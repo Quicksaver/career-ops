@@ -51,7 +51,7 @@ Career-Ops turns any AI coding CLI into a full job search command center. Instea
 
 - **Evaluates offers** with a structured A-F scoring system (10 weighted dimensions)
 - **Generates tailored PDFs** -- ATS-optimized CVs customized per job description
-- **Scans portals** automatically (Greenhouse, Ashby, Lever, PCSX, company pages)
+- **Scans portals** automatically (Greenhouse, Ashby, Lever, PCSX, ITJobs, SAPO Emprego, company pages)
 - **Processes in batch** -- evaluate 10+ offers in parallel with sub-agents
 - **Tracks everything** in a single source of truth with integrity checks
 

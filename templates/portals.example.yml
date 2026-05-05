@@ -281,13 +281,16 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs
+# api_provider: greenhouse, pcsx, itjobs, sapo
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
 #   - ITJobs can be configured with `api_provider: itjobs` + `api_params:` using
 #     listing-page filters (`date`, `work_model`, `location`, `salary`, `type`,
 #     `contract`) and optional `api_max_pages:`
+#   - SAPO Emprego can be configured with `api_provider: sapo` + `api_params:` using
+#     search/listing filters such as `pesquisa`, `categoria`, `modelo`,
+#     `distrito`, and optional `api_max_pages:`
 
 tracked_companies:
 
@@ -315,6 +318,23 @@ tracked_companies:
         - 2
     api_max_pages: 3
     notes: "Server-rendered Portugal IT job board with stable filters for date, work model, location, salary, contract, and pagination."
+    enabled: false
+
+  - name: SAPO Emprego
+    careers_url: https://emprego.sapo.pt/offers
+    api_provider: sapo
+    api: https://emprego.sapo.pt/offers
+    api_params:
+      pesquisa:
+        - ai
+        - "machine learning"
+        - "data science"
+      categoria: informatica-tecnologias
+      modelo:
+        - teletrabalho,hibrido
+        - hibrido
+    api_max_pages: 4
+    notes: "Server-rendered Portugal job board with embedded results payloads, native tech/remote filters, and JobPosting JSON-LD on detail pages."
     enabled: false
 
   # -- Voice AI & Conversational AI --

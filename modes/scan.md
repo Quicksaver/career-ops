@@ -2,7 +2,7 @@
 
 Escanea portales de empleo configurados, filtra por relevancia de título, y añade nuevas ofertas al pipeline para evaluación posterior.
 
-> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers HTML estructurados como ITJobs. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider HTML soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch).
+> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers HTML estructurados como ITJobs y SAPO Emprego. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider HTML soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch).
 
 ## Ejecución recomendada
 
@@ -47,6 +47,7 @@ Para empresas con API pública o feed estructurado, usar la respuesta JSON/XML c
 - **Teamtailor**: `https://{company}.teamtailor.com/jobs.rss`
 - **Workday**: `https://{company}.{shard}.myworkdayjobs.com/wday/cxs/{company}/{site}/jobs`
 - **ITJobs**: `https://www.itjobs.pt/emprego` y variantes filtradas (`?date=24h&work_model=1&page=N`, `?date=24h&work_model=2&page=N`)
+- **SAPO Emprego**: `https://emprego.sapo.pt/offers` y variantes filtradas (`?pesquisa=ai&categoria=informatica-tecnologias&modelo=teletrabalho,hibrido&pagina=N`)
 
 **Convención de parsing por provider:**
 - `greenhouse`: `jobs[]` → `title`, `absolute_url`
@@ -56,6 +57,7 @@ Para empresas con API pública o feed estructurado, usar la respuesta JSON/XML c
 - `teamtailor`: RSS items → `title`, `link`
 - `workday`: `jobPostings[]`/`jobPostings` (según tenant) → `title`, `externalPath` o URL construida desde el host
 - `itjobs`: HTML SSR `ul.listing > li` → `div.list-title a` (`title`, `href`), `div.list-name a` (`company`), `div.list-details` (`location` y metadatos como remoto/híbrido/salario)
+- `sapo`: HTML SSR / Vue props `:offers='[...]'` → `offer_name`, `link`, `company_name`, `location`, `job_district`, `job_work_hours`; detalle con JSON-LD `JobPosting`
 
 ### Nivel 3 — WebSearch queries (DESCUBRIMIENTO AMPLIO)
 
@@ -87,14 +89,15 @@ Los niveles son aditivos — se ejecutan todos, los resultados se mezclan y dedu
 5. **Nivel 2 — ATS APIs / feeds** (paralelo):
    Para cada empresa en `tracked_companies` con `api:` definida o `api_provider:` configurado y `enabled: true`:
    a. WebFetch de la URL de API/feed
-   b. Si `api_provider` está definido, usar su parser; si no está definido, inferir por dominio (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `www.itjobs.pt/emprego`)
+   b. Si `api_provider` está definido, usar su parser; si no está definido, inferir por dominio (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `www.itjobs.pt/emprego`, `emprego.sapo.pt/offers`)
    c. Para **Ashby**, enviar POST con:
       - `operationName: ApiJobBoardWithTeams`
       - `variables.organizationHostedJobsPageName: {company}`
       - query GraphQL de `jobBoardWithTeams` + `jobPostings { id title locationName employmentType compensationTierSummary }`
    d. Para **BambooHR**, la lista solo trae metadatos básicos. Para cada item relevante, leer `id`, hacer GET a `https://{company}.bamboohr.com/careers/{id}/detail`, y extraer el JD completo desde `result.jobOpening`. Usar `jobOpeningShareUrl` como URL pública si viene; si no, usar la URL de detalle.
     e. Para **Workday**, enviar POST JSON con al menos `{"appliedFacets":{},"limit":20,"offset":0,"searchText":""}` y paginar por `offset` hasta agotar resultados
-    e2. Para **ITJobs**, hacer GET de la página listada con los filtros en querystring (`date`, `work_model`, `location`, `salary`, `type`, `contract`) y paginar por `page` hasta el máximo configurado o el último enlace visible. Si un filtro admite múltiples valores (ej. remoto + híbrido), hacer fan-out en varias requests y deduplicar por URL.
+     e2. Para **ITJobs**, hacer GET de la página listada con los filtros en querystring (`date`, `work_model`, `location`, `salary`, `type`, `contract`) y paginar por `page` hasta el máximo configurado o el último enlace visible. Si un filtro admite múltiples valores (ej. remoto + híbrido), hacer fan-out en varias requests y deduplicar por URL.
+     e3. Para **SAPO Emprego**, hacer GET de la página de resultados con filtros en querystring (`pesquisa`, `categoria`, `modelo`, `distrito`) y leer el payload embebido en `:offers` + `:pagination`. Paginar por `pagina` y hacer fan-out cuando un filtro tenga múltiples valores.
     f. Para cada job extraer y normalizar: `{title, url, company}`
    g. Acumular en lista de candidatos (dedup con Nivel 1)
 

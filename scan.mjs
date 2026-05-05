@@ -4,7 +4,7 @@
  * scan.mjs — Zero-token portal scanner
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured HTML
- * providers such as ITJobs, applies title filters from portals.yml,
+ * providers such as ITJobs and SAPO Emprego, applies title filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
  *
@@ -34,6 +34,7 @@ const CONCURRENCY = 10;
 const FETCH_TIMEOUT_MS = 10_000;
 const PCSX_DETAIL_CONCURRENCY = 20;
 const ITJOBS_MAX_PAGES = 5;
+const SAPO_MAX_PAGES = 5;
 
 function normalizeWhitespace(value) {
   return value.replace(/\s+/g, ' ').trim();
@@ -159,6 +160,44 @@ function getItjobsConfig(company) {
   };
 }
 
+function getSapoConfig(company) {
+  const baseUrl = company.api || company.careers_url;
+  if (!baseUrl) return null;
+
+  let listUrl;
+  try {
+    listUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  let urls = [listUrl];
+
+  for (const [key, rawValue] of Object.entries(company.api_params || {})) {
+    if (rawValue === false || rawValue === null || rawValue === undefined || rawValue === '') {
+      continue;
+    }
+
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    const nextUrls = [];
+
+    for (const existingUrl of urls) {
+      for (const value of values) {
+        const nextUrl = new URL(existingUrl.toString());
+        nextUrl.searchParams.set(key, String(value));
+        nextUrls.push(nextUrl);
+      }
+    }
+
+    urls = nextUrls;
+  }
+
+  return {
+    listUrls: urls.map(url => url.toString()),
+    maxPages: Math.max(1, Number(company.api_max_pages) || SAPO_MAX_PAGES),
+  };
+}
+
 function buildPcsxDetailUrl(company, positionId, queriedLocation) {
   const pcsx = company._api?.pcsx || getPcsxConfig(company);
   if (!pcsx || !positionId) return null;
@@ -185,6 +224,11 @@ function detectApi(company) {
   if (company.api_provider === 'itjobs' || /https?:\/\/(?:www\.)?itjobs\.pt\/emprego/.test(company.api || company.careers_url || '')) {
     const itjobs = getItjobsConfig(company);
     return itjobs ? { type: 'itjobs', url: itjobs.listUrls[0], itjobs } : null;
+  }
+
+  if (company.api_provider === 'sapo' || /https?:\/\/emprego\.sapo\.pt\/offers(?:\/search)?/.test(company.api || company.careers_url || '')) {
+    const sapo = getSapoConfig(company);
+    return sapo ? { type: 'sapo', url: sapo.listUrls[0], sapo } : null;
   }
 
   // Greenhouse: explicit api field
@@ -329,6 +373,85 @@ function getItjobsPageCount(html) {
   return maxPage;
 }
 
+function buildSapoPageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+  if (pageNumber <= 1) {
+    pageUrl.searchParams.delete('pagina');
+  } else {
+    pageUrl.searchParams.set('pagina', String(pageNumber));
+  }
+  return pageUrl.toString();
+}
+
+function decodeJsSingleQuotedString(value) {
+  return value
+    .replace(/\\\//g, '/')
+    .replace(/\\'/g, "'")
+    .replace(/\\\\/g, '\\');
+}
+
+function extractSapoBinding(html, bindingName) {
+  const match = html.match(new RegExp(`:${bindingName}='((?:\\\\.|[^'])*)'`));
+  if (!match) return null;
+
+  try {
+    return JSON.parse(decodeJsSingleQuotedString(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function parseSapoOffer(offer, company) {
+  const title = cleanHtmlText(offer.offer_name || offer.title || '');
+  const url = offer.link || '';
+  const companyName = cleanHtmlText(offer.company_name || company.name || '');
+
+  if (!title || !url || !companyName || offer.is_image_highlight) {
+    return null;
+  }
+
+  const locationParts = [offer.location, offer.job_district, offer.job_work_hours]
+    .map(value => cleanHtmlText(String(value || '')))
+    .filter(Boolean);
+
+  return {
+    title,
+    url,
+    company: companyName,
+    location: [...new Set(locationParts)].join(' | '),
+    publicationDate: offer.publication_date || '',
+    remoteWork: Boolean(offer.remote_work),
+  };
+}
+
+function parseSapoPage(html, company, seenUrls) {
+  const offers = extractSapoBinding(html, 'offers') || [];
+  const jobs = [];
+
+  for (const offer of offers) {
+    const parsed = parseSapoOffer(offer, company);
+    if (!parsed) continue;
+    if (seenUrls.has(parsed.url)) continue;
+    seenUrls.add(parsed.url);
+    jobs.push(parsed);
+  }
+
+  return jobs;
+}
+
+function getSapoPageCount(html) {
+  const pagination = extractSapoBinding(html, 'pagination');
+  const total = Number(pagination?.total || pagination?.offers_total || 0);
+  const size = Number(pagination?.size || 0);
+  const currentPage = Number(pagination?.page || 1) || 1;
+
+  if (total > 0 && size > 0) {
+    return Math.max(currentPage, Math.ceil(total / size));
+  }
+
+  return currentPage;
+}
+
 const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pcsx: parsePcsx };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
@@ -349,7 +472,13 @@ async function fetchText(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const headers = {};
+    if (/https?:\/\/emprego\.sapo\.pt\//.test(url)) {
+      headers['user-agent'] = 'Mozilla/5.0';
+      headers['accept-language'] = 'pt-PT,pt;q=0.9,en;q=0.8';
+    }
+
+    const res = await fetch(url, { signal: controller.signal, headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } finally {
@@ -438,6 +567,26 @@ async function fetchItjobsJobs(url, company) {
   return jobs;
 }
 
+async function fetchSapoJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.sapo?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    const firstPageHtml = await fetchText(listUrl);
+    const pageCount = getSapoPageCount(firstPageHtml);
+    const maxPages = Math.min(company._api?.sapo?.maxPages || SAPO_MAX_PAGES, pageCount);
+    jobs.push(...parseSapoPage(firstPageHtml, company, seenUrls));
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildSapoPageUrl(listUrl, pageNumber));
+      jobs.push(...parseSapoPage(html, company, seenUrls));
+    }
+  }
+
+  return jobs;
+}
+
 async function fetchJobs(company) {
   const { type, url } = company._api;
 
@@ -447,6 +596,10 @@ async function fetchJobs(company) {
 
   if (type === 'itjobs') {
     return fetchItjobsJobs(url, company);
+  }
+
+  if (type === 'sapo') {
+    return fetchSapoJobs(url, company);
   }
 
   const json = await fetchJson(url);
