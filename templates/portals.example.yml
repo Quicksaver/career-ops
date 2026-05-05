@@ -309,7 +309,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, euremotejobs, dice
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, euremotejobs, dice, workingnomads
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -335,6 +335,11 @@ search_queries:
 #     such as `q`, `location`, `includeRemote`, `filters.workplaceTypes`,
 #     `employmentType`, `postedDate`, and `employerType`, plus optional
 #     `api_page_size:` / `api_max_pages:`
+#   - Working Nomads can be configured with `api_provider: workingnomads` +
+#     `api: https://www.workingnomads.com/api/exposed_jobs/` and optional
+#     client-side `api_params:` such as `location`, `category`, `q`, `tags`,
+#     and `published_within_days`. Public server-side filters/pagination were
+#     not observed, so the scanner fetches once and filters locally.
 # Search-only portals such as Indeed belong in `search_queries`, not
 # `tracked_companies`, unless you have a proven low-friction HTML/API path.
 
@@ -423,6 +428,17 @@ tracked_companies:
     api: https://euremotejobs.com/job-listings/feed/
     api_max_pages: 4
     notes: "WordPress RSS feed with paginated `?paged=N` archives, canonical job URLs, publish dates, and normalized summaries. Better fit than HTML scraping or WebSearch for zero-token scanning."
+    enabled: false
+
+  - name: Working Nomads Europe
+    careers_url: https://www.workingnomads.com/remote-europe-jobs
+    api_provider: workingnomads
+    api: https://www.workingnomads.com/api/exposed_jobs/
+    api_params:
+      location:
+        - Europe
+      published_within_days: 30
+    notes: "Public JSON API with canonical Working Nomads job URLs, title, company, location, category, tags, description, and publish date. No reliable server-side region/category/paging params were observed, so the optimal integration is one API fetch plus local filtering."
     enabled: false
 
   - name: Dice

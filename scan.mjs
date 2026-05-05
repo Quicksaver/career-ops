@@ -5,7 +5,7 @@
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
  * providers such as Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego,
- * Portal Emprego, and Dice, applies title
+ * Portal Emprego, Dice, and Working Nomads, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -204,6 +204,58 @@ function getEuRemoteJobsConfig(company) {
   };
 }
 
+function formatWorkingNomadsSlugToken(value) {
+  const token = String(value || '').trim();
+  if (!token) return '';
+
+  if (['apac', 'emea', 'uk', 'usa', 'eu'].includes(token)) {
+    return token.toUpperCase();
+  }
+
+  return token.charAt(0).toUpperCase() + token.slice(1);
+}
+
+function inferWorkingNomadsLocationFilters(company) {
+  const explicitFilters = toFilterArray(company.api_params?.location);
+  if (explicitFilters.length > 0) return explicitFilters;
+
+  try {
+    const pathname = new URL(company.careers_url || '').pathname;
+    const slug = pathname.match(/^\/remote-([a-z-]+)-jobs\/?$/)?.[1];
+    if (!slug) return [];
+
+    return [slug.split('-').map(formatWorkingNomadsSlugToken).join(' ')];
+  } catch {
+    return [];
+  }
+}
+
+function getWorkingNomadsConfig(company) {
+  const baseUrl = company.api || 'https://www.workingnomads.com/api/exposed_jobs/';
+  let apiUrl;
+
+  try {
+    apiUrl = new URL(baseUrl).toString();
+  } catch {
+    return null;
+  }
+
+  const publishedWithinDays = Number(company.api_params?.published_within_days);
+
+  return {
+    apiUrl,
+    filters: {
+      q: toFilterArray(company.api_params?.q),
+      category: toFilterArray(company.api_params?.category),
+      location: inferWorkingNomadsLocationFilters(company),
+      tags: toFilterArray(company.api_params?.tags),
+      publishedWithinDays: Number.isFinite(publishedWithinDays) && publishedWithinDays > 0
+        ? publishedWithinDays
+        : null,
+    },
+  };
+}
+
 function getSapoConfig(company) {
   const baseUrl = company.api || company.careers_url;
   if (!baseUrl) return null;
@@ -297,6 +349,13 @@ function toFilterArray(value) {
 
   return (Array.isArray(value) ? value : [value])
     .map(item => normalizeWhitespace(String(item || '')))
+    .filter(Boolean);
+}
+
+function splitCommaSeparatedValues(value) {
+  return String(value || '')
+    .split(',')
+    .map(item => normalizeWhitespace(item))
     .filter(Boolean);
 }
 
@@ -404,6 +463,11 @@ function detectApi(company) {
   if (company.api_provider === 'euremotejobs' || /https?:\/\/(?:www\.)?euremotejobs\.com\/(?:job-listings\/feed\/?|job-category\/[^/?#]+\/feed\/?)(?:[?#].*)?$/.test(company.api || company.careers_url || '')) {
     const euremotejobs = getEuRemoteJobsConfig(company);
     return euremotejobs ? { type: 'euremotejobs', url: euremotejobs.feedUrl, euremotejobs } : null;
+  }
+
+  if (company.api_provider === 'workingnomads' || /https?:\/\/(?:www\.)?workingnomads\.com\/(?:api\/exposed_jobs\/?|remote-[^/?#]+-jobs(?:[/?#]|$)|jobs(?:[/?#]|$))/.test(company.api || company.careers_url || '')) {
+    const workingnomads = getWorkingNomadsConfig(company);
+    return workingnomads ? { type: 'workingnomads', url: workingnomads.apiUrl, workingnomads } : null;
   }
 
   if (company.api_provider === 'sapo' || /https?:\/\/emprego\.sapo\.pt\/offers(?:\/search)?/.test(company.api || company.careers_url || '')) {
@@ -740,6 +804,65 @@ function parseLandingJobsFeed(xml) {
   }
 
   return jobs;
+}
+
+function parseWorkingNomadsJobs(json) {
+  if (!Array.isArray(json)) return [];
+
+  return json
+    .map(job => {
+      const title = normalizeWhitespace(String(job.title || ''));
+      const url = String(job.url || '').trim();
+      const company = normalizeWhitespace(String(job.company_name || ''));
+
+      if (!title || !url || !company) {
+        return null;
+      }
+
+      return {
+        title,
+        url,
+        company,
+        location: normalizeWhitespace(String(job.location || '')),
+        category: normalizeWhitespace(String(job.category_name || '')),
+        publishedAt: String(job.pub_date || ''),
+        tags: splitCommaSeparatedValues(job.tags),
+        jobDescription: cleanHtmlText(String(job.description || '')),
+      };
+    })
+    .filter(Boolean);
+}
+
+function matchesWorkingNomadsQuery(queries, job) {
+  if (!queries || queries.length === 0) return true;
+
+  const haystack = normalizeSearchText([
+    job.title,
+    job.company,
+    job.location,
+    job.category,
+    job.tags.join(' '),
+    job.jobDescription,
+  ].filter(Boolean).join(' '));
+
+  return queries.some(query => haystack.includes(normalizeSearchText(query)));
+}
+
+function matchesWorkingNomadsTagFilter(requestedValues, tags) {
+  if (!requestedValues || requestedValues.length === 0) return true;
+  if (!Array.isArray(tags) || tags.length === 0) return false;
+
+  return requestedValues.some(value => tags.some(tag => matchesLandingJobsFilter([value], tag)));
+}
+
+function filterWorkingNomadsJobs(jobs, filters) {
+  return jobs.filter(job => (
+    matchesWorkingNomadsQuery(filters?.q, job)
+    && matchesLandingJobsFilter(filters?.category, job.category)
+    && matchesLandingJobsFilter(filters?.location, job.location)
+    && matchesWorkingNomadsTagFilter(filters?.tags, job.tags)
+    && isWithinDays(job.publishedAt, filters?.publishedWithinDays)
+  ));
 }
 
 function filterLandingJobsJobs(jobs, filters) {
@@ -1176,6 +1299,12 @@ async function fetchEuRemoteJobsJobs(url, company) {
   return parallelFetch(tasks, detailConcurrency);
 }
 
+async function fetchWorkingNomadsJobs(url, company) {
+  const json = await fetchJson(url);
+  const jobs = parseWorkingNomadsJobs(json);
+  return filterWorkingNomadsJobs(jobs, company._api?.workingnomads?.filters);
+}
+
 async function fetchPcsxPositionDetails(company, job) {
   const detailUrl = buildPcsxDetailUrl(company, job.positionId, job.queriedLocation);
   if (!detailUrl) return job;
@@ -1324,6 +1453,10 @@ async function fetchJobs(company) {
 
   if (type === 'euremotejobs') {
     return fetchEuRemoteJobsJobs(url, company);
+  }
+
+  if (type === 'workingnomads') {
+    return fetchWorkingNomadsJobs(url, company);
   }
 
   if (type === 'sapo') {
