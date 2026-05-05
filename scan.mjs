@@ -43,6 +43,11 @@ const PORTALEMPREGO_MAX_PAGES = 5;
 const DICE_MAX_PAGES = 5;
 const REMOTEINEUROPE_DETAIL_CONCURRENCY = 5;
 const REMOTEINEUROPE_MAX_PAGES = 5;
+const NODESK_MAX_PAGES = 5;
+const NODESK_DETAIL_CONCURRENCY = 5;
+const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
+const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
+const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
 
 const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
   fullremote: ['fullremote', 'remote'],
@@ -366,6 +371,29 @@ function getRemoteInEuropeConfig(company) {
   };
 }
 
+function normalizeNodeskFilterPath(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^https?:\/\/nodesk\.co\//, '')
+    .replace(/^\/+|\/+$/g, '');
+}
+
+function getNodeskConfig(company) {
+  const filters = toFilterArray(company.api_params?.search_filter || company.api_params?.search_filters)
+    .map(normalizeNodeskFilterPath)
+    .filter(Boolean);
+
+  const query = toFilterArray(company.api_params?.q || company.api_params?.query);
+  const hitsPerPage = Math.max(1, Math.min(Number(company.api_page_size) || 90, 1000));
+
+  return {
+    filters: filters.length > 0 ? filters : ['remote-jobs'],
+    query: query.length > 0 ? query : [''],
+    maxPages: Math.max(1, Number(company.api_max_pages) || NODESK_MAX_PAGES),
+    hitsPerPage,
+  };
+}
+
 function slugifyPortalEmpregoTerm(value) {
   return normalizeWhitespace(String(value || ''))
     .normalize('NFD')
@@ -521,6 +549,11 @@ function detectApi(company) {
   if (company.api_provider === 'remoteineurope' || /https?:\/\/(?:www\.)?remoteineurope\.com\/(?:categories\/[^/?#]+|job\/[^/?#]+|$)/.test(company.api || company.careers_url || '')) {
     const remoteineurope = getRemoteInEuropeConfig(company);
     return remoteineurope ? { type: 'remoteineurope', url: remoteineurope.listUrls[0], remoteineurope } : null;
+  }
+
+  if (company.api_provider === 'nodesk' || /https?:\/\/(?:www\.)?nodesk\.co\/remote-jobs(?:\/|$)/.test(company.api || company.careers_url || '')) {
+    const nodesk = getNodeskConfig(company);
+    return { type: 'nodesk', url: company.api || company.careers_url || 'https://nodesk.co/remote-jobs/', nodesk };
   }
 
   // Greenhouse: explicit api field
@@ -1330,6 +1363,100 @@ function parseRemoteInEuropeDetailPage(html, fallbackJob) {
   };
 }
 
+function formatNodeskLocation(job) {
+  const values = Array.isArray(job.applicantLocations)
+    ? job.applicantLocations.map(location => normalizeWhitespace(String(location?.name || ''))).filter(Boolean)
+    : [];
+  return [...new Set(values)].join(' | ');
+}
+
+function formatNodeskEmploymentTypes(job) {
+  const values = Array.isArray(job.employmentTypes)
+    ? job.employmentTypes.map(type => normalizeWhitespace(String(type?.name || ''))).filter(Boolean)
+    : [];
+  return [...new Set(values)].join(' | ');
+}
+
+function formatNodeskKeywords(job) {
+  return Array.isArray(job.keywords)
+    ? [...new Set(job.keywords.map(keyword => normalizeWhitespace(String(keyword?.name || ''))).filter(Boolean))]
+    : [];
+}
+
+function parseNodeskJob(job, seenUrls) {
+  const path = normalizeWhitespace(String(job.permalink || ''));
+  const title = normalizeWhitespace(String(job.title || ''));
+  const company = normalizeWhitespace(String(job.company?.name || ''));
+
+  if (!path || !title || !company) {
+    return null;
+  }
+
+  const sourceUrl = new URL(path, 'https://nodesk.co').toString();
+  if (seenUrls.has(sourceUrl)) {
+    return null;
+  }
+  seenUrls.add(sourceUrl);
+
+  const salary = normalizeWhitespace(String(job.baseSalary || ''));
+  const employmentType = formatNodeskEmploymentTypes(job);
+  const keywords = formatNodeskKeywords(job);
+
+  return {
+    title,
+    url: sourceUrl,
+    sourceUrl,
+    company,
+    location: formatNodeskLocation(job),
+    salary,
+    employmentType,
+    role: normalizeWhitespace(String(job.role?.name || '')),
+    keywords,
+    postedDate: String(job.datePublished || ''),
+    publishedAt: String(job.datePublished || ''),
+    relativeDate: normalizeWhitespace(String(job.date || '')),
+  };
+}
+
+function extractNodeskJobPostingSchema(html) {
+  const match = html.match(/<script type=application\/ld\+json>([\s\S]*?)<\/script>/i);
+  if (!match) return null;
+
+  try {
+    return JSON.parse(decodeHtmlEntities(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function parseNodeskDetailPage(html, fallbackJob) {
+  const schema = extractNodeskJobPostingSchema(html) || {};
+  const title = cleanHtmlText(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || schema.title || fallbackJob.title || '');
+  const company = cleanHtmlText(html.match(/<h2[^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i)?.[1] || schema.hiringOrganization?.name || fallbackJob.company || '');
+  const applyUrl = decodeHtmlEntities(
+    html.match(/<a[^>]+href="([^"]+)"[^>]*>Apply (?:Now|for this job)<\/a>/i)?.[1]
+    || ''
+  );
+  const salary = cleanHtmlText(html.match(/tracked-wide">([\s\S]*?)<\/p>/i)?.[1] || fallbackJob.salary || '');
+  const description = cleanHtmlText(
+    html.match(/<section[^>]*class="fr [^"]*">[\s\S]*?<div class=grey-800>([\s\S]*?)<\/div>/i)?.[1]
+    || schema.description
+    || ''
+  );
+
+  return {
+    ...fallbackJob,
+    title: title || fallbackJob.title,
+    url: applyUrl || fallbackJob.url,
+    sourceUrl: fallbackJob.sourceUrl || fallbackJob.url,
+    company: company || fallbackJob.company,
+    salary: salary || fallbackJob.salary || '',
+    publishedAt: parseRemoteInEuropeDate(schema.datePosted) || fallbackJob.publishedAt || '',
+    validThrough: parseRemoteInEuropeDate(schema.validThrough) || '',
+    jobDescription: description,
+  };
+}
+
 const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pcsx: parsePcsx };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
@@ -1359,6 +1486,13 @@ async function fetchText(url) {
     if (/https?:\/\/(?:www\.)?dice\.com\//.test(url)) {
       headers['user-agent'] = 'Mozilla/5.0';
       headers['accept-language'] = 'en-US,en;q=0.9';
+    }
+
+    if (/https?:\/\/(?:www\.)?nodesk\.co\//.test(url)) {
+      headers['user-agent'] = 'Mozilla/5.0';
+      headers['accept-language'] = 'en-US,en;q=0.9';
+      headers['referer'] = 'https://nodesk.co/remote-jobs/';
+      headers['origin'] = 'https://nodesk.co';
     }
 
     const res = await fetch(url, { signal: controller.signal, headers });
@@ -1619,6 +1753,111 @@ async function fetchRemoteInEuropeJobs(url, company) {
   return jobs;
 }
 
+async function fetchNodeskIndexPage({ filter, page, hitsPerPage, query, referer }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`https://${NODESK_ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/${NODESK_ALGOLIA_JOB_INDEX}/query`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        'x-algolia-application-id': NODESK_ALGOLIA_APP_ID,
+        'x-algolia-api-key': NODESK_ALGOLIA_API_KEY,
+        'origin': 'https://nodesk.co',
+        'referer': referer,
+        'user-agent': 'Mozilla/5.0',
+      },
+      body: JSON.stringify({
+        query,
+        hitsPerPage,
+        page,
+        filters: `searchFilter:${filter}`,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchNodeskJobDetails(job) {
+  const html = await fetchText(job.sourceUrl || job.url);
+  return parseNodeskDetailPage(html, job);
+}
+
+async function enrichNodeskJobs(jobs, seenUrls) {
+  if (jobs.length === 0) {
+    return jobs;
+  }
+
+  const detailConcurrency = Math.max(1, Math.min(NODESK_DETAIL_CONCURRENCY, jobs.length));
+  const tasks = jobs.map(job => async () => {
+    try {
+      return await fetchNodeskJobDetails(job);
+    } catch {
+      return job;
+    }
+  });
+
+  const enriched = await parallelFetch(tasks, detailConcurrency);
+  const deduped = [];
+
+  for (const job of enriched) {
+    const finalUrl = job.url || job.sourceUrl;
+    const sourceUrl = job.sourceUrl || job.url;
+
+    if (!finalUrl || !sourceUrl) continue;
+    if (finalUrl !== sourceUrl && seenUrls.has(finalUrl)) continue;
+
+    seenUrls.add(finalUrl);
+    seenUrls.add(sourceUrl);
+    deduped.push(job);
+  }
+
+  return deduped;
+}
+
+async function fetchNodeskJobs(_url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const filters = company._api?.nodesk?.filters || ['remote-jobs'];
+  const maxPages = company._api?.nodesk?.maxPages || NODESK_MAX_PAGES;
+  const hitsPerPage = company._api?.nodesk?.hitsPerPage || 90;
+  const queries = company._api?.nodesk?.query || [''];
+
+  for (const filter of filters) {
+    const referer = `https://nodesk.co/${filter.replace(/^\/+/, '')}/`;
+
+    for (const query of queries) {
+      const firstPage = await fetchNodeskIndexPage({ filter, page: 0, hitsPerPage, query, referer });
+      const pageCount = Number(firstPage.nbPages || 1);
+      const boundedPages = Math.min(maxPages, pageCount);
+
+      for (const hit of firstPage.hits || []) {
+        const parsed = parseNodeskJob(hit, seenUrls);
+        if (parsed) jobs.push(parsed);
+      }
+
+      for (let pageNumber = 1; pageNumber < boundedPages; pageNumber++) {
+        const pageData = await fetchNodeskIndexPage({ filter, page: pageNumber, hitsPerPage, query, referer });
+        for (const hit of pageData.hits || []) {
+          const parsed = parseNodeskJob(hit, seenUrls);
+          if (parsed) jobs.push(parsed);
+        }
+      }
+    }
+  }
+
+  return enrichNodeskJobs(jobs, seenUrls);
+}
+
 async function fetchJobs(company) {
   const { type, url } = company._api;
 
@@ -1656,6 +1895,10 @@ async function fetchJobs(company) {
 
   if (type === 'remoteineurope') {
     return fetchRemoteInEuropeJobs(url, company);
+  }
+
+  if (type === 'nodesk') {
+    return fetchNodeskJobs(url, company);
   }
 
   const json = await fetchJson(url);
@@ -1865,7 +2108,13 @@ async function main() {
           : candidateJobs;
 
       for (const job of enrichedJobs) {
+        if (seenUrls.has(job.url)) {
+          totalDupes++;
+          continue;
+        }
+
         seenUrls.add(job.url);
+        if (job.sourceUrl) seenUrls.add(job.sourceUrl);
         newOffers.push({ ...job, source: `${type}-api` });
       }
     } catch (err) {

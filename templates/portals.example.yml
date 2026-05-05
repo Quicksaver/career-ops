@@ -309,7 +309,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, euremotejobs, dice, remoteineurope, workingnomads
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, euremotejobs, dice, remoteineurope, workingnomads, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -346,6 +346,14 @@ search_queries:
 #     client-side `api_params:` such as `location`, `category`, `q`, `tags`,
 #     and `published_within_days`. Public server-side filters/pagination were
 #     not observed, so the scanner fetches once and filters locally.
+#   - NoDesk can be configured with `api_provider: nodesk` +
+#     `careers_url: https://nodesk.co/remote-jobs/`. The optimal integration is
+#     the public Algolia index used by the site search, with `Origin`/`Referer`
+#     headers matching nodesk.co. Optional `api_params.search_filter:` values use
+#     NoDesk path slugs such as `remote-jobs`, `remote-jobs/engineering`,
+#     `remote-jobs/product`, or `remote-jobs/europe`, plus optional `api_params.q:`
+#     to seed title/keyword queries. Detail pages expose the real outbound apply
+#     URL and JobPosting schema, so the scanner enriches hits with those fields.
 # Search-only portals such as Indeed belong in `search_queries`, not
 # `tracked_companies`, unless you have a proven low-friction HTML/API path.
 
@@ -445,6 +453,17 @@ tracked_companies:
         - Europe
       published_within_days: 30
     notes: "Public JSON API with canonical Working Nomads job URLs, title, company, location, category, tags, description, and publish date. No reliable server-side region/category/paging params were observed, so the optimal integration is one API fetch plus local filtering."
+    enabled: false
+
+  - name: NoDesk
+    careers_url: https://nodesk.co/remote-jobs/
+    api_provider: nodesk
+    api_params:
+      search_filter:
+        - remote-jobs/engineering
+        - remote-jobs/product
+    api_max_pages: 3
+    notes: "Public Algolia search index behind NoDesk's SSR listings, referer-gated but stable. Best integration is structured search hits plus detail-page enrichment to recover the real outbound apply URL, salary text, and JobPosting dates."
     enabled: false
 
   - name: Dice
