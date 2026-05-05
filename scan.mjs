@@ -4,7 +4,8 @@
  * scan.mjs — Zero-token portal scanner
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured HTML
- * providers such as ITJobs and SAPO Emprego, applies title filters from portals.yml,
+ * providers such as ITJobs, SAPO Emprego, and Portal Emprego, applies title
+ * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
  *
@@ -35,6 +36,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 const PCSX_DETAIL_CONCURRENCY = 20;
 const ITJOBS_MAX_PAGES = 5;
 const SAPO_MAX_PAGES = 5;
+const PORTALEMPREGO_MAX_PAGES = 5;
 
 function normalizeWhitespace(value) {
   return value.replace(/\s+/g, ' ').trim();
@@ -198,6 +200,51 @@ function getSapoConfig(company) {
   };
 }
 
+function slugifyPortalEmpregoTerm(value) {
+  return normalizeWhitespace(String(value || ''))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function buildPortalEmpregoListUrl(origin, searchTerm, itemsPerPage) {
+  const safeItemsPerPage = Math.max(1, Number(itemsPerPage) || 20);
+  const slug = slugifyPortalEmpregoTerm(searchTerm);
+  const pathname = slug
+    ? `/anuncios/pesquisa-${slug}/mostrar-${safeItemsPerPage}/`
+    : `/anuncios/mostrar-${safeItemsPerPage}/`;
+
+  return new URL(pathname, origin).toString();
+}
+
+function getPortalEmpregoConfig(company) {
+  const baseUrl = company.api || company.careers_url;
+  if (!baseUrl) return null;
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const itemsPerPage = company.api_params?.mostrar || company.api_items_per_page || 20;
+  const searchTerms = company.api_params?.pesquisa;
+  const values = Array.isArray(searchTerms) ? searchTerms : (searchTerms ? [searchTerms] : []);
+  const listUrls = values.length > 0
+    ? values
+        .map(value => buildPortalEmpregoListUrl(parsedUrl.origin, value, itemsPerPage))
+        .filter((value, index, array) => value && array.indexOf(value) === index)
+    : [buildPortalEmpregoListUrl(parsedUrl.origin, '', itemsPerPage)];
+
+  return {
+    listUrls,
+    maxPages: Math.max(1, Number(company.api_max_pages) || PORTALEMPREGO_MAX_PAGES),
+  };
+}
+
 function buildPcsxDetailUrl(company, positionId, queriedLocation) {
   const pcsx = company._api?.pcsx || getPcsxConfig(company);
   if (!pcsx || !positionId) return null;
@@ -229,6 +276,11 @@ function detectApi(company) {
   if (company.api_provider === 'sapo' || /https?:\/\/emprego\.sapo\.pt\/offers(?:\/search)?/.test(company.api || company.careers_url || '')) {
     const sapo = getSapoConfig(company);
     return sapo ? { type: 'sapo', url: sapo.listUrls[0], sapo } : null;
+  }
+
+  if (company.api_provider === 'portalemprego' || /https?:\/\/(?:www\.)?portalemprego\.pt\/anuncios(?:\/|$)/.test(company.api || company.careers_url || '')) {
+    const portalemprego = getPortalEmpregoConfig(company);
+    return portalemprego ? { type: 'portalemprego', url: portalemprego.listUrls[0], portalemprego } : null;
   }
 
   // Greenhouse: explicit api field
@@ -383,6 +435,15 @@ function buildSapoPageUrl(url, pageNumber) {
   return pageUrl.toString();
 }
 
+function buildPortalEmpregoPageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+  let pathname = pageUrl.pathname.replace(/\/pagina-\d+\/?$/, '/');
+  if (!pathname.endsWith('/')) pathname += '/';
+
+  pageUrl.pathname = pageNumber <= 1 ? pathname : `${pathname}pagina-${pageNumber}/`;
+  return pageUrl.toString();
+}
+
 function decodeJsSingleQuotedString(value) {
   return value
     .replace(/\\\//g, '/')
@@ -437,6 +498,54 @@ function parseSapoPage(html, company, seenUrls) {
   }
 
   return jobs;
+}
+
+function extractPortalEmpregoField(itemHtml, className) {
+  const match = itemHtml.match(new RegExp(`<span class="${className}(?: [^"]*)?"[^>]*>([\\s\\S]*?)<\\/span>`));
+  return match ? cleanHtmlText(match[1]) : '';
+}
+
+function parsePortalEmpregoPage(html, sourceUrl, seenUrls) {
+  const origin = new URL(sourceUrl).origin;
+  const jobs = [];
+  const listHtml = html.match(/<div id="listCont" class="jobs">([\s\S]*?)(?:<nav>|<script type="application\/ld\+json">|<footer|$)/)?.[1] || html;
+  const jobPattern = /<a class="d-flex" href="([^"]*\/emprego\/[^\"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+
+  for (const match of listHtml.matchAll(jobPattern)) {
+    const url = new URL(decodeHtmlEntities(match[1]), origin).toString();
+    if (seenUrls.has(url)) continue;
+
+    const itemHtml = match[2];
+    const title = cleanHtmlText(itemHtml.match(/<div class="title">[\s\S]*?<h5>([\s\S]*?)<\/h5>/)?.[1] || '');
+    const companyName = extractPortalEmpregoField(itemHtml, 'company');
+
+    if (!title || !companyName) continue;
+
+    seenUrls.add(url);
+
+    const location = [
+      extractPortalEmpregoField(itemHtml, 'city'),
+      extractPortalEmpregoField(itemHtml, 'type'),
+    ].filter(Boolean).join(' | ');
+
+    jobs.push({
+      title,
+      url,
+      company: companyName,
+      location,
+      publicationDate: extractPortalEmpregoField(itemHtml, 'postedDate'),
+    });
+  }
+
+  return jobs;
+}
+
+function getPortalEmpregoPageCount(html) {
+  let maxPage = 1;
+  for (const match of html.matchAll(/\/pagina-(\d+)\/?/g)) {
+    maxPage = Math.max(maxPage, Number(match[1]));
+  }
+  return maxPage;
 }
 
 function getSapoPageCount(html) {
@@ -587,6 +696,26 @@ async function fetchSapoJobs(url, company) {
   return jobs;
 }
 
+async function fetchPortalEmpregoJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.portalemprego?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    const firstPageHtml = await fetchText(listUrl);
+    const pageCount = getPortalEmpregoPageCount(firstPageHtml);
+    const maxPages = Math.min(company._api?.portalemprego?.maxPages || PORTALEMPREGO_MAX_PAGES, pageCount);
+    jobs.push(...parsePortalEmpregoPage(firstPageHtml, listUrl, seenUrls));
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildPortalEmpregoPageUrl(listUrl, pageNumber));
+      jobs.push(...parsePortalEmpregoPage(html, listUrl, seenUrls));
+    }
+  }
+
+  return jobs;
+}
+
 async function fetchJobs(company) {
   const { type, url } = company._api;
 
@@ -600,6 +729,10 @@ async function fetchJobs(company) {
 
   if (type === 'sapo') {
     return fetchSapoJobs(url, company);
+  }
+
+  if (type === 'portalemprego') {
+    return fetchPortalEmpregoJobs(url, company);
   }
 
   const json = await fetchJson(url);
