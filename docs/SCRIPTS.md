@@ -180,7 +180,7 @@ Each URL gets a verdict: `active`, `expired`, or `uncertain` with a reason.
 
 ## scan
 
-Zero-token portal scanner. Hits supported ATS/search APIs such as Greenhouse, Ashby, Lever, and PCSX directly, plus structured HTML providers such as ITJobs, SAPO Emprego, and Portal Emprego — no LLM tokens consumed. Reads `portals.yml` for target companies; broad-discovery `search_queries` remain part of the agent/WebSearch flow for portals such as Indeed where direct bot-style access is unreliable. Outputs matching listings to stdout and optionally appends to `data/pipeline.md`.
+Zero-token portal scanner. Hits supported ATS/search APIs such as Greenhouse, Ashby, Lever, and PCSX directly, plus structured providers such as the Landing.jobs Atom feed and HTML providers like ITJobs, SAPO Emprego, and Portal Emprego — no LLM tokens consumed. Reads `portals.yml` for target companies; broad-discovery `search_queries` remain part of the agent/WebSearch flow for portals such as Indeed where direct bot-style access is unreliable. Outputs matching listings to stdout and optionally appends to `data/pipeline.md`.
 
 ```bash
 npm run scan

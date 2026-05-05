@@ -3,8 +3,8 @@
 /**
  * scan.mjs — Zero-token portal scanner
  *
- * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured HTML
- * providers such as ITJobs, SAPO Emprego, and Portal Emprego, applies title
+ * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
+ * providers such as Landing.jobs, ITJobs, SAPO Emprego, and Portal Emprego, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -38,8 +38,26 @@ const ITJOBS_MAX_PAGES = 5;
 const SAPO_MAX_PAGES = 5;
 const PORTALEMPREGO_MAX_PAGES = 5;
 
+const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
+  fullremote: ['fullremote', 'remote'],
+  globalremote: ['globalremote', 'remoteacrossborders'],
+  partialremote: ['partialremote', 'hybrid'],
+  onsite: ['onsite', 'onsitejob'],
+};
+
 function normalizeWhitespace(value) {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSearchText(value) {
+  return normalizeWhitespace(String(value || ''))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function normalizeSearchKey(value) {
+  return normalizeSearchText(value).replace(/[^a-z0-9]+/g, '');
 }
 
 function decodeHtmlEntities(value) {
@@ -209,6 +227,48 @@ function slugifyPortalEmpregoTerm(value) {
     .replace(/^-+|-+$/g, '');
 }
 
+function toFilterArray(value) {
+  if (value === false || value === null || value === undefined || value === '') {
+    return [];
+  }
+
+  return (Array.isArray(value) ? value : [value])
+    .map(item => normalizeWhitespace(String(item || '')))
+    .filter(Boolean);
+}
+
+function getLandingJobsConfig(company) {
+  const baseUrl = company.api || 'https://landing.jobs/feed';
+  let feedUrl;
+
+  try {
+    feedUrl = new URL(baseUrl).toString();
+  } catch {
+    return null;
+  }
+
+  const publishedWithinDays = Number(company.api_params?.published_within_days);
+  const updatedWithinDays = Number(company.api_params?.updated_within_days);
+
+  return {
+    feedUrl,
+    filters: {
+      q: toFilterArray(company.api_params?.q),
+      category: toFilterArray(company.api_params?.category),
+      remotePolicy: toFilterArray(company.api_params?.remote_policy),
+      country: toFilterArray(company.api_params?.country),
+      city: toFilterArray(company.api_params?.city),
+      jobType: toFilterArray(company.api_params?.job_type),
+      publishedWithinDays: Number.isFinite(publishedWithinDays) && publishedWithinDays > 0
+        ? publishedWithinDays
+        : null,
+      updatedWithinDays: Number.isFinite(updatedWithinDays) && updatedWithinDays > 0
+        ? updatedWithinDays
+        : null,
+    },
+  };
+}
+
 function buildPortalEmpregoListUrl(origin, searchTerm, itemsPerPage) {
   const safeItemsPerPage = Math.max(1, Number(itemsPerPage) || 20);
   const slug = slugifyPortalEmpregoTerm(searchTerm);
@@ -263,6 +323,11 @@ function buildPcsxDetailUrl(company, positionId, queriedLocation) {
 // ── API detection ───────────────────────────────────────────────────
 
 function detectApi(company) {
+  if (company.api_provider === 'landingjobs' || /https?:\/\/(?:www\.)?landing\.jobs\/(?:feed(?:\.atom)?|jobs)(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
+    const landingjobs = getLandingJobsConfig(company);
+    return landingjobs ? { type: 'landingjobs', url: landingjobs.feedUrl, landingjobs } : null;
+  }
+
   if (company.api_provider === 'pcsx' || (company.api && company.api.includes('/api/pcsx/search'))) {
     const pcsx = getPcsxConfig(company);
     return pcsx ? { type: 'pcsx', url: pcsx.searchUrl, pcsx } : null;
@@ -377,6 +442,136 @@ function parsePcsxPosition(position, company) {
 function parsePcsx(json, company) {
   const positions = json.data?.positions || [];
   return positions.map(position => parsePcsxPosition(position, company));
+}
+
+function stripCdata(value) {
+  return String(value || '')
+    .replace(/^<!\[CDATA\[/, '')
+    .replace(/\]\]>$/, '');
+}
+
+function extractXmlTag(block, tagName) {
+  const match = block.match(new RegExp(`<${tagName}(?:\s[^>]*)?>([\\s\\S]*?)<\/${tagName}>`));
+  return match ? stripCdata(match[1]) : '';
+}
+
+function extractLandingJobsAuthor(block) {
+  const authorBlock = extractXmlTag(block, 'author');
+  return authorBlock ? cleanHtmlText(extractXmlTag(authorBlock, 'name')) : '';
+}
+
+function cleanFeedText(value) {
+  const cleaned = cleanHtmlText(stripCdata(value));
+  return cleaned === 'false' ? '' : cleaned;
+}
+
+function parseLandingJobsDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeLandingJobsRemotePolicy(value) {
+  const key = normalizeSearchKey(value);
+
+  for (const [canonical, aliases] of Object.entries(LANDINGJOBS_REMOTE_POLICY_ALIASES)) {
+    if (aliases.includes(key)) return canonical;
+  }
+
+  return key;
+}
+
+function matchesLandingJobsFilter(requestedValues, candidate) {
+  if (!requestedValues || requestedValues.length === 0) return true;
+  const candidateKey = normalizeSearchKey(candidate);
+  if (!candidateKey) return false;
+
+  return requestedValues.some(value => {
+    const filterKey = normalizeSearchKey(value);
+    return filterKey && (candidateKey === filterKey || candidateKey.includes(filterKey) || filterKey.includes(candidateKey));
+  });
+}
+
+function matchesLandingJobsRemotePolicy(requestedValues, policy) {
+  if (!requestedValues || requestedValues.length === 0) return true;
+  const candidate = normalizeLandingJobsRemotePolicy(policy);
+  if (!candidate) return false;
+
+  return requestedValues.some(value => normalizeLandingJobsRemotePolicy(value) === candidate);
+}
+
+function matchesLandingJobsQuery(queries, job) {
+  if (!queries || queries.length === 0) return true;
+
+  const haystack = normalizeSearchText([
+    job.title,
+    job.company,
+    job.category,
+    job.location,
+    job.remotePolicy,
+    job.jobDescription,
+  ].filter(Boolean).join(' '));
+
+  return queries.some(query => haystack.includes(normalizeSearchText(query)));
+}
+
+function isWithinDays(value, maxAgeDays) {
+  if (!maxAgeDays) return true;
+  const date = parseLandingJobsDate(value);
+  if (!date) return false;
+
+  const diffMs = Date.now() - date.getTime();
+  return diffMs <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+function parseLandingJobsFeed(xml) {
+  const jobs = [];
+
+  for (const match of xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/g)) {
+    const entry = match[1];
+    const url = cleanFeedText(extractXmlTag(entry, 'id')) || cleanFeedText(extractXmlTag(entry, 'link'));
+    const title = cleanFeedText(extractXmlTag(entry, 'title'));
+    const company = extractLandingJobsAuthor(entry);
+
+    if (!url || !title || !company) continue;
+
+    const city = cleanFeedText(extractXmlTag(entry, 'lj:city'));
+    const country = cleanFeedText(extractXmlTag(entry, 'lj:country'));
+    const remotePolicy = cleanFeedText(extractXmlTag(entry, 'lj:remote_policy'));
+    const location = [city, country, remotePolicy].filter(Boolean).join(' | ');
+
+    jobs.push({
+      title,
+      url,
+      company,
+      location,
+      city,
+      country,
+      category: cleanFeedText(extractXmlTag(entry, 'lj:category')),
+      jobType: cleanFeedText(extractXmlTag(entry, 'lj:job_type')),
+      salary: cleanFeedText(extractXmlTag(entry, 'lj:salary')),
+      remotePolicy,
+      publishedAt: cleanFeedText(extractXmlTag(entry, 'published')),
+      updatedAt: cleanFeedText(extractXmlTag(entry, 'updated')),
+      expiresAt: cleanFeedText(extractXmlTag(entry, 'lj:expires_at')),
+      jobDescription: cleanFeedText(extractXmlTag(entry, 'content')),
+    });
+  }
+
+  return jobs;
+}
+
+function filterLandingJobsJobs(jobs, filters) {
+  return jobs.filter(job => (
+    matchesLandingJobsQuery(filters?.q, job)
+    && matchesLandingJobsFilter(filters?.category, job.category)
+    && matchesLandingJobsRemotePolicy(filters?.remotePolicy, job.remotePolicy)
+    && matchesLandingJobsFilter(filters?.country, job.country)
+    && matchesLandingJobsFilter(filters?.city, job.city)
+    && matchesLandingJobsFilter(filters?.jobType, job.jobType)
+    && isWithinDays(job.publishedAt, filters?.publishedWithinDays)
+    && isWithinDays(job.updatedAt, filters?.updatedWithinDays)
+  ));
 }
 
 function buildItjobsPageUrl(url, pageNumber) {
@@ -621,6 +816,12 @@ async function fetchPcsxJobs(url, company) {
   return jobs;
 }
 
+async function fetchLandingJobsJobs(url, company) {
+  const xml = await fetchText(url);
+  const jobs = parseLandingJobsFeed(xml);
+  return filterLandingJobsJobs(jobs, company._api?.landingjobs?.filters);
+}
+
 async function fetchPcsxPositionDetails(company, job) {
   const detailUrl = buildPcsxDetailUrl(company, job.positionId, job.queriedLocation);
   if (!detailUrl) return job;
@@ -718,6 +919,10 @@ async function fetchPortalEmpregoJobs(url, company) {
 
 async function fetchJobs(company) {
   const { type, url } = company._api;
+
+  if (type === 'landingjobs') {
+    return fetchLandingJobsJobs(url, company);
+  }
 
   if (type === 'pcsx') {
     return fetchPcsxJobs(url, company);

@@ -295,10 +295,14 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
+#   - Landing.jobs can be configured with `api_provider: landingjobs` +
+#     `api: https://landing.jobs/feed` and optional client-side `api_params:`
+#     such as `q`, `category`, `remote_policy`, `country`, `city`, `job_type`,
+#     `published_within_days`, and `updated_within_days`
 #   - ITJobs can be configured with `api_provider: itjobs` + `api_params:` using
 #     listing-page filters (`date`, `work_model`, `location`, `salary`, `type`,
 #     `contract`) and optional `api_max_pages:`
@@ -368,6 +372,26 @@ tracked_companies:
       mostrar: 20
     api_max_pages: 4
     notes: "Server-rendered Portugal job board with keyword-seeded SEO listing pages and stable pagination under /anuncios/."
+    enabled: false
+
+  - name: Landing.jobs
+    careers_url: https://landing.jobs/jobs
+    api_provider: landingjobs
+    api: https://landing.jobs/feed
+    # Optional client-side filters on feed entries:
+    # api_params:
+    #   q:
+    #     - ai
+    #     - platform
+    #   remote_policy:
+    #     - Full remote
+    #     - Global remote
+    #     - Partial remote
+    #   category:
+    #     - Data
+    #     - AI
+    #   published_within_days: 30
+    notes: "Public Atom feed with stable zero-token metadata for title, company, location, remote policy, category, salary, and publish/update dates. Search pages exist, but the feed is the most reliable integration surface."
     enabled: false
 
   # -- Voice AI & Conversational AI --

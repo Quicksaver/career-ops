@@ -2,7 +2,7 @@
 
 Escanea portales de empleo configurados, filtra por relevancia de título, y añade nuevas ofertas al pipeline para evaluación posterior.
 
-> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers HTML estructurados como ITJobs y SAPO Emprego. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider HTML soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch). **Indeed PT entra en esta categoría**: sus URLs de búsqueda son útiles para descubrimiento, pero el portal suele bloquear fetches genéricos y navegadores headless con desafíos anti-bot.
+> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers estructurados como el feed Atom de Landing.jobs y HTML SSR de ITJobs/SAPO/Portal Emprego. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider estructurado soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch). **Indeed PT entra en esta categoría**: sus URLs de búsqueda son útiles para descubrimiento, pero el portal suele bloquear fetches genéricos y navegadores headless con desafíos anti-bot.
 
 ## Ejecución recomendada
 
@@ -46,6 +46,7 @@ Para empresas con API pública o feed estructurado, usar la respuesta JSON/XML c
 - **Lever**: `https://api.lever.co/v0/postings/{company}?mode=json`
 - **Teamtailor**: `https://{company}.teamtailor.com/jobs.rss`
 - **Workday**: `https://{company}.{shard}.myworkdayjobs.com/wday/cxs/{company}/{site}/jobs`
+- **Landing.jobs**: `https://landing.jobs/feed` (Atom) como fuente estructurada principal; páginas públicas `https://landing.jobs/jobs?q={query}` y facets `/jobs/for/{slug}` útiles para descubrir filtros, pero menos adecuadas para scraping/paginación zero-token
 - **ITJobs**: `https://www.itjobs.pt/emprego` y variantes filtradas (`?date=24h&work_model=1&page=N`, `?date=24h&work_model=2&page=N`)
 - **SAPO Emprego**: `https://emprego.sapo.pt/offers` y variantes filtradas (`?pesquisa=ai&categoria=informatica-tecnologias&modelo=teletrabalho,hibrido&pagina=N`)
 - **Portal Emprego**: `https://www.portalemprego.pt/anuncios/` y variantes SEO (`/anuncios/pesquisa-ai/mostrar-20/pagina-N/`)
@@ -57,6 +58,7 @@ Para empresas con API pública o feed estructurado, usar la respuesta JSON/XML c
 - `lever`: array raíz `[]` → `text`, `hostedUrl` (fallback: `applyUrl`)
 - `teamtailor`: RSS items → `title`, `link`
 - `workday`: `jobPostings[]`/`jobPostings` (según tenant) → `title`, `externalPath` o URL construida desde el host
+- `landingjobs`: Atom `<entry>` → `title`, `id`/URL pública, `author > name` (empresa), `lj:city`, `lj:country`, `lj:remote_policy`, `lj:category`, `lj:job_type`, `published`, `updated`
 - `itjobs`: HTML SSR `ul.listing > li` → `div.list-title a` (`title`, `href`), `div.list-name a` (`company`), `div.list-details` (`location` y metadatos como remoto/híbrido/salario)
 - `sapo`: HTML SSR / Vue props `:offers='[...]'` → `offer_name`, `link`, `company_name`, `location`, `job_district`, `job_work_hours`; detalle con JSON-LD `JobPosting`
 - `portalemprego`: HTML SSR `#listCont a.d-flex[href^="/emprego/"]` → `div.title h5` (`title`), `href`, `span.company`, `span.city`, `span.type`, `span.postedDate`
@@ -70,6 +72,13 @@ Los `search_queries` con `site:` filters cubren portales de forma transversal (t
 - **Filtros observables en URL:** `q`, `l`, `start`, `fromage`, `radius`, `jt`, `sc`
 - **Buen uso en career-ops:** descubrimiento en Nivel 3 / `search_queries`
 - **Mal encaje por defecto:** provider zero-token en `scan.mjs`, porque HTTP directo y Chromium headless suelen recibir bloqueo / Cloudflare
+
+**Perfil de capacidad de Landing.jobs (recomendado):**
+- **Mejor superficie zero-token:** `https://landing.jobs/feed`
+- **Metadatos disponibles en feed:** título, empresa, URL pública canónica, ciudad/país, remote policy, categoría, tipo de contrato, salario, fechas de publicación/actualización y extracto largo del JD
+- **Búsqueda pública útil:** `https://landing.jobs/jobs?q={query}` y facets `/jobs/for/{slug}`, `/jobs/in/{slug}`
+- **Encaje óptimo en career-ops:** provider zero-token basado en feed, con filtros cliente opcionales (`q`, `category`, `remote_policy`, `country`, `city`, `job_type`, `published_within_days`)
+- **Motivo:** el feed es estable y estructurado; las páginas HTML públicas sirven para descubrir filtros, pero no exponen una paginación/SSR suficientemente limpia para scraping robusto
 
 **Prioridad de ejecución:**
 1. Nivel 1: Playwright → todas las `tracked_companies` con `careers_url`
@@ -97,7 +106,7 @@ Los niveles son aditivos — se ejecutan todos, los resultados se mezclan y dedu
 5. **Nivel 2 — ATS APIs / feeds** (paralelo):
    Para cada empresa en `tracked_companies` con `api:` definida o `api_provider:` configurado y `enabled: true`:
    a. WebFetch de la URL de API/feed
-   b. Si `api_provider` está definido, usar su parser; si no está definido, inferir por dominio (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `www.itjobs.pt/emprego`, `emprego.sapo.pt/offers`, `www.portalemprego.pt/anuncios`)
+   b. Si `api_provider` está definido, usar su parser; si no está definido, inferir por dominio (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `landing.jobs/feed`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `www.itjobs.pt/emprego`, `emprego.sapo.pt/offers`, `www.portalemprego.pt/anuncios`)
    c. Para **Ashby**, enviar POST con:
       - `operationName: ApiJobBoardWithTeams`
       - `variables.organizationHostedJobsPageName: {company}`
