@@ -3,9 +3,10 @@
 /**
  * scan.mjs — Zero-token portal scanner
  *
- * Fetches Greenhouse, Ashby, Lever, and PCSX APIs directly, applies title
- * filters from portals.yml, deduplicates against existing history,
- * and appends new offers to pipeline.md + scan-history.tsv.
+ * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured HTML
+ * providers such as ITJobs, applies title filters from portals.yml,
+ * deduplicates against existing history, and appends new offers to
+ * pipeline.md + scan-history.tsv.
  *
  * Zero Claude API tokens — pure HTTP + JSON.
  *
@@ -32,6 +33,48 @@ mkdirSync('data', { recursive: true });
 const CONCURRENCY = 10;
 const FETCH_TIMEOUT_MS = 10_000;
 const PCSX_DETAIL_CONCURRENCY = 20;
+const ITJOBS_MAX_PAGES = 5;
+
+function normalizeWhitespace(value) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function decodeHtmlEntities(value) {
+  return value
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&(amp|lt|gt|quot|apos|nbsp);/gi, (_, name) => {
+      const entities = {
+        amp: '&',
+        lt: '<',
+        gt: '>',
+        quot: '"',
+        apos: "'",
+        nbsp: ' ',
+      };
+      return entities[name.toLowerCase()] || `&${name};`;
+    });
+}
+
+function cleanHtmlText(value) {
+  return normalizeWhitespace(
+    decodeHtmlEntities(value.replace(/<[^>]+>/g, ' ').replace(/\u00a0/g, ' '))
+  );
+}
+
+function splitHtmlSegments(value) {
+  const prepared = value
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<i\b[^>]*><\/i>/g, '|')
+    .replace(/<br\s*\/?>/gi, '|')
+    .replace(/<\/(div|p|li)>/gi, '|')
+    .replace(/&nbsp;/gi, ' ');
+
+  return decodeHtmlEntities(prepared.replace(/<[^>]+>/g, ' ').replace(/\u00a0/g, ' '))
+    .split('|')
+    .map(normalizeWhitespace)
+    .filter(Boolean);
+}
 
 function getUrlOrigin(value) {
   if (!value) return null;
@@ -78,6 +121,44 @@ function getPcsxConfig(company) {
   };
 }
 
+function getItjobsConfig(company) {
+  const baseUrl = company.api || company.careers_url;
+  if (!baseUrl) return null;
+
+  let listUrl;
+  try {
+    listUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  let urls = [listUrl];
+
+  for (const [key, rawValue] of Object.entries(company.api_params || {})) {
+    if (rawValue === false || rawValue === null || rawValue === undefined || rawValue === '') {
+      continue;
+    }
+
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    const nextUrls = [];
+
+    for (const existingUrl of urls) {
+      for (const value of values) {
+        const nextUrl = new URL(existingUrl.toString());
+        nextUrl.searchParams.set(key, String(value));
+        nextUrls.push(nextUrl);
+      }
+    }
+
+    urls = nextUrls;
+  }
+
+  return {
+    listUrls: urls.map(url => url.toString()),
+    maxPages: Math.max(1, Number(company.api_max_pages) || ITJOBS_MAX_PAGES),
+  };
+}
+
 function buildPcsxDetailUrl(company, positionId, queriedLocation) {
   const pcsx = company._api?.pcsx || getPcsxConfig(company);
   if (!pcsx || !positionId) return null;
@@ -99,6 +180,11 @@ function detectApi(company) {
   if (company.api_provider === 'pcsx' || (company.api && company.api.includes('/api/pcsx/search'))) {
     const pcsx = getPcsxConfig(company);
     return pcsx ? { type: 'pcsx', url: pcsx.searchUrl, pcsx } : null;
+  }
+
+  if (company.api_provider === 'itjobs' || /https?:\/\/(?:www\.)?itjobs\.pt\/emprego/.test(company.api || company.careers_url || '')) {
+    const itjobs = getItjobsConfig(company);
+    return itjobs ? { type: 'itjobs', url: itjobs.listUrls[0], itjobs } : null;
   }
 
   // Greenhouse: explicit api field
@@ -197,6 +283,52 @@ function parsePcsx(json, company) {
   return positions.map(position => parsePcsxPosition(position, company));
 }
 
+function buildItjobsPageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+  if (pageNumber <= 1) {
+    pageUrl.searchParams.delete('page');
+  } else {
+    pageUrl.searchParams.set('page', String(pageNumber));
+  }
+  return pageUrl.toString();
+}
+
+function extractItjobsDetails(itemHtml) {
+  const detailsMatch = itemHtml.match(/<div class="list-details">([\s\S]*?)<\/div>/);
+  if (!detailsMatch) return '';
+  return splitHtmlSegments(detailsMatch[1]).join(' | ');
+}
+
+function parseItjobsPage(html, sourceUrl, seenUrls) {
+  const origin = new URL(sourceUrl).origin;
+  const jobs = [];
+
+  const jobPattern = /<div class="list-title">\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/div>\s*<div class="list-name">\s*<a[^>]*>([\s\S]*?)<\/a>\s*<\/div>\s*<div class="list-details">([\s\S]*?)<\/div>/g;
+
+  for (const match of html.matchAll(jobPattern)) {
+    const url = new URL(decodeHtmlEntities(match[1]), origin).toString();
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+
+    jobs.push({
+      title: cleanHtmlText(match[2]),
+      url,
+      company: cleanHtmlText(match[3]),
+      location: splitHtmlSegments(match[4]).join(' | '),
+    });
+  }
+
+  return jobs;
+}
+
+function getItjobsPageCount(html) {
+  let maxPage = 1;
+  for (const match of html.matchAll(/[?&]page=(\d+)/g)) {
+    maxPage = Math.max(maxPage, Number(match[1]));
+  }
+  return maxPage;
+}
+
 const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pcsx: parsePcsx };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
@@ -208,6 +340,18 @@ async function fetchJson(url) {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchText(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
   } finally {
     clearTimeout(timer);
   }
@@ -274,11 +418,35 @@ async function enrichPcsxJobs(company, jobs) {
   return parallelFetch(tasks, detailConcurrency);
 }
 
+async function fetchItjobsJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.itjobs?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    const firstPageHtml = await fetchText(listUrl);
+    const pageCount = getItjobsPageCount(firstPageHtml);
+    const maxPages = Math.min(company._api?.itjobs?.maxPages || ITJOBS_MAX_PAGES, pageCount);
+    jobs.push(...parseItjobsPage(firstPageHtml, listUrl, seenUrls));
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildItjobsPageUrl(listUrl, pageNumber));
+      jobs.push(...parseItjobsPage(html, listUrl, seenUrls));
+    }
+  }
+
+  return jobs;
+}
+
 async function fetchJobs(company) {
   const { type, url } = company._api;
 
   if (type === 'pcsx') {
     return fetchPcsxJobs(url, company);
+  }
+
+  if (type === 'itjobs') {
+    return fetchItjobsJobs(url, company);
   }
 
   const json = await fetchJson(url);

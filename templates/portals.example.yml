@@ -281,10 +281,13 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx
+# api_provider: greenhouse, pcsx, itjobs
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
+#   - ITJobs can be configured with `api_provider: itjobs` + `api_params:` using
+#     listing-page filters (`date`, `work_model`, `location`, `salary`, `type`,
+#     `contract`) and optional `api_max_pages:`
 
 tracked_companies:
 
@@ -300,6 +303,19 @@ tracked_companies:
     scan_method: websearch
     scan_query: 'site:openai.com/careers "Solutions" OR "Forward Deployed" OR "AI Engineer"'
     enabled: true
+
+  - name: ITJobs Portugal
+    careers_url: https://www.itjobs.pt/emprego/remote
+    api_provider: itjobs
+    api: https://www.itjobs.pt/emprego
+    api_params:
+      date: 24h
+      work_model:
+        - 1
+        - 2
+    api_max_pages: 3
+    notes: "Server-rendered Portugal IT job board with stable filters for date, work model, location, salary, contract, and pagination."
+    enabled: false
 
   # -- Voice AI & Conversational AI --
 
