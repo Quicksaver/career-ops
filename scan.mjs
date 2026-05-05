@@ -41,6 +41,8 @@ const ITJOBS_MAX_PAGES = 5;
 const SAPO_MAX_PAGES = 5;
 const PORTALEMPREGO_MAX_PAGES = 5;
 const DICE_MAX_PAGES = 5;
+const REMOTEINEUROPE_DETAIL_CONCURRENCY = 5;
+const REMOTEINEUROPE_MAX_PAGES = 5;
 
 const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
   fullremote: ['fullremote', 'remote'],
@@ -333,6 +335,37 @@ function getDiceConfig(company) {
   };
 }
 
+function getRemoteInEuropeConfig(company) {
+  const baseUrl = company.api || company.careers_url || 'https://remoteineurope.com/categories/programming';
+
+  let listUrl;
+  try {
+    listUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  let urls = [listUrl];
+
+  for (const rawCategory of toFilterArray(company.api_params?.category)) {
+    const slug = normalizeWhitespace(rawCategory).toLowerCase();
+    const nextUrls = [];
+
+    for (const existingUrl of urls) {
+      const nextUrl = new URL(existingUrl.toString());
+      nextUrl.pathname = `/categories/${slug}`;
+      nextUrls.push(nextUrl);
+    }
+
+    urls = nextUrls;
+  }
+
+  return {
+    listUrls: urls.map(url => url.toString()),
+    maxPages: Math.max(1, Number(company.api_max_pages) || REMOTEINEUROPE_MAX_PAGES),
+  };
+}
+
 function slugifyPortalEmpregoTerm(value) {
   return normalizeWhitespace(String(value || ''))
     .normalize('NFD')
@@ -483,6 +516,11 @@ function detectApi(company) {
   if (company.api_provider === 'dice' || /https?:\/\/(?:www\.)?dice\.com\/jobs(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
     const dice = getDiceConfig(company);
     return dice ? { type: 'dice', url: dice.listUrls[0], dice } : null;
+  }
+
+  if (company.api_provider === 'remoteineurope' || /https?:\/\/(?:www\.)?remoteineurope\.com\/(?:categories\/[^/?#]+|job\/[^/?#]+|$)/.test(company.api || company.careers_url || '')) {
+    const remoteineurope = getRemoteInEuropeConfig(company);
+    return remoteineurope ? { type: 'remoteineurope', url: remoteineurope.listUrls[0], remoteineurope } : null;
   }
 
   // Greenhouse: explicit api field
@@ -1189,6 +1227,109 @@ function parseDiceJob(job, seenUrls) {
   };
 }
 
+function buildRemoteInEuropePageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+
+  if (pageNumber <= 1) {
+    for (const key of [...pageUrl.searchParams.keys()]) {
+      if (/_page$/.test(key)) pageUrl.searchParams.delete(key);
+    }
+  } else if (!Array.from(pageUrl.searchParams.keys()).some(key => /_page$/.test(key))) {
+    pageUrl.searchParams.set('b31548a3_page', String(pageNumber));
+  } else {
+    for (const key of [...pageUrl.searchParams.keys()]) {
+      if (/_page$/.test(key)) pageUrl.searchParams.set(key, String(pageNumber));
+    }
+  }
+
+  return pageUrl.toString();
+}
+
+function getRemoteInEuropePageCount(html) {
+  const pageCountMatch = html.match(/class="w-page-count[^"]*">\s*(\d+)\s*\/\s*(\d+)\s*</i);
+  if (pageCountMatch) {
+    return Number(pageCountMatch[2]) || 1;
+  }
+
+  let maxPage = 1;
+  for (const match of html.matchAll(/[?&][^\s"'>]*?_page=(\d+)/g)) {
+    maxPage = Math.max(maxPage, Number(match[1]));
+  }
+  return maxPage;
+}
+
+function parseRemoteInEuropePage(html, sourceUrl, seenUrls) {
+  const origin = new URL(sourceUrl).origin;
+  const jobs = [];
+  const jobPattern = /<a[^>]+href="(\/job\/[^"#?]+)"[^>]+class="card job w-inline-block[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+
+  for (const match of html.matchAll(jobPattern)) {
+    const path = match[1] || '';
+    const itemHtml = match[2];
+    const company = cleanHtmlText(itemHtml.match(/<div fs-cmsfilter-field="company" class="card-link homepage">([\s\S]*?)<\/div>/i)?.[1] || '');
+    const title = cleanHtmlText(itemHtml.match(/<h3[^>]+fs-cmsfilter-field="job-title"[^>]*>([\s\S]*?)<\/h3>/i)?.[1] || '');
+
+    if (!path || !company || !title) continue;
+
+    const url = new URL(path, origin).toString();
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+
+    jobs.push({
+      title,
+      url,
+      company,
+      location: cleanHtmlText(itemHtml.match(/<div[^>]+class="short-location">([\s\S]*?)<\/div>/i)?.[1] || ''),
+      category: cleanHtmlText(itemHtml.match(/<div[^>]+class="category-filter">([\s\S]*?)<\/div>/i)?.[1] || ''),
+      publishedAt: cleanHtmlText(itemHtml.match(/<div class="date-text">([\s\S]*?)<\/div>/i)?.[1] || itemHtml.match(/<div class="date-text-mobile">([\s\S]*?)<\/div>/i)?.[1] || ''),
+    });
+  }
+
+  return jobs;
+}
+
+function extractRemoteInEuropeHiddenField(html, id) {
+  const match = html.match(new RegExp(`<div id="${escapeRegExp(id)}">([\\s\\S]*?)<\\/div>`, 'i'));
+  return match ? decodeHtmlEntities(match[1]) : '';
+}
+
+function parseRemoteInEuropeDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString();
+}
+
+function parseRemoteInEuropeDetailPage(html, fallbackJob) {
+  const title = cleanHtmlText(html.match(/<h1 class="title">([\s\S]*?)<\/h1>/i)?.[1] || fallbackJob.title || '');
+  const company = cleanHtmlText(html.match(/<h3 class="title h4-size card-job-post-sidebar">([\s\S]*?)<\/h3>/i)?.[1] || extractRemoteInEuropeHiddenField(html, 'schema-company') || fallbackJob.company || '');
+  const applyUrl = decodeHtmlEntities(
+    html.match(/<a[^>]+href="([^"]+)"[^>]+class="button-primary apply-button w-button"/i)?.[1]
+    || html.match(/<a[^>]+href="([^"]+)"[^>]+class="button-primary small card-job-post-sidebar w-button"/i)?.[1]
+    || ''
+  );
+  const companyUrl = decodeHtmlEntities(html.match(/<a[^>]+href="([^"]+)"[^>]*class="card-link-wrapper w-inline-block"/i)?.[1] || extractRemoteInEuropeHiddenField(html, 'schema-company-url') || '');
+  const location = cleanHtmlText(html.match(/<div class="label-location">([\s\S]*?)<\/div>/i)?.[1] || fallbackJob.location || '');
+  const category = cleanHtmlText(html.match(/<a href="\/categories\/[^"#?]+"[^>]*class="job-detail-wrapper w-inline-block"[^>]*>[\s\S]*?<div>([\s\S]*?)<\/div>/i)?.[1] || fallbackJob.category || '');
+  const jobType = cleanHtmlText(html.match(/<div class="job-post-type-value">([\s\S]*?)<\/div>/i)?.[1] || '');
+  const descriptionHtml = html.match(/<div class="rich-text-block-2 w-richtext">([\s\S]*?)<\/div><div class="apply-div">/i)?.[1] || '';
+  const hiddenDescription = extractRemoteInEuropeHiddenField(html, 'schema-desc');
+
+  return {
+    title,
+    url: applyUrl || fallbackJob.url,
+    sourceUrl: fallbackJob.url,
+    company,
+    location,
+    category,
+    companyUrl,
+    employmentType: jobType,
+    publishedAt: parseRemoteInEuropeDate(extractRemoteInEuropeHiddenField(html, 'schema-date')) || fallbackJob.publishedAt || '',
+    validThrough: parseRemoteInEuropeDate(extractRemoteInEuropeHiddenField(html, 'schema-valid')),
+    jobDescription: cleanHtmlText(descriptionHtml || hiddenDescription),
+  };
+}
+
 const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pcsx: parsePcsx };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
@@ -1436,6 +1577,48 @@ async function fetchDiceJobs(url, company) {
   return jobs;
 }
 
+async function fetchRemoteInEuropeJobDetails(job) {
+  const html = await fetchText(job.url);
+  return parseRemoteInEuropeDetailPage(html, job);
+}
+
+async function enrichRemoteInEuropeJobs(jobs) {
+  if (jobs.length === 0) {
+    return jobs;
+  }
+
+  const detailConcurrency = Math.max(1, Math.min(REMOTEINEUROPE_DETAIL_CONCURRENCY, jobs.length));
+  const tasks = jobs.map(job => async () => {
+    try {
+      return await fetchRemoteInEuropeJobDetails(job);
+    } catch {
+      return job;
+    }
+  });
+
+  return parallelFetch(tasks, detailConcurrency);
+}
+
+async function fetchRemoteInEuropeJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.remoteineurope?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    const firstPageHtml = await fetchText(listUrl);
+    const pageCount = getRemoteInEuropePageCount(firstPageHtml);
+    const maxPages = Math.min(company._api?.remoteineurope?.maxPages || REMOTEINEUROPE_MAX_PAGES, pageCount);
+    jobs.push(...parseRemoteInEuropePage(firstPageHtml, listUrl, seenUrls));
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildRemoteInEuropePageUrl(listUrl, pageNumber));
+      jobs.push(...parseRemoteInEuropePage(html, listUrl, seenUrls));
+    }
+  }
+
+  return jobs;
+}
+
 async function fetchJobs(company) {
   const { type, url } = company._api;
 
@@ -1469,6 +1652,10 @@ async function fetchJobs(company) {
 
   if (type === 'dice') {
     return fetchDiceJobs(url, company);
+  }
+
+  if (type === 'remoteineurope') {
+    return fetchRemoteInEuropeJobs(url, company);
   }
 
   const json = await fetchJson(url);
@@ -1673,7 +1860,9 @@ async function main() {
 
       const enrichedJobs = type === 'pcsx'
         ? await enrichPcsxJobs(company, candidateJobs)
-        : candidateJobs;
+        : type === 'remoteineurope'
+          ? await enrichRemoteInEuropeJobs(candidateJobs)
+          : candidateJobs;
 
       for (const job of enrichedJobs) {
         seenUrls.add(job.url);

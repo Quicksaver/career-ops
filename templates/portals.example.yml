@@ -309,7 +309,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, euremotejobs, dice, workingnomads
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, euremotejobs, dice, remoteineurope, workingnomads
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -335,6 +335,12 @@ search_queries:
 #     such as `q`, `location`, `includeRemote`, `filters.workplaceTypes`,
 #     `employmentType`, `postedDate`, and `employerType`, plus optional
 #     `api_page_size:` / `api_max_pages:`
+#   - Remote in Europe can be configured with `api_provider: remoteineurope` +
+#     a category URL such as `https://remoteineurope.com/categories/programming`
+#     or optional `api_params.category:` slugs like `programming`, `product`,
+#     and `devops-sysadmin`. The scanner paginates Webflow category listings,
+#     then enriches each job detail page to recover the external apply URL,
+#     company site, publish/expiry dates, and full description.
 #   - Working Nomads can be configured with `api_provider: workingnomads` +
 #     `api: https://www.workingnomads.com/api/exposed_jobs/` and optional
 #     client-side `api_params:` such as `location`, `category`, `q`, `tags`,
@@ -469,6 +475,19 @@ tracked_companies:
     api_page_size: 20
     api_max_pages: 4
     notes: "SSR search pages embed structured job results with canonical job-detail URLs, company, title, location, employment type, salary, workplace type, easy-apply flag, and pageCount. Best used with a small set of seeded queries rather than broad unfiltered crawling."
+    enabled: false
+
+  - name: Remote in Europe
+    careers_url: https://remoteineurope.com/categories/programming
+    api_provider: remoteineurope
+    api: https://remoteineurope.com/categories/programming
+    api_params:
+      category:
+        - programming
+        - product
+        - devops-sysadmin
+    api_max_pages: 3
+    notes: "Webflow category listings with stable pagination and per-job detail pages that expose the real external apply URL, company website, location scope, publish/expiry dates, and full description via hidden schema fields. Better integration surface than generic web search."
     enabled: false
 
   # -- Voice AI & Conversational AI --
