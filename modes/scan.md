@@ -2,7 +2,7 @@
 
 Escanea portales de empleo configurados, filtra por relevancia de título, y añade nuevas ofertas al pipeline para evaluación posterior.
 
-> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers estructurados como el feed Atom de Landing.jobs y HTML/SSR con datos embebidos de ITJobs/SAPO/Portal Emprego/Dice. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider estructurado soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch). **Indeed PT entra en esta categoría**: sus URLs de búsqueda son útiles para descubrimiento, pero el portal suele bloquear fetches genéricos y navegadores headless con desafíos anti-bot.
+> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers estructurados como el feed Atom de Landing.jobs, el feed RSS paginado de EU Remote Jobs y HTML/SSR con datos embebidos de ITJobs/SAPO/Portal Emprego/Dice. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider estructurado soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch). **Indeed PT entra en esta categoría**: sus URLs de búsqueda son útiles para descubrimiento, pero el portal suele bloquear fetches genéricos y navegadores headless con desafíos anti-bot.
 
 ## Ejecución recomendada
 
@@ -47,6 +47,7 @@ Para empresas con API pública o feed estructurado, usar la respuesta JSON/XML c
 - **Teamtailor**: `https://{company}.teamtailor.com/jobs.rss`
 - **Workday**: `https://{company}.{shard}.myworkdayjobs.com/wday/cxs/{company}/{site}/jobs`
 - **Landing.jobs**: `https://landing.jobs/feed` (Atom) como fuente estructurada principal; páginas públicas `https://landing.jobs/jobs?q={query}` y facets `/jobs/for/{slug}` útiles para descubrir filtros, pero menos adecuadas para scraping/paginación zero-token
+- **EU Remote Jobs**: `https://euremotejobs.com/job-listings/feed/` y variantes `?paged={N}` como fuente estructurada principal; feeds de categoría como `https://euremotejobs.com/job-category/engineering/feed/` también existen, pero el feed global paginado encaja mejor como provider zero-token
 - **ITJobs**: `https://www.itjobs.pt/emprego` y variantes filtradas (`?date=24h&work_model=1&page=N`, `?date=24h&work_model=2&page=N`)
 - **SAPO Emprego**: `https://emprego.sapo.pt/offers` y variantes filtradas (`?pesquisa=ai&categoria=informatica-tecnologias&modelo=teletrabalho,hibrido&pagina=N`)
 - **Portal Emprego**: `https://www.portalemprego.pt/anuncios/` y variantes SEO (`/anuncios/pesquisa-ai/mostrar-20/pagina-N/`)
@@ -60,6 +61,7 @@ Para empresas con API pública o feed estructurado, usar la respuesta JSON/XML c
 - `teamtailor`: RSS items → `title`, `link`
 - `workday`: `jobPostings[]`/`jobPostings` (según tenant) → `title`, `externalPath` o URL construida desde el host
 - `landingjobs`: Atom `<entry>` → `title`, `id`/URL pública, `author > name` (empresa), `lj:city`, `lj:country`, `lj:remote_policy`, `lj:category`, `lj:job_type`, `published`, `updated`
+- `euremotejobs`: RSS `<item>` → `title`, `link`, `pubDate`, `content:encoded`; extraer `company` y `location` desde párrafos normalizados del contenido
 - `itjobs`: HTML SSR `ul.listing > li` → `div.list-title a` (`title`, `href`), `div.list-name a` (`company`), `div.list-details` (`location` y metadatos como remoto/híbrido/salario)
 - `sapo`: HTML SSR / Vue props `:offers='[...]'` → `offer_name`, `link`, `company_name`, `location`, `job_district`, `job_work_hours`; detalle con JSON-LD `JobPosting`
 - `portalemprego`: HTML SSR `#listCont a.d-flex[href^="/emprego/"]` → `div.title h5` (`title`), `href`, `span.company`, `span.city`, `span.type`, `span.postedDate`
@@ -81,6 +83,13 @@ Los `search_queries` con `site:` filters cubren portales de forma transversal (t
 - **Búsqueda pública útil:** `https://landing.jobs/jobs?q={query}` y facets `/jobs/for/{slug}`, `/jobs/in/{slug}`
 - **Encaje óptimo en career-ops:** provider zero-token basado en feed, con filtros cliente opcionales (`q`, `category`, `remote_policy`, `country`, `city`, `job_type`, `published_within_days`)
 - **Motivo:** el feed es estable y estructurado; las páginas HTML públicas sirven para descubrir filtros, pero no exponen una paginación/SSR suficientemente limpia para scraping robusto
+
+**Perfil de capacidad de EU Remote Jobs (recomendado):**
+- **Mejor superficie zero-token:** `https://euremotejobs.com/job-listings/feed/` con paginación `?paged={N}`
+- **Metadatos disponibles:** URL canónica de detalle, título, fecha de publicación y resumen largo/normalizado en `content:encoded`; desde ese contenido se puede extraer ubicación y, en muchos casos, empresa
+- **Superficies alternativas:** páginas SSR como `/job-category/engineering/` y `/jobs/all-remote-jobs/`, pero son menos estables que el feed para un parser mantenible
+- **Encaje óptimo en career-ops:** provider zero-token basado en RSS, con paginación limitada por `api_max_pages`
+- **Motivo:** reduce fragilidad frente a cambios de HTML y evita depender de WebSearch para un portal que ya expone archivo estructurado público
 
 **Perfil de capacidad de Dice (recomendado):**
 - **Mejor superficie zero-token:** `https://www.dice.com/jobs` leyendo el payload `jobList` embebido en la respuesta SSR
@@ -122,10 +131,11 @@ Los niveles son aditivos — se ejecutan todos, los resultados se mezclan y dedu
       - query GraphQL de `jobBoardWithTeams` + `jobPostings { id title locationName employmentType compensationTierSummary }`
    d. Para **BambooHR**, la lista solo trae metadatos básicos. Para cada item relevante, leer `id`, hacer GET a `https://{company}.bamboohr.com/careers/{id}/detail`, y extraer el JD completo desde `result.jobOpening`. Usar `jobOpeningShareUrl` como URL pública si viene; si no, usar la URL de detalle.
     e. Para **Workday**, enviar POST JSON con al menos `{"appliedFacets":{},"limit":20,"offset":0,"searchText":""}` y paginar por `offset` hasta agotar resultados
-     e2. Para **ITJobs**, hacer GET de la página listada con los filtros en querystring (`date`, `work_model`, `location`, `salary`, `type`, `contract`) y paginar por `page` hasta el máximo configurado o el último enlace visible. Si un filtro admite múltiples valores (ej. remoto + híbrido), hacer fan-out en varias requests y deduplicar por URL.
-      e3. Para **Portal Emprego**, usar páginas SEO server-rendered bajo `/anuncios/pesquisa-{slug}/mostrar-20/` y paginar por `/pagina-N/` hasta el máximo configurado o el último enlace visible. Usar `api_params.pesquisa` como lista de keywords semilla y deduplicar por URL.
-      e4. Para **SAPO Emprego**, hacer GET de la página de resultados con filtros en querystring (`pesquisa`, `categoria`, `modelo`, `distrito`) y leer el payload embebido en `:offers` + `:pagination`. Paginar por `pagina` y hacer fan-out cuando un filtro tenga múltiples valores.
-      e5. Para **Dice**, hacer GET de `https://www.dice.com/jobs` con una lista corta de queries (`q`) y filtros públicos opcionales (`location`, `includeRemote`, `filters.workplaceTypes`, `employmentType`, `postedDate`, `employerType`). Leer `jobList.data[]` desde el payload SSR embebido y paginar con `jobList.meta.pageCount` hasta `api_max_pages`.
+      e2. Para **EU Remote Jobs**, hacer GET del feed RSS `https://euremotejobs.com/job-listings/feed/` y paginar con `?paged=N` hasta `api_max_pages` o hasta que una página no añada ítems nuevos. Extraer `title`, `link`, `pubDate` y usar `content:encoded` para derivar `company`/`location` cuando estén presentes.
+      e3. Para **ITJobs**, hacer GET de la página listada con los filtros en querystring (`date`, `work_model`, `location`, `salary`, `type`, `contract`) y paginar por `page` hasta el máximo configurado o el último enlace visible. Si un filtro admite múltiples valores (ej. remoto + híbrido), hacer fan-out en varias requests y deduplicar por URL.
+       e4. Para **Portal Emprego**, usar páginas SEO server-rendered bajo `/anuncios/pesquisa-{slug}/mostrar-20/` y paginar por `/pagina-N/` hasta el máximo configurado o el último enlace visible. Usar `api_params.pesquisa` como lista de keywords semilla y deduplicar por URL.
+       e5. Para **SAPO Emprego**, hacer GET de la página de resultados con filtros en querystring (`pesquisa`, `categoria`, `modelo`, `distrito`) y leer el payload embebido en `:offers` + `:pagination`. Paginar por `pagina` y hacer fan-out cuando un filtro tenga múltiples valores.
+       e6. Para **Dice**, hacer GET de `https://www.dice.com/jobs` con una lista corta de queries (`q`) y filtros públicos opcionales (`location`, `includeRemote`, `filters.workplaceTypes`, `employmentType`, `postedDate`, `employerType`). Leer `jobList.data[]` desde el payload SSR embebido y paginar con `jobList.meta.pageCount` hasta `api_max_pages`.
     f. Para cada job extraer y normalizar: `{title, url, company}`
    g. Acumular en lista de candidatos (dedup con Nivel 1)
 

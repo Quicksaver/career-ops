@@ -51,7 +51,7 @@ Career-Ops turns any AI coding CLI into a full job search command center. Instea
 
 - **Evaluates offers** with a structured A-F scoring system (10 weighted dimensions)
 - **Generates tailored PDFs** -- ATS-optimized CVs customized per job description
-- **Scans portals** automatically (Greenhouse, Ashby, Lever, PCSX, ITJobs, SAPO Emprego, Portal Emprego, Dice, company pages)
+- **Scans portals** automatically (Greenhouse, Ashby, Lever, PCSX, Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, company pages)
 - **Processes in batch** -- evaluate 10+ offers in parallel with sub-agents
 - **Tracks everything** in a single source of truth with integrity checks
 
@@ -72,7 +72,7 @@ Built by someone who used it to evaluate 740+ job offers, generate 100+ tailored
 | **Interview Story Bank** | Accumulates STAR+Reflection stories across evaluations -- 5-10 master stories that answer any behavioral question |
 | **Negotiation Scripts** | Salary negotiation frameworks, geographic discount pushback, competing offer leverage |
 | **ATS PDF Generation** | Keyword-injected CVs with Space Grotesk + DM Sans design |
-| **Portal Scanner** | 45+ companies pre-configured (Anthropic, OpenAI, ElevenLabs, Retool, n8n...) + zero-token scanning across Greenhouse, Ashby, Lever, PCSX, Landing.jobs, ITJobs, SAPO Emprego, Portal Emprego, and Dice |
+| **Portal Scanner** | 45+ companies pre-configured (Anthropic, OpenAI, ElevenLabs, Retool, n8n...) + zero-token scanning across Greenhouse, Ashby, Lever, PCSX, Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, and Dice |
 | **Batch Processing** | Parallel evaluation with `claude -p` workers |
 | **Dashboard TUI** | Terminal UI to browse, filter, and sort your pipeline |
 | **Human-in-the-Loop** | AI evaluates and recommends, you decide and act. The system never submits an application -- you always have the final call |
@@ -215,7 +215,7 @@ The scanner comes with **45+ companies** ready to scan and **19 search queries**
 **Automation:** n8n, Zapier, Make.com
 **European:** Factorial, Attio, Tinybird, Clarity AI, Travelperk
 
-**Job boards searched:** Ashby, Greenhouse, Lever, Workable, Landing.jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice
+**Job boards searched:** Ashby, Greenhouse, Lever, Workable, Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice
 
 ## Dashboard TUI
 

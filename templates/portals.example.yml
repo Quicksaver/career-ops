@@ -309,7 +309,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, dice
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, euremotejobs, dice
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -320,6 +320,10 @@ search_queries:
 #   - ITJobs can be configured with `api_provider: itjobs` + `api_params:` using
 #     listing-page filters (`date`, `work_model`, `location`, `salary`, `type`,
 #     `contract`) and optional `api_max_pages:`
+#   - EU Remote Jobs can be configured with `api_provider: euremotejobs` +
+#     `api:` pointing to `https://euremotejobs.com/job-listings/feed/` or a
+#     category feed such as `https://euremotejobs.com/job-category/engineering/feed/`,
+#     plus optional `api_max_pages:` for `?paged=N` RSS pagination
 #   - SAPO Emprego can be configured with `api_provider: sapo` + `api_params:` using
 #     search/listing filters such as `pesquisa`, `categoria`, `modelo`,
 #     `distrito`, and optional `api_max_pages:`
@@ -411,6 +415,14 @@ tracked_companies:
     #     - AI
     #   published_within_days: 30
     notes: "Public Atom feed with stable zero-token metadata for title, company, location, remote policy, category, salary, and publish/update dates. Search pages exist, but the feed is the most reliable integration surface."
+    enabled: false
+
+  - name: EU Remote Jobs
+    careers_url: https://euremotejobs.com/job-category/engineering/
+    api_provider: euremotejobs
+    api: https://euremotejobs.com/job-listings/feed/
+    api_max_pages: 4
+    notes: "WordPress RSS feed with paginated `?paged=N` archives, canonical job URLs, publish dates, and normalized summaries. Better fit than HTML scraping or WebSearch for zero-token scanning."
     enabled: false
 
   - name: Dice

@@ -4,7 +4,8 @@
  * scan.mjs — Zero-token portal scanner
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
- * providers such as Landing.jobs, ITJobs, SAPO Emprego, Portal Emprego, and Dice, applies title
+ * providers such as Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego,
+ * Portal Emprego, and Dice, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -34,6 +35,8 @@ mkdirSync('data', { recursive: true });
 const CONCURRENCY = 10;
 const FETCH_TIMEOUT_MS = 10_000;
 const PCSX_DETAIL_CONCURRENCY = 20;
+const EUREMOTEJOBS_DETAIL_CONCURRENCY = 5;
+const EUREMOTEJOBS_MAX_PAGES = 5;
 const ITJOBS_MAX_PAGES = 5;
 const SAPO_MAX_PAGES = 5;
 const PORTALEMPREGO_MAX_PAGES = 5;
@@ -59,6 +62,10 @@ function normalizeSearchText(value) {
 
 function normalizeSearchKey(value) {
   return normalizeSearchText(value).replace(/[^a-z0-9]+/g, '');
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function decodeHtmlEntities(value) {
@@ -178,6 +185,22 @@ function getItjobsConfig(company) {
   return {
     listUrls: urls.map(url => url.toString()),
     maxPages: Math.max(1, Number(company.api_max_pages) || ITJOBS_MAX_PAGES),
+  };
+}
+
+function getEuRemoteJobsConfig(company) {
+  const baseUrl = company.api || company.careers_url || 'https://euremotejobs.com/job-listings/feed/';
+
+  let feedUrl;
+  try {
+    feedUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  return {
+    feedUrl: feedUrl.toString(),
+    maxPages: Math.max(1, Number(company.api_max_pages) || EUREMOTEJOBS_MAX_PAGES),
   };
 }
 
@@ -378,6 +401,11 @@ function detectApi(company) {
     return itjobs ? { type: 'itjobs', url: itjobs.listUrls[0], itjobs } : null;
   }
 
+  if (company.api_provider === 'euremotejobs' || /https?:\/\/(?:www\.)?euremotejobs\.com\/(?:job-listings\/feed\/?|job-category\/[^/?#]+\/feed\/?)(?:[?#].*)?$/.test(company.api || company.careers_url || '')) {
+    const euremotejobs = getEuRemoteJobsConfig(company);
+    return euremotejobs ? { type: 'euremotejobs', url: euremotejobs.feedUrl, euremotejobs } : null;
+  }
+
   if (company.api_provider === 'sapo' || /https?:\/\/emprego\.sapo\.pt\/offers(?:\/search)?/.test(company.api || company.careers_url || '')) {
     const sapo = getSapoConfig(company);
     return sapo ? { type: 'sapo', url: sapo.listUrls[0], sapo } : null;
@@ -510,10 +538,118 @@ function cleanFeedText(value) {
   return cleaned === 'false' ? '' : cleaned;
 }
 
+function extractMetaContent(html, attribute, name) {
+  const escapedName = escapeRegExp(name);
+  const match = html.match(new RegExp(`<meta[^>]+${attribute}=["']${escapedName}["'][^>]+content=["']([\s\S]*?)["'][^>]*>`, 'i'))
+    || html.match(new RegExp(`<meta[^>]+content=["']([\s\S]*?)["'][^>]+${attribute}=["']${escapedName}["'][^>]*>`, 'i'));
+  return match ? decodeHtmlEntities(match[1]) : '';
+}
+
 function parseLandingJobsDate(value) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function buildEuRemoteJobsFeedPageUrl(url, pageNumber) {
+  const feedUrl = new URL(url);
+  if (pageNumber <= 1) {
+    feedUrl.searchParams.delete('paged');
+  } else {
+    feedUrl.searchParams.set('paged', String(pageNumber));
+  }
+  return feedUrl.toString();
+}
+
+function extractEuRemoteJobsFirstParagraph(content) {
+  const match = content.match(/<p>([\s\S]*?)<\/p>/i);
+  return match ? cleanHtmlText(match[1]) : '';
+}
+
+function extractEuRemoteJobsCompanyFromText(text, title = '') {
+  const normalized = normalizeWhitespace(String(text || ''));
+  if (!normalized) return '';
+
+  const stopPattern = '(?=\\s+(?:Location|Employment Type|Location Type|Department|Compensation):|[.,]|\\s+based\\b|\\s+located\\b|\\s+within\\b|\\s+to\\s+join\\b|$)';
+
+  const patterns = [
+    title ? new RegExp(`^${escapeRegExp(title)}\\s+at\\s+(.+?)${stopPattern}`, 'i') : null,
+    /^([^.,|]+?)\s+is\s+(?:hiring|looking for)\b/i,
+    new RegExp(`^.+?\\s+position\\s+at\\s+(.+?)${stopPattern}`, 'i'),
+    new RegExp(`^.+?\\s+role\\s+at\\s+(.+?)${stopPattern}`, 'i'),
+    new RegExp(`^.+?\\s+at\\s+(.+?)${stopPattern}`, 'i'),
+  ].filter(Boolean);
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const company = normalizeWhitespace(match?.[1] || '');
+    if (company) return company;
+  }
+
+  return '';
+}
+
+function extractEuRemoteJobsCompany(content) {
+  const match = content.match(/<p><strong>(?:Company|Employer):<\/strong>\s*([\s\S]*?)<\/p>/i);
+  if (match) return cleanHtmlText(match[1]);
+  return extractEuRemoteJobsCompanyFromText(extractEuRemoteJobsFirstParagraph(content));
+}
+
+function extractEuRemoteJobsLocation(content) {
+  const match = content.match(/<p><strong>Location:\s*<\/strong>\s*([\s\S]*?)<\/p>/i);
+  return match ? cleanHtmlText(match[1]) : '';
+}
+
+function parseEuRemoteJobsDetailPage(html, fallbackTitle = '') {
+  const metaDescription = extractMetaContent(html, 'name', 'description')
+    || extractMetaContent(html, 'property', 'og:description');
+  const companyLinkMatch = html.match(/<a[^>]+href=["']https?:\/\/(?:www\.)?euremotejobs\.com\/company\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/i);
+  const company = cleanHtmlText(companyLinkMatch?.[1] || '')
+    || extractEuRemoteJobsCompanyFromText(metaDescription, fallbackTitle);
+  const locationMatch = html.match(/<a[^>]+href=["']https?:\/\/maps\.google\.com\/maps\?q=[^"']+["'][^>]*>([\s\S]*?)<\/a>/i);
+
+  return {
+    company,
+    location: cleanHtmlText(locationMatch?.[1] || ''),
+    jobDescription: metaDescription,
+  };
+}
+
+function parseEuRemoteJobsFeed(xml) {
+  const jobs = [];
+
+  for (const match of xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/g)) {
+    const item = match[1];
+    const title = cleanFeedText(extractXmlTag(item, 'title'));
+    const url = cleanFeedText(extractXmlTag(item, 'link'));
+    const content = stripCdata(extractXmlTag(item, 'content:encoded')) || stripCdata(extractXmlTag(item, 'description'));
+    const company = extractEuRemoteJobsCompany(content) || extractEuRemoteJobsCompanyFromText(cleanFeedText(extractXmlTag(item, 'description')), title);
+
+    if (!title || !url) continue;
+
+    jobs.push({
+      title,
+      url,
+      company: company || 'EU Remote Jobs',
+      location: extractEuRemoteJobsLocation(content),
+      publishedAt: cleanFeedText(extractXmlTag(item, 'pubDate')),
+      jobDescription: cleanFeedText(content),
+    });
+  }
+
+  return jobs;
+}
+
+async function fetchEuRemoteJobsJobDetails(job) {
+  const html = await fetchText(job.url);
+  const detail = parseEuRemoteJobsDetailPage(html, job.title);
+
+  return {
+    ...job,
+    company: detail.company || job.company,
+    location: detail.location || job.location,
+    jobDescription: job.jobDescription || detail.jobDescription,
+  };
 }
 
 function normalizeLandingJobsRemotePolicy(value) {
@@ -1001,6 +1137,45 @@ async function fetchLandingJobsJobs(url, company) {
   return filterLandingJobsJobs(jobs, company._api?.landingjobs?.filters);
 }
 
+async function fetchEuRemoteJobsJobs(url, company) {
+  const jobs = [];
+  const seenUrls = new Set();
+  const maxPages = company._api?.euremotejobs?.maxPages || EUREMOTEJOBS_MAX_PAGES;
+
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
+    const pageUrl = buildEuRemoteJobsFeedPageUrl(url, pageNumber);
+    const xml = await fetchText(pageUrl);
+    const pageJobs = parseEuRemoteJobsFeed(xml);
+
+    if (pageJobs.length === 0) break;
+
+    let addedOnPage = 0;
+    for (const job of pageJobs) {
+      if (seenUrls.has(job.url)) continue;
+      seenUrls.add(job.url);
+      jobs.push(job);
+      addedOnPage += 1;
+    }
+
+    if (addedOnPage === 0) break;
+  }
+
+  const detailConcurrency = Math.max(1, Math.min(EUREMOTEJOBS_DETAIL_CONCURRENCY, jobs.length));
+  const tasks = jobs.map(job => async () => {
+    if (job.company && job.company !== 'EU Remote Jobs' && job.location) {
+      return job;
+    }
+
+    try {
+      return await fetchEuRemoteJobsJobDetails(job);
+    } catch {
+      return job;
+    }
+  });
+
+  return parallelFetch(tasks, detailConcurrency);
+}
+
 async function fetchPcsxPositionDetails(company, job) {
   const detailUrl = buildPcsxDetailUrl(company, job.positionId, job.queriedLocation);
   if (!detailUrl) return job;
@@ -1145,6 +1320,10 @@ async function fetchJobs(company) {
 
   if (type === 'itjobs') {
     return fetchItjobsJobs(url, company);
+  }
+
+  if (type === 'euremotejobs') {
+    return fetchEuRemoteJobsJobs(url, company);
   }
 
   if (type === 'sapo') {
