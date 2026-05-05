@@ -4,7 +4,7 @@
  * scan.mjs — Zero-token portal scanner
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
- * providers such as Landing.jobs, ITJobs, SAPO Emprego, and Portal Emprego, applies title
+ * providers such as Landing.jobs, ITJobs, SAPO Emprego, Portal Emprego, and Dice, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -37,6 +37,7 @@ const PCSX_DETAIL_CONCURRENCY = 20;
 const ITJOBS_MAX_PAGES = 5;
 const SAPO_MAX_PAGES = 5;
 const PORTALEMPREGO_MAX_PAGES = 5;
+const DICE_MAX_PAGES = 5;
 
 const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
   fullremote: ['fullremote', 'remote'],
@@ -218,6 +219,45 @@ function getSapoConfig(company) {
   };
 }
 
+function getDiceConfig(company) {
+  const baseUrl = company.api || company.careers_url || 'https://www.dice.com/jobs';
+
+  let listUrl;
+  try {
+    listUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const apiParams = company.api_params || {};
+  let urls = [listUrl];
+
+  for (const [key, rawValue] of Object.entries(apiParams)) {
+    if (rawValue === false || rawValue === null || rawValue === undefined || rawValue === '') {
+      continue;
+    }
+
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    const nextUrls = [];
+
+    for (const existingUrl of urls) {
+      for (const value of values) {
+        const nextUrl = new URL(existingUrl.toString());
+        nextUrl.searchParams.set(key, String(value));
+        nextUrls.push(nextUrl);
+      }
+    }
+
+    urls = nextUrls;
+  }
+
+  return {
+    listUrls: urls.map(url => url.toString()),
+    maxPages: Math.max(1, Number(company.api_max_pages) || DICE_MAX_PAGES),
+    pageSize: Math.max(1, Math.min(Number(company.api_page_size) || Number(apiParams.pageSize) || 20, 100)),
+  };
+}
+
 function slugifyPortalEmpregoTerm(value) {
   return normalizeWhitespace(String(value || ''))
     .normalize('NFD')
@@ -346,6 +386,11 @@ function detectApi(company) {
   if (company.api_provider === 'portalemprego' || /https?:\/\/(?:www\.)?portalemprego\.pt\/anuncios(?:\/|$)/.test(company.api || company.careers_url || '')) {
     const portalemprego = getPortalEmpregoConfig(company);
     return portalemprego ? { type: 'portalemprego', url: portalemprego.listUrls[0], portalemprego } : null;
+  }
+
+  if (company.api_provider === 'dice' || /https?:\/\/(?:www\.)?dice\.com\/jobs(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
+    const dice = getDiceConfig(company);
+    return dice ? { type: 'dice', url: dice.listUrls[0], dice } : null;
   }
 
   // Greenhouse: explicit api field
@@ -756,6 +801,135 @@ function getSapoPageCount(html) {
   return currentPage;
 }
 
+function buildDicePageUrl(url, pageNumber, pageSize) {
+  const pageUrl = new URL(url);
+  pageUrl.searchParams.set('page', String(pageNumber));
+  pageUrl.searchParams.set('pageSize', String(pageSize));
+
+  if (!pageUrl.searchParams.has('includeRemote')) {
+    pageUrl.searchParams.set('includeRemote', 'true');
+  }
+  if (!pageUrl.searchParams.has('recommendations')) {
+    pageUrl.searchParams.set('recommendations', 'true');
+  }
+  if (!pageUrl.searchParams.has('fj')) {
+    pageUrl.searchParams.set('fj', 'true');
+  }
+  if (!pageUrl.searchParams.has('radiusUnit')) {
+    pageUrl.searchParams.set('radiusUnit', 'mi');
+  }
+  if (!pageUrl.searchParams.has('filters.workplaceTypes')) {
+    pageUrl.searchParams.set('filters.workplaceTypes', '');
+  }
+
+  return pageUrl.toString();
+}
+
+function decodeJsStringLiteral(value) {
+  try {
+    return JSON.parse(`"${value}"`);
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonObject(text, startIndex) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let index = startIndex; index < text.length; index++) {
+    const char = text[index];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === '\\') {
+        escape = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(startIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractDiceJobList(html) {
+  const decodedFlight = Array.from(html.matchAll(/self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)<\/script>/g))
+    .map(match => decodeJsStringLiteral(match[1]))
+    .filter(Boolean)
+    .join('');
+
+  const marker = '"jobList":';
+  const markerIndex = decodedFlight.indexOf(marker);
+  if (markerIndex === -1) return null;
+
+  const objectStart = decodedFlight.indexOf('{', markerIndex + marker.length);
+  if (objectStart === -1) return null;
+
+  const objectText = extractJsonObject(decodedFlight, objectStart);
+  if (!objectText) return null;
+
+  try {
+    return JSON.parse(objectText);
+  } catch {
+    return null;
+  }
+}
+
+function formatDiceLocation(job) {
+  const displayName = normalizeWhitespace(String(job.jobLocation?.displayName || '').replace(/,\s*USA$/, ''));
+  const workplaceTypes = Array.isArray(job.workplaceTypes)
+    ? job.workplaceTypes.map(value => normalizeWhitespace(String(value || ''))).filter(Boolean)
+    : [];
+
+  return [...new Set([...workplaceTypes, displayName].filter(Boolean))].join(' | ');
+}
+
+function parseDiceJob(job, seenUrls) {
+  const url = job.detailsPageUrl || '';
+  const title = normalizeWhitespace(String(job.title || ''));
+  const company = normalizeWhitespace(String(job.companyName || ''));
+
+  if (!url || !title || !company || seenUrls.has(url)) {
+    return null;
+  }
+
+  seenUrls.add(url);
+
+  return {
+    title,
+    url,
+    company,
+    location: formatDiceLocation(job),
+    salary: normalizeWhitespace(String(job.salary || '')),
+    employmentType: normalizeWhitespace(String(job.employmentType || '')),
+    easyApply: Boolean(job.easyApply),
+    employerType: normalizeWhitespace(String(job.employerType || '')),
+    postedDate: job.postedDate || '',
+    jobDescription: normalizeWhitespace(String(job.summary || '')),
+  };
+}
+
 const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pcsx: parsePcsx };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
@@ -780,6 +954,11 @@ async function fetchText(url) {
     if (/https?:\/\/emprego\.sapo\.pt\//.test(url)) {
       headers['user-agent'] = 'Mozilla/5.0';
       headers['accept-language'] = 'pt-PT,pt;q=0.9,en;q=0.8';
+    }
+
+    if (/https?:\/\/(?:www\.)?dice\.com\//.test(url)) {
+      headers['user-agent'] = 'Mozilla/5.0';
+      headers['accept-language'] = 'en-US,en;q=0.9';
     }
 
     const res = await fetch(url, { signal: controller.signal, headers });
@@ -917,6 +1096,42 @@ async function fetchPortalEmpregoJobs(url, company) {
   return jobs;
 }
 
+async function fetchDiceJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.dice?.listUrls || [url];
+  const pageSize = company._api?.dice?.pageSize || 20;
+
+  for (const listUrl of listUrls) {
+    const firstPageHtml = await fetchText(buildDicePageUrl(listUrl, 1, pageSize));
+    const firstPageData = extractDiceJobList(firstPageHtml);
+    if (!firstPageData) {
+      throw new Error('Unable to parse Dice embedded job data');
+    }
+
+    const pageCount = Number(firstPageData.meta?.pageCount || 1);
+    const maxPages = Math.min(company._api?.dice?.maxPages || DICE_MAX_PAGES, pageCount);
+
+    for (const item of firstPageData.data || []) {
+      const parsed = parseDiceJob(item, seenUrls);
+      if (parsed) jobs.push(parsed);
+    }
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildDicePageUrl(listUrl, pageNumber, pageSize));
+      const pageData = extractDiceJobList(html);
+      if (!pageData) break;
+
+      for (const item of pageData.data || []) {
+        const parsed = parseDiceJob(item, seenUrls);
+        if (parsed) jobs.push(parsed);
+      }
+    }
+  }
+
+  return jobs;
+}
+
 async function fetchJobs(company) {
   const { type, url } = company._api;
 
@@ -938,6 +1153,10 @@ async function fetchJobs(company) {
 
   if (type === 'portalemprego') {
     return fetchPortalEmpregoJobs(url, company);
+  }
+
+  if (type === 'dice') {
+    return fetchDiceJobs(url, company);
   }
 
   const json = await fetchJson(url);

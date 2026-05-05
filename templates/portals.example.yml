@@ -278,6 +278,20 @@ search_queries:
     query: 'site:news.ycombinator.com OR site:hnrss.org "AI Engineer" OR "Forward Deployed" OR "DevRel" OR "Founding Engineer" remote'
     enabled: true
 
+  # -- Major aggregators --
+  # Dice exposes SSR job cards and an embedded public search payload with
+  # canonical job-detail URLs, company name, title, location, salary,
+  # employment type, easy-apply flag, workplace type, and pageCount. It fits
+  # well as a zero-token structured provider when seeded with focused queries.
+
+  - name: Dice — AI/ML
+    query: 'site:dice.com/job-detail/ "AI Engineer" OR "Machine Learning Engineer" OR "Applied AI" OR "Data Scientist"'
+    enabled: true
+
+  - name: Dice — Solutions/Automation
+    query: 'site:dice.com/job-detail/ "Solutions Architect" OR "Solutions Engineer" OR "Platform Engineer" OR "Automation Engineer"'
+    enabled: true
+
   # -- Portuguese market aggregators --
   # Indeed PT exposes useful search params (`q`, `l`, `start`, `fromage`,
   # `radius`, `jt`, `sc`) but aggressively blocks generic HTTP/headless access,
@@ -295,7 +309,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, dice
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -312,6 +326,11 @@ search_queries:
 #   - Portal Emprego can be configured with `api_provider: portalemprego` +
 #     `api_params.pesquisa:` using keyword-seeded SEO listing pages and optional
 #     `api_max_pages:`
+#   - Dice can be configured with `api_provider: dice` + `api:` pointing to
+#     `https://www.dice.com/jobs` and `api_params:` using public search params
+#     such as `q`, `location`, `includeRemote`, `filters.workplaceTypes`,
+#     `employmentType`, `postedDate`, and `employerType`, plus optional
+#     `api_page_size:` / `api_max_pages:`
 # Search-only portals such as Indeed belong in `search_queries`, not
 # `tracked_companies`, unless you have a proven low-friction HTML/API path.
 
@@ -392,6 +411,36 @@ tracked_companies:
     #     - AI
     #   published_within_days: 30
     notes: "Public Atom feed with stable zero-token metadata for title, company, location, remote policy, category, salary, and publish/update dates. Search pages exist, but the feed is the most reliable integration surface."
+    enabled: false
+
+  - name: Dice
+    careers_url: https://www.dice.com/jobs
+    api_provider: dice
+    api: https://www.dice.com/jobs
+    api_params:
+      q:
+        - 'artificial intelligence'
+        - 'machine learning'
+        - 'solutions architect'
+        - 'platform engineer'
+      includeRemote: true
+      # Optional public filters seen in Dice search state:
+      # filters.workplaceTypes:
+      #   - Remote
+      #   - Hybrid
+      # employmentType:
+      #   - FULLTIME
+      #   - CONTRACTS
+      # postedDate:
+      #   - ONE
+      #   - THREE
+      #   - SEVEN
+      # employerType:
+      #   - Direct Hire
+      #   - Recruiter
+    api_page_size: 20
+    api_max_pages: 4
+    notes: "SSR search pages embed structured job results with canonical job-detail URLs, company, title, location, employment type, salary, workplace type, easy-apply flag, and pageCount. Best used with a small set of seeded queries rather than broad unfiltered crawling."
     enabled: false
 
   # -- Voice AI & Conversational AI --
