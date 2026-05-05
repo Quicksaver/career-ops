@@ -280,8 +280,11 @@ search_queries:
 
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
-# scan_method: playwright (default), websearch, greenhouse_api
-# For Greenhouse companies, add api: field for faster structured JSON access.
+# scan_method: playwright (default), websearch
+# api_provider: greenhouse, pcsx
+# For API-backed companies:
+#   - `api:` may point directly to the search endpoint
+#   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
 
 tracked_companies:
 

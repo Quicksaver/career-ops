@@ -3,7 +3,7 @@
 /**
  * scan.mjs — Zero-token portal scanner
  *
- * Fetches Greenhouse, Ashby, and Lever APIs directly, applies title
+ * Fetches Greenhouse, Ashby, Lever, and PCSX APIs directly, applies title
  * filters from portals.yml, deduplicates against existing history,
  * and appends new offers to pipeline.md + scan-history.tsv.
  *
@@ -31,10 +31,76 @@ mkdirSync('data', { recursive: true });
 
 const CONCURRENCY = 10;
 const FETCH_TIMEOUT_MS = 10_000;
+const PCSX_DETAIL_CONCURRENCY = 20;
+
+function getUrlOrigin(value) {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getPcsxConfig(company) {
+  const origin = getUrlOrigin(company.careers_url) || getUrlOrigin(company.api);
+  if (!origin) return null;
+
+  let domain = company.api_domain || null;
+
+  if (!domain && company.api) {
+    try {
+      domain = new URL(company.api).searchParams.get('domain');
+    } catch {
+      domain = null;
+    }
+  }
+
+  if (!domain) return null;
+
+  const searchUrl = company.api
+    ? new URL(company.api)
+    : new URL(company.api_search_path || '/api/pcsx/search', origin);
+
+  if (!searchUrl.searchParams.get('domain')) {
+    searchUrl.searchParams.set('domain', domain);
+  }
+
+  if (company.api_sort_by !== false && !searchUrl.searchParams.get('sort_by')) {
+    searchUrl.searchParams.set('sort_by', company.api_sort_by || 'timestamp');
+  }
+
+  return {
+    origin,
+    domain,
+    searchUrl: searchUrl.toString(),
+    detailPath: company.api_detail_path || '/api/pcsx/position_details',
+  };
+}
+
+function buildPcsxDetailUrl(company, positionId, queriedLocation) {
+  const pcsx = company._api?.pcsx || getPcsxConfig(company);
+  if (!pcsx || !positionId) return null;
+
+  const detailUrl = new URL(pcsx.detailPath, pcsx.origin);
+  detailUrl.searchParams.set('domain', pcsx.domain);
+  detailUrl.searchParams.set('position_id', String(positionId));
+
+  if (queriedLocation) {
+    detailUrl.searchParams.set('queried_location', queriedLocation);
+  }
+
+  return detailUrl.toString();
+}
 
 // ── API detection ───────────────────────────────────────────────────
 
 function detectApi(company) {
+  if (company.api_provider === 'pcsx' || (company.api && company.api.includes('/api/pcsx/search'))) {
+    const pcsx = getPcsxConfig(company);
+    return pcsx ? { type: 'pcsx', url: pcsx.searchUrl, pcsx } : null;
+  }
+
   // Greenhouse: explicit api field
   if (company.api && company.api.includes('greenhouse')) {
     return { type: 'greenhouse', url: company.api };
@@ -74,37 +140,64 @@ function detectApi(company) {
 
 // ── API parsers ─────────────────────────────────────────────────────
 
-function parseGreenhouse(json, companyName) {
+function parseGreenhouse(json, company) {
   const jobs = json.jobs || [];
   return jobs.map(j => ({
     title: j.title || '',
     url: j.absolute_url || '',
-    company: companyName,
+    company: company.name,
     location: j.location?.name || '',
   }));
 }
 
-function parseAshby(json, companyName) {
+function parseAshby(json, company) {
   const jobs = json.jobs || [];
   return jobs.map(j => ({
     title: j.title || '',
     url: j.jobUrl || '',
-    company: companyName,
+    company: company.name,
     location: j.location || '',
   }));
 }
 
-function parseLever(json, companyName) {
+function parseLever(json, company) {
   if (!Array.isArray(json)) return [];
   return json.map(j => ({
     title: j.text || '',
     url: j.hostedUrl || '',
-    company: companyName,
+    company: company.name,
     location: j.categories?.location || '',
   }));
 }
 
-const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever };
+function parsePcsxPosition(position, company) {
+  const origin = company._api?.pcsx?.origin || getUrlOrigin(company.careers_url) || getUrlOrigin(company.api) || 'https://apply.careers.microsoft.com';
+  const locations = Array.isArray(position.locations)
+    ? position.locations.filter(Boolean)
+    : (position.location ? [position.location] : []);
+
+  return {
+    title: position.name || '',
+    url: position.publicUrl || new URL(position.positionUrl || `/careers/job/${position.id}`, origin).toString(),
+    company: company.name,
+    location: locations.join(' | '),
+    positionId: position.id || null,
+    externalId: position.displayJobId || position.atsJobId || '',
+    department: position.department || '',
+    postedTs: position.postedTs || null,
+    workLocationOption: position.workLocationOption || '',
+    locationFlexibility: position.locationFlexibility || null,
+    jobDescription: position.jobDescription || '',
+    queriedLocation: position.location || '',
+  };
+}
+
+function parsePcsx(json, company) {
+  const positions = json.data?.positions || [];
+  return positions.map(position => parsePcsxPosition(position, company));
+}
+
+const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pcsx: parsePcsx };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
 
@@ -118,6 +211,78 @@ async function fetchJson(url) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchPcsxJobs(url, company) {
+  const pageUrl = new URL(url);
+  const jobs = [];
+  let start = Number(pageUrl.searchParams.get('start') || '0');
+  let total = Infinity;
+  let requests = 0;
+
+  while (jobs.length < total && requests < 500) {
+    pageUrl.searchParams.set('start', String(start));
+
+    const json = await fetchJson(pageUrl.toString());
+    const pageJobs = parsePcsx(json, company);
+    const count = Number(json.data?.count || pageJobs.length);
+
+    total = Number.isFinite(count) && count > 0 ? count : pageJobs.length;
+    requests += 1;
+
+    if (pageJobs.length === 0) break;
+
+    jobs.push(...pageJobs);
+    start += pageJobs.length;
+  }
+
+  return jobs;
+}
+
+async function fetchPcsxPositionDetails(company, job) {
+  const detailUrl = buildPcsxDetailUrl(company, job.positionId, job.queriedLocation);
+  if (!detailUrl) return job;
+
+  const json = await fetchJson(detailUrl);
+  const position = json.data || null;
+
+  if (!position) return job;
+
+  return {
+    ...job,
+    ...parsePcsxPosition(position, company),
+  };
+}
+
+async function enrichPcsxJobs(company, jobs) {
+  if (company.fetch_details === false || jobs.length === 0) {
+    return jobs;
+  }
+
+  const detailConcurrency = Math.max(1, Math.min(Number(company.detail_concurrency) || PCSX_DETAIL_CONCURRENCY, jobs.length));
+
+  const tasks = jobs.map(job => async () => {
+    if (!job.positionId) return job;
+
+    try {
+      return await fetchPcsxPositionDetails(company, job);
+    } catch {
+      return job;
+    }
+  });
+
+  return parallelFetch(tasks, detailConcurrency);
+}
+
+async function fetchJobs(company) {
+  const { type, url } = company._api;
+
+  if (type === 'pcsx') {
+    return fetchPcsxJobs(url, company);
+  }
+
+  const json = await fetchJson(url);
+  return PARSERS[type](json, company);
 }
 
 // ── Title filter ────────────────────────────────────────────────────
@@ -290,11 +455,11 @@ async function main() {
   const errors = [];
 
   const tasks = targets.map(company => async () => {
-    const { type, url } = company._api;
+    const { type } = company._api;
     try {
-      const json = await fetchJson(url);
-      const jobs = PARSERS[type](json, company.name);
+      const jobs = await fetchJobs(company);
       totalFound += jobs.length;
+      const candidateJobs = [];
 
       for (const job of jobs) {
         if (!titleFilter(job.title)) {
@@ -313,6 +478,15 @@ async function main() {
         // Mark as seen to avoid intra-scan dupes
         seenUrls.add(job.url);
         seenCompanyRoles.add(key);
+        candidateJobs.push(job);
+      }
+
+      const enrichedJobs = type === 'pcsx'
+        ? await enrichPcsxJobs(company, candidateJobs)
+        : candidateJobs;
+
+      for (const job of enrichedJobs) {
+        seenUrls.add(job.url);
         newOffers.push({ ...job, source: `${type}-api` });
       }
     } catch (err) {
