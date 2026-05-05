@@ -2,7 +2,7 @@
 
 Escanea portales de empleo configurados, filtra por relevancia de título, y añade nuevas ofertas al pipeline para evaluación posterior.
 
-> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers HTML estructurados como ITJobs y SAPO Emprego. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider HTML soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch).
+> **Nota (v1.5+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y consulta directamente APIs públicas compatibles como Greenhouse, Ashby, Lever y PCSX, además de providers HTML estructurados como ITJobs y SAPO Emprego. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene API compatible ni un provider HTML soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch). **Indeed PT entra en esta categoría**: sus URLs de búsqueda son útiles para descubrimiento, pero el portal suele bloquear fetches genéricos y navegadores headless con desafíos anti-bot.
 
 ## Ejecución recomendada
 
@@ -19,7 +19,7 @@ Agent(
 ## Configuración
 
 Leer `portals.yml` que contiene:
-- `search_queries`: Lista de queries WebSearch con `site:` filters por portal (descubrimiento amplio)
+- `search_queries`: Lista de queries WebSearch con `site:` filters por portal (descubrimiento amplio, incluido Indeed cuando solo conviene usarlo como discovery source)
 - `tracked_companies`: Empresas específicas con `careers_url` para navegación directa
 - `title_filter`: Keywords positive/negative/seniority_boost para filtrado de títulos
 
@@ -61,7 +61,13 @@ Para empresas con API pública o feed estructurado, usar la respuesta JSON/XML c
 
 ### Nivel 3 — WebSearch queries (DESCUBRIMIENTO AMPLIO)
 
-Los `search_queries` con `site:` filters cubren portales de forma transversal (todos los Ashby, todos los Greenhouse, etc.). Útil para descubrir empresas NUEVAS que aún no están en `tracked_companies`, pero los resultados pueden estar desfasados.
+Los `search_queries` con `site:` filters cubren portales de forma transversal (todos los Ashby, todos los Greenhouse, etc.). Útil para descubrir empresas NUEVAS que aún no están en `tracked_companies`, pero los resultados pueden estar desfasados. También es el encaje correcto para portales tipo **Indeed PT** cuando el entorno no puede atravesar su capa anti-bot de forma fiable.
+
+**Perfil de capacidad de Indeed PT (recomendado):**
+- **Búsqueda pública útil:** `https://pt.indeed.com/jobs?q={query}&l={location}`
+- **Filtros observables en URL:** `q`, `l`, `start`, `fromage`, `radius`, `jt`, `sc`
+- **Buen uso en career-ops:** descubrimiento en Nivel 3 / `search_queries`
+- **Mal encaje por defecto:** provider zero-token en `scan.mjs`, porque HTTP directo y Chromium headless suelen recibir bloqueo / Cloudflare
 
 **Prioridad de ejecución:**
 1. Nivel 1: Playwright → todas las `tracked_companies` con `careers_url`

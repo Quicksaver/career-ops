@@ -30,7 +30,7 @@ Copy from `templates/portals.example.yml` and customize:
 
 1. **title_filter.positive**: Keywords matching your target roles
 2. **title_filter.negative**: Tech stacks or domains to exclude
-3. **search_queries**: WebSearch queries for job boards (Ashby, Greenhouse, Lever)
+3. **search_queries**: WebSearch queries for job boards (Ashby, Greenhouse, Lever, Indeed, etc.)
 4. **tracked_companies**: Companies to check directly
 
 ## CV Template (templates/cv-template.html)

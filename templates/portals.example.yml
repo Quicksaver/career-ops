@@ -278,6 +278,20 @@ search_queries:
     query: 'site:news.ycombinator.com OR site:hnrss.org "AI Engineer" OR "Forward Deployed" OR "DevRel" OR "Founding Engineer" remote'
     enabled: true
 
+  # -- Portuguese market aggregators --
+  # Indeed PT exposes useful search params (`q`, `l`, `start`, `fromage`,
+  # `radius`, `jt`, `sc`) but aggressively blocks generic HTTP/headless access,
+  # so it works best as a WebSearch discovery source rather than a zero-token
+  # structured provider.
+
+  - name: Indeed Portugal — AI/ML
+    query: 'site:pt.indeed.com "AI Engineer" OR "Machine Learning Engineer" OR "Applied AI" OR "Data Scientist" Portugal'
+    enabled: true
+
+  - name: Indeed Portugal — Solutions/Automation
+    query: 'site:pt.indeed.com "Solutions Architect" OR "Solutions Engineer" OR "Platform Engineer" OR "Automation Engineer" Portugal'
+    enabled: true
+
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
@@ -291,6 +305,8 @@ search_queries:
 #   - SAPO Emprego can be configured with `api_provider: sapo` + `api_params:` using
 #     search/listing filters such as `pesquisa`, `categoria`, `modelo`,
 #     `distrito`, and optional `api_max_pages:`
+# Search-only portals such as Indeed belong in `search_queries`, not
+# `tracked_companies`, unless you have a proven low-friction HTML/API path.
 
 tracked_companies:
 
