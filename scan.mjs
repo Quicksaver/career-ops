@@ -5,8 +5,9 @@
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
  * providers such as Landing.jobs, SwissDevJobs/GermanTechJobs/DevITJobs,
- * jobs.ch, DEVjobs.de, Make it in Germany, EU Remote Jobs, ITJobs,
- * SAPO Emprego, Portal Emprego, Dice, and Working Nomads, applies title
+ * jobs.ch, DEVjobs.de, Jobs in English Denmark, Make it in Germany,
+ * EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, and
+ * Working Nomads, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -48,6 +49,7 @@ const REMOTEINEUROPE_MAX_PAGES = 5;
 const NODESK_MAX_PAGES = 5;
 const NODESK_DETAIL_CONCURRENCY = 5;
 const ENGLISHJOBS_MAX_PAGES = 5;
+const JOBSINENGLISH_MAX_PAGES = 5;
 const JOBSCH_MAX_PAGES = 5;
 const MAKEITINGERMANY_MAX_PAGES = 5;
 const DEVJOBSDE_MAX_PAGES = 5;
@@ -583,6 +585,55 @@ function getEnglishJobsConfig(company) {
   };
 }
 
+function buildJobsInEnglishSearchUrl(baseUrl, query, regions, categories, useViewAll) {
+  const url = new URL(baseUrl);
+
+  if (useViewAll) {
+    url.pathname = '/view_all_ads/';
+  }
+
+  url.searchParams.delete('page');
+  url.searchParams.delete('search');
+  url.searchParams.delete('region');
+  url.searchParams.delete('category');
+
+  if (query) {
+    url.searchParams.set('search', query);
+  }
+
+  regions.forEach(region => url.searchParams.append('region', region));
+  categories.forEach(category => url.searchParams.append('category', category));
+
+  return url.toString();
+}
+
+function getJobsInEnglishConfig(company) {
+  const baseUrl = company.api || company.careers_url || 'https://jobsinenglish.dk/';
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const queries = toFilterArray(company.api_params?.search || company.api_params?.q || company.api_params?.query);
+  const regions = toFilterArray(company.api_params?.region);
+  const categories = toFilterArray(company.api_params?.category);
+  const hasServerSideFilters = queries.length > 0 || regions.length > 0 || categories.length > 0;
+  const useViewAll = company.api_use_view_all !== false && hasServerSideFilters;
+  const queryValues = queries.length > 0 ? queries : [''];
+  const listUrls = queryValues
+    .map(query => buildJobsInEnglishSearchUrl(parsedUrl.toString(), query, regions, categories, useViewAll))
+    .filter((value, index, array) => value && array.indexOf(value) === index);
+
+  return {
+    listUrls: listUrls.length > 0 ? listUrls : [parsedUrl.toString()],
+    useViewAll,
+    maxPages: Math.max(1, Number(company.api_max_pages) || JOBSINENGLISH_MAX_PAGES),
+  };
+}
+
 function normalizeDevJobsDeApiParamKey(key) {
   if (key === 'query') return 'q';
   if (key === 'english_only') return 'englishOnly';
@@ -857,6 +908,11 @@ function detectApi(company) {
   ) {
     const englishjobs = getEnglishJobsConfig(company);
     return englishjobs ? { type: 'englishjobs', url: englishjobs.listUrls[0], englishjobs } : null;
+  }
+
+  if (company.api_provider === 'jobsinenglish' || /https?:\/\/(?:www\.)?jobsinenglish\.dk(?:\/|$)/.test(company.api || company.careers_url || '')) {
+    const jobsinenglish = getJobsInEnglishConfig(company);
+    return jobsinenglish ? { type: 'jobsinenglish', url: jobsinenglish.listUrls[0], jobsinenglish } : null;
   }
 
   if (
@@ -1936,6 +1992,61 @@ function parseEnglishJobsPage(markdown, sourceUrl, seenUrls) {
   return jobs;
 }
 
+function getJobsInEnglishPageCount(html) {
+  let maxPage = 1;
+
+  for (const match of html.matchAll(/[?&]page=(\d+)/g)) {
+    maxPage = Math.max(maxPage, Number(match[1]));
+  }
+
+  return maxPage;
+}
+
+function buildJobsInEnglishPageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+
+  if (pageNumber <= 1) {
+    pageUrl.searchParams.delete('page');
+  } else {
+    pageUrl.searchParams.set('page', String(pageNumber));
+  }
+
+  return pageUrl.toString();
+}
+
+function parseJobsInEnglishPage(html, sourceUrl, seenUrls) {
+  const origin = new URL(sourceUrl).origin;
+  const jobs = [];
+  const listHtml = html.match(/<div id="ad-list-and-pagination">([\s\S]*?)(?:<footer|$)/i)?.[1] || html;
+  const jobPattern = /<a href="(\/ads\/[^\"]+)" class="block group">([\s\S]*?)<\/a>/g;
+
+  for (const match of listHtml.matchAll(jobPattern)) {
+    const url = new URL(decodeHtmlEntities(match[1]), origin).toString();
+    if (seenUrls.has(url)) continue;
+
+    const itemHtml = match[2];
+    const title = cleanHtmlText(itemHtml.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)?.[1] || '');
+    const company = cleanHtmlText(itemHtml.match(/<p[^>]*class="[^"]*text-sm[^"]*text-gray-(?:500|600)[^"]*"[^>]*>([\s\S]*?)<\/p>/i)?.[1] || '');
+
+    if (!title || !company) continue;
+
+    seenUrls.add(url);
+
+    jobs.push({
+      title,
+      url,
+      sourceUrl: url,
+      company,
+      location: cleanHtmlText(itemHtml.match(/<div class="inline-flex items-center gap-1\.5[^"]*">([\s\S]*?)<\/div>/i)?.[1] || ''),
+      category: cleanHtmlText(itemHtml.match(/<span[^>]*class="[^"]*text-xs[^"]*"[^>]*>([\s\S]*?)<\/span>/i)?.[1] || ''),
+      postedDate: cleanHtmlText(itemHtml.match(/<span class="text-xs text-gray-400">([\s\S]*?)<\/span>/i)?.[1] || ''),
+      publishedAt: cleanHtmlText(itemHtml.match(/<span class="text-xs text-gray-400">([\s\S]*?)<\/span>/i)?.[1] || ''),
+    });
+  }
+
+  return jobs;
+}
+
 function buildDevJobsDePageUrl(url, pageNumber) {
   const pageUrl = new URL(url);
 
@@ -2406,6 +2517,15 @@ async function fetchText(url) {
       headers['origin'] = 'https://nodesk.co';
     }
 
+    if (/https?:\/\/(?:www\.)?jobsinenglish\.dk\//.test(url)) {
+      headers['user-agent'] = 'Mozilla/5.0';
+      headers['accept-language'] = 'en-US,en;q=0.9';
+
+      if (/https?:\/\/(?:www\.)?jobsinenglish\.dk\/view_all_ads\//.test(url)) {
+        headers['hx-request'] = 'true';
+      }
+    }
+
     const res = await fetch(url, { signal: controller.signal, headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
@@ -2606,6 +2726,35 @@ async function fetchEnglishJobsJobs(url, company) {
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
       const markdown = await fetchText(buildEnglishJobsPageUrl(listUrl, pageNumber));
       const pageJobs = parseEnglishJobsPage(markdown, listUrl, seenUrls);
+      if (pageJobs.length === 0) break;
+      jobs.push(...pageJobs);
+    }
+  }
+
+  return jobs;
+}
+
+async function fetchJobsInEnglishJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const config = company._api?.jobsinenglish;
+  const listUrls = config?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    if (config?.useViewAll || /\/view_all_ads\/(?:[?#]|$)/.test(listUrl)) {
+      const html = await fetchText(listUrl);
+      jobs.push(...parseJobsInEnglishPage(html, listUrl, seenUrls));
+      continue;
+    }
+
+    const firstPageHtml = await fetchText(buildJobsInEnglishPageUrl(listUrl, 1));
+    const pageCount = getJobsInEnglishPageCount(firstPageHtml);
+    const maxPages = Math.min(config?.maxPages || JOBSINENGLISH_MAX_PAGES, pageCount);
+    jobs.push(...parseJobsInEnglishPage(firstPageHtml, listUrl, seenUrls));
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildJobsInEnglishPageUrl(listUrl, pageNumber));
+      const pageJobs = parseJobsInEnglishPage(html, listUrl, seenUrls);
       if (pageJobs.length === 0) break;
       jobs.push(...pageJobs);
     }
@@ -2912,6 +3061,10 @@ async function fetchJobs(company) {
 
   if (type === 'englishjobs') {
     return fetchEnglishJobsJobs(url, company);
+  }
+
+  if (type === 'jobsinenglish') {
+    return fetchJobsInEnglishJobs(url, company);
   }
 
   if (type === 'devjobsde') {

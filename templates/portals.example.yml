@@ -196,7 +196,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsch, dice, remoteineurope, workingnomads, nodesk
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsinenglish, jobsch, dice, remoteineurope, workingnomads, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -239,6 +239,13 @@ search_queries:
 #     brittle HTML scraping. Result links are tracker clickouts, not canonical
 #     downstream job URLs, so dedup should key off the stable `/clickout/{id}`
 #     path and keep the full clickout URL for evaluation.
+#   - JobsInEnglish.dk can be configured with `api_provider: jobsinenglish` +
+#     `careers_url: https://jobsinenglish.dk/`. Optional `api_params:` use
+#     `q`/`search`, repeated `region`, and repeated `category`. The best scan
+#     surface is the first-party HTMX `/view_all_ads/` endpoint, which returns
+#     one unpaginated HTML fragment per filtered query when requested with
+#     `HX-Request: true`; canonical `/ads/...` pages retain full descriptions,
+#     JobPosting schema, and the outbound Apply Now link.
 #   - jobs.ch can be configured with `api_provider: jobsch` + a localized
 #     search URL such as `https://www.jobs.ch/en/vacancies/`,
 #     `https://www.jobs.ch/de/stellenangebote/`, or
@@ -442,6 +449,21 @@ tracked_companies:
         - danish
     api_max_pages: 3
     notes: "English-speaking Denmark aggregator in the same portal family as englishjobsearch.ch, with the same llms.txt search contract, markdown rendering, and `page` pagination. Use as a seeded discovery source; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: Jobs in English Denmark
+    careers_url: https://jobsinenglish.dk/
+    api_provider: jobsinenglish
+    api_params:
+      q:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+      category:
+        - software-development
+        - engineering
+        - data-science
+    notes: "Denmark-focused English-speaking aggregator. The optimal integration surface is the first-party HTMX `/view_all_ads/` endpoint with server-side `search`, repeated `region`, and repeated `category` filters; canonical `/ads/...` pages keep the full description, JobPosting schema, and external Apply Now link."
     enabled: false
 
   - name: English Jobs Sweden
