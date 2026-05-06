@@ -5,8 +5,8 @@
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
  * providers such as Landing.jobs, SwissDevJobs/GermanTechJobs/DevITJobs,
- * EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, and Working
- * Nomads, applies title
+ * jobs.ch, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice,
+ * and Working Nomads, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -48,6 +48,7 @@ const REMOTEINEUROPE_MAX_PAGES = 5;
 const NODESK_MAX_PAGES = 5;
 const NODESK_DETAIL_CONCURRENCY = 5;
 const ENGLISHJOBS_MAX_PAGES = 5;
+const JOBSCH_MAX_PAGES = 5;
 const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
 const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
 const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
@@ -574,6 +575,48 @@ function getEnglishJobsConfig(company) {
   };
 }
 
+function getJobsChLocaleFromPathname(pathname) {
+  if (/^\/fr\/offres-emplois(?:[/?#]|$)/.test(pathname)) return 'fr';
+  if (/^\/de\/stellenangebote(?:[/?#]|$)/.test(pathname)) return 'de';
+  return 'en';
+}
+
+function getJobsChDetailPathTemplate(locale) {
+  if (locale === 'fr') return '/fr/offres-emplois/detail/{ID}/';
+  if (locale === 'de') return '/de/stellenangebote/detail/{ID}/';
+  return '/en/vacancies/detail/{ID}/';
+}
+
+function buildJobsChSearchUrl(baseUrl, term) {
+  const url = new URL(baseUrl);
+  url.searchParams.set('term', String(term || ''));
+  url.searchParams.delete('page');
+  return url.toString();
+}
+
+function getJobsChConfig(company) {
+  const baseUrl = company.careers_url || company.api || 'https://www.jobs.ch/en/vacancies/';
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const terms = toFilterArray(company.api_params?.term || company.api_params?.q || company.api_params?.query);
+  const values = terms.length > 0 ? terms : [''];
+  const listUrls = values
+    .map(value => buildJobsChSearchUrl(parsedUrl.toString(), value))
+    .filter((value, index, array) => value && array.indexOf(value) === index);
+
+  return {
+    listUrls: listUrls.length > 0 ? listUrls : [buildJobsChSearchUrl(parsedUrl.toString(), '')],
+    locale: getJobsChLocaleFromPathname(parsedUrl.pathname),
+    maxPages: Math.max(1, Number(company.api_max_pages) || JOBSCH_MAX_PAGES),
+  };
+}
+
 function getLandingJobsConfig(company) {
   const baseUrl = company.api || 'https://landing.jobs/feed';
   let feedUrl;
@@ -712,6 +755,11 @@ function detectApi(company) {
   ) {
     const englishjobs = getEnglishJobsConfig(company);
     return englishjobs ? { type: 'englishjobs', url: englishjobs.listUrls[0], englishjobs } : null;
+  }
+
+  if (company.api_provider === 'jobsch' || /https?:\/\/(?:www\.)?jobs\.ch\/(?:en\/vacancies|de\/stellenangebote|fr\/offres-emplois)(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
+    const jobsch = getJobsChConfig(company);
+    return jobsch ? { type: 'jobsch', url: jobsch.listUrls[0], jobsch } : null;
   }
 
   if (company.api_provider === 'dice' || /https?:\/\/(?:www\.)?dice\.com\/jobs(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
@@ -1508,6 +1556,23 @@ function extractJsonObject(text, startIndex) {
   return null;
 }
 
+function extractEmbeddedAssignmentObject(html, variableName) {
+  const match = new RegExp(`${escapeRegExp(variableName)}\\s*=\\s*\\{`).exec(html);
+  if (!match) return null;
+
+  const objectStart = html.indexOf('{', match.index);
+  if (objectStart === -1) return null;
+
+  const objectText = extractJsonObject(html, objectStart);
+  if (!objectText) return null;
+
+  try {
+    return JSON.parse(objectText);
+  } catch {
+    return null;
+  }
+}
+
 function extractDiceJobList(html) {
   const decodedFlight = Array.from(html.matchAll(/self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)<\/script>/g))
     .map(match => decodeJsStringLiteral(match[1]))
@@ -1756,6 +1821,84 @@ function parseEnglishJobsPage(markdown, sourceUrl, seenUrls) {
   return jobs;
 }
 
+function buildJobsChPageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+
+  if (pageNumber <= 1) {
+    pageUrl.searchParams.delete('page');
+  } else {
+    pageUrl.searchParams.set('page', String(pageNumber));
+  }
+
+  if (!pageUrl.searchParams.has('term')) {
+    pageUrl.searchParams.set('term', '');
+  }
+
+  return pageUrl.toString();
+}
+
+function formatJobsChLocation(job) {
+  const place = normalizeWhitespace(String(job.place || ''));
+  const regions = Array.isArray(job.regions)
+    ? job.regions.map(region => normalizeWhitespace(String(region?.name || region || ''))).filter(Boolean)
+    : [];
+
+  return [...new Set([place, ...regions].filter(Boolean))].join(' | ');
+}
+
+function parseJobsChJob(job, origin, detailPathTemplate, seenUrls) {
+  const id = normalizeWhitespace(String(job.id || ''));
+  const title = normalizeWhitespace(String(job.title || ''));
+  const company = normalizeWhitespace(String(job.company?.name || ''));
+
+  if (!job?.isActive || !id || !title || !company) {
+    return null;
+  }
+
+  const url = new URL(detailPathTemplate.replace('{ID}', encodeURIComponent(id)), origin).toString();
+  if (seenUrls.has(url)) {
+    return null;
+  }
+
+  seenUrls.add(url);
+
+  return {
+    title,
+    url,
+    company,
+    location: formatJobsChLocation(job),
+    postedDate: normalizeWhitespace(String(job.relativeDate || job.relativeDateInitial || '')),
+    publishedAt: String(job.publicationDate || job.initialPublicationDate || ''),
+    initialPublishedAt: String(job.initialPublicationDate || ''),
+  };
+}
+
+function parseJobsChSearchPage(html, sourceUrl, seenUrls) {
+  const initData = extractEmbeddedAssignmentObject(html, '__INIT__');
+  const globalData = extractEmbeddedAssignmentObject(html, '__GLOBAL__') || {};
+  const results = initData?.vacancy?.results?.main?.results;
+
+  if (!Array.isArray(results)) {
+    throw new Error('Unable to parse jobs.ch embedded results payload');
+  }
+
+  const source = new URL(sourceUrl);
+  const locale = getJobsChLocaleFromPathname(source.pathname);
+  const detailPathTemplate = globalData?.ROUTES?.VACANCY_DETAIL?.[locale] || getJobsChDetailPathTemplate(locale);
+  const jobs = [];
+
+  for (const item of results) {
+    const parsed = parseJobsChJob(item, source.origin, detailPathTemplate, seenUrls);
+    if (parsed) jobs.push(parsed);
+  }
+
+  const pageCount = Number(initData?.vacancy?.results?.main?.meta?.numPages || 1);
+  return {
+    jobs,
+    pageCount: Number.isFinite(pageCount) && pageCount > 0 ? pageCount : 1,
+  };
+}
+
 function parseRemoteInEuropeDetailPage(html, fallbackJob) {
   const title = cleanHtmlText(html.match(/<h1 class="title">([\s\S]*?)<\/h1>/i)?.[1] || fallbackJob.title || '');
   const company = cleanHtmlText(html.match(/<h3 class="title h4-size card-job-post-sidebar">([\s\S]*?)<\/h3>/i)?.[1] || extractRemoteInEuropeHiddenField(html, 'schema-company') || fallbackJob.company || '');
@@ -1918,6 +2061,11 @@ async function fetchText(url) {
     }
 
     if (/https?:\/\/(?:www\.)?dice\.com\//.test(url)) {
+      headers['user-agent'] = 'Mozilla/5.0';
+      headers['accept-language'] = 'en-US,en;q=0.9';
+    }
+
+    if (/https?:\/\/(?:www\.)?jobs\.ch\//.test(url)) {
       headers['user-agent'] = 'Mozilla/5.0';
       headers['accept-language'] = 'en-US,en;q=0.9';
     }
@@ -2131,6 +2279,28 @@ async function fetchEnglishJobsJobs(url, company) {
       const pageJobs = parseEnglishJobsPage(markdown, listUrl, seenUrls);
       if (pageJobs.length === 0) break;
       jobs.push(...pageJobs);
+    }
+  }
+
+  return jobs;
+}
+
+async function fetchJobsChJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.jobsch?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    const firstPageHtml = await fetchText(buildJobsChPageUrl(listUrl, 1));
+    const firstPage = parseJobsChSearchPage(firstPageHtml, listUrl, seenUrls);
+    const maxPages = Math.min(company._api?.jobsch?.maxPages || JOBSCH_MAX_PAGES, firstPage.pageCount);
+    jobs.push(...firstPage.jobs);
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildJobsChPageUrl(listUrl, pageNumber));
+      const pageData = parseJobsChSearchPage(html, listUrl, seenUrls);
+      if (pageData.jobs.length === 0) break;
+      jobs.push(...pageData.jobs);
     }
   }
 
@@ -2357,6 +2527,10 @@ async function fetchJobs(company) {
 
   if (type === 'englishjobs') {
     return fetchEnglishJobsJobs(url, company);
+  }
+
+  if (type === 'jobsch') {
+    return fetchJobsChJobs(url, company);
   }
 
   if (type === 'dice') {

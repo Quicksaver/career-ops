@@ -196,7 +196,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, dice, remoteineurope, workingnomads, nodesk
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsch, dice, remoteineurope, workingnomads, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -239,6 +239,15 @@ search_queries:
 #     brittle HTML scraping. Result links are tracker clickouts, not canonical
 #     downstream job URLs, so dedup should key off the stable `/clickout/{id}`
 #     path and keep the full clickout URL for evaluation.
+#   - jobs.ch can be configured with `api_provider: jobsch` + a localized
+#     search URL such as `https://www.jobs.ch/en/vacancies/`,
+#     `https://www.jobs.ch/de/stellenangebote/`, or
+#     `https://www.jobs.ch/fr/offres-emplois/`. Optional `api_params.term:` can
+#     seed multiple queries and the scanner paginates with `?page=N`. The public
+#     `job-search-api.jobs.ch` host appears WAF-protected for direct scraping,
+#     but the HTML search page embeds `__INIT__.vacancy.results.main.results`
+#     plus localized `__GLOBAL__.ROUTES.VACANCY_DETAIL`, making embedded JSON
+#     extraction the lowest-friction stable integration.
 #   - Dice can be configured with `api_provider: dice` + `api:` pointing to
 #     `https://www.dice.com/jobs` and `api_params:` using public search params
 #     such as `q`, `location`, `includeRemote`, `filters.workplaceTypes`,
@@ -404,6 +413,18 @@ tracked_companies:
         - german
     api_max_pages: 3
     notes: "English-speaking Switzerland aggregator with documented search URLs in llms.txt, markdown rendering via `format=markdown`, and simple `page` pagination. Best used as a discovery source with seeded query/location combinations; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: Jobs.ch Switzerland
+    careers_url: https://www.jobs.ch/en/vacancies/
+    api_provider: jobsch
+    api_params:
+      term:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+    api_max_pages: 3
+    notes: "Public jobs.ch search pages embed structured `__INIT__.vacancy.results` data and localized detail routes, so HTML fetch + JSON extraction is more reliable than the WAF-protected search API host."
     enabled: false
 
   - name: English Jobs Denmark
