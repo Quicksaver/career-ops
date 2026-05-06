@@ -4,8 +4,8 @@
  * scan.mjs — Zero-token portal scanner
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
- * providers such as Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego,
- * Portal Emprego, Dice, and Working Nomads, applies title
+ * providers such as Landing.jobs, SwissDevJobs, EU Remote Jobs, ITJobs,
+ * SAPO Emprego, Portal Emprego, Dice, and Working Nomads, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -49,6 +49,7 @@ const NODESK_DETAIL_CONCURRENCY = 5;
 const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
 const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
 const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
+const SWISSDEVJOBS_BASE_URL = 'https://swissdevjobs.ch';
 
 const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
   fullremote: ['fullremote', 'remote'],
@@ -257,6 +258,41 @@ function getWorkingNomadsConfig(company) {
       category: toFilterArray(company.api_params?.category),
       location: inferWorkingNomadsLocationFilters(company),
       tags: toFilterArray(company.api_params?.tags),
+      publishedWithinDays: Number.isFinite(publishedWithinDays) && publishedWithinDays > 0
+        ? publishedWithinDays
+        : null,
+    },
+  };
+}
+
+function getSwissDevJobsConfig(company) {
+  const baseUrl = company.api || `${SWISSDEVJOBS_BASE_URL}/api/jobsLight`;
+  let apiUrl;
+
+  try {
+    apiUrl = new URL(baseUrl).toString();
+  } catch {
+    return null;
+  }
+
+  const publishedWithinDays = Number(company.api_params?.published_within_days);
+
+  return {
+    apiUrl,
+    filters: {
+      q: toFilterArray(company.api_params?.q),
+      city: toFilterArray(company.api_params?.city || company.api_params?.actual_city),
+      cityCategory: toFilterArray(company.api_params?.city_category),
+      workplace: toFilterArray(company.api_params?.workplace),
+      language: toFilterArray(company.api_params?.language),
+      visaSponsorship: toFilterArray(company.api_params?.visa_sponsorship),
+      jobType: toFilterArray(company.api_params?.job_type),
+      expLevel: toFilterArray(company.api_params?.exp_level),
+      techCategory: toFilterArray(company.api_params?.tech_category),
+      metaCategory: toFilterArray(company.api_params?.meta_category),
+      companyType: toFilterArray(company.api_params?.company_type),
+      companySize: toFilterArray(company.api_params?.company_size),
+      technologies: toFilterArray(company.api_params?.technologies),
       publishedWithinDays: Number.isFinite(publishedWithinDays) && publishedWithinDays > 0
         ? publishedWithinDays
         : null,
@@ -530,6 +566,11 @@ function detectApi(company) {
   if (company.api_provider === 'workingnomads' || /https?:\/\/(?:www\.)?workingnomads\.com\/(?:api\/exposed_jobs\/?|remote-[^/?#]+-jobs(?:[/?#]|$)|jobs(?:[/?#]|$))/.test(company.api || company.careers_url || '')) {
     const workingnomads = getWorkingNomadsConfig(company);
     return workingnomads ? { type: 'workingnomads', url: workingnomads.apiUrl, workingnomads } : null;
+  }
+
+  if (company.api_provider === 'swissdevjobs' || /https?:\/\/(?:www\.)?swissdevjobs\.ch\/api\/jobsLight(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
+    const swissdevjobs = getSwissDevJobsConfig(company);
+    return swissdevjobs ? { type: 'swissdevjobs', url: swissdevjobs.apiUrl, swissdevjobs } : null;
   }
 
   if (company.api_provider === 'sapo' || /https?:\/\/emprego\.sapo\.pt\/offers(?:\/search)?/.test(company.api || company.careers_url || '')) {
@@ -876,6 +917,129 @@ function parseLandingJobsFeed(xml) {
   }
 
   return jobs;
+}
+
+function formatSwissDevJobsNumber(value) {
+  if (!Number.isFinite(value)) return '';
+  return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+}
+
+function formatSwissDevJobsSalary(job) {
+  const from = Number(job.annualSalaryFrom);
+  const to = Number(job.annualSalaryTo);
+  const hasFrom = Number.isFinite(from) && from > 0;
+  const hasTo = Number.isFinite(to) && to > 0;
+
+  if (hasFrom && hasTo) {
+    return `CHF ${formatSwissDevJobsNumber(from)} - ${formatSwissDevJobsNumber(to)}`;
+  }
+
+  if (hasFrom) return `CHF ${formatSwissDevJobsNumber(from)}`;
+  if (hasTo) return `CHF ${formatSwissDevJobsNumber(to)}`;
+  return '';
+}
+
+function formatSwissDevJobsLocation(job) {
+  const city = normalizeWhitespace(String(job.actualCity || ''));
+  const cityCategory = normalizeWhitespace(String(job.cityCategory || ''));
+  const workplace = normalizeWhitespace(String(job.workplace || ''));
+  return [...new Set([city || cityCategory, workplace].filter(Boolean))].join(' | ');
+}
+
+function parseSwissDevJobsJobs(json) {
+  if (!Array.isArray(json)) return [];
+
+  return json
+    .map(job => {
+      const slug = normalizeWhitespace(String(job.jobUrl || ''));
+      const title = normalizeWhitespace(String(job.name || ''));
+      const company = normalizeWhitespace(String(job.company || ''));
+
+      if (!slug || !title || !company || job.isPaused || job.isDisabledOrOutdated) {
+        return null;
+      }
+
+      return {
+        title,
+        url: new URL(`/jobs/${slug}`, SWISSDEVJOBS_BASE_URL).toString(),
+        company,
+        location: formatSwissDevJobsLocation(job),
+        actualCity: normalizeWhitespace(String(job.actualCity || '')),
+        cityCategory: normalizeWhitespace(String(job.cityCategory || '')),
+        workplace: normalizeWhitespace(String(job.workplace || '')),
+        language: normalizeWhitespace(String(job.language || '')),
+        visaSponsorship: normalizeWhitespace(String(job.hasVisaSponsorship || '')),
+        employmentType: normalizeWhitespace(String(job.jobType || '')),
+        experienceLevel: normalizeWhitespace(String(job.expLevel || '')),
+        techCategory: normalizeWhitespace(String(job.techCategory || '')),
+        metaCategory: normalizeWhitespace(String(job.metaCategory || '')),
+        companyType: normalizeWhitespace(String(job.companyType || '')),
+        companySize: normalizeWhitespace(String(job.companySize || '')),
+        technologies: Array.isArray(job.technologies)
+          ? [...new Set(job.technologies.map(value => normalizeWhitespace(String(value || ''))).filter(Boolean))]
+          : [],
+        filterTags: Array.isArray(job.filterTags)
+          ? [...new Set(job.filterTags.map(value => normalizeWhitespace(String(value || ''))).filter(Boolean))]
+          : [],
+        salary: formatSwissDevJobsSalary(job),
+        publishedAt: String(job.activeFrom || ''),
+        applyUrl: normalizeWhitespace(String(job.redirectJobUrl || '')),
+        candidateContactWay: normalizeWhitespace(String(job.candidateContactWay || '')),
+      };
+    })
+    .filter(Boolean);
+}
+
+function matchesSwissDevJobsQuery(queries, job) {
+  if (!queries || queries.length === 0) return true;
+
+  const haystack = normalizeSearchText([
+    job.title,
+    job.company,
+    job.location,
+    job.actualCity,
+    job.cityCategory,
+    job.workplace,
+    job.language,
+    job.visaSponsorship,
+    job.employmentType,
+    job.experienceLevel,
+    job.techCategory,
+    job.metaCategory,
+    job.companyType,
+    job.companySize,
+    job.technologies.join(' '),
+    job.filterTags.join(' '),
+  ].filter(Boolean).join(' '));
+
+  return queries.some(query => haystack.includes(normalizeSearchText(query)));
+}
+
+function matchesSwissDevJobsTechnologies(requestedValues, job) {
+  if (!requestedValues || requestedValues.length === 0) return true;
+  const values = [...job.technologies, ...job.filterTags];
+  if (values.length === 0) return false;
+
+  return requestedValues.some(value => values.some(candidate => matchesLandingJobsFilter([value], candidate)));
+}
+
+function filterSwissDevJobsJobs(jobs, filters) {
+  return jobs.filter(job => (
+    matchesSwissDevJobsQuery(filters?.q, job)
+    && matchesLandingJobsFilter(filters?.city, job.actualCity)
+    && matchesLandingJobsFilter(filters?.cityCategory, job.cityCategory)
+    && matchesLandingJobsFilter(filters?.workplace, job.workplace)
+    && matchesLandingJobsFilter(filters?.language, job.language)
+    && matchesLandingJobsFilter(filters?.visaSponsorship, job.visaSponsorship)
+    && matchesLandingJobsFilter(filters?.jobType, job.employmentType)
+    && matchesLandingJobsFilter(filters?.expLevel, job.experienceLevel)
+    && matchesLandingJobsFilter(filters?.techCategory, job.techCategory)
+    && matchesLandingJobsFilter(filters?.metaCategory, job.metaCategory)
+    && matchesLandingJobsFilter(filters?.companyType, job.companyType)
+    && matchesLandingJobsFilter(filters?.companySize, job.companySize)
+    && matchesSwissDevJobsTechnologies(filters?.technologies, job)
+    && isWithinDays(job.publishedAt, filters?.publishedWithinDays)
+  ));
 }
 
 function parseWorkingNomadsJobs(json) {
@@ -1466,7 +1630,17 @@ async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const headers = {};
+
+    if (/https?:\/\/(?:www\.)?swissdevjobs\.ch\/api\//.test(url)) {
+      headers['user-agent'] = 'Mozilla/5.0';
+      headers['accept'] = 'application/json,text/plain,*/*';
+      headers['accept-language'] = 'en-US,en;q=0.9';
+      headers['referer'] = `${SWISSDEVJOBS_BASE_URL}/`;
+      headers['origin'] = SWISSDEVJOBS_BASE_URL;
+    }
+
+    const res = await fetch(url, { signal: controller.signal, headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
@@ -1579,6 +1753,12 @@ async function fetchWorkingNomadsJobs(url, company) {
   const json = await fetchJson(url);
   const jobs = parseWorkingNomadsJobs(json);
   return filterWorkingNomadsJobs(jobs, company._api?.workingnomads?.filters);
+}
+
+async function fetchSwissDevJobsJobs(url, company) {
+  const json = await fetchJson(url);
+  const jobs = parseSwissDevJobsJobs(json);
+  return filterSwissDevJobsJobs(jobs, company._api?.swissdevjobs?.filters);
 }
 
 async function fetchPcsxPositionDetails(company, job) {
@@ -1880,6 +2060,10 @@ async function fetchJobs(company) {
 
   if (type === 'workingnomads') {
     return fetchWorkingNomadsJobs(url, company);
+  }
+
+  if (type === 'swissdevjobs') {
+    return fetchSwissDevJobsJobs(url, company);
   }
 
   if (type === 'sapo') {
