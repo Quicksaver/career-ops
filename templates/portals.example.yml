@@ -27,62 +27,54 @@
 title_filter:
   positive:
     # [CUSTOMIZE] Add keywords matching YOUR target roles
-    # -- AI/ML roles --
-    - "AI"
-    - "ML"
-    - "LLM"
-    - "Agent"
-    - "Agentic"
-    - "GenAI"
-    - "Generative AI"
-    - "NLP"
-    - "LLMOps"
-    - "MLOps"
-    - "Voice AI"
-    - "Conversational AI"
-    - "Speech"
-    # -- German AI/ML keywords (DACH market) --
-    - "KI"
-    - "Künstliche Intelligenz"
-    - "KI Engineer"
-    - "KI Trainer"
-    - "Dozent"
-    - "Weiterbildung"
     # -- Engineering roles --
     - "Platform Engineer"
+    - "Web Platform Engineer"
     - "Solutions Architect"
     - "Solutions Engineer"
-    - "Forward Deployed"
-    - "Deployed Engineer"
-    - "Customer Engineer"
     - "Integration Engineer"
-    # -- Product roles --
-    - "Product Manager"
-    - "Technical PM"
-    # -- Automation roles --
-    - "Automation"
-    - "Hyperautomation"
-    - "Low-Code"
-    - "No-Code"
-    - "GTM Engineer"
-    - "RevOps"
-    - "Business Systems"
-    - "Internal Tools"
-    - "Transformation"
+    - "Software Engineer"
+    - "Software Developer"
+    - "Software Architect"
+    - "Backend"
+    - "Backend Engineer"
+    - "Backend Developer"
+    - "Back-End"
+    - "Back End"
+    - "Full-Stack"
+    - "Full Stack"
+    - "Fullstack"
+    - "Technical Lead"
+    - "Tech Lead"
+    - "Engineering Lead"
+    - "Staff Engineer"
+    - "Principal Engineer"
+    # PT-PT specific localized keywords:
+    - "Engenheiro de Software"
+    - "Desenvolvedor de Software"
+    - "Arquiteto de Software"
+    - "Engenheiro de Plataforma"
+    - "Engenheiro de Solucoes"
+    - "Engenheiro de Soluções"
+    - "Arquiteto de Solucoes"
+    - "Arquiteto de Soluções"
+    - "Engenheiro de Integracao"
+    - "Engenheiro de Integração"
+    - "Lider Tecnico"
+    - "Líder Técnico"
+    - "Lider de Engenharia"
+    - "Líder de Engenharia"
   negative:
     # [CUSTOMIZE] Add keywords for roles you want to exclude
+    - "No-Code"
+    - "Low-Code"
     - "Junior"
     - "Intern"
     - ".NET"
     - "Java "
     - "iOS"
     - "Android"
-    - "PHP"
     - "Ruby"
-    - "Embedded"
-    - "Firmware"
-    - "FPGA"
-    - "ASIC"
     - "Blockchain"
     - "Web3"
     - "Crypto"
@@ -91,6 +83,21 @@ title_filter:
     - "Oracle EBS"
     - "Mainframe"
     - "COBOL"
+    - "Presales"
+    - "Pre-Sales"
+    - "Pre Sales"
+    - "Account Executive"
+    - "Sales Engineer"
+    - "Solution Consultant"
+    - "Customer Success"
+    # PT-PT specific localized keywords:
+    - "Júnior"
+    - "Estagio"
+    - "Estágio"
+    - "Estagiario"
+    - "Estagiário"
+    - "Recem-Licenciado"
+    - "Recém-Licenciado"
   seniority_boost:
     # These prefixes add relevance but are not required
     - "Senior"
@@ -105,191 +112,71 @@ title_filter:
 # The scanner extracts title, URL, and company from results.
 
 search_queries:
-  # -- Ashby --
-  - name: Ashby — AI PM
-    query: 'site:jobs.ashbyhq.com "AI Product Manager" OR "Senior Product Manager AI" remote'
+  # Keep this list narrow and title-aligned with the current north star:
+  # senior full-stack/backend/platform/lead roles, with solutions as an
+  # adjacent lane rather than the main target.
+
+  # -- ATS-heavy boards --
+  - name: Ashby — Senior Full-Stack & Backend
+    query: 'site:jobs.ashbyhq.com "Senior Full Stack Engineer" OR "Senior Full-Stack Engineer" OR "Senior Backend Engineer" OR "Staff Engineer" remote'
     enabled: true
 
-  - name: Ashby — Solutions Architect
-    query: 'site:jobs.ashbyhq.com "Solutions Architect" AI OR automation remote'
+  - name: Ashby — Platform & Lead
+    query: 'site:jobs.ashbyhq.com "Platform Engineer" OR "Web Platform Engineer" OR "Technical Lead" OR "Engineering Lead" OR "Software Architect" remote'
     enabled: true
 
-  - name: Ashby — AI Engineer
-    query: 'site:jobs.ashbyhq.com "AI Engineer" OR "LLM Engineer" OR "Forward Deployed" remote'
+  - name: Greenhouse — Senior Full-Stack & Backend
+    query: 'site:boards.greenhouse.io OR site:job-boards.greenhouse.io "Senior Full Stack Engineer" OR "Senior Full-Stack Engineer" OR "Senior Backend Engineer" OR "Senior Software Engineer" remote'
     enabled: true
 
-  - name: Ashby — Agentic
-    query: 'site:jobs.ashbyhq.com "Agentic" OR "AI Agent" OR "Automation Architect" remote'
+  - name: Greenhouse — Platform & Lead
+    query: 'site:boards.greenhouse.io OR site:job-boards.greenhouse.io "Platform Engineer" OR "Web Platform Engineer" OR "Technical Lead" OR "Engineering Lead" OR "Software Architect" remote'
     enabled: true
 
-  # -- Greenhouse --
-  - name: Greenhouse — AI PM
-    query: 'site:boards.greenhouse.io OR site:job-boards.greenhouse.io "AI Product Manager" OR "Senior Product Manager" AI remote'
+  - name: Greenhouse / Ashby — Solutions & Integration
+    query: 'site:job-boards.greenhouse.io OR site:jobs.ashbyhq.com "Solutions Engineer" OR "Solutions Architect" OR "Integration Engineer" remote'
     enabled: true
 
-  - name: Greenhouse — SA & FDE
-    query: 'site:boards.greenhouse.io OR site:job-boards.greenhouse.io "Solutions Architect" OR "Forward Deployed" AI remote'
+  - name: Workable — Backend / Full-Stack
+    query: 'site:apply.workable.com "Senior Backend Engineer" OR "Senior Software Engineer" OR "Senior Full Stack Engineer" OR "Full-Stack Engineer" remote'
     enabled: true
 
-  - name: Greenhouse — AI Engineer
-    query: 'site:boards.greenhouse.io OR site:job-boards.greenhouse.io "AI Engineer" OR "LLM" OR "Agentic" remote'
+  # -- Remote-friendly boards --
+  - name: Remotive — Backend / Platform
+    query: 'site:remotive.com "Senior Backend Engineer" OR "Senior Software Engineer" OR "Platform Engineer" OR "Technical Lead" Europe OR remote'
     enabled: true
 
-  # -- Workable --
-  - name: Workable — AI Roles
-    query: 'site:apply.workable.com "AI" "Product Manager" OR "Solutions Architect" OR "AI Engineer" remote'
+  - name: WeWorkRemotely — Backend / Full-Stack
+    query: 'site:weworkremotely.com "Senior Backend Engineer" OR "Senior Software Engineer" OR "Senior Full Stack Engineer" OR "Platform Engineer"'
     enabled: true
 
-  # -- No-Code / Low-Code / Automation --
-  - name: Ashby — No-Code & Automation
-    query: 'site:jobs.ashbyhq.com "no-code" OR "low-code" OR "automation engineer" OR "n8n" OR "Make" OR "Airtable" remote senior'
+  - name: Working Nomads — Backend / Platform
+    query: 'site:workingnomads.com "Senior Backend Engineer" OR "Senior Software Engineer" OR "Platform Engineer" OR "Engineering Lead"'
     enabled: true
 
-  - name: Greenhouse — No-Code & Automation
-    query: 'site:job-boards.greenhouse.io "no-code" OR "low-code" OR "automation engineer" OR "business systems" senior remote'
+  - name: EU Remote Jobs — Backend / Platform
+    query: 'site:euremotejobs.com "Senior Backend Engineer" OR "Senior Software Engineer" OR "Platform Engineer" OR "Technical Lead" Europe'
     enabled: true
 
-  - name: GTM Engineer — All portals
-    query: '"GTM Engineer" OR "RevOps Engineer" OR "Growth Engineer" automation Airtable OR Make OR Clay remote'
+  - name: YC Jobs — Full-Stack / Backend
+    query: 'site:workatastartup.com "Senior Backend Engineer" OR "Senior Full Stack Engineer" OR "Product Engineer" OR "Platform Engineer" remote'
     enabled: true
 
-  # -- Voice AI & Conversational AI --
-  - name: Voice AI — FDE & SA
-    query: 'site:job-boards.greenhouse.io OR site:jobs.ashbyhq.com "Voice AI" OR "Conversational AI" OR "Speech" "Solutions" OR "Forward Deployed" OR "Customer Engineer"'
+  - name: "HN Who's Hiring — Backend / Platform"
+    query: 'site:news.ycombinator.com OR site:hnrss.org "Senior Backend Engineer" OR "Senior Software Engineer" OR "Full Stack Engineer" OR "Platform Engineer" remote'
     enabled: true
 
-  - name: Voice AI — AI Engineer
-    query: 'site:job-boards.greenhouse.io OR site:jobs.ashbyhq.com "Voice" OR "Speech" "AI Engineer" OR "Deployment" OR "Integration"'
+  # -- Iberia / Portugal --
+  - name: Manfred — Senior Backend / Full-Stack
+    query: 'site:getmanfred.com/en/job-offers "Senior Software Engineer" OR "Backend Engineer" OR "Full Stack Engineer" OR "Platform Engineer"'
     enabled: true
 
-  # -- Contact Center AI --
-  - name: Contact Center AI — SA & SE
-    query: '"contact center" OR "customer service" "AI" "Solutions Architect" OR "Solutions Engineer" OR "Forward Deployed" remote'
+  - name: Tecnoempleo — Remoto Backend / Full-Stack
+    query: 'site:tecnoempleo.com remoto OR remote "Senior Software Engineer" OR "Backend Engineer" OR "Full Stack Engineer" OR "Technical Lead"'
     enabled: true
 
-  # -- FDE specific (cross-portal) --
-  - name: FDE & Deployed Engineer — All portals
-    query: '"Forward Deployed Engineer" OR "Deployed Engineer" OR "Deployment Engineer" AI site:job-boards.greenhouse.io OR site:jobs.ashbyhq.com OR site:jobs.lever.co'
-    enabled: true
-
-  # -- Remote-friendly Europe boards --
-
-  - name: Remotive — AI/DevRel/SA/FDE
-    query: 'site:remotive.com "AI Engineer" OR "Developer Advocate" OR "Solutions Architect" OR "Forward Deployed" OR "DevRel" Europe'
-    enabled: true
-
-  - name: WeWorkRemotely — AI & DX
-    query: 'site:weworkremotely.com "AI" OR "DevRel" OR "Solutions Engineer" OR "Forward Deployed" OR "Founding Engineer"'
-    enabled: true
-
-  - name: Working Nomads — AI/DevRel/SA
-    query: 'site:workingnomads.com "AI Engineer" OR "Developer Advocate" OR "Solutions Architect" OR "Forward Deployed"'
-    enabled: true
-
-  - name: EU Remote Jobs — AI/DevRel/SA
-    query: 'site:euremotejobs.com "AI" OR "DevRel" OR "Solutions Architect" OR "Forward Deployed" OR "Founding Engineer"'
-    enabled: true
-
-  - name: RemoteOK — AI/DevRel/SA
-    query: 'site:remoteok.com "AI Engineer" OR "Developer Advocate" OR "Solutions Architect" OR "Forward Deployed" OR "Founding Engineer"'
-    enabled: true
-
-  # -- Specialized AI / Dev-Tools / FDE boards --
-
-  - name: ai-jobs.net — DevRel/SA/FDE
-    query: 'site:ai-jobs.net "Developer Advocate" OR "Solutions Architect" OR "Forward Deployed" OR "DevRel" remote Europe'
-    enabled: true
-
-  - name: ai-jobs.net — Founding/Applied AI
-    query: 'site:ai-jobs.net "Founding Engineer" OR "Applied AI Engineer" OR "Founding" remote'
-    enabled: true
-
-  - name: fwddeploy.com — Forward Deployed roles
-    query: 'site:fwddeploy.com "Forward Deployed" OR "Deployed Engineer" remote Europe OR EMEA'
-    enabled: true
-
-  - name: YC Jobs — DevRel/SA/FDE/Founding
-    query: 'site:ycombinator.com/jobs OR site:workatastartup.com "Forward Deployed" OR "Developer Advocate" OR "Founding Engineer" OR "Solutions Architect" remote'
-    enabled: true
-
-  - name: YC Jobs — Applied AI
-    query: 'site:workatastartup.com "Applied AI" OR "AI Engineer" OR "AI Agent" remote Europe'
-    enabled: true
-
-  # -- Spanish market specialized (high-value for Madrid/Barcelona-based candidates) --
-
-  - name: Manfred — Tech Senior España
-    query: 'site:getmanfred.com/en/job-offers "Solutions Architect" OR "DevRel" OR "Forward Deployed" OR "AI Engineer" OR "Founding"'
-    enabled: true
-
-  - name: Manfred — Remote AI/Senior
-    query: 'site:getmanfred.com "remote" "AI" OR "Senior" OR "Staff" OR "Lead"'
-    enabled: true
-
-  - name: Tecnoempleo — España IT
-    query: 'site:tecnoempleo.com "AI Engineer" OR "Solutions Architect" OR "DevRel" OR "Forward Deployed" OR "Founding Engineer"'
-    enabled: true
-
-  - name: Tecnoempleo — Remoto Senior
-    query: 'site:tecnoempleo.com "remoto" OR "remote" Senior "AI" OR "Architect" OR "Lead"'
-    enabled: true
-
-  - name: JobFluent — Spain startups
-    query: 'site:jobfluent.com Madrid OR Barcelona "AI" OR "Engineer" OR "Solutions" OR "DevRel"'
-    enabled: true
-
-  - name: Welcome to the Jungle — Spain tech
-    query: 'site:welcometothejungle.com Spain OR Madrid OR Barcelona "AI Engineer" OR "Solutions Architect" OR "DevRel" OR "Forward Deployed"'
-    enabled: true
-
-  # -- DevRel-specific boards --
-
-  - name: DevRelX Jobs
-    query: 'site:devrelx.com/jobs remote OR Europe OR EMEA'
-    enabled: true
-
-  - name: TrueUp — DevRel roles
-    query: 'site:trueup.io/devrel OR site:trueup.io "Developer Advocate" OR "DevRel" remote Europe'
-    enabled: true
-
-  - name: Remote Rocketship — DevRel
-    query: 'site:remoterocketship.com/jobs/developer-relations OR site:remoterocketship.com "DevRel" remote'
-    enabled: true
-
-  - name: DevRel Job board
-    query: 'site:devreljob.com remote OR Europe OR EMEA'
-    enabled: true
-
-  # -- European / global aggregators --
-
-  - name: Himalayas — Remote AI/Dev-tools
-    query: 'site:himalayas.app "AI Engineer" OR "Solutions Architect" OR "Developer Advocate" OR "Forward Deployed" OR "Founding Engineer" Europe'
-    enabled: true
-
-  - name: Jooble — España Tech Senior
-    query: 'site:jooble.org "AI Engineer" OR "Solutions Architect" OR "DevRel" Madrid OR remote España'
-    enabled: true
-
-  - name: EU Data Jobs — AI/ML Europe
-    query: 'site:eudatajobs.com "AI" OR "ML" OR "Data" "Engineer" OR "Architect" remote Europe'
-    enabled: true
-
-  - name: HN Who's Hiring — Remote AI
-    query: 'site:news.ycombinator.com OR site:hnrss.org "AI Engineer" OR "Forward Deployed" OR "DevRel" OR "Founding Engineer" remote'
-    enabled: true
-
-  # -- Major aggregators --
-  # Dice exposes SSR job cards and an embedded public search payload with
-  # canonical job-detail URLs, company name, title, location, salary,
-  # employment type, easy-apply flag, workplace type, and pageCount. It fits
-  # well as a zero-token structured provider when seeded with focused queries.
-
-  - name: Dice — AI/ML
-    query: 'site:dice.com/job-detail/ "AI Engineer" OR "Machine Learning Engineer" OR "Applied AI" OR "Data Scientist"'
-    enabled: true
-
-  - name: Dice — Solutions/Automation
-    query: 'site:dice.com/job-detail/ "Solutions Architect" OR "Solutions Engineer" OR "Platform Engineer" OR "Automation Engineer"'
+  - name: JobFluent — Backend / Full-Stack
+    query: 'site:jobfluent.com Madrid OR Barcelona OR Remote "Backend Engineer" OR "Full Stack Engineer" OR "Platform Engineer"'
     enabled: true
 
   # -- Portuguese market aggregators --
@@ -298,12 +185,12 @@ search_queries:
   # so it works best as a WebSearch discovery source rather than a zero-token
   # structured provider.
 
-  - name: Indeed Portugal — AI/ML
-    query: 'site:pt.indeed.com "AI Engineer" OR "Machine Learning Engineer" OR "Applied AI" OR "Data Scientist" Portugal'
+  - name: Indeed Portugal — Backend / Platform
+    query: 'site:pt.indeed.com "Backend Engineer" OR "Software Engineer" OR "Full Stack Engineer" OR "Platform Engineer" OR "Engenheiro de Software" OR "Engenheiro de Plataforma" Portugal'
     enabled: true
 
-  - name: Indeed Portugal — Solutions/Automation
-    query: 'site:pt.indeed.com "Solutions Architect" OR "Solutions Engineer" OR "Platform Engineer" OR "Automation Engineer" Portugal'
+  - name: Indeed Portugal — Lead / Solutions (PT)
+    query: 'site:pt.indeed.com "Líder Técnico" OR "Lider Tecnico" OR "Líder de Engenharia" OR "Arquiteto de Soluções" OR "Engenheiro de Soluções" OR "Engenheiro de Integração" Portugal'
     enabled: true
 
 # -- Tracked companies --
@@ -436,6 +323,14 @@ tracked_companies:
     #   remote_policy:
     #     - Full remote
     #     - Global remote
+    #     - Partial remote
+    #   category:
+    #     - Data
+    #     - AI
+    #   published_within_days: 30
+    notes: "Public Atom feed with stable zero-token metadata for title, company, location, remote policy, category, salary, and publish/update dates. Search pages exist, but the feed is the most reliable integration surface."
+    enabled: false
+
   - name: SwissDevJobs
     careers_url: https://swissdevjobs.ch/
     api_provider: swissdevjobs
@@ -443,14 +338,6 @@ tracked_companies:
     api_params:
       published_within_days: 45
     notes: "Public jobsLight JSON catalog with company, title, city, workplace, salary, language, visa sponsorship, job type, experience level, and tech tags. Detail pages expose a richer embedded payload too, but jobsLight is the optimal scan surface."
-    enabled: false
-
-    #     - Partial remote
-    #   category:
-    #     - Data
-    #     - AI
-    #   published_within_days: 30
-    notes: "Public Atom feed with stable zero-token metadata for title, company, location, remote policy, category, salary, and publish/update dates. Search pages exist, but the feed is the most reliable integration surface."
     enabled: false
 
   - name: EU Remote Jobs
