@@ -47,6 +47,7 @@ const REMOTEINEUROPE_DETAIL_CONCURRENCY = 5;
 const REMOTEINEUROPE_MAX_PAGES = 5;
 const NODESK_MAX_PAGES = 5;
 const NODESK_DETAIL_CONCURRENCY = 5;
+const ENGLISHJOBSEARCH_MAX_PAGES = 5;
 const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
 const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
 const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
@@ -489,6 +490,90 @@ function splitCommaSeparatedValues(value) {
     .filter(Boolean);
 }
 
+function slugifyEnglishJobSearchQuery(value) {
+  return normalizeWhitespace(String(value || ''))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function slugifyEnglishJobSearchLocation(value) {
+  return normalizeWhitespace(String(value || ''))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function normalizeEnglishJobSearchLanguage(value) {
+  return normalizeWhitespace(String(value || ''))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, '');
+}
+
+function buildEnglishJobSearchSearchUrl(origin, location, query, includeLanguages) {
+  const locationSlug = slugifyEnglishJobSearchLocation(location);
+  const querySlug = slugifyEnglishJobSearchQuery(query);
+
+  let pathname = '/';
+  if (locationSlug && querySlug) {
+    pathname = `/in/${locationSlug}/${querySlug}`;
+  } else if (locationSlug) {
+    pathname = `/in/${locationSlug}`;
+  } else if (querySlug) {
+    pathname = `/jobs/${querySlug}`;
+  }
+
+  const url = new URL(pathname, origin);
+  if (includeLanguages.length > 0) {
+    url.searchParams.set('include', includeLanguages.join('.'));
+  }
+  return url.toString();
+}
+
+function getEnglishJobSearchConfig(company) {
+  const baseUrl = company.api || company.careers_url || 'https://englishjobsearch.ch';
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const origin = parsedUrl.origin;
+  const queries = toFilterArray(company.api_params?.q || company.api_params?.query);
+  const locations = toFilterArray(company.api_params?.location);
+  const includeLanguages = toFilterArray(company.api_params?.include || company.api_params?.languages)
+    .map(normalizeEnglishJobSearchLanguage)
+    .filter(Boolean);
+
+  const queryValues = queries.length > 0 ? queries : [''];
+  const locationValues = locations.length > 0 ? locations : [''];
+  const generatedUrls = [];
+
+  for (const location of locationValues) {
+    for (const query of queryValues) {
+      generatedUrls.push(buildEnglishJobSearchSearchUrl(origin, location, query, includeLanguages));
+    }
+  }
+
+  const listUrls = generatedUrls
+    .map(value => value.trim())
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index);
+
+  return {
+    listUrls: listUrls.length > 0 ? listUrls : [origin],
+    maxPages: Math.max(1, Number(company.api_max_pages) || ENGLISHJOBSEARCH_MAX_PAGES),
+  };
+}
+
 function getLandingJobsConfig(company) {
   const baseUrl = company.api || 'https://landing.jobs/feed';
   let feedUrl;
@@ -618,6 +703,11 @@ function detectApi(company) {
   if (company.api_provider === 'portalemprego' || /https?:\/\/(?:www\.)?portalemprego\.pt\/anuncios(?:\/|$)/.test(company.api || company.careers_url || '')) {
     const portalemprego = getPortalEmpregoConfig(company);
     return portalemprego ? { type: 'portalemprego', url: portalemprego.listUrls[0], portalemprego } : null;
+  }
+
+  if (company.api_provider === 'englishjobsearch' || /https?:\/\/(?:www\.)?englishjobsearch\.ch(?:\/|$)/.test(company.api || company.careers_url || '')) {
+    const englishjobsearch = getEnglishJobSearchConfig(company);
+    return englishjobsearch ? { type: 'englishjobsearch', url: englishjobsearch.listUrls[0], englishjobsearch } : null;
   }
 
   if (company.api_provider === 'dice' || /https?:\/\/(?:www\.)?dice\.com\/jobs(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
@@ -1544,6 +1634,124 @@ function parseRemoteInEuropeDate(value) {
   return date.toISOString();
 }
 
+function stripMarkdownFormatting(value) {
+  return normalizeWhitespace(
+    decodeHtmlEntities(
+      String(value || '')
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/\\([\\`*_{}\[\]()#+\-.!])/g, '$1')
+        .replace(/[*_`>#]+/g, ' ')
+    )
+  );
+}
+
+function canonicalizeEnglishJobSearchClickout(url) {
+  const parsed = new URL(url);
+  return new URL(parsed.pathname, parsed.origin).toString();
+}
+
+function getEnglishJobSearchPageCount(markdown) {
+  let maxPage = 1;
+
+  for (const match of markdown.matchAll(/[?&]page=(\d+)/g)) {
+    maxPage = Math.max(maxPage, Number(match[1]));
+  }
+
+  return maxPage;
+}
+
+function buildEnglishJobSearchPageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+  pageUrl.searchParams.set('format', 'markdown');
+
+  if (pageNumber <= 1) {
+    pageUrl.searchParams.delete('page');
+  } else {
+    pageUrl.searchParams.set('page', String(pageNumber));
+  }
+
+  return pageUrl.toString();
+}
+
+function parseEnglishJobSearchPage(markdown, sourceUrl, seenUrls) {
+  const jobs = [];
+  const origin = new URL(sourceUrl).origin;
+  const lines = markdown.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const match = line.match(/^\[### ([\s\S]+?)\]\((\/clickout\/[^)]+)\)$/);
+    if (!match) continue;
+
+    const title = stripMarkdownFormatting(match[1]);
+    const clickoutUrl = new URL(match[2], origin).toString();
+    const canonicalUrl = canonicalizeEnglishJobSearchClickout(clickoutUrl);
+
+    if (!title || seenUrls.has(canonicalUrl)) {
+      continue;
+    }
+
+    seenUrls.add(canonicalUrl);
+    seenUrls.add(clickoutUrl);
+
+    let company = '';
+    let location = '';
+    let postedDate = '';
+    const descriptionLines = [];
+
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const nextLine = lines[j].trim();
+
+      if (!nextLine) continue;
+      if (/^\[### /.test(nextLine)) break;
+      if (nextLine === 'report probem') {
+        j += 1;
+        break;
+      }
+
+      if (nextLine.startsWith('* ')) {
+        const value = stripMarkdownFormatting(nextLine.slice(2));
+        if (!value) continue;
+
+        if (!company) {
+          company = value;
+        } else if (!location) {
+          location = value;
+        } else if (!postedDate) {
+          postedDate = value;
+        } else {
+          descriptionLines.push(value);
+        }
+        continue;
+      }
+
+      if (!/^Email me future jobs like these/.test(nextLine)) {
+        const value = stripMarkdownFormatting(nextLine);
+        if (value) descriptionLines.push(value);
+      }
+    }
+
+    i = j - 1;
+
+    if (!company) continue;
+
+    jobs.push({
+      title,
+      url: canonicalUrl,
+      sourceUrl: clickoutUrl,
+      company,
+      location,
+      postedDate,
+      publishedAt: postedDate,
+      jobDescription: descriptionLines.join(' '),
+    });
+  }
+
+  return jobs;
+}
+
 function parseRemoteInEuropeDetailPage(html, fallbackJob) {
   const title = cleanHtmlText(html.match(/<h1 class="title">([\s\S]*?)<\/h1>/i)?.[1] || fallbackJob.title || '');
   const company = cleanHtmlText(html.match(/<h3 class="title h4-size card-job-post-sidebar">([\s\S]*?)<\/h3>/i)?.[1] || extractRemoteInEuropeHiddenField(html, 'schema-company') || fallbackJob.company || '');
@@ -1903,6 +2111,28 @@ async function fetchPortalEmpregoJobs(url, company) {
   return jobs;
 }
 
+async function fetchEnglishJobSearchJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.englishjobsearch?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    const firstPageMarkdown = await fetchText(buildEnglishJobSearchPageUrl(listUrl, 1));
+    const pageCount = getEnglishJobSearchPageCount(firstPageMarkdown);
+    const maxPages = Math.min(company._api?.englishjobsearch?.maxPages || ENGLISHJOBSEARCH_MAX_PAGES, pageCount);
+    jobs.push(...parseEnglishJobSearchPage(firstPageMarkdown, listUrl, seenUrls));
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const markdown = await fetchText(buildEnglishJobSearchPageUrl(listUrl, pageNumber));
+      const pageJobs = parseEnglishJobSearchPage(markdown, listUrl, seenUrls);
+      if (pageJobs.length === 0) break;
+      jobs.push(...pageJobs);
+    }
+  }
+
+  return jobs;
+}
+
 async function fetchDiceJobs(url, company) {
   const seenUrls = new Set();
   const jobs = [];
@@ -2119,6 +2349,10 @@ async function fetchJobs(company) {
 
   if (type === 'portalemprego') {
     return fetchPortalEmpregoJobs(url, company);
+  }
+
+  if (type === 'englishjobsearch') {
+    return fetchEnglishJobSearchJobs(url, company);
   }
 
   if (type === 'dice') {
