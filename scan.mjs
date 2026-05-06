@@ -5,8 +5,8 @@
  *
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
  * providers such as Landing.jobs, SwissDevJobs/GermanTechJobs/DevITJobs,
- * jobs.ch, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice,
- * and Working Nomads, applies title
+ * jobs.ch, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego,
+ * Portal Emprego, Dice, and Working Nomads, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -49,6 +49,7 @@ const NODESK_MAX_PAGES = 5;
 const NODESK_DETAIL_CONCURRENCY = 5;
 const ENGLISHJOBS_MAX_PAGES = 5;
 const JOBSCH_MAX_PAGES = 5;
+const MAKEITINGERMANY_MAX_PAGES = 5;
 const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
 const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
 const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
@@ -617,6 +618,52 @@ function getJobsChConfig(company) {
   };
 }
 
+function buildMakeItInGermanySearchUrl(baseUrl, query, filters) {
+  const url = new URL(baseUrl);
+
+  url.searchParams.delete('tx_solr[page]');
+  for (const key of [...url.searchParams.keys()]) {
+    if (/^tx_solr\[filter\]\[\d+\]$/.test(key)) {
+      url.searchParams.delete(key);
+    }
+  }
+
+  if (query) {
+    url.searchParams.set('tx_solr[q]', query);
+  } else {
+    url.searchParams.delete('tx_solr[q]');
+  }
+
+  filters.forEach((filterValue, index) => {
+    url.searchParams.set(`tx_solr[filter][${index}]`, filterValue);
+  });
+
+  return url.toString();
+}
+
+function getMakeItInGermanyConfig(company) {
+  const baseUrl = company.api || company.careers_url || 'https://www.make-it-in-germany.com/en/working-in-germany/job-listings';
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const queries = toFilterArray(company.api_params?.q || company.api_params?.query);
+  const filters = toFilterArray(company.api_params?.filter || company.api_params?.filters);
+  const values = queries.length > 0 ? queries : [''];
+  const listUrls = values
+    .map(value => buildMakeItInGermanySearchUrl(parsedUrl.toString(), value, filters))
+    .filter((value, index, array) => value && array.indexOf(value) === index);
+
+  return {
+    listUrls: listUrls.length > 0 ? listUrls : [buildMakeItInGermanySearchUrl(parsedUrl.toString(), '', filters)],
+    maxPages: Math.max(1, Number(company.api_max_pages) || MAKEITINGERMANY_MAX_PAGES),
+  };
+}
+
 function getLandingJobsConfig(company) {
   const baseUrl = company.api || 'https://landing.jobs/feed';
   let feedUrl;
@@ -760,6 +807,11 @@ function detectApi(company) {
   if (company.api_provider === 'jobsch' || /https?:\/\/(?:www\.)?jobs\.ch\/(?:en\/vacancies|de\/stellenangebote|fr\/offres-emplois)(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
     const jobsch = getJobsChConfig(company);
     return jobsch ? { type: 'jobsch', url: jobsch.listUrls[0], jobsch } : null;
+  }
+
+  if (company.api_provider === 'makeitingermany' || /https?:\/\/(?:www\.)?make-it-in-germany\.com\/(?:[a-z]{2}\/)?working-in-germany\/job-listings(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
+    const makeitingermany = getMakeItInGermanyConfig(company);
+    return makeitingermany ? { type: 'makeitingermany', url: makeitingermany.listUrls[0], makeitingermany } : null;
   }
 
   if (company.api_provider === 'dice' || /https?:\/\/(?:www\.)?dice\.com\/jobs(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
@@ -1837,6 +1889,18 @@ function buildJobsChPageUrl(url, pageNumber) {
   return pageUrl.toString();
 }
 
+function buildMakeItInGermanyPageUrl(url, pageNumber) {
+  const pageUrl = new URL(url);
+
+  if (pageNumber <= 1) {
+    pageUrl.searchParams.delete('tx_solr[page]');
+  } else {
+    pageUrl.searchParams.set('tx_solr[page]', String(pageNumber));
+  }
+
+  return pageUrl.toString();
+}
+
 function formatJobsChLocation(job) {
   const place = normalizeWhitespace(String(job.place || ''));
   const regions = Array.isArray(job.regions)
@@ -1897,6 +1961,56 @@ function parseJobsChSearchPage(html, sourceUrl, seenUrls) {
     jobs,
     pageCount: Number.isFinite(pageCount) && pageCount > 0 ? pageCount : 1,
   };
+}
+
+function extractMakeItInGermanyLabeledValue(itemHtml, label) {
+  const match = itemHtml.match(new RegExp(`<span class="sr-only">\\s*${escapeRegExp(label)}\\s*<\\/span>\\s*<span class="element">([\\s\\S]*?)<\\/span>`, 'i'));
+  return match ? cleanHtmlText(match[1]) : '';
+}
+
+function getMakeItInGermanyPageCount(html) {
+  let maxPage = 1;
+
+  for (const match of html.matchAll(/(?:tx_solr%5Bpage%5D|tx_solr\[page\])=(\d+)/gi)) {
+    maxPage = Math.max(maxPage, Number(match[1]));
+  }
+
+  return maxPage;
+}
+
+function parseMakeItInGermanyPage(html, sourceUrl, seenUrls) {
+  const origin = new URL(sourceUrl).origin;
+  const jobs = [];
+  const listHtml = html.match(/<ul class="list list--jobs">([\s\S]*?)(?:<div class="pagination|<!--TYPO3SEARCH_end|<\/main>|$)/i)?.[1] || html;
+  const jobPattern = /<article class="card card--job"[^>]*>([\s\S]*?)<\/article>/gi;
+
+  for (const match of listHtml.matchAll(jobPattern)) {
+    const itemHtml = match[1];
+    const href = decodeHtmlEntities(itemHtml.match(/<h3 class="h5">[\s\S]*?<a href="([^"]+)"/i)?.[1] || '');
+    const title = cleanHtmlText(itemHtml.match(/<h3 class="h5">[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i)?.[1] || '');
+    const company = cleanHtmlText(itemHtml.match(/<\/header>\s*<p>\s*([\s\S]*?)\s*<\/p>/i)?.[1] || '');
+
+    if (!href || !title || !company) continue;
+
+    const url = new URL(href, origin).toString();
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+
+    const timeMatch = itemHtml.match(/<time class="element" datetime="([^"]+)">([\s\S]*?)<\/time>/i);
+
+    jobs.push({
+      title,
+      url,
+      company,
+      location: extractMakeItInGermanyLabeledValue(itemHtml, 'Place of work:'),
+      sector: extractMakeItInGermanyLabeledValue(itemHtml, 'Sector:'),
+      employmentType: extractMakeItInGermanyLabeledValue(itemHtml, 'Type of job offer:'),
+      publishedAt: normalizeWhitespace(timeMatch?.[1] || ''),
+      postedDate: cleanHtmlText(timeMatch?.[2] || ''),
+    });
+  }
+
+  return jobs;
 }
 
 function parseRemoteInEuropeDetailPage(html, fallbackJob) {
@@ -2068,6 +2182,13 @@ async function fetchText(url) {
     if (/https?:\/\/(?:www\.)?jobs\.ch\//.test(url)) {
       headers['user-agent'] = 'Mozilla/5.0';
       headers['accept-language'] = 'en-US,en;q=0.9';
+    }
+
+    if (/https?:\/\/(?:www\.)?make-it-in-germany\.com\//.test(url)) {
+      headers['user-agent'] = 'Mozilla/5.0';
+      headers['accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+      headers['accept-language'] = 'en-US,en;q=0.9';
+      headers['referer'] = 'https://www.make-it-in-germany.com/en/working-in-germany/job-listings';
     }
 
     if (/https?:\/\/(?:www\.)?nodesk\.co\//.test(url)) {
@@ -2307,6 +2428,27 @@ async function fetchJobsChJobs(url, company) {
   return jobs;
 }
 
+async function fetchMakeItInGermanyJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.makeitingermany?.listUrls || [url];
+
+  for (const listUrl of listUrls) {
+    const firstPageHtml = await fetchText(buildMakeItInGermanyPageUrl(listUrl, 1));
+    const maxPages = Math.min(company._api?.makeitingermany?.maxPages || MAKEITINGERMANY_MAX_PAGES, getMakeItInGermanyPageCount(firstPageHtml));
+    jobs.push(...parseMakeItInGermanyPage(firstPageHtml, listUrl, seenUrls));
+
+    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      const html = await fetchText(buildMakeItInGermanyPageUrl(listUrl, pageNumber));
+      const pageJobs = parseMakeItInGermanyPage(html, listUrl, seenUrls);
+      if (pageJobs.length === 0) break;
+      jobs.push(...pageJobs);
+    }
+  }
+
+  return jobs;
+}
+
 async function fetchDiceJobs(url, company) {
   const seenUrls = new Set();
   const jobs = [];
@@ -2531,6 +2673,10 @@ async function fetchJobs(company) {
 
   if (type === 'jobsch') {
     return fetchJobsChJobs(url, company);
+  }
+
+  if (type === 'makeitingermany') {
+    return fetchMakeItInGermanyJobs(url, company);
   }
 
   if (type === 'dice') {
