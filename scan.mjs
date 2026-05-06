@@ -28,6 +28,7 @@ const PORTALS_PATH = 'portals.yml';
 const SCAN_HISTORY_PATH = 'data/scan-history.tsv';
 const PIPELINE_PATH = 'data/pipeline.md';
 const APPLICATIONS_PATH = 'data/applications.md';
+const PIPELINE_TEMPLATE = '## Pendientes\n\n## Procesadas\n';
 
 // Ensure required directories exist (fresh setup)
 mkdirSync('data', { recursive: true });
@@ -1973,7 +1974,13 @@ function loadSeenCompanyRoles() {
 function appendToPipeline(offers) {
   if (offers.length === 0) return;
 
-  let text = readFileSync(PIPELINE_PATH, 'utf-8');
+  let text = existsSync(PIPELINE_PATH)
+    ? readFileSync(PIPELINE_PATH, 'utf-8')
+    : PIPELINE_TEMPLATE;
+
+  if (!text.trim()) {
+    text = PIPELINE_TEMPLATE;
+  }
 
   // Find "## Pendientes" section and append after it
   const marker = '## Pendientes';
@@ -2065,6 +2072,8 @@ async function main() {
   // 3. Load dedup sets
   const seenUrls = loadSeenUrls();
   const seenCompanyRoles = loadSeenCompanyRoles();
+  const reservedUrls = new Set();
+  const reservedCompanyRoles = new Set();
 
   // 4. Fetch all APIs
   const date = new Date().toISOString().slice(0, 10);
@@ -2086,18 +2095,19 @@ async function main() {
           totalFiltered++;
           continue;
         }
-        if (seenUrls.has(job.url)) {
+        if (seenUrls.has(job.url) || reservedUrls.has(job.url)) {
           totalDupes++;
           continue;
         }
         const key = `${job.company.toLowerCase()}::${job.title.toLowerCase()}`;
-        if (seenCompanyRoles.has(key)) {
+        if (seenCompanyRoles.has(key) || reservedCompanyRoles.has(key)) {
           totalDupes++;
           continue;
         }
-        // Mark as seen to avoid intra-scan dupes
-        seenUrls.add(job.url);
-        seenCompanyRoles.add(key);
+
+        // Reserve candidates during this scan without polluting the persisted dedup sets.
+        reservedUrls.add(job.url);
+        reservedCompanyRoles.add(key);
         candidateJobs.push(job);
       }
 
@@ -2108,13 +2118,16 @@ async function main() {
           : candidateJobs;
 
       for (const job of enrichedJobs) {
-        if (seenUrls.has(job.url)) {
+        const finalUrl = job.url;
+        const sourceUrl = job.sourceUrl || job.url;
+
+        if (seenUrls.has(finalUrl) || (sourceUrl && seenUrls.has(sourceUrl))) {
           totalDupes++;
           continue;
         }
 
-        seenUrls.add(job.url);
-        if (job.sourceUrl) seenUrls.add(job.sourceUrl);
+        seenUrls.add(finalUrl);
+        if (sourceUrl) seenUrls.add(sourceUrl);
         newOffers.push({ ...job, source: `${type}-api` });
       }
     } catch (err) {
