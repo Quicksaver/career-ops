@@ -196,7 +196,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobsearch, dice, remoteineurope, workingnomads, nodesk
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, dice, remoteineurope, workingnomads, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -227,15 +227,18 @@ search_queries:
 #   - Portal Emprego can be configured with `api_provider: portalemprego` +
 #     `api_params.pesquisa:` using keyword-seeded SEO listing pages and optional
 #     `api_max_pages:`
-#   - English Job Search Switzerland can be configured with
-#     `api_provider: englishjobsearch` + `careers_url: https://englishjobsearch.ch`
-#     and optional `api_params:` using `q`, `location`, and `include`. The
-#     site publishes stable search paths in `llms.txt`, supports
-#     `?format=markdown`, and paginates with `?page=N`, so the optimal
-#     integration is markdown SERP parsing rather than brittle HTML scraping.
-#     Result links are tracker clickouts, not canonical downstream job URLs, so
-#     dedup should key off the stable `/clickout/{id}` path and keep the full
-#     clickout URL for evaluation.
+#   - The EnglishJobs / EnglishJobSearch country portals can be configured with
+#     `api_provider: englishjobs` + a country `careers_url`, for example:
+#     `https://englishjobsearch.ch`, `https://englishjobs.dk`,
+#     `https://englishjobsearch.se`, `https://englishjobs.no`,
+#     `https://englishjobs.fi`, `https://englishjobsearch.nl`, or
+#     `https://englishjobs.de`. Optional `api_params:` use `q`, `location`, and
+#     `include`. All observed country portals publish the same stable search
+#     contract in `llms.txt`, support `?format=markdown`, and paginate with
+#     `?page=N`, so the optimal integration is markdown SERP parsing rather than
+#     brittle HTML scraping. Result links are tracker clickouts, not canonical
+#     downstream job URLs, so dedup should key off the stable `/clickout/{id}`
+#     path and keep the full clickout URL for evaluation.
 #   - Dice can be configured with `api_provider: dice` + `api:` pointing to
 #     `https://www.dice.com/jobs` and `api_params:` using public search params
 #     such as `q`, `location`, `includeRemote`, `filters.workplaceTypes`,
@@ -388,7 +391,7 @@ tracked_companies:
 
   - name: English Job Search Switzerland
     careers_url: https://englishjobsearch.ch
-    api_provider: englishjobsearch
+    api_provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -401,6 +404,108 @@ tracked_companies:
         - german
     api_max_pages: 3
     notes: "English-speaking Switzerland aggregator with documented search URLs in llms.txt, markdown rendering via `format=markdown`, and simple `page` pagination. Best used as a discovery source with seeded query/location combinations; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: English Jobs Denmark
+    careers_url: https://englishjobs.dk
+    api_provider: englishjobs
+    api_params:
+      q:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+      location:
+        - kobenhavn
+        - arhus
+      include:
+        - danish
+    api_max_pages: 3
+    notes: "English-speaking Denmark aggregator in the same portal family as englishjobsearch.ch, with the same llms.txt search contract, markdown rendering, and `page` pagination. Use as a seeded discovery source; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: English Jobs Sweden
+    careers_url: https://englishjobsearch.se
+    api_provider: englishjobs
+    api_params:
+      q:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+      location:
+        - stockholm
+        - goteborg
+      include:
+        - swedish
+    api_max_pages: 3
+    notes: "English-speaking Sweden aggregator in the same portal family as englishjobsearch.ch, with the same llms.txt search contract, markdown rendering, and `page` pagination. Use as a seeded discovery source; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: English Jobs Norway
+    careers_url: https://englishjobs.no
+    api_provider: englishjobs
+    api_params:
+      q:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+      location:
+        - oslo
+        - bergen
+      include:
+        - norwegian
+    api_max_pages: 3
+    notes: "English-speaking Norway aggregator in the same portal family as englishjobsearch.ch, with the same llms.txt search contract, markdown rendering, and `page` pagination. Use as a seeded discovery source; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: English Jobs Finland
+    careers_url: https://englishjobs.fi
+    api_provider: englishjobs
+    api_params:
+      q:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+      location:
+        - helsinki
+        - tampere
+      include:
+        - finnish
+    api_max_pages: 3
+    notes: "English-speaking Finland aggregator in the same portal family as englishjobsearch.ch, with the same llms.txt search contract, markdown rendering, and `page` pagination. Use as a seeded discovery source; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: English Jobs Netherlands
+    careers_url: https://englishjobsearch.nl
+    api_provider: englishjobs
+    api_params:
+      q:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+      location:
+        - amsterdam
+        - utrecht
+      include:
+        - dutch
+    api_max_pages: 3
+    notes: "English-speaking Netherlands aggregator in the same portal family as englishjobsearch.ch, with the same llms.txt search contract, markdown rendering, and `page` pagination. Use as a seeded discovery source; outbound links remain portal clickouts."
+    enabled: false
+
+  - name: English Jobs Germany
+    careers_url: https://englishjobs.de
+    api_provider: englishjobs
+    api_params:
+      q:
+        - "platform engineer"
+        - "backend engineer"
+        - "software engineer"
+      location:
+        - berlin
+        - muenchen
+      include:
+        - german
+    api_max_pages: 3
+    notes: "English-speaking Germany aggregator in the same portal family as englishjobsearch.ch, with the same llms.txt search contract, markdown rendering, and `page` pagination. Use as a seeded discovery source; outbound links remain portal clickouts."
     enabled: false
 
   - name: Working Nomads Europe

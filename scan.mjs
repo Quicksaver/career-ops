@@ -47,7 +47,7 @@ const REMOTEINEUROPE_DETAIL_CONCURRENCY = 5;
 const REMOTEINEUROPE_MAX_PAGES = 5;
 const NODESK_MAX_PAGES = 5;
 const NODESK_DETAIL_CONCURRENCY = 5;
-const ENGLISHJOBSEARCH_MAX_PAGES = 5;
+const ENGLISHJOBS_MAX_PAGES = 5;
 const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
 const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
 const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
@@ -490,7 +490,7 @@ function splitCommaSeparatedValues(value) {
     .filter(Boolean);
 }
 
-function slugifyEnglishJobSearchQuery(value) {
+function slugifyEnglishJobsQuery(value) {
   return normalizeWhitespace(String(value || ''))
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -499,7 +499,7 @@ function slugifyEnglishJobSearchQuery(value) {
     .replace(/^_+|_+$/g, '');
 }
 
-function slugifyEnglishJobSearchLocation(value) {
+function slugifyEnglishJobsLocation(value) {
   return normalizeWhitespace(String(value || ''))
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -508,7 +508,7 @@ function slugifyEnglishJobSearchLocation(value) {
     .replace(/^-+|-+$/g, '');
 }
 
-function normalizeEnglishJobSearchLanguage(value) {
+function normalizeEnglishJobsLanguage(value) {
   return normalizeWhitespace(String(value || ''))
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -516,9 +516,9 @@ function normalizeEnglishJobSearchLanguage(value) {
     .replace(/[^a-z]+/g, '');
 }
 
-function buildEnglishJobSearchSearchUrl(origin, location, query, includeLanguages) {
-  const locationSlug = slugifyEnglishJobSearchLocation(location);
-  const querySlug = slugifyEnglishJobSearchQuery(query);
+function buildEnglishJobsSearchUrl(origin, location, query, includeLanguages) {
+  const locationSlug = slugifyEnglishJobsLocation(location);
+  const querySlug = slugifyEnglishJobsQuery(query);
 
   let pathname = '/';
   if (locationSlug && querySlug) {
@@ -536,7 +536,7 @@ function buildEnglishJobSearchSearchUrl(origin, location, query, includeLanguage
   return url.toString();
 }
 
-function getEnglishJobSearchConfig(company) {
+function getEnglishJobsConfig(company) {
   const baseUrl = company.api || company.careers_url || 'https://englishjobsearch.ch';
 
   let parsedUrl;
@@ -550,7 +550,7 @@ function getEnglishJobSearchConfig(company) {
   const queries = toFilterArray(company.api_params?.q || company.api_params?.query);
   const locations = toFilterArray(company.api_params?.location);
   const includeLanguages = toFilterArray(company.api_params?.include || company.api_params?.languages)
-    .map(normalizeEnglishJobSearchLanguage)
+    .map(normalizeEnglishJobsLanguage)
     .filter(Boolean);
 
   const queryValues = queries.length > 0 ? queries : [''];
@@ -559,7 +559,7 @@ function getEnglishJobSearchConfig(company) {
 
   for (const location of locationValues) {
     for (const query of queryValues) {
-      generatedUrls.push(buildEnglishJobSearchSearchUrl(origin, location, query, includeLanguages));
+      generatedUrls.push(buildEnglishJobsSearchUrl(origin, location, query, includeLanguages));
     }
   }
 
@@ -570,7 +570,7 @@ function getEnglishJobSearchConfig(company) {
 
   return {
     listUrls: listUrls.length > 0 ? listUrls : [origin],
-    maxPages: Math.max(1, Number(company.api_max_pages) || ENGLISHJOBSEARCH_MAX_PAGES),
+    maxPages: Math.max(1, Number(company.api_max_pages) || ENGLISHJOBS_MAX_PAGES),
   };
 }
 
@@ -705,9 +705,13 @@ function detectApi(company) {
     return portalemprego ? { type: 'portalemprego', url: portalemprego.listUrls[0], portalemprego } : null;
   }
 
-  if (company.api_provider === 'englishjobsearch' || /https?:\/\/(?:www\.)?englishjobsearch\.ch(?:\/|$)/.test(company.api || company.careers_url || '')) {
-    const englishjobsearch = getEnglishJobSearchConfig(company);
-    return englishjobsearch ? { type: 'englishjobsearch', url: englishjobsearch.listUrls[0], englishjobsearch } : null;
+  if (
+    company.api_provider === 'englishjobs'
+    || company.api_provider === 'englishjobsearch'
+    || /https?:\/\/(?:www\.)?(?:englishjobsearch\.ch|englishjobs\.dk|englishjobsearch\.se|englishjobs\.no|englishjobs\.fi|englishjobsearch\.nl|englishjobs\.de)(?:\/|$)/.test(company.api || company.careers_url || '')
+  ) {
+    const englishjobs = getEnglishJobsConfig(company);
+    return englishjobs ? { type: 'englishjobs', url: englishjobs.listUrls[0], englishjobs } : null;
   }
 
   if (company.api_provider === 'dice' || /https?:\/\/(?:www\.)?dice\.com\/jobs(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
@@ -1646,12 +1650,12 @@ function stripMarkdownFormatting(value) {
   );
 }
 
-function canonicalizeEnglishJobSearchClickout(url) {
+function canonicalizeEnglishJobsClickout(url) {
   const parsed = new URL(url);
   return new URL(parsed.pathname, parsed.origin).toString();
 }
 
-function getEnglishJobSearchPageCount(markdown) {
+function getEnglishJobsPageCount(markdown) {
   let maxPage = 1;
 
   for (const match of markdown.matchAll(/[?&]page=(\d+)/g)) {
@@ -1661,7 +1665,7 @@ function getEnglishJobSearchPageCount(markdown) {
   return maxPage;
 }
 
-function buildEnglishJobSearchPageUrl(url, pageNumber) {
+function buildEnglishJobsPageUrl(url, pageNumber) {
   const pageUrl = new URL(url);
   pageUrl.searchParams.set('format', 'markdown');
 
@@ -1674,7 +1678,7 @@ function buildEnglishJobSearchPageUrl(url, pageNumber) {
   return pageUrl.toString();
 }
 
-function parseEnglishJobSearchPage(markdown, sourceUrl, seenUrls) {
+function parseEnglishJobsPage(markdown, sourceUrl, seenUrls) {
   const jobs = [];
   const origin = new URL(sourceUrl).origin;
   const lines = markdown.split('\n');
@@ -1686,7 +1690,7 @@ function parseEnglishJobSearchPage(markdown, sourceUrl, seenUrls) {
 
     const title = stripMarkdownFormatting(match[1]);
     const clickoutUrl = new URL(match[2], origin).toString();
-    const canonicalUrl = canonicalizeEnglishJobSearchClickout(clickoutUrl);
+    const canonicalUrl = canonicalizeEnglishJobsClickout(clickoutUrl);
 
     if (!title || seenUrls.has(canonicalUrl)) {
       continue;
@@ -2111,20 +2115,20 @@ async function fetchPortalEmpregoJobs(url, company) {
   return jobs;
 }
 
-async function fetchEnglishJobSearchJobs(url, company) {
+async function fetchEnglishJobsJobs(url, company) {
   const seenUrls = new Set();
   const jobs = [];
-  const listUrls = company._api?.englishjobsearch?.listUrls || [url];
+  const listUrls = company._api?.englishjobs?.listUrls || [url];
 
   for (const listUrl of listUrls) {
-    const firstPageMarkdown = await fetchText(buildEnglishJobSearchPageUrl(listUrl, 1));
-    const pageCount = getEnglishJobSearchPageCount(firstPageMarkdown);
-    const maxPages = Math.min(company._api?.englishjobsearch?.maxPages || ENGLISHJOBSEARCH_MAX_PAGES, pageCount);
-    jobs.push(...parseEnglishJobSearchPage(firstPageMarkdown, listUrl, seenUrls));
+    const firstPageMarkdown = await fetchText(buildEnglishJobsPageUrl(listUrl, 1));
+    const pageCount = getEnglishJobsPageCount(firstPageMarkdown);
+    const maxPages = Math.min(company._api?.englishjobs?.maxPages || ENGLISHJOBS_MAX_PAGES, pageCount);
+    jobs.push(...parseEnglishJobsPage(firstPageMarkdown, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
-      const markdown = await fetchText(buildEnglishJobSearchPageUrl(listUrl, pageNumber));
-      const pageJobs = parseEnglishJobSearchPage(markdown, listUrl, seenUrls);
+      const markdown = await fetchText(buildEnglishJobsPageUrl(listUrl, pageNumber));
+      const pageJobs = parseEnglishJobsPage(markdown, listUrl, seenUrls);
       if (pageJobs.length === 0) break;
       jobs.push(...pageJobs);
     }
@@ -2351,8 +2355,8 @@ async function fetchJobs(company) {
     return fetchPortalEmpregoJobs(url, company);
   }
 
-  if (type === 'englishjobsearch') {
-    return fetchEnglishJobSearchJobs(url, company);
+  if (type === 'englishjobs') {
+    return fetchEnglishJobsJobs(url, company);
   }
 
   if (type === 'dice') {
