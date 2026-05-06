@@ -196,7 +196,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, euremotejobs, dice, remoteineurope, workingnomads, nodesk
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, dice, remoteineurope, workingnomads, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -204,14 +204,16 @@ search_queries:
 #     `api: https://landing.jobs/feed` and optional client-side `api_params:`
 #     such as `q`, `category`, `remote_policy`, `country`, `city`, `job_type`,
 #     `published_within_days`, and `updated_within_days`
-#   - SwissDevJobs can be configured with `api_provider: swissdevjobs` +
-#     `api: https://swissdevjobs.ch/api/jobsLight`. This public JSON endpoint is
-#     the optimal low-friction source: it already exposes title, company, city,
-#     workplace, salary band, language, visa sponsorship, job type, experience,
-#     and tech tags. Optional local `api_params:` include `q`, `city`,
-#     `city_category`, `workplace`, `language`, `visa_sponsorship`, `job_type`,
-#     `exp_level`, `tech_category`, `meta_category`, `company_type`,
-#     `company_size`, `technologies`, and `published_within_days`
+#   - SwissDevJobs / GermanTechJobs / DevITJobs.* can be configured with
+#     `api_provider: swissdevjobs`, `germantechjobs`, or `devitjobs` plus a
+#     domain-specific `api: https://<portal>/api/jobsLight`. These public JSON
+#     endpoints are the optimal low-friction source: they already expose title,
+#     company, city, workplace, salary band, language, visa sponsorship, job
+#     type, experience, and tech tags. Optional local `api_params:` include
+#     `q`, `city`, `city_category`, `workplace`, `language`,
+#     `visa_sponsorship`, `job_type`, `exp_level`, `tech_category`,
+#     `meta_category`, `company_type`, `company_size`, `technologies`, and
+#     `published_within_days`
 #   - ITJobs can be configured with `api_provider: itjobs` + `api_params:` using
 #     listing-page filters (`date`, `work_model`, `location`, `salary`, `type`,
 #     `contract`) and optional `api_max_pages:`
@@ -338,6 +340,33 @@ tracked_companies:
     api_params:
       published_within_days: 45
     notes: "Public jobsLight JSON catalog with company, title, city, workplace, salary, language, visa sponsorship, job type, experience level, and tech tags. Detail pages expose a richer embedded payload too, but jobsLight is the optimal scan surface."
+    enabled: false
+
+  - name: GermanTechJobs
+    careers_url: https://germantechjobs.de/
+    api_provider: germantechjobs
+    api: https://germantechjobs.de/api/jobsLight
+    api_params:
+      published_within_days: 45
+    notes: "Same jobsLight portal family as SwissDevJobs, localized for Germany. Best integration surface is the public JSON catalog rather than RSS or per-job page scraping."
+    enabled: false
+
+  - name: DevITJobs UK
+    careers_url: https://devitjobs.uk/
+    api_provider: devitjobs
+    api: https://devitjobs.uk/api/jobsLight
+    api_params:
+      published_within_days: 45
+    notes: "Same jobsLight portal family as SwissDevJobs, localized for the UK market. Public JSON catalog already includes salary bands, visa flag, workplace mode, and tech tags."
+    enabled: false
+
+  - name: DevITJobs NL
+    careers_url: https://devitjobs.nl/
+    api_provider: devitjobs
+    api: https://devitjobs.nl/api/jobsLight
+    api_params:
+      published_within_days: 45
+    notes: "Same jobsLight portal family as SwissDevJobs, localized for the Netherlands. Public JSON catalog is the lowest-friction scan surface."
     enabled: false
 
   - name: EU Remote Jobs
