@@ -57,10 +57,7 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 			return m, func() tea.Msg { return ViewerClosedMsg{} }
 
 		case "down", "j":
-			maxScroll := len(m.lines) - m.bodyHeight()
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
+			maxScroll := m.maxScroll()
 			if m.scrollOffset < maxScroll {
 				m.scrollOffset++
 			}
@@ -72,10 +69,7 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 
 		case "pgdown", "ctrl+d":
 			jump := m.bodyHeight() / 2
-			maxScroll := len(m.lines) - m.bodyHeight()
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
+			maxScroll := m.maxScroll()
 			m.scrollOffset += jump
 			if m.scrollOffset > maxScroll {
 				m.scrollOffset = maxScroll
@@ -92,16 +86,15 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 			m.scrollOffset = 0
 
 		case "end", "G":
-			maxScroll := len(m.lines) - m.bodyHeight()
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			m.scrollOffset = maxScroll
+			m.scrollOffset = m.maxScroll()
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.scrollOffset > m.maxScroll() {
+			m.scrollOffset = m.maxScroll()
+		}
 	}
 
 	return m, nil
@@ -113,6 +106,14 @@ func (m ViewerModel) bodyHeight() int {
 		h = 3
 	}
 	return h
+}
+
+func (m ViewerModel) maxScroll() int {
+	maxScroll := len(m.renderedLines()) - m.bodyHeight()
+	if maxScroll < 0 {
+		return 0
+	}
+	return maxScroll
 }
 
 func (m ViewerModel) View() string {
@@ -164,11 +165,12 @@ func (m ViewerModel) renderHeader() string {
 	_ = lineInfo
 
 	scroll := right.Render(func() string {
-		if len(m.lines) == 0 {
+		rendered := m.renderedLines()
+		if len(rendered) == 0 {
 			return ""
 		}
 		pct := 0
-		maxScroll := len(m.lines) - m.bodyHeight()
+		maxScroll := m.maxScroll()
 		if maxScroll > 0 {
 			pct = m.scrollOffset * 100 / maxScroll
 		}
@@ -196,47 +198,21 @@ func (m ViewerModel) renderBody() string {
 	bh := m.bodyHeight()
 	padStyle := lipgloss.NewStyle().Padding(0, 2)
 
-	if len(m.lines) == 0 {
+	rendered := m.renderedLines()
+	if len(rendered) == 0 {
 		emptyStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext)
 		return padStyle.Render(emptyStyle.Render("(empty file)"))
 	}
 
+	if m.scrollOffset > m.maxScroll() {
+		m.scrollOffset = m.maxScroll()
+	}
+
 	end := m.scrollOffset + bh
-	if end > len(m.lines) {
-		end = len(m.lines)
+	if end > len(rendered) {
+		end = len(rendered)
 	}
-	visible := m.lines[m.scrollOffset:end]
-
-	// Render with table block detection
-	var styled []string
-	i := 0
-	for i < len(visible) {
-		if isTableLine(visible[i]) {
-			// Collect consecutive table lines
-			tableStart := i
-			for i < len(visible) && isTableLine(visible[i]) {
-				i++
-			}
-			tableLines := visible[tableStart:i]
-
-			// Also look ahead in full document for remaining table rows
-			// that may be just beyond the visible window, to get correct column widths
-			fullTableStart := m.scrollOffset + tableStart
-			fullTableEnd := fullTableStart
-			for fullTableEnd < len(m.lines) && isTableLine(m.lines[fullTableEnd]) {
-				fullTableEnd++
-			}
-			fullTable := m.lines[fullTableStart:fullTableEnd]
-
-			// Compute column widths from the full table, render only visible rows
-			colWidths := computeColumnWidths(fullTable, m.width-6)
-			rendered := m.renderTableBlock(tableLines, colWidths, fullTableStart)
-			styled = append(styled, rendered...)
-		} else {
-			styled = append(styled, m.styleLine(visible[i]))
-			i++
-		}
-	}
+	styled := append([]string(nil), rendered[m.scrollOffset:end]...)
 
 	// Pad to fill height
 	for len(styled) < bh {
@@ -244,6 +220,31 @@ func (m ViewerModel) renderBody() string {
 	}
 
 	return padStyle.Render(strings.Join(styled, "\n"))
+}
+
+func (m ViewerModel) renderedLines() []string {
+	if len(m.lines) == 0 {
+		return nil
+	}
+
+	var styled []string
+	for i := 0; i < len(m.lines); {
+		if isTableLine(m.lines[i]) {
+			tableStart := i
+			for i < len(m.lines) && isTableLine(m.lines[i]) {
+				i++
+			}
+			tableLines := m.lines[tableStart:i]
+			colWidths := computeColumnWidths(tableLines, m.width-6)
+			styled = append(styled, m.renderTableBlock(tableLines, colWidths, tableStart)...)
+			continue
+		}
+
+		styled = append(styled, m.styleLine(m.lines[i]))
+		i++
+	}
+
+	return styled
 }
 
 // isTableLine checks if a line is part of a markdown table.
@@ -312,7 +313,14 @@ func computeColumnWidths(lines []string, maxTotal int) []int {
 		}
 	}
 
-	// Cap individual columns based on column count
+	for i := range widths {
+		if widths[i] < 3 {
+			widths[i] = 3
+		}
+	}
+
+	// Cap the first descriptive column based on column count.
+	// If column 0 is a numeric index column, column 1 becomes the first descriptive one.
 	maxColW := 45
 	if maxCols > 5 {
 		maxColW = 30
@@ -320,40 +328,240 @@ func computeColumnWidths(lines []string, maxTotal int) []int {
 	if maxCols > 7 {
 		maxColW = 22
 	}
+	firstNumeric := columnIsNumeric(lines, 0)
+	descriptiveIdx := 0
+	if firstNumeric && maxCols > 1 {
+		descriptiveIdx = 1
+	}
+
+	contentBudget := maxTotal - (1 + 3*maxCols)
+	minContentBudget := 3 * maxCols
+	if contentBudget < minContentBudget {
+		contentBudget = minContentBudget
+	}
+
+	numericWidth := 0
+	if firstNumeric {
+		numericWidth = widths[0]
+	}
+	descriptiveWidth := widths[descriptiveIdx]
+	if descriptiveWidth > maxColW {
+		descriptiveWidth = maxColW
+	}
+
+	flexCols := make([]int, 0, maxCols)
 	for i := range widths {
-		if widths[i] > maxColW {
-			widths[i] = maxColW
+		if i == descriptiveIdx {
+			continue
 		}
-		if widths[i] < 3 {
-			widths[i] = 3
+		if firstNumeric && i == 0 {
+			continue
+		}
+		flexCols = append(flexCols, i)
+	}
+
+	remainingCols := maxCols
+	if firstNumeric {
+		remainingCols--
+	}
+	if remainingCols < 1 {
+		remainingCols = 1
+	}
+	minFlexBudget := 3 * len(flexCols)
+	maxDescriptive := contentBudget - numericWidth - minFlexBudget
+	if maxDescriptive < 3 {
+		maxDescriptive = 3
+	}
+	if descriptiveWidth > maxDescriptive {
+		descriptiveWidth = maxDescriptive
+	}
+	widths[descriptiveIdx] = descriptiveWidth
+
+	if len(flexCols) > 0 {
+		remainingBudget := contentBudget - numericWidth - widths[descriptiveIdx]
+		if remainingBudget < minFlexBudget {
+			remainingBudget = minFlexBudget
+		}
+
+		share := remainingBudget / len(flexCols)
+		remainder := remainingBudget % len(flexCols)
+		for _, idx := range flexCols {
+			widths[idx] = share
+			if remainder > 0 {
+				widths[idx]++
+				remainder--
+			}
 		}
 	}
 
-	// Shrink to fit available width
-	for {
-		total := 1 // trailing border
-		for _, w := range widths {
-			total += w + 3 // cell padding + border
+	if sumInts(widths) > contentBudget {
+		allCols := make([]int, 0, len(widths))
+		for i := range widths {
+			allCols = append(allCols, i)
 		}
-		if total <= maxTotal {
-			break
-		}
-		// Find the widest column and shrink it by 1
-		widestIdx := 0
-		widestVal := 0
-		for i, w := range widths {
-			if w > widestVal {
-				widestVal = w
-				widestIdx = i
-			}
-		}
-		if widths[widestIdx] <= 3 {
-			break // can't shrink further
-		}
-		widths[widestIdx]--
+		shrinkBudget(widths, allCols, contentBudget)
+	}
+
+	if firstNumeric {
+		widths[0] = numericWidth
 	}
 
 	return widths
+}
+
+func columnIsNumeric(lines []string, col int) bool {
+	seenHeader := false
+	seenData := false
+
+	for _, line := range lines {
+		if isTableSeparator(line) {
+			continue
+		}
+
+		cells := parseTableCells(line)
+		if col >= len(cells) {
+			continue
+		}
+
+		if !seenHeader {
+			seenHeader = true
+			continue
+		}
+
+		cell := strings.TrimSpace(cells[col])
+		if cell == "" {
+			continue
+		}
+		seenData = true
+		if !isNumericCell(cell) {
+			return false
+		}
+	}
+
+	return seenData
+}
+
+func isNumericCell(cell string) bool {
+	for _, r := range cell {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return cell != ""
+}
+
+func sumInts(values []int) int {
+	total := 0
+	for _, value := range values {
+		total += value
+	}
+	return total
+}
+
+func shrinkBudget(widths, candidates []int, budget int) {
+	for sumInts(widths) > budget {
+		widestIdx := -1
+		widestVal := 0
+		for _, idx := range candidates {
+			if idx < 0 || idx >= len(widths) {
+				continue
+			}
+			if widths[idx] <= 3 {
+				continue
+			}
+			if widths[idx] > widestVal {
+				widestVal = widths[idx]
+				widestIdx = idx
+			}
+		}
+		if widestIdx == -1 {
+			return
+		}
+		widths[widestIdx]--
+	}
+}
+
+// wrapTableCell wraps a table cell to fit the target column width.
+func wrapTableCell(cell string, width int) []string {
+	if width <= 0 {
+		return []string{""}
+	}
+
+	if lipgloss.Width(cell) <= width {
+		return []string{cell}
+	}
+
+	words := strings.Fields(cell)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	var lines []string
+	current := ""
+
+	for _, word := range words {
+		if lipgloss.Width(word) > width {
+			if current != "" {
+				lines = append(lines, current)
+				current = ""
+			}
+
+			for lipgloss.Width(word) > width {
+				chunk, rest := splitTableToken(word, width)
+				lines = append(lines, chunk)
+				word = rest
+			}
+
+			current = word
+			continue
+		}
+
+		candidate := word
+		if current != "" {
+			candidate = current + " " + word
+		}
+
+		if lipgloss.Width(candidate) <= width {
+			current = candidate
+			continue
+		}
+
+		if current != "" {
+			lines = append(lines, current)
+		}
+		current = word
+	}
+
+	if current != "" {
+		lines = append(lines, current)
+	}
+
+	if len(lines) == 0 {
+		return []string{""}
+	}
+
+	return lines
+}
+
+func splitTableToken(token string, width int) (string, string) {
+	runes := []rune(token)
+	if len(runes) == 0 || width <= 0 {
+		return "", ""
+	}
+
+	split := 0
+	for i := 1; i <= len(runes); i++ {
+		if lipgloss.Width(string(runes[:i])) > width {
+			break
+		}
+		split = i
+	}
+
+	if split == 0 {
+		split = 1
+	}
+
+	return string(runes[:split]), string(runes[split:])
 }
 
 // renderTableBlock renders table lines with aligned columns and box-drawing borders.
@@ -393,46 +601,43 @@ func (m ViewerModel) renderTableBlock(lines []string, colWidths []int, firstLine
 		}
 
 		cells := parseTableCells(line)
-		var paddedCells []string
+		wrappedCells := make([][]string, maxCols)
+		rowHeight := 1
 		for i := 0; i < maxCols; i++ {
 			cell := ""
 			if i < len(cells) {
 				cell = cells[i]
 			}
-			cellWidth := lipgloss.Width(cell)
 			colW := colWidths[i]
+			wrappedCells[i] = wrapTableCell(cell, colW)
+			if len(wrappedCells[i]) > rowHeight {
+				rowHeight = len(wrappedCells[i])
+			}
+		}
 
-			if cellWidth > colW {
-				// Truncate — need to handle multi-byte/emoji carefully
-				runes := []rune(cell)
-				truncated := string(runes)
-				for lipgloss.Width(truncated) > colW-3 && len(runes) > 0 {
-					runes = runes[:len(runes)-1]
-					truncated = string(runes)
+		for lineIdx := 0; lineIdx < rowHeight; lineIdx++ {
+			border := borderStyle.Render("│")
+			var rowParts []string
+			for i, cellLines := range wrappedCells {
+				cellLine := ""
+				if lineIdx < len(cellLines) {
+					cellLine = cellLines[lineIdx]
 				}
-				cell = truncated + "..."
-				cellWidth = lipgloss.Width(cell)
+				padding := colWidths[i] - lipgloss.Width(cellLine)
+				if padding < 0 {
+					padding = 0
+				}
+				padded := " " + cellLine + strings.Repeat(" ", padding) + " "
+				if isFirstDataRow {
+					rowParts = append(rowParts, headerStyle.Render(padded))
+				} else {
+					rowParts = append(rowParts, dataStyle.Render(padded))
+				}
 			}
-
-			padding := colW - cellWidth
-			if padding < 0 {
-				padding = 0
-			}
-			paddedCells = append(paddedCells, " "+cell+strings.Repeat(" ", padding)+" ")
+			row := border + strings.Join(rowParts, border) + border
+			result = append(result, row)
 		}
 
-		// Build row with borders
-		border := borderStyle.Render("│")
-		var rowParts []string
-		for _, cell := range paddedCells {
-			if isFirstDataRow {
-				rowParts = append(rowParts, headerStyle.Render(cell))
-			} else {
-				rowParts = append(rowParts, dataStyle.Render(cell))
-			}
-		}
-		row := border + strings.Join(rowParts, border) + border
-		result = append(result, row)
 		isFirstDataRow = false
 	}
 
