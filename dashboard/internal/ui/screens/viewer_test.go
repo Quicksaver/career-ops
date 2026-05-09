@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
 
@@ -103,6 +105,50 @@ func TestMaxScrollUsesRenderedHeightForWrappedTables(t *testing.T) {
 	body := m.renderBody()
 	if !strings.Contains(body, "Final line") {
 		t.Fatalf("expected bottom of wrapped document to be reachable, got %q", body)
+	}
+}
+
+func TestRenderedLinesWrapLongPlainTextWithoutTruncation(t *testing.T) {
+	m := ViewerModel{
+		theme: theme.NewTheme("catppuccin-mocha"),
+		width: 60,
+		lines: []string{
+			"    Response: I bring extreme optimization experience from outside trading like speeding up 400M-plus-row data processing by 20x, and strong systems design that carries across domains.",
+		},
+	}
+
+	rendered := m.renderedLines()
+	if len(rendered) < 2 {
+		t.Fatalf("expected long plain text to wrap into multiple visual lines, got %d", len(rendered))
+	}
+
+	joined := strings.Join(strings.Fields(ansi.Strip(strings.Join(rendered, " "))), " ")
+	want := strings.Join(strings.Fields(m.lines[0]), " ")
+	if joined != want {
+		t.Fatalf("expected wrapped plain text to preserve full content, got %q want %q", joined, want)
+	}
+}
+
+func TestMaxScrollUsesRenderedHeightForWrappedPlainText(t *testing.T) {
+	m := ViewerModel{
+		theme:  theme.NewTheme("catppuccin-mocha"),
+		width:  60,
+		height: 8,
+		lines: []string{
+			"Short intro",
+			"Response: I bring extreme optimization experience from outside trading like speeding up 400M-plus-row data processing by 20x, and strong systems design that carries across domains.",
+			"Final line",
+		},
+	}
+
+	if got, rawBased := m.maxScroll(), len(m.lines)-m.bodyHeight(); got <= rawBased {
+		t.Fatalf("expected wrapped plain text to increase scroll range, got maxScroll=%d rawBased=%d", got, rawBased)
+	}
+
+	m.scrollOffset = m.maxScroll()
+	body := ansi.Strip(m.renderBody())
+	if !strings.Contains(body, "Final line") {
+		t.Fatalf("expected bottom of wrapped plain text to be reachable, got %q", body)
 	}
 }
 

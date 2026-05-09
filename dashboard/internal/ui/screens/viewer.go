@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
@@ -240,11 +241,27 @@ func (m ViewerModel) renderedLines() []string {
 			continue
 		}
 
-		styled = append(styled, m.styleLine(m.lines[i]))
+		styled = append(styled, m.wrapStyledLine(m.styleLine(m.lines[i]))...)
 		i++
 	}
 
 	return styled
+}
+
+func (m ViewerModel) contentWidth() int {
+	w := m.width - 4
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
+func (m ViewerModel) wrapStyledLine(line string) []string {
+	wrapped := ansi.Wrap(line, m.contentWidth(), " \t")
+	if wrapped == "" {
+		return []string{""}
+	}
+	return strings.Split(wrapped, "\n")
 }
 
 // isTableLine checks if a line is part of a markdown table.
@@ -570,7 +587,7 @@ func (m ViewerModel) renderTableBlock(lines []string, colWidths []int, firstLine
 		// Fallback: render as plain text
 		var result []string
 		for _, line := range lines {
-			result = append(result, m.styleLine(line))
+			result = append(result, m.wrapStyledLine(m.styleLine(line))...)
 		}
 		return result
 	}
