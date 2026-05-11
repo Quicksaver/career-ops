@@ -196,7 +196,7 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsinenglish, jobsch, dice, remoteineurope, workingnomads, nodesk
+# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsinenglish, jobsch, dice, remoteineurope, workingnomads, rustjobs, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
@@ -271,6 +271,14 @@ search_queries:
 #     client-side `api_params:` such as `location`, `category`, `q`, `tags`,
 #     and `published_within_days`. Public server-side filters/pagination were
 #     not observed, so the scanner fetches once and filters locally.
+#   - RustJobs.dev can be configured with `api_provider: rustjobs` +
+#     `careers_url: https://rustjobs.dev`. Optional `api_params.location:`
+#     values include slugs like `remote`, `europe`, `united-states`,
+#     `united-kingdom`, `germany`, and `netherlands`. Direct HTTP fetches are
+#     rate-limited, so the scanner uses Playwright to render the first-party
+#     location pages, click `Load more jobs`, and extract canonical job URLs,
+#     company, location, salary, remote policy, posted date, and apply URL
+#     from the DOM.
 #   - NoDesk can be configured with `api_provider: nodesk` +
 #     `careers_url: https://nodesk.co/remote-jobs/`. The optimal integration is
 #     the public Algolia index used by the site search, with `Origin`/`Referer`
@@ -614,6 +622,17 @@ tracked_companies:
         - devops-sysadmin
     api_max_pages: 3
     notes: "Webflow category listings with stable pagination and per-job detail pages that expose the real external apply URL, company website, location scope, publish/expiry dates, and full description via hidden schema fields. Better integration surface than generic web search."
+    enabled: false
+
+  - name: RustJobs.dev
+    careers_url: https://rustjobs.dev
+    api_provider: rustjobs
+    api_params:
+      location:
+        - remote
+        - europe
+    api_max_pages: 10
+    notes: "Rust-exclusive board. Direct HTTP requests are rate-limited, but the first-party location pages render cleanly in Playwright and expose detail URLs, company, location, salary, remote policy, posted date, and apply links on each card."
     enabled: false
 
   # -- Voice AI & Conversational AI --

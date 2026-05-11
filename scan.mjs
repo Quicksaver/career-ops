@@ -6,8 +6,8 @@
  * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
  * providers such as Landing.jobs, SwissDevJobs/GermanTechJobs/DevITJobs,
  * jobs.ch, DEVjobs.de, Jobs in English Denmark, Make it in Germany,
- * EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, and
- * Working Nomads, applies title
+ * EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice,
+ * Working Nomads, and RustJobs.dev, applies title
  * filters from portals.yml,
  * deduplicates against existing history, and appends new offers to
  * pipeline.md + scan-history.tsv.
@@ -53,7 +53,9 @@ const JOBSINENGLISH_MAX_PAGES = 5;
 const JOBSCH_MAX_PAGES = 5;
 const MAKEITINGERMANY_MAX_PAGES = 5;
 const DEVJOBSDE_MAX_PAGES = 5;
+const RUSTJOBS_MAX_PAGES = 20;
 const DEVJOBSDE_NAVIGATION_TIMEOUT_MS = 45_000;
+const RUSTJOBS_NAVIGATION_TIMEOUT_MS = 45_000;
 const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
 const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
 const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
@@ -492,6 +494,45 @@ function toFilterArray(value) {
   return (Array.isArray(value) ? value : [value])
     .map(item => normalizeWhitespace(String(item || '')))
     .filter(Boolean);
+}
+
+function buildRustJobsListUrl(baseUrl, locationSlug) {
+  const url = new URL(baseUrl);
+  url.search = '';
+  url.hash = '';
+  url.pathname = locationSlug ? `/locations/${encodeURIComponent(locationSlug)}` : '/';
+  return url.toString();
+}
+
+function getRustJobsConfig(company) {
+  const baseUrl = company.careers_url || company.api || 'https://rustjobs.dev';
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  let locations = toFilterArray(company.api_params?.location)
+    .map(value => normalizeWhitespace(value).toLowerCase())
+    .filter(Boolean);
+
+  if (locations.length === 0) {
+    const locationMatch = parsedUrl.pathname.match(/^\/locations\/([^/?#]+)/);
+    if (locationMatch) {
+      locations = [decodeURIComponent(locationMatch[1]).toLowerCase()];
+    }
+  }
+
+  const listUrls = (locations.length > 0 ? locations : [''])
+    .map(location => buildRustJobsListUrl(parsedUrl.origin, location))
+    .filter((value, index, array) => value && array.indexOf(value) === index);
+
+  return {
+    listUrls,
+    maxPages: Math.max(1, Number(company.api_max_pages) || RUSTJOBS_MAX_PAGES),
+  };
 }
 
 function splitCommaSeparatedValues(value) {
@@ -941,6 +982,11 @@ function detectApi(company) {
   if (company.api_provider === 'remoteineurope' || /https?:\/\/(?:www\.)?remoteineurope\.com\/(?:categories\/[^/?#]+|job\/[^/?#]+|$)/.test(company.api || company.careers_url || '')) {
     const remoteineurope = getRemoteInEuropeConfig(company);
     return remoteineurope ? { type: 'remoteineurope', url: remoteineurope.listUrls[0], remoteineurope } : null;
+  }
+
+  if (company.api_provider === 'rustjobs' || /https?:\/\/(?:www\.)?rustjobs\.dev(?:\/locations\/[^/?#]+)?(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
+    const rustjobs = getRustJobsConfig(company);
+    return rustjobs ? { type: 'rustjobs', url: rustjobs.listUrls[0], rustjobs } : null;
   }
 
   if (company.api_provider === 'nodesk' || /https?:\/\/(?:www\.)?nodesk\.co\/remote-jobs(?:\/|$)/.test(company.api || company.careers_url || '')) {
@@ -2919,6 +2965,119 @@ async function fetchRemoteInEuropeJobs(url, company) {
   return jobs;
 }
 
+function normalizeRustJobsPublishedAt(value) {
+  const trimmed = normalizeWhitespace(String(value || ''));
+  if (!trimmed) return '';
+
+  const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) {
+    return parseRemoteInEuropeDate(trimmed);
+  }
+
+  return parseRemoteInEuropeDate(`${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`);
+}
+
+async function extractRustJobsCards(page) {
+  return page.evaluate(() => {
+    const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const salaryPattern = /(?:[$€£]|\b(?:CAD|USD|EUR|GBP|CHF)\b|\b\d{2,3}k\b)/i;
+
+    return Array.from(document.querySelectorAll('article'))
+      .map(article => {
+        const titleLink = article.querySelector('a[href^="/jobs/"]');
+        if (!titleLink) return null;
+
+        const title = clean(titleLink.textContent);
+        const detailUrl = titleLink.href;
+        const companyFromImage = clean(article.querySelector('img[alt$=" logo"]')?.getAttribute('alt')?.replace(/ logo$/, '') || '');
+        const companyFromAria = clean(titleLink.getAttribute('aria-label')).match(/ at (.+)$/)?.[1] || '';
+        const remotePolicy = clean(article.querySelector('div.mb-2 span')?.textContent || '');
+        const time = article.querySelector('time');
+        const postedDate = clean(time?.textContent || '');
+        const publishedAt = clean(time?.getAttribute('datetime') || '');
+        const applyUrl = Array.from(article.querySelectorAll('a'))
+          .find(link => /apply now/i.test(link.textContent || ''))?.href || '';
+        const pillTexts = Array.from(article.querySelectorAll('div[class*="rounded-lg"]'))
+          .map(node => clean(node.textContent))
+          .filter(Boolean);
+        const salary = pillTexts.find(text => salaryPattern.test(text)) || '';
+        const location = pillTexts.find(text => (
+          text !== salary
+          && text !== postedDate
+          && !/^(remote|hybrid|on-site)$/i.test(text)
+        )) || '';
+
+        if (!title || !detailUrl) return null;
+
+        return {
+          title,
+          url: detailUrl,
+          company: companyFromImage || companyFromAria,
+          location,
+          salary,
+          remotePolicy,
+          applyUrl,
+          postedDate,
+          publishedAt,
+        };
+      })
+      .filter(Boolean);
+  });
+}
+
+async function fetchRustJobsJobs(url, company) {
+  const seenUrls = new Set();
+  const jobs = [];
+  const listUrls = company._api?.rustjobs?.listUrls || [url];
+  const maxPages = company._api?.rustjobs?.maxPages || RUSTJOBS_MAX_PAGES;
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ headless: true });
+
+  try {
+    const context = await browser.newContext({
+      userAgent: DEVJOBSDE_BROWSER_USER_AGENT,
+    });
+    const page = await context.newPage();
+
+    for (const listUrl of listUrls) {
+      await page.goto(listUrl, { waitUntil: 'networkidle', timeout: RUSTJOBS_NAVIGATION_TIMEOUT_MS });
+
+      let loadedPages = 1;
+      while (loadedPages < maxPages) {
+        const loadMoreButton = page.getByRole('button', { name: /load more jobs/i });
+        const hasLoadMore = await loadMoreButton.isVisible().catch(() => false);
+        if (!hasLoadMore) break;
+
+        const previousCount = await page.locator('a[href^="/jobs/"]').count();
+        await loadMoreButton.click();
+        await page.waitForFunction(
+          previous => document.querySelectorAll('a[href^="/jobs/"]').length > previous,
+          previousCount,
+          { timeout: FETCH_TIMEOUT_MS },
+        ).catch(() => {});
+        await page.waitForTimeout(400);
+        loadedPages += 1;
+      }
+
+      const pageJobs = await extractRustJobsCards(page);
+      for (const job of pageJobs) {
+        if (!job.company || seenUrls.has(job.url)) continue;
+        seenUrls.add(job.url);
+        jobs.push({
+          ...job,
+          publishedAt: normalizeRustJobsPublishedAt(job.publishedAt),
+        });
+      }
+    }
+
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+
+  return jobs;
+}
+
 async function fetchNodeskIndexPage({ filter, page, hitsPerPage, query, referer }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -3085,6 +3244,10 @@ async function fetchJobs(company) {
 
   if (type === 'remoteineurope') {
     return fetchRemoteInEuropeJobs(url, company);
+  }
+
+  if (type === 'rustjobs') {
+    return fetchRustJobsJobs(url, company);
   }
 
   if (type === 'nodesk') {
