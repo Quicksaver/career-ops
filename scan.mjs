@@ -896,6 +896,32 @@ function buildPcsxDetailUrl(company, positionId, queriedLocation) {
 
 // ── API detection ───────────────────────────────────────────────────
 
+const ALLOWED_GREENHOUSE_HOSTS = new Set([
+  'boards-api.greenhouse.io',
+  'boards.greenhouse.io',
+  'job-boards.greenhouse.io',
+  'job-boards.eu.greenhouse.io',
+]);
+
+function assertGreenhouseUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`greenhouse: invalid URL: ${url}`);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`greenhouse: URL must use HTTPS: ${url}`);
+  }
+
+  if (!ALLOWED_GREENHOUSE_HOSTS.has(parsed.hostname)) {
+    throw new Error(`greenhouse: untrusted hostname "${parsed.hostname}"`);
+  }
+
+  return url;
+}
+
 function detectApi(company) {
   if (company.api_provider === 'landingjobs' || /https?:\/\/(?:www\.)?landing\.jobs\/(?:feed(?:\.atom)?|jobs)(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
     const landingjobs = getLandingJobsConfig(company);
@@ -996,7 +1022,7 @@ function detectApi(company) {
 
   // Greenhouse: explicit api field
   if (company.api && company.api.includes('greenhouse')) {
-    return { type: 'greenhouse', url: company.api };
+    return { type: 'greenhouse', url: assertGreenhouseUrl(company.api) };
   }
 
   const url = company.careers_url || '';
@@ -1024,7 +1050,7 @@ function detectApi(company) {
   if (ghEuMatch && !company.api) {
     return {
       type: 'greenhouse',
-      url: `https://boards-api.greenhouse.io/v1/boards/${ghEuMatch[1]}/jobs`,
+      url: assertGreenhouseUrl(`https://boards-api.greenhouse.io/v1/boards/${ghEuMatch[1]}/jobs`),
     };
   }
 
@@ -2521,7 +2547,13 @@ async function fetchJson(url) {
       headers['origin'] = origin;
     }
 
-    const res = await fetch(url, { signal: controller.signal, headers });
+    const options = { signal: controller.signal, headers };
+    if (/https:\/\/(?:boards-api|boards|job-boards(?:\.eu)?)\.greenhouse\.io\//.test(url)) {
+      assertGreenhouseUrl(url);
+      options.redirect = 'error';
+    }
+
+    const res = await fetch(url, options);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
