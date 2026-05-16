@@ -226,10 +226,14 @@ search_queries:
     query: 'site:pt.indeed.com "Líder Técnico" OR "Lider Tecnico" OR "Líder de Engenharia" OR "Arquiteto de Soluções" OR "Engenheiro de Soluções" OR "Engenheiro de Integração" Portugal'
     enabled: true
 
+  - name: IT Jobs Switzerland — Backend / Platform
+    query: 'site:it-jobs-switzerland.ch "Backend Engineer" OR "Software Engineer" OR "Full Stack Engineer" OR "Platform Engineer" OR "Technical Lead" Switzerland OR Schweiz OR Zürich OR Lausanne OR Genève'
+    enabled: true
+
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsinenglish, devjobsde, jobsch, makeitingermany, jobchannel, dice, remoteineurope, workingnomads, rustjobs, nodesk
+# provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsinenglish, devjobsde, jobsch, makeitingermany, dice, remoteineurope, workingnomads, rustjobs, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
 #   - PCSX portals can also be configured with `provider: pcsx` + `api_domain:`
