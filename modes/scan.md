@@ -122,9 +122,9 @@ Los niveles son aditivos — se ejecutan todos, los resultados se mezclan y dedu
    g. Si `careers_url` falla (404, redirect), intentar `scan_query` como fallback y anotar para actualizar la URL
 
 5. **Nivel 2 — ATS APIs / feeds** (paralelo):
-   Para cada empresa en `tracked_companies` con `api:` definida o `api_provider:` configurado y `enabled: true`:
+   Para cada empresa en `tracked_companies` con `api:` definida o `provider:` configurado y `enabled: true`:
    a. WebFetch de la URL de API/feed
-    b. Si `api_provider` está definido, usar su parser; si no está definido, inferir por dominio (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `landing.jobs/feed`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `www.itjobs.pt/emprego`, `emprego.sapo.pt/offers`, `www.portalemprego.pt/anuncios`, `www.dice.com/jobs`)
+    b. Si `provider` está definido, usar su parser; si no está definido, inferir por dominio (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `landing.jobs/feed`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `www.itjobs.pt/emprego`, `emprego.sapo.pt/offers`, `www.portalemprego.pt/anuncios`, `www.dice.com/jobs`)
    c. Para **Ashby**, enviar POST con:
       - `operationName: ApiJobBoardWithTeams`
       - `variables.organizationHostedJobsPageName: {company}`

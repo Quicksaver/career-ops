@@ -229,16 +229,16 @@ search_queries:
 # -- Tracked companies --
 # Companies whose career pages are checked directly.
 # scan_method: playwright (default), websearch
-# api_provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsinenglish, jobsch, dice, remoteineurope, workingnomads, rustjobs, nodesk
+# provider: greenhouse, pcsx, itjobs, sapo, portalemprego, landingjobs, swissdevjobs, germantechjobs, devitjobs, euremotejobs, englishjobs, jobsinenglish, devjobsde, jobsch, makeitingermany, jobchannel, dice, remoteineurope, workingnomads, rustjobs, nodesk
 # For API-backed companies:
 #   - `api:` may point directly to the search endpoint
-#   - PCSX portals can also be configured with `api_provider: pcsx` + `api_domain:`
-#   - Landing.jobs can be configured with `api_provider: landingjobs` +
+#   - PCSX portals can also be configured with `provider: pcsx` + `api_domain:`
+#   - Landing.jobs can be configured with `provider: landingjobs` +
 #     `api: https://landing.jobs/feed` and optional client-side `api_params:`
 #     such as `q`, `category`, `remote_policy`, `country`, `city`, `job_type`,
 #     `published_within_days`, and `updated_within_days`
 #   - SwissDevJobs / GermanTechJobs / DevITJobs.* can be configured with
-#     `api_provider: swissdevjobs`, `germantechjobs`, or `devitjobs` plus a
+#     `provider: swissdevjobs`, `germantechjobs`, or `devitjobs` plus a
 #     domain-specific `api: https://<portal>/api/jobsLight`. These public JSON
 #     endpoints are the optimal low-friction source: they already expose title,
 #     company, city, workplace, salary band, language, visa sponsorship, job
@@ -247,21 +247,21 @@ search_queries:
 #     `visa_sponsorship`, `job_type`, `exp_level`, `tech_category`,
 #     `meta_category`, `company_type`, `company_size`, `technologies`, and
 #     `published_within_days`
-#   - ITJobs can be configured with `api_provider: itjobs` + `api_params:` using
+#   - ITJobs can be configured with `provider: itjobs` + `api_params:` using
 #     listing-page filters (`date`, `work_model`, `location`, `salary`, `type`,
 #     `contract`) and optional `api_max_pages:`
-#   - EU Remote Jobs can be configured with `api_provider: euremotejobs` +
+#   - EU Remote Jobs can be configured with `provider: euremotejobs` +
 #     `api:` pointing to `https://euremotejobs.com/job-listings/feed/` or a
 #     category feed such as `https://euremotejobs.com/job-category/engineering/feed/`,
 #     plus optional `api_max_pages:` for `?paged=N` RSS pagination
-#   - SAPO Emprego can be configured with `api_provider: sapo` + `api_params:` using
+#   - SAPO Emprego can be configured with `provider: sapo` + `api_params:` using
 #     search/listing filters such as `pesquisa`, `categoria`, `modelo`,
 #     `distrito`, and optional `api_max_pages:`
-#   - Portal Emprego can be configured with `api_provider: portalemprego` +
+#   - Portal Emprego can be configured with `provider: portalemprego` +
 #     `api_params.pesquisa:` using keyword-seeded SEO listing pages and optional
 #     `api_max_pages:`
 #   - The EnglishJobs / EnglishJobSearch country portals can be configured with
-#     `api_provider: englishjobs` + a country `careers_url`, for example:
+#     `provider: englishjobs` + a country `careers_url`, for example:
 #     `https://englishjobsearch.ch`, `https://englishjobs.dk`,
 #     `https://englishjobsearch.se`, `https://englishjobs.no`,
 #     `https://englishjobs.fi`, `https://englishjobsearch.nl`, or
@@ -272,14 +272,14 @@ search_queries:
 #     brittle HTML scraping. Result links are tracker clickouts, not canonical
 #     downstream job URLs, so dedup should key off the stable `/clickout/{id}`
 #     path and keep the full clickout URL for evaluation.
-#   - JobsInEnglish.dk can be configured with `api_provider: jobsinenglish` +
+#   - JobsInEnglish.dk can be configured with `provider: jobsinenglish` +
 #     `careers_url: https://jobsinenglish.dk/`. Optional `api_params:` use
 #     `q`/`search`, repeated `region`, and repeated `category`. The best scan
 #     surface is the first-party HTMX `/view_all_ads/` endpoint, which returns
 #     one unpaginated HTML fragment per filtered query when requested with
 #     `HX-Request: true`; canonical `/ads/...` pages retain full descriptions,
 #     JobPosting schema, and the outbound Apply Now link.
-#   - jobs.ch can be configured with `api_provider: jobsch` + a localized
+#   - jobs.ch can be configured with `provider: jobsch` + a localized
 #     search URL such as `https://www.jobs.ch/en/vacancies/`,
 #     `https://www.jobs.ch/de/stellenangebote/`, or
 #     `https://www.jobs.ch/fr/offres-emplois/`. Optional `api_params.term:` can
@@ -288,23 +288,23 @@ search_queries:
 #     but the HTML search page embeds `__INIT__.vacancy.results.main.results`
 #     plus localized `__GLOBAL__.ROUTES.VACANCY_DETAIL`, making embedded JSON
 #     extraction the lowest-friction stable integration.
-#   - Dice can be configured with `api_provider: dice` + `api:` pointing to
+#   - Dice can be configured with `provider: dice` + `api:` pointing to
 #     `https://www.dice.com/jobs` and `api_params:` using public search params
 #     such as `q`, `location`, `includeRemote`, `filters.workplaceTypes`,
 #     `employmentType`, `postedDate`, and `employerType`, plus optional
 #     `api_page_size:` / `api_max_pages:`
-#   - Remote in Europe can be configured with `api_provider: remoteineurope` +
+#   - Remote in Europe can be configured with `provider: remoteineurope` +
 #     a category URL such as `https://remoteineurope.com/categories/programming`
 #     or optional `api_params.category:` slugs like `programming`, `product`,
 #     and `devops-sysadmin`. The scanner paginates Webflow category listings,
 #     then enriches each job detail page to recover the external apply URL,
 #     company site, publish/expiry dates, and full description.
-#   - Working Nomads can be configured with `api_provider: workingnomads` +
+#   - Working Nomads can be configured with `provider: workingnomads` +
 #     `api: https://www.workingnomads.com/api/exposed_jobs/` and optional
 #     client-side `api_params:` such as `location`, `category`, `q`, `tags`,
 #     and `published_within_days`. Public server-side filters/pagination were
 #     not observed, so the scanner fetches once and filters locally.
-#   - RustJobs.dev can be configured with `api_provider: rustjobs` +
+#   - RustJobs.dev can be configured with `provider: rustjobs` +
 #     `careers_url: https://rustjobs.dev`. Optional `api_params.location:`
 #     values include slugs like `remote`, `europe`, `united-states`,
 #     `united-kingdom`, `germany`, and `netherlands`. Direct HTTP fetches are
@@ -312,7 +312,7 @@ search_queries:
 #     location pages, click `Load more jobs`, and extract canonical job URLs,
 #     company, location, salary, remote policy, posted date, and apply URL
 #     from the DOM.
-#   - NoDesk can be configured with `api_provider: nodesk` +
+#   - NoDesk can be configured with `provider: nodesk` +
 #     `careers_url: https://nodesk.co/remote-jobs/`. The optimal integration is
 #     the public Algolia index used by the site search, with `Origin`/`Referer`
 #     headers matching nodesk.co. Optional `api_params.search_filter:` values use
@@ -340,7 +340,7 @@ tracked_companies:
 
   - name: ITJobs Portugal
     careers_url: https://www.itjobs.pt/emprego/remote
-    api_provider: itjobs
+    provider: itjobs
     api: https://www.itjobs.pt/emprego
     api_params:
       date: 24h
@@ -353,7 +353,7 @@ tracked_companies:
 
   - name: SAPO Emprego
     careers_url: https://emprego.sapo.pt/offers
-    api_provider: sapo
+    provider: sapo
     api: https://emprego.sapo.pt/offers
     api_params:
       pesquisa:
@@ -370,7 +370,7 @@ tracked_companies:
 
   - name: Portal Emprego
     careers_url: https://www.portalemprego.pt/anuncios/
-    api_provider: portalemprego
+    provider: portalemprego
     api: https://www.portalemprego.pt/anuncios/
     api_params:
       pesquisa:
@@ -384,7 +384,7 @@ tracked_companies:
 
   - name: Landing.jobs
     careers_url: https://landing.jobs/jobs
-    api_provider: landingjobs
+    provider: landingjobs
     api: https://landing.jobs/feed
     # Optional client-side filters on feed entries:
     # api_params:
@@ -404,7 +404,7 @@ tracked_companies:
 
   - name: SwissDevJobs
     careers_url: https://swissdevjobs.ch/
-    api_provider: swissdevjobs
+    provider: swissdevjobs
     api: https://swissdevjobs.ch/api/jobsLight
     api_params:
       published_within_days: 45
@@ -413,7 +413,7 @@ tracked_companies:
 
   - name: GermanTechJobs
     careers_url: https://germantechjobs.de/
-    api_provider: germantechjobs
+    provider: germantechjobs
     api: https://germantechjobs.de/api/jobsLight
     api_params:
       published_within_days: 45
@@ -422,7 +422,7 @@ tracked_companies:
 
   - name: DevITJobs UK
     careers_url: https://devitjobs.uk/
-    api_provider: devitjobs
+    provider: devitjobs
     api: https://devitjobs.uk/api/jobsLight
     api_params:
       published_within_days: 45
@@ -431,7 +431,7 @@ tracked_companies:
 
   - name: DevITJobs NL
     careers_url: https://devitjobs.nl/
-    api_provider: devitjobs
+    provider: devitjobs
     api: https://devitjobs.nl/api/jobsLight
     api_params:
       published_within_days: 45
@@ -440,7 +440,7 @@ tracked_companies:
 
   - name: EU Remote Jobs
     careers_url: https://euremotejobs.com/job-category/engineering/
-    api_provider: euremotejobs
+    provider: euremotejobs
     api: https://euremotejobs.com/job-listings/feed/
     api_max_pages: 4
     notes: "WordPress RSS feed with paginated `?paged=N` archives, canonical job URLs, publish dates, and normalized summaries. Better fit than HTML scraping or WebSearch for zero-token scanning."
@@ -448,7 +448,7 @@ tracked_companies:
 
   - name: English Job Search Switzerland
     careers_url: https://englishjobsearch.ch
-    api_provider: englishjobs
+    provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -465,7 +465,7 @@ tracked_companies:
 
   - name: Jobs.ch Switzerland
     careers_url: https://www.jobs.ch/en/vacancies/
-    api_provider: jobsch
+    provider: jobsch
     api_params:
       term:
         - "platform engineer"
@@ -477,7 +477,7 @@ tracked_companies:
 
   - name: English Jobs Denmark
     careers_url: https://englishjobs.dk
-    api_provider: englishjobs
+    provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -494,7 +494,7 @@ tracked_companies:
 
   - name: Jobs in English Denmark
     careers_url: https://jobsinenglish.dk/
-    api_provider: jobsinenglish
+    provider: jobsinenglish
     api_params:
       q:
         - "platform engineer"
@@ -509,7 +509,7 @@ tracked_companies:
 
   - name: English Jobs Sweden
     careers_url: https://englishjobsearch.se
-    api_provider: englishjobs
+    provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -526,7 +526,7 @@ tracked_companies:
 
   - name: English Jobs Norway
     careers_url: https://englishjobs.no
-    api_provider: englishjobs
+    provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -543,7 +543,7 @@ tracked_companies:
 
   - name: English Jobs Finland
     careers_url: https://englishjobs.fi
-    api_provider: englishjobs
+    provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -560,7 +560,7 @@ tracked_companies:
 
   - name: English Jobs Netherlands
     careers_url: https://englishjobsearch.nl
-    api_provider: englishjobs
+    provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -577,7 +577,7 @@ tracked_companies:
 
   - name: English Jobs Germany
     careers_url: https://englishjobs.de
-    api_provider: englishjobs
+    provider: englishjobs
     api_params:
       q:
         - "platform engineer"
@@ -594,7 +594,7 @@ tracked_companies:
 
   - name: Working Nomads Europe
     careers_url: https://www.workingnomads.com/remote-europe-jobs
-    api_provider: workingnomads
+    provider: workingnomads
     api: https://www.workingnomads.com/api/exposed_jobs/
     api_params:
       location:
@@ -605,7 +605,7 @@ tracked_companies:
 
   - name: NoDesk
     careers_url: https://nodesk.co/remote-jobs/
-    api_provider: nodesk
+    provider: nodesk
     api_params:
       search_filter:
         - remote-jobs/engineering
@@ -616,7 +616,7 @@ tracked_companies:
 
   - name: Dice
     careers_url: https://www.dice.com/jobs
-    api_provider: dice
+    provider: dice
     api: https://www.dice.com/jobs
     api_params:
       q:
@@ -646,7 +646,7 @@ tracked_companies:
 
   - name: Remote in Europe
     careers_url: https://remoteineurope.com/categories/programming
-    api_provider: remoteineurope
+    provider: remoteineurope
     api: https://remoteineurope.com/categories/programming
     api_params:
       category:
@@ -659,7 +659,7 @@ tracked_companies:
 
   - name: RustJobs.dev
     careers_url: https://rustjobs.dev
-    api_provider: rustjobs
+    provider: rustjobs
     api_params:
       location:
         - remote
