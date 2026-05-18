@@ -28,10 +28,10 @@ LaTeX template for Overleaf-compatible CV generation. Based on the [sb2nov/resum
 **Usage:**
 ```bash
 # Validate and compile .tex → .pdf (requires pdflatex on PATH)
-node generate-latex.mjs output/cv-name-company-date.tex
+node generate-latex.mjs output/123-company-2026-05-18.tex
 
 # Or specify a custom output path
-node generate-latex.mjs output/cv-name-company-date.tex output/custom-name.pdf
+node generate-latex.mjs output/123-company-2026-05-18.tex output/123-company-2026-05-18.pdf
 ```
 
 **Prerequisites:** `pdflatex` via [MiKTeX](https://miktex.org/) (Windows) or TeX Live (Linux/macOS). First compilation may auto-install missing LaTeX packages. Alternatively, upload the `.tex` file directly to [Overleaf](https://www.overleaf.com) — no local install needed.
