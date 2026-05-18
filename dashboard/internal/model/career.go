@@ -4,6 +4,7 @@ package model
 type CareerApplication struct {
 	Number       int
 	Date         string
+	ListingDate  string
 	Company      string
 	Role         string
 	Status       string
@@ -48,10 +49,10 @@ type ProgressMetrics struct {
 	OfferRate     float64 // Offer / Applied
 
 	// Averages
-	AvgScore     float64
-	TopScore     float64
-	TotalOffers  int
-	ActiveApps int // not skip/rejected/discarded
+	AvgScore    float64
+	TopScore    float64
+	TotalOffers int
+	ActiveApps  int // not skip/rejected/discarded
 }
 
 // FunnelStage represents one stage of the application funnel.

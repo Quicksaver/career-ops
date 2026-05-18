@@ -14,16 +14,18 @@ import (
 )
 
 var (
-	reReportLink     = regexp.MustCompile(`\[(\d+)\]\(([^)]+)\)`)
-	reScoreValue     = regexp.MustCompile(`(\d+\.?\d*)/5`)
-	reArchetype      = regexp.MustCompile(`(?i)\*\*Arquetipo(?:\s+detectado)?\*\*\s*\|\s*(.+)`)
-	reTlDr           = regexp.MustCompile(`(?i)\*\*TL;DR\*\*\s*\|\s*(.+)`)
-	reTlDrColon      = regexp.MustCompile(`(?i)\*\*TL;DR:\*\*\s*(.+)`)
-	reRemote         = regexp.MustCompile(`(?i)\*\*Remote\*\*\s*\|\s*(.+)`)
-	reComp           = regexp.MustCompile(`(?i)\*\*Comp\*\*\s*\|\s*(.+)`)
-	reArchetypeColon = regexp.MustCompile(`(?i)\*\*Arquetipo:\*\*\s*(.+)`)
-	reReportURL      = regexp.MustCompile(`(?m)^\*\*URL:\*\*\s*(https?://\S+)`)
-	reBatchID        = regexp.MustCompile(`(?m)^\*\*Batch ID:\*\*\s*(\d+)`)
+	reReportLink      = regexp.MustCompile(`\[(\d+)\]\(([^)]+)\)`)
+	reScoreValue      = regexp.MustCompile(`(\d+\.?\d*)/5`)
+	reArchetype       = regexp.MustCompile(`(?i)\*\*Arquetipo(?:\s+detectado)?\*\*\s*\|\s*(.+)`)
+	reTlDr            = regexp.MustCompile(`(?i)\*\*TL;DR\*\*\s*\|\s*(.+)`)
+	reTlDrColon       = regexp.MustCompile(`(?i)\*\*TL;DR:\*\*\s*(.+)`)
+	reRemote          = regexp.MustCompile(`(?i)\*\*Remote\*\*\s*\|\s*(.+)`)
+	reComp            = regexp.MustCompile(`(?i)\*\*Comp\*\*\s*\|\s*(.+)`)
+	reArchetypeColon  = regexp.MustCompile(`(?i)\*\*Arquetipo:\*\*\s*(.+)`)
+	reReportURL       = regexp.MustCompile(`(?m)^\*\*URL:\*\*\s*(https?://\S+)`)
+	reBatchID         = regexp.MustCompile(`(?m)^\*\*Batch ID:\*\*\s*(\d+)`)
+	reListingISODate  = regexp.MustCompile(`(?i)(?:posted|published|first published|date posted|posting date|listing date)[^\n\d]{0,40}(\d{4}-\d{2}-\d{2})`)
+	reListingTextDate = regexp.MustCompile(`(?i)(?:posted|published|first published|date posted|posting date|listing date)[^\n\d]{0,40}((?:\d{1,2}\s+)?(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})`)
 )
 
 // ParseApplications reads applications.md and returns parsed applications.
@@ -133,6 +135,10 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 		if len(header) > 1000 {
 			header = header[:1000]
 		}
+
+		// Prefer a posting/listing date from the report text when available.
+		// Keep the tracker Date as the processed-date fallback.
+		apps[i].ListingDate = extractListingDate(string(reportContent))
 
 		// Strategy 1: **URL:** in report
 		if m := reReportURL.FindStringSubmatch(header); m != nil {
@@ -286,18 +292,25 @@ func loadJobURLs(careerOpsPath string) map[string]string {
 
 // enrichFromScanHistory fills JobURL from scan-history.tsv by matching company name.
 func enrichFromScanHistory(careerOpsPath string, apps []model.CareerApplication) {
-	scanPath := filepath.Join(careerOpsPath, "scan-history.tsv")
+	scanPath := scanHistoryPath(careerOpsPath)
+	if scanPath == "" {
+		return
+	}
 	scanData, err := os.ReadFile(scanPath)
 	if err != nil {
 		return
 	}
 
-	// Build company -> URL index from scan-history
+	// Build URL and company indexes from scan-history. `first_seen` is the
+	// earliest locally known listing/discovery date and is better for dashboard
+	// display than the later processed date in applications.md.
 	type scanEntry struct {
-		url     string
-		company string
-		title   string
+		url       string
+		firstSeen string
+		company   string
+		title     string
 	}
+	byURL := make(map[string]scanEntry)
 	byCompany := make(map[string][]scanEntry)
 	for _, line := range strings.Split(string(scanData), "\n") {
 		fields := strings.Split(line, "\t")
@@ -305,27 +318,38 @@ func enrichFromScanHistory(careerOpsPath string, apps []model.CareerApplication)
 			continue
 		}
 		url := fields[0]
+		firstSeen := fields[1]
 		company := fields[4]
 		title := fields[3]
 		if url == "" || !strings.HasPrefix(url, "http") {
 			continue
 		}
+		entry := scanEntry{url: url, firstSeen: firstSeen, company: company, title: title}
+		byURL[url] = entry
 		key := normalizeCompany(company)
-		byCompany[key] = append(byCompany[key], scanEntry{url: url, company: company, title: title})
+		byCompany[key] = append(byCompany[key], entry)
 	}
 
 	for i := range apps {
 		if apps[i].JobURL != "" {
-			continue
+			if match, ok := byURL[apps[i].JobURL]; ok {
+				if apps[i].ListingDate == "" {
+					apps[i].ListingDate = normalizeDashboardDate(match.firstSeen)
+				}
+				continue
+			}
 		}
 		key := normalizeCompany(apps[i].Company)
 		matches := byCompany[key]
 		if len(matches) == 1 {
 			apps[i].JobURL = matches[0].url
+			if apps[i].ListingDate == "" {
+				apps[i].ListingDate = normalizeDashboardDate(matches[0].firstSeen)
+			}
 		} else if len(matches) > 1 {
 			// Multiple entries: pick best role match
 			appRole := strings.ToLower(apps[i].Role)
-			best := matches[0].url
+			best := matches[0]
 			bestScore := 0
 			for _, m := range matches {
 				score := 0
@@ -337,12 +361,28 @@ func enrichFromScanHistory(careerOpsPath string, apps []model.CareerApplication)
 				}
 				if score > bestScore {
 					bestScore = score
-					best = m.url
+					best = m
 				}
 			}
-			apps[i].JobURL = best
+			apps[i].JobURL = best.url
+			if apps[i].ListingDate == "" {
+				apps[i].ListingDate = normalizeDashboardDate(best.firstSeen)
+			}
 		}
 	}
+}
+
+func scanHistoryPath(careerOpsPath string) string {
+	candidates := []string{
+		filepath.Join(careerOpsPath, "data", "scan-history.tsv"),
+		filepath.Join(careerOpsPath, "scan-history.tsv"),
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // normalizeCompany strips common suffixes and lowercases a company name.
@@ -587,6 +627,46 @@ func cleanTableCell(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimRight(s, "|")
 	return strings.TrimSpace(s)
+}
+
+func extractListingDate(reportText string) string {
+	for _, re := range []*regexp.Regexp{reListingISODate, reListingTextDate} {
+		if m := re.FindStringSubmatch(reportText); m != nil {
+			if normalized := normalizeDashboardDate(m[1]); normalized != "" {
+				return normalized
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeDashboardDate(raw string) string {
+	raw = strings.TrimSpace(strings.Trim(raw, ".,;:()[]"))
+	if raw == "" {
+		return ""
+	}
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		return t.Format("2006-01-02")
+	}
+	formats := []string{
+		"2 January 2006",
+		"02 January 2006",
+		"January 2 2006",
+		"January 02 2006",
+		"January 2006",
+		"2 Jan 2006",
+		"02 Jan 2006",
+		"Jan 2 2006",
+		"Jan 02 2006",
+		"Jan 2006",
+	}
+	title := strings.Title(strings.ToLower(raw))
+	for _, format := range formats {
+		if t, err := time.Parse(format, title); err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+	return ""
 }
 
 // StatusPriority returns the sort priority for a status (lower = higher priority).

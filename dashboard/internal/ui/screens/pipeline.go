@@ -562,7 +562,7 @@ func (m *PipelineModel) applyFilterAndSort() {
 		})
 	case sortDate:
 		sort.SliceStable(filtered, func(i, j int) bool {
-			return filtered[i].Date > filtered[j].Date
+			return dashboardDate(filtered[i]) > dashboardDate(filtered[j])
 		})
 	case sortCompany:
 		sort.SliceStable(filtered, func(i, j int) bool {
@@ -587,7 +587,7 @@ func (m *PipelineModel) applyFilterAndSort() {
 			case sortScore:
 				return filtered[i].Score > filtered[j].Score
 			case sortDate:
-				return filtered[i].Date > filtered[j].Date
+				return dashboardDate(filtered[i]) > dashboardDate(filtered[j])
 			case sortCompany:
 				return strings.ToLower(filtered[i].Company) < strings.ToLower(filtered[j].Company)
 			default:
@@ -910,8 +910,8 @@ func (m PipelineModel) renderAppLine(app model.CareerApplication, selected bool)
 	company := truncateRunes(app.Company, companyW)
 	companyStyle := lipgloss.NewStyle().Foreground(m.theme.Text).Width(companyW)
 
-	// Date (fixed width)
-	dateText := app.Date
+	// Listing date when known; processed date as fallback.
+	dateText := dashboardDate(app)
 	if dateText == "" {
 		dateText = "—"
 	}
@@ -952,6 +952,13 @@ func (m PipelineModel) renderAppLine(app model.CareerApplication, selected bool)
 		return padStyle.Render(selStyle.Render(line))
 	}
 	return padStyle.Render(line)
+}
+
+func dashboardDate(app model.CareerApplication) string {
+	if app.ListingDate != "" {
+		return app.ListingDate
+	}
+	return app.Date
 }
 
 func (m PipelineModel) renderPreview() string {
