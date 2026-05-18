@@ -15,6 +15,7 @@
     "rollback": "node update-system.mjs rollback",
     "liveness": "node check-liveness.mjs",
     "scan": "node scan.mjs",
+    "dashboard": "./run-dashboard.sh",
     "gemini:eval": "node gemini-eval.mjs"
   },
   "keywords": [
