@@ -193,7 +193,11 @@ try {
   ) {
     pass('fetchJson retries retryable HTTP statuses with exponential backoff');
   } else {
-    fail(`fetchJson retry sequence was unexpected: calls=${calls}, delays=${delays.join(',')}`);
+    fail(
+      `fetchJson retry sequence was unexpected: expected 3 calls, one ok job, and 2 increasing delays within jitter bounds; `
+      + `got calls=${calls}, jobs=${JSON.stringify(retryResult.jobs)}, delays=[${delays.join(', ')}], `
+      + `withinJitter=${delays.map((delay, index) => isWithinJitter(delay, index + 1)).join(',')}`
+    );
   }
 
   calls = 0;
@@ -332,10 +336,16 @@ try {
   const jitteredHigh = retryDelayMs(1, () => 0.999999);
   const expectedLow = Math.round(FETCH_RETRY_BASE_DELAY_MS * (1 - FETCH_RETRY_JITTER_RATIO));
   const expectedHigh = Math.round(FETCH_RETRY_BASE_DELAY_MS * (1 + FETCH_RETRY_JITTER_RATIO));
-  if (FETCH_MAX_ATTEMPTS > 1 && jitteredLow === expectedLow && jitteredHigh <= expectedHigh && jitteredHigh > FETCH_RETRY_BASE_DELAY_MS) {
-    pass('Retry attempt naming and jitter bounds are explicit');
+  if (FETCH_MAX_ATTEMPTS <= 1) {
+    fail(`FETCH_MAX_ATTEMPTS must be > 1, got ${FETCH_MAX_ATTEMPTS}`);
+  } else if (jitteredLow !== expectedLow) {
+    fail(`Jitter low bound incorrect: expected ${expectedLow}, got ${jitteredLow}`);
+  } else if (jitteredHigh > expectedHigh) {
+    fail(`Jitter high bound exceeds maximum: expected <= ${expectedHigh}, got ${jitteredHigh}`);
+  } else if (jitteredHigh <= FETCH_RETRY_BASE_DELAY_MS) {
+    fail(`Jitter high bound should exceed base delay ${FETCH_RETRY_BASE_DELAY_MS}, got ${jitteredHigh}`);
   } else {
-    fail(`Retry constants/jitter unexpected: attempts=${FETCH_MAX_ATTEMPTS}, low=${jitteredLow}, high=${jitteredHigh}`);
+    pass('Retry configuration and jitter bounds are valid');
   }
 } catch (e) {
   fail(`Custom provider retry tests crashed: ${e.message}`);

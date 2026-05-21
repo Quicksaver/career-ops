@@ -90,4 +90,6 @@ export async function fetchJsonWithRetry(url, {
       clearTimeout(timer);
     }
   }
+
+  throw new Error('fetchJsonWithRetry: exhausted retry attempts unexpectedly');
 }
