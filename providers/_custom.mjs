@@ -67,7 +67,7 @@ const DEVJOBSDE_BROWSER_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_
 const DEVJOBSDE_WORKING_MODELS = new Set(['Full Remote', 'Hybrid', 'Onsite']);
 const DEVJOBSDE_EMPLOYMENT_TYPES = new Set(['Full Time', 'Part Time', 'Part Time/Full Time', 'Freelance', 'Internship', 'Apprenticeship']);
 const DEVJOBSDE_EXPERIENCE_LEVELS = new Set(['Junior', 'Senior', 'Lead']);
-const RETRYABLE_HTTP_STATUSES = new Set([403, 408, 409, 425, 429, 500, 502, 503, 504]);
+const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
   fullremote: ['fullremote', 'remote'],
@@ -2549,8 +2549,6 @@ const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLe
 // ── Fetch with timeout ──────────────────────────────────────────────
 
 async function fetchJson(url) {
-  let lastError;
-
   for (let attempt = 0; attempt <= FETCH_MAX_RETRIES; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -2581,7 +2579,6 @@ async function fetchJson(url) {
       }
       return await res.json();
     } catch (error) {
-      lastError = error;
       if (attempt >= FETCH_MAX_RETRIES || !isRetryableFetchError(error)) {
         throw error;
       }
@@ -2590,8 +2587,6 @@ async function fetchJson(url) {
       clearTimeout(timer);
     }
   }
-
-  throw lastError;
 }
 
 async function fetchText(url) {
