@@ -137,10 +137,214 @@ try {
   fail(`Liveness classification tests crashed: ${e.message}`);
 }
 
-// ── 4. DASHBOARD BUILD ──────────────────────────────────────────
+// ── 4. CUSTOM PROVIDER RETRIES ──────────────────────────────────
+
+console.log('\n4. Custom provider retries');
+
+try {
+  const {
+    FETCH_MAX_ATTEMPTS,
+    FETCH_RETRY_BASE_DELAY_MS,
+    FETCH_RETRY_JITTER_RATIO,
+    RETRYABLE_HTTP_STATUSES,
+    fetchJsonWithRetry,
+    isRetryableFetchError,
+    retryDelayMs,
+  } = await import(pathToFileURL(join(ROOT, 'providers/_custom-fetch.mjs')).href);
+  const { detectCustomProvider, fetchCustomProvider } = await import(pathToFileURL(join(ROOT, 'providers/_custom.mjs')).href);
+
+  const okJson = value => ({ ok: true, status: 200, json: async () => value });
+  const statusJson = status => ({ ok: false, status, json: async () => ({}) });
+  const isWithinJitter = (delay, retryNumber) => {
+    const baseDelay = FETCH_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, retryNumber - 1));
+    const min = Math.round(baseDelay * (1 - FETCH_RETRY_JITTER_RATIO));
+    const max = Math.round(baseDelay * (1 + FETCH_RETRY_JITTER_RATIO));
+    return delay >= min && delay <= max;
+  };
+  const expectReject = async (label, task, predicate, describeError = error => error.message) => {
+    try {
+      await task();
+      fail(`${label} unexpectedly succeeded`);
+    } catch (error) {
+      if (predicate(error)) {
+        pass(label);
+      } else {
+        fail(`${label} rejected unexpectedly: ${describeError(error)}`);
+      }
+    }
+  };
+
+  let calls = 0;
+  const delays = [];
+  const retryResult = await fetchJsonWithRetry('https://example.com/jobs.json', {
+    fetchImpl: async () => {
+      calls++;
+      return calls < 3 ? statusJson(503) : okJson({ jobs: ['ok'] });
+    },
+    sleepFn: async ms => delays.push(ms),
+    randomFn: () => 0.5,
+  });
+  if (
+    calls === 3
+    && retryResult.jobs?.[0] === 'ok'
+    && delays.length === 2
+    && delays[1] > delays[0]
+    && delays.every((delay, index) => isWithinJitter(delay, index + 1))
+  ) {
+    pass('fetchJson retries retryable HTTP statuses with exponential backoff');
+  } else {
+    fail(`fetchJson retry sequence was unexpected: calls=${calls}, delays=${delays.join(',')}`);
+  }
+
+  calls = 0;
+  await expectReject(
+    'fetchJson does not retry HTTP 404',
+    () => fetchJsonWithRetry('https://example.com/missing.json', {
+      fetchImpl: async () => {
+        calls++;
+        return statusJson(404);
+      },
+      sleepFn: async () => {},
+    }),
+    () => calls === 1,
+    () => `retried ${calls} times`
+  );
+
+  calls = 0;
+  // 409 conflicts are excluded deliberately because identical retries normally
+  // repeat the same state conflict rather than recovering like 429/5xx errors.
+  await expectReject(
+    'fetchJson does not retry HTTP 409 conflicts',
+    () => fetchJsonWithRetry('https://example.com/conflict.json', {
+      fetchImpl: async () => {
+        calls++;
+        return statusJson(409);
+      },
+      sleepFn: async () => {},
+    }),
+    () => calls === 1,
+    () => `retried ${calls} times`
+  );
+
+  let optionRedirect;
+  await fetchJsonWithRetry('https://boards-api.greenhouse.io/v1/boards/example/jobs', {
+    configureOptions: (_url, options) => ({ ...options, redirect: 'error' }),
+    fetchImpl: async (_url, options) => {
+      optionRedirect = options.redirect;
+      return okJson({ jobs: [] });
+    },
+    sleepFn: async () => {},
+  });
+  if (optionRedirect === 'error') {
+    pass('fetchJson uses returned per-attempt option overrides');
+  } else {
+    fail(`fetchJson option override was not applied: ${optionRedirect}`);
+  }
+
+  await expectReject(
+    'Greenhouse explicit APIs must use HTTPS',
+    () => detectCustomProvider('greenhouse', {
+      name: 'Invalid Greenhouse',
+      api: 'http://boards-api.greenhouse.io/v1/boards/example/jobs',
+    }),
+    error => /must use HTTPS/.test(error.message)
+  );
+
+  await expectReject(
+    'Greenhouse explicit APIs reject untrusted hosts',
+    () => detectCustomProvider('greenhouse', {
+      name: 'Invalid Greenhouse',
+      api: 'https://evil-greenhouse.example/v1/boards/example/jobs',
+    }),
+    error => /untrusted hostname/.test(error.message)
+  );
+
+  const originalFetch = globalThis.fetch;
+  let customProviderRedirect;
+  try {
+    globalThis.fetch = async (_url, options) => {
+      customProviderRedirect = options.redirect;
+      return okJson({ jobs: [{ title: 'AI Engineer', absolute_url: 'https://example.com/job', location: { name: 'Remote' } }] });
+    };
+
+    const greenhouseJobs = await fetchCustomProvider('greenhouse', {
+      name: 'Example',
+      api: 'https://boards-api.greenhouse.io/v1/boards/example/jobs',
+    });
+
+    if (customProviderRedirect === 'error' && greenhouseJobs[0]?.title === 'AI Engineer') {
+      pass('Custom provider fetch wrapper preserves Greenhouse options and JSON parsing');
+    } else {
+      fail(`Custom provider wrapper result unexpected: redirect=${customProviderRedirect}, jobs=${greenhouseJobs.length}`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const networkError = new TypeError('fetch failed');
+  networkError.cause = { code: 'EAI_AGAIN' };
+  const wrappedNetworkError = new Error('socket closed');
+  wrappedNetworkError.code = 'ECONNRESET';
+  const programmingError = new TypeError('Cannot read properties of undefined');
+  const abortError = new Error('The operation was aborted');
+  abortError.name = 'AbortError';
+
+  if (
+    isRetryableFetchError(networkError)
+    && isRetryableFetchError(wrappedNetworkError)
+    && isRetryableFetchError(abortError, { abortIsRetryable: true })
+    && !isRetryableFetchError(abortError)
+    && !isRetryableFetchError(programmingError)
+    && RETRYABLE_HTTP_STATUSES.has(503)
+    && !RETRYABLE_HTTP_STATUSES.has(409)
+  ) {
+    pass('Retryability guard only accepts network/timeout failures and selected statuses');
+  } else {
+    fail('Retryability guard accepted or rejected the wrong error/status');
+  }
+
+  calls = 0;
+  await expectReject(
+    'fetchJson stops after the configured max attempts',
+    () => fetchJsonWithRetry('https://example.com/down.json', {
+      fetchImpl: async () => {
+        calls++;
+        return statusJson(503);
+      },
+      sleepFn: async () => {},
+      maxAttempts: 3,
+    }),
+    () => calls === 3,
+    () => `stopped after ${calls} attempts`
+  );
+
+  await expectReject(
+    'fetchJson rejects invalid maxAttempts',
+    () => fetchJsonWithRetry('https://example.com/invalid-attempts.json', {
+      fetchImpl: async () => okJson({}),
+      maxAttempts: 0,
+    }),
+    error => error instanceof RangeError,
+    error => error.name
+  );
+
+  const jitteredLow = retryDelayMs(1, () => 0);
+  const jitteredHigh = retryDelayMs(1, () => 0.999999);
+  const expectedLow = Math.round(FETCH_RETRY_BASE_DELAY_MS * (1 - FETCH_RETRY_JITTER_RATIO));
+  const expectedHigh = Math.round(FETCH_RETRY_BASE_DELAY_MS * (1 + FETCH_RETRY_JITTER_RATIO));
+  if (FETCH_MAX_ATTEMPTS > 1 && jitteredLow === expectedLow && jitteredHigh <= expectedHigh && jitteredHigh > FETCH_RETRY_BASE_DELAY_MS) {
+    pass('Retry attempt naming and jitter bounds are explicit');
+  } else {
+    fail(`Retry constants/jitter unexpected: attempts=${FETCH_MAX_ATTEMPTS}, low=${jitteredLow}, high=${jitteredHigh}`);
+  }
+} catch (e) {
+  fail(`Custom provider retry tests crashed: ${e.message}`);
+}
+
+// ── 5. DASHBOARD BUILD ──────────────────────────────────────────
 
 if (!QUICK) {
-  console.log('\n4. Dashboard build');
+  console.log('\n5. Dashboard build');
   const goBuild = run('cd dashboard && go build -o /tmp/career-dashboard-test . 2>&1');
   if (goBuild !== null) {
     pass('Dashboard compiles');
@@ -148,12 +352,12 @@ if (!QUICK) {
     fail('Dashboard build failed');
   }
 } else {
-  console.log('\n4. Dashboard build (skipped --quick)');
+  console.log('\n5. Dashboard build (skipped --quick)');
 }
 
-// ── 5. DATA CONTRACT ────────────────────────────────────────────
+// ── 6. DATA CONTRACT ────────────────────────────────────────────
 
-console.log('\n5. Data contract validation');
+console.log('\n6. Data contract validation');
 
 // Check system files exist
 const systemFiles = [
@@ -187,9 +391,9 @@ for (const f of userFiles) {
   }
 }
 
-// ── 6. PERSONAL DATA LEAK CHECK ─────────────────────────────────
+// ── 7. PERSONAL DATA LEAK CHECK ─────────────────────────────────
 
-console.log('\n6. Personal data leak check');
+console.log('\n7. Personal data leak check');
 
 const leakPatterns = [
   'Santiago', 'santifer.io', 'Santifer iRepair', 'Zinkee', 'ALMAS',
@@ -237,9 +441,9 @@ if (!leakFound) {
   pass('No personal data leaks outside allowed files');
 }
 
-// ── 7. ABSOLUTE PATH CHECK ──────────────────────────────────────
+// ── 8. ABSOLUTE PATH CHECK ──────────────────────────────────────
 
-console.log('\n7. Absolute path check');
+console.log('\n8. Absolute path check');
 
 // Same git grep approach: only scans tracked files. Untracked AI tool
 // outputs, local debate artifacts, etc. can't false-positive here.
@@ -254,9 +458,9 @@ if (!absPathResult) {
   }
 }
 
-// ── 8. MODE FILE INTEGRITY ──────────────────────────────────────
+// ── 9. MODE FILE INTEGRITY ──────────────────────────────────────
 
-console.log('\n8. Mode file integrity');
+console.log('\n9. Mode file integrity');
 
 const expectedModes = [
   '_shared.md', '_profile.template.md', 'oferta.md', 'pdf.md', 'scan.md',
@@ -280,9 +484,9 @@ if (shared.includes('_profile.md')) {
   fail('_shared.md does NOT reference _profile.md');
 }
 
-// ── 9. AGENTS.md INTEGRITY ──────────────────────────────────────
+// ── 10. AGENTS.md INTEGRITY ──────────────────────────────────────
 
-console.log('\n9. AGENTS.md integrity');
+console.log('\n10. AGENTS.md integrity');
 
 const agents = readFile('AGENTS.md');
 const requiredSections = [
@@ -299,9 +503,9 @@ for (const section of requiredSections) {
   }
 }
 
-// ── 10. VERSION FILE ─────────────────────────────────────────────
+// ── 11. VERSION FILE ─────────────────────────────────────────────
 
-console.log('\n10. Version file');
+console.log('\n11. Version file');
 
 if (fileExists('VERSION')) {
   const version = readFile('VERSION').trim();

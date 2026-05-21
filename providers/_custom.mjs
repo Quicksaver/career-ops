@@ -22,6 +22,7 @@
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 import yaml from 'js-yaml';
+import { FETCH_TIMEOUT_MS, fetchJsonWithRetry } from './_custom-fetch.mjs';
 const parseYaml = yaml.load;
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -36,9 +37,6 @@ const PIPELINE_TEMPLATE = '## Pendientes\n\n## Procesadas\n';
 mkdirSync('data', { recursive: true });
 
 const CONCURRENCY = 10;
-const FETCH_TIMEOUT_MS = 10_000;
-const FETCH_MAX_RETRIES = 3;
-const FETCH_RETRY_BASE_DELAY_MS = 750;
 const PCSX_DETAIL_CONCURRENCY = 20;
 const EUREMOTEJOBS_DETAIL_CONCURRENCY = 5;
 const EUREMOTEJOBS_MAX_PAGES = 5;
@@ -63,11 +61,12 @@ const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
 const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
 const DEVITJOBS_FAMILY_DEFAULT_BASE_URL = 'https://swissdevjobs.ch';
 const DEVJOBSDE_BROWSER_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const DEVITJOBS_FAMILY_API_RE = /^https?:\/\/(?:www\.)?(?:swissdevjobs\.ch|germantechjobs\.de|devitjobs\.uk|devitjobs\.nl)\/api\//;
+const GREENHOUSE_API_RE = /^https:\/\/(?:boards-api|boards|job-boards(?:\.eu)?)\.greenhouse\.io\//;
 
 const DEVJOBSDE_WORKING_MODELS = new Set(['Full Remote', 'Hybrid', 'Onsite']);
 const DEVJOBSDE_EMPLOYMENT_TYPES = new Set(['Full Time', 'Part Time', 'Part Time/Full Time', 'Freelance', 'Internship', 'Apprenticeship']);
 const DEVJOBSDE_EXPERIENCE_LEVELS = new Set(['Junior', 'Senior', 'Lead']);
-const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
   fullremote: ['fullremote', 'remote'],
@@ -89,19 +88,6 @@ function normalizeSearchText(value) {
 
 function normalizeSearchKey(value) {
   return normalizeSearchText(value).replace(/[^a-z0-9]+/g, '');
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function retryDelayMs(retryNumber) {
-  return FETCH_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, retryNumber - 1));
-}
-
-function isRetryableFetchError(error) {
-  if (error?.status && RETRYABLE_HTTP_STATUSES.has(error.status)) return true;
-  return error?.name === 'AbortError' || error instanceof TypeError;
 }
 
 function escapeRegExp(value) {
@@ -2548,45 +2534,38 @@ const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLe
 
 // ── Fetch with timeout ──────────────────────────────────────────────
 
-async function fetchJson(url) {
-  for (let attempt = 0; attempt <= FETCH_MAX_RETRIES; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+function buildFetchJsonHeaders(url) {
+  const headers = {};
 
-    try {
-      const headers = {};
-
-      if (/https?:\/\/(?:www\.)?(?:swissdevjobs\.ch|germantechjobs\.de|devitjobs\.uk|devitjobs\.nl)\/api\//.test(url)) {
-        const origin = new URL(url).origin;
-        headers['user-agent'] = 'Mozilla/5.0';
-        headers['accept'] = 'application/json,text/plain,*/*';
-        headers['accept-language'] = 'en-US,en;q=0.9';
-        headers['referer'] = `${origin}/`;
-        headers['origin'] = origin;
-      }
-
-      const options = { signal: controller.signal, headers };
-      if (/https:\/\/(?:boards-api|boards|job-boards(?:\.eu)?)\.greenhouse\.io\//.test(url)) {
-        assertGreenhouseUrl(url);
-        options.redirect = 'error';
-      }
-
-      const res = await fetch(url, options);
-      if (!res.ok) {
-        const error = new Error(`HTTP ${res.status}`);
-        error.status = res.status;
-        throw error;
-      }
-      return await res.json();
-    } catch (error) {
-      if (attempt >= FETCH_MAX_RETRIES || !isRetryableFetchError(error)) {
-        throw error;
-      }
-      await sleep(retryDelayMs(attempt + 1));
-    } finally {
-      clearTimeout(timer);
-    }
+  if (DEVITJOBS_FAMILY_API_RE.test(url)) {
+    const origin = new URL(url).origin;
+    headers['user-agent'] = 'Mozilla/5.0';
+    headers['accept'] = 'application/json,text/plain,*/*';
+    headers['accept-language'] = 'en-US,en;q=0.9';
+    headers['referer'] = `${origin}/`;
+    headers['origin'] = origin;
   }
+
+  return headers;
+}
+
+function configureFetchJsonOptions(url, options) {
+  if (GREENHOUSE_API_RE.test(url)) {
+    return { ...options, redirect: 'error' };
+  }
+  return options;
+}
+
+async function fetchJson(url) {
+  if (GREENHOUSE_API_RE.test(url)) {
+    assertGreenhouseUrl(url);
+  }
+
+  return fetchJsonWithRetry(url, {
+    buildHeaders: buildFetchJsonHeaders,
+    configureOptions: configureFetchJsonOptions,
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
 }
 
 async function fetchText(url) {
