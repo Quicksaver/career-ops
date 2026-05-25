@@ -68,6 +68,26 @@ location:
 
 cv:
   output_format: "html" # "html" (default) or "latex"
+  # Optional HTML/PDF color overrides. Missing keys use the defaults from
+  # templates/cv-template.html.
+  # theme:
+  #   background: "#ffffff"
+  #   text: "#1a1a2e"
+  #   heading: "#1a1a2e"
+  #   summary: "#2f2f2f"
+  #   body: "#333"
+  #   body_muted: "#444"
+  #   muted: "#555"
+  #   muted_secondary: "#666"
+  #   subtle: "#777"
+  #   faint: "#888"
+  #   separator: "#ccc"
+  #   rule: "#e2e2e2"
+  #   primary: "hsl(187, 74%, 32%)"
+  #   primary_strong: "hsl(187, 74%, 28%)"
+  #   primary_soft: "hsl(187, 40%, 95%)"
+  #   primary_border: "hsl(187, 40%, 88%)"
+  #   accent: "hsl(270, 70%, 45%)"
   # (Optional) Canva resume design ID for visual CV generation via /career-ops pdf.
   # Find it in your Canva design URL: https://www.canva.com/design/DAxxxxxxx/...
   # The ID starts with "D" and is 11 characters long.

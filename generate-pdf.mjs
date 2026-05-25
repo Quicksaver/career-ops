@@ -13,13 +13,91 @@
 import { chromium } from 'playwright';
 import { resolve, dirname } from 'path';
 import { readFile } from 'fs/promises';
-import { mkdirSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
+import { load as yamlLoad } from 'js-yaml';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const THEME_VARIABLES = {
+  background: '--cv-background',
+  text: '--cv-text',
+  heading: '--cv-heading',
+  summary: '--cv-summary',
+  body: '--cv-body',
+  body_muted: '--cv-body-muted',
+  muted: '--cv-muted',
+  muted_secondary: '--cv-muted-secondary',
+  subtle: '--cv-subtle',
+  faint: '--cv-faint',
+  separator: '--cv-separator',
+  rule: '--cv-rule',
+  primary: '--cv-primary',
+  primary_strong: '--cv-primary-strong',
+  primary_soft: '--cv-primary-soft',
+  primary_border: '--cv-primary-border',
+  accent: '--cv-accent',
+};
+
 // Ensure output directory exists (fresh setup)
 mkdirSync(resolve(__dirname, 'output'), { recursive: true });
+
+async function loadThemeOverrides() {
+  const profilePath = resolve(__dirname, 'config', 'profile.yml');
+  if (!existsSync(profilePath)) return {};
+
+  try {
+    const profile = yamlLoad(await readFile(profilePath, 'utf-8'));
+    const theme = profile?.cv?.theme;
+    return theme && typeof theme === 'object' && !Array.isArray(theme) ? theme : {};
+  } catch (err) {
+    console.warn(`⚠️  Could not read cv.theme from config/profile.yml: ${err.message}`);
+    return {};
+  }
+}
+
+function isSafeCssValue(value) {
+  return typeof value === 'string'
+    && value.trim().length > 0
+    && !/[;{}<>\n\r]/.test(value)
+    && !value.includes('/*')
+    && !value.includes('*/');
+}
+
+function applyThemeOverrides(html, theme) {
+  const entries = Object.entries(THEME_VARIABLES)
+    .filter(([key]) => Object.hasOwn(theme, key))
+    .map(([key, cssVariable]) => [key, cssVariable, theme[key]]);
+
+  if (entries.length === 0) return { html, applied: [], skipped: [] };
+
+  const applied = [];
+  const skipped = [];
+  const declarations = [];
+
+  for (const [key, cssVariable, value] of entries) {
+    if (!isSafeCssValue(value)) {
+      skipped.push(key);
+      continue;
+    }
+
+    declarations.push(`    ${cssVariable}: ${value.trim()};`);
+    applied.push(key);
+  }
+
+  if (declarations.length === 0) return { html, applied, skipped };
+
+  const overrideStyle = `<style id="cv-theme-overrides">\n  :root {\n${declarations.join('\n')}\n  }\n</style>`;
+  if (/<\/head>/i.test(html)) {
+    return {
+      html: html.replace(/<\/head>/i, `${overrideStyle}\n</head>`),
+      applied,
+      skipped,
+    };
+  }
+
+  return { html: `${overrideStyle}\n${html}`, applied, skipped };
+}
 
 /**
  * Normalize text for ATS compatibility by converting problematic Unicode.
@@ -111,6 +189,15 @@ async function generatePDF() {
 
   // Read HTML to inject font paths as absolute file:// URLs
   let html = await readFile(inputPath, 'utf-8');
+
+  const themeResult = applyThemeOverrides(html, await loadThemeOverrides());
+  html = themeResult.html;
+  if (themeResult.applied.length > 0) {
+    console.log(`🎨 CV theme overrides: ${themeResult.applied.join(', ')}`);
+  }
+  if (themeResult.skipped.length > 0) {
+    console.warn(`⚠️  Skipped unsafe cv.theme values: ${themeResult.skipped.join(', ')}`);
+  }
 
   // Resolve font paths relative to career-ops/fonts/
   const fontsDir = resolve(__dirname, 'fonts');

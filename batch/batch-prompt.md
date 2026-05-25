@@ -314,12 +314,19 @@ node generate-pdf.mjs \
 **Diseño:**
 - Fonts: Space Grotesk (headings, 600-700) + DM Sans (body, 400-500)
 - Fonts self-hosted: `fonts/`
-- Header: Space Grotesk 24px bold + gradiente cyan→purple 2px + contacto
-- Section headers: Space Grotesk 13px uppercase, color cyan `hsl(187,74%,32%)`
+- Header: Space Grotesk 24px bold + gradient line using `--cv-primary` → `--cv-accent` + contact row
+- Section headers: Space Grotesk 13px uppercase, color `--cv-primary`
 - Body: DM Sans 11px, line-height 1.5
-- Company names: purple `hsl(270,70%,45%)`
+- Company names: `--cv-accent`
 - Márgenes: 0.6in
-- Background: blanco
+- Background: `--cv-background`
+
+**Color theme:**
+- `templates/cv-template.html` defines default CSS variables in `:root`.
+- Read optional overrides from `config/profile.yml` under `cv.theme`.
+- Replace only the matching CSS variable values; missing keys keep template defaults.
+- `generate-pdf.mjs` also applies these overrides at render time as a fallback.
+- Supported keys: `background`, `text`, `heading`, `summary`, `body`, `body_muted`, `muted`, `muted_secondary`, `subtle`, `faint`, `separator`, `rule`, `primary`, `primary_strong`, `primary_soft`, `primary_border`, `accent`.
 
 **Estrategia keyword injection (ético):**
 - Reformular experiencia real con vocabulario exacto del JD

@@ -40,12 +40,50 @@ must match the evaluation report and tracker row for that company/role.
 
 - **Fonts**: Space Grotesk (headings, 600-700) + DM Sans (body, 400-500)
 - **Fonts self-hosted**: `fonts/`
-- **Header**: name in Space Grotesk 24px bold + gradient line `linear-gradient(to right, hsl(187,74%,32%), hsl(270,70%,45%))` 2px + contact row
-- **Section headers**: Space Grotesk 13px, uppercase, letter-spacing 0.05em, color cyan primary
+- **Header**: name in Space Grotesk 24px bold + gradient line using `--cv-primary` → `--cv-accent` + contact row
+- **Section headers**: Space Grotesk 13px, uppercase, letter-spacing 0.05em, color `--cv-primary`
 - **Body**: DM Sans 11px, line-height 1.5
-- **Company names**: accent purple color `hsl(270,70%,45%)`
+- **Company names**: accent color `--cv-accent`
 - **Margins**: 0.6in
-- **Background**: pure white
+- **Background**: `--cv-background`
+
+### CV theme customization
+
+The HTML template defines default CSS variables that preserve the current palette. Before writing the final HTML, read optional overrides from `config/profile.yml` under `cv.theme` and replace only the corresponding `:root` variable values. Missing keys must keep the defaults from `templates/cv-template.html`. `generate-pdf.mjs` also applies the same overrides at render time, so the PDF stays themed even if the HTML still contains template defaults.
+
+Supported keys:
+
+| `config/profile.yml` key | CSS variable | Default |
+|---|---|---|
+| `background` | `--cv-background` | `#ffffff` |
+| `text` | `--cv-text` | `#1a1a2e` |
+| `heading` | `--cv-heading` | `#1a1a2e` |
+| `summary` | `--cv-summary` | `#2f2f2f` |
+| `body` | `--cv-body` | `#333` |
+| `body_muted` | `--cv-body-muted` | `#444` |
+| `muted` | `--cv-muted` | `#555` |
+| `muted_secondary` | `--cv-muted-secondary` | `#666` |
+| `subtle` | `--cv-subtle` | `#777` |
+| `faint` | `--cv-faint` | `#888` |
+| `separator` | `--cv-separator` | `#ccc` |
+| `rule` | `--cv-rule` | `#e2e2e2` |
+| `primary` | `--cv-primary` | `hsl(187, 74%, 32%)` |
+| `primary_strong` | `--cv-primary-strong` | `hsl(187, 74%, 28%)` |
+| `primary_soft` | `--cv-primary-soft` | `hsl(187, 40%, 95%)` |
+| `primary_border` | `--cv-primary-border` | `hsl(187, 40%, 88%)` |
+| `accent` | `--cv-accent` | `hsl(270, 70%, 45%)` |
+
+Example:
+
+```yaml
+cv:
+  output_format: "html"
+  theme:
+    primary: "#2563eb"
+    accent: "#7c3aed"
+    primary_soft: "#eff6ff"
+    primary_border: "#bfdbfe"
+```
 
 ## Section order (optimized "6-second recruiter scan")
 

@@ -41,6 +41,26 @@
     unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
   }
 
+  :root {
+    --cv-background: #ffffff;
+    --cv-text: #1a1a2e;
+    --cv-heading: #1a1a2e;
+    --cv-summary: #2f2f2f;
+    --cv-body: #333;
+    --cv-body-muted: #444;
+    --cv-muted: #555;
+    --cv-muted-secondary: #666;
+    --cv-subtle: #777;
+    --cv-faint: #888;
+    --cv-separator: #ccc;
+    --cv-rule: #e2e2e2;
+    --cv-primary: hsl(187, 74%, 32%);
+    --cv-primary-strong: hsl(187, 74%, 28%);
+    --cv-primary-soft: hsl(187, 40%, 95%);
+    --cv-primary-border: hsl(187, 40%, 88%);
+    --cv-accent: hsl(270, 70%, 45%);
+  }
+
   * {
     margin: 0;
     padding: 0;
@@ -56,8 +76,8 @@
     font-family: 'DM Sans', sans-serif;
     font-size: 11px;
     line-height: 1.5;
-    color: #1a1a2e;
-    background: #ffffff;
+    color: var(--cv-text);
+    background: var(--cv-background);
     padding: 0;
     margin: 0;
   }
@@ -78,7 +98,7 @@
     font-family: 'Space Grotesk', sans-serif;
     font-size: 28px;
     font-weight: 700;
-    color: #1a1a2e;
+    color: var(--cv-heading);
     letter-spacing: -0.02em;
     margin-bottom: 6px;
     line-height: 1.1;
@@ -86,7 +106,7 @@
 
   .header-gradient {
     height: 2px;
-    background: linear-gradient(to right, hsl(187, 74%, 32%), hsl(270, 70%, 45%));
+    background: linear-gradient(to right, var(--cv-primary), var(--cv-accent));
     border-radius: 1px;
     margin-bottom: 10px;
   }
@@ -98,16 +118,16 @@
     font-family: 'DM Sans', sans-serif;
     font-size: 10.5px;
     line-height: 1.4;
-    color: #555;
+    color: var(--cv-muted);
   }
 
   .contact-row a {
-    color: #555;
+    color: var(--cv-muted);
     text-decoration: none;
   }
 
   .contact-row .separator {
-    color: #ccc;
+    color: var(--cv-separator);
   }
 
   /* === SECTIONS === */
@@ -121,8 +141,8 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: hsl(187, 74%, 32%);
-    border-bottom: 1.5px solid #e2e2e2;
+    color: var(--cv-primary);
+    border-bottom: 1.5px solid var(--cv-rule);
     padding-bottom: 4px;
     margin-bottom: 10px;
     line-height: 1.2;
@@ -132,7 +152,7 @@
   .summary-text {
     font-size: 11px;
     line-height: 1.7;
-    color: #2f2f2f;
+    color: var(--cv-summary);
   }
 
   /* Links must never break across lines */
@@ -151,11 +171,11 @@
     font-family: 'DM Sans', sans-serif;
     font-size: 10px;
     font-weight: 500;
-    color: hsl(187, 74%, 28%);
-    background: hsl(187, 40%, 95%);
+    color: var(--cv-primary-strong);
+    background: var(--cv-primary-soft);
     padding: 4px 10px;
     border-radius: 3px;
-    border: 1px solid hsl(187, 40%, 88%);
+    border: 1px solid var(--cv-primary-border);
   }
 
   /* === WORK EXPERIENCE === */
@@ -175,25 +195,25 @@
     font-family: 'Space Grotesk', sans-serif;
     font-size: 12.5px;
     font-weight: 600;
-    color: hsl(270, 70%, 45%);
+    color: var(--cv-accent);
   }
 
   .job-period {
     font-size: 10.5px;
-    color: #777;
+    color: var(--cv-subtle);
     white-space: nowrap;
   }
 
   .job-role {
     font-size: 11px;
     font-weight: 600;
-    color: #333;
+    color: var(--cv-body);
     margin-bottom: 6px;
   }
 
   .job-location {
     font-size: 10px;
-    color: #888;
+    color: var(--cv-faint);
   }
 
   .job ul {
@@ -204,7 +224,7 @@
   .job li {
     font-size: 10.5px;
     line-height: 1.6;
-    color: #333;
+    color: var(--cv-body);
     margin-bottom: 4px;
   }
 
@@ -221,14 +241,14 @@
     font-family: 'Space Grotesk', sans-serif;
     font-size: 11.5px;
     font-weight: 600;
-    color: hsl(270, 70%, 45%);
+    color: var(--cv-accent);
   }
 
   .project-badge {
     font-size: 9px;
     font-weight: 500;
-    color: hsl(187, 74%, 32%);
-    background: hsl(187, 40%, 95%);
+    color: var(--cv-primary);
+    background: var(--cv-primary-soft);
     padding: 1px 6px;
     border-radius: 2px;
     margin-left: 6px;
@@ -236,14 +256,14 @@
 
   .project-desc {
     font-size: 10.5px;
-    color: #444;
+    color: var(--cv-body-muted);
     margin-top: 3px;
     line-height: 1.55;
   }
 
   .project-tech {
     font-size: 9.5px;
-    color: #888;
+    color: var(--cv-faint);
     margin-top: 3px;
   }
 
@@ -262,23 +282,23 @@
   .edu-title {
     font-weight: 600;
     font-size: 11px;
-    color: #333;
+    color: var(--cv-body);
   }
 
   .edu-org {
-    color: hsl(270, 70%, 45%);
+    color: var(--cv-accent);
     font-weight: 500;
   }
 
   .edu-year {
     font-size: 10px;
-    color: #777;
+    color: var(--cv-subtle);
     white-space: nowrap;
   }
 
   .edu-desc {
     font-size: 10px;
-    color: #666;
+    color: var(--cv-muted-secondary);
     margin-top: 2px;
     line-height: 1.5;
   }
@@ -295,18 +315,18 @@
   .cert-title {
     font-size: 10.5px;
     font-weight: 500;
-    color: #333;
+    color: var(--cv-body);
     min-width: 0;
   }
 
   .cert-org {
-    color: hsl(270, 70%, 45%);
+    color: var(--cv-accent);
     white-space: nowrap;
   }
 
   .cert-year {
     font-size: 10px;
-    color: #777;
+    color: var(--cv-subtle);
     white-space: nowrap;
     text-align: right;
   }
@@ -320,12 +340,12 @@
 
   .skill-item {
     font-size: 10.5px;
-    color: #444;
+    color: var(--cv-body-muted);
   }
 
   .skill-category {
     font-weight: 600;
-    color: #333;
+    color: var(--cv-body);
     font-size: 10.5px;
   }
 
