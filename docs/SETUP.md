@@ -78,6 +78,11 @@ node verify-pipeline.mjs --user <username>    # Check pipeline integrity
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path .. --user <username>  # Opens TUI pipeline viewer
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard  # Opens TUI pipeline viewer
+
+# Cross-compile for Windows x64
+GOOS=windows GOARCH=amd64 go build -o ../users/<username>/career-dashboard.exe .
 ```
+
+The dashboard binary is meant to live inside `users/<username>/`, where it can infer the tracker/report path without `--path`. Pass `--path` only when you need to override that location.

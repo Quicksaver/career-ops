@@ -221,8 +221,8 @@ career-ops 是一个单一斜杠命令，带有多种模式：
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path ..
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 功能包括：6 个筛选标签、4 种排序模式、分组/平铺视图、懒加载预览、行内状态修改。

@@ -171,8 +171,8 @@ Career-ops는 다양한 모드를 가진 하나의 슬래시 커맨드입니다:
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path ..
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 기능: 6개의 필터 탭, 4가지 정렬 모드, 그룹/플랫 뷰, 지연 로딩 미리보기, 인라인 상태 변경.

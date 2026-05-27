@@ -155,27 +155,106 @@ func (m appModel) View() string {
 	}
 }
 
-func main() {
-	pathFlag := flag.String("path", ".", "Path to career-ops project directory")
-	userFlag := flag.String("user", "", "Required career-ops user ID under users/")
-	usersDirFlag := flag.String("users-dir", "", "Override users directory (defaults to {path}/users or CAREER_OPS_USERS_DIR)")
-	flag.Parse()
+func hasApplicationsFile(path string) bool {
+	for _, rel := range []string{"applications.md", filepath.Join("data", "applications.md")} {
+		if _, err := os.Stat(filepath.Join(path, rel)); err == nil {
+			return true
+		}
+	}
+	return false
+}
 
-	projectPath := *pathFlag
-	userID := *userFlag
-	if userID == "" {
-		userID = os.Getenv("CAREER_OPS_USER")
+func appendUniquePath(paths []string, path string) []string {
+	if path == "" {
+		return paths
 	}
-	if userID == "" {
-		fmt.Fprintln(os.Stderr, "Error: no career-ops user selected. Pass --user ID or set CAREER_OPS_USER.")
-		os.Exit(1)
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
 	}
-	if !reUserID.MatchString(userID) {
-		fmt.Fprintf(os.Stderr, "Error: invalid career-ops user %q. Use letters, numbers, dots, underscores, or hyphens.\n", userID)
-		os.Exit(1)
+	for _, existing := range paths {
+		if existing == path {
+			return paths
+		}
+	}
+	return append(paths, path)
+}
+
+func inferUserPath(userID, usersDirFlag string) string {
+	var candidates []string
+
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = appendUniquePath(candidates, cwd)
+		if userID != "" {
+			usersDir := usersDirFlag
+			if usersDir == "" {
+				usersDir = os.Getenv("CAREER_OPS_USERS_DIR")
+			}
+			if usersDir != "" {
+				if filepath.IsAbs(usersDir) {
+					candidates = appendUniquePath(candidates, filepath.Join(usersDir, userID))
+				} else {
+					candidates = appendUniquePath(candidates, filepath.Join(cwd, usersDir, userID))
+				}
+			}
+			candidates = appendUniquePath(candidates, filepath.Join(cwd, "users", userID))
+			if filepath.Base(cwd) == "dashboard" {
+				candidates = appendUniquePath(candidates, filepath.Join(filepath.Dir(cwd), "users", userID))
+			}
+		}
 	}
 
-	usersDir := *usersDirFlag
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		candidates = appendUniquePath(candidates, exeDir)
+		if userID != "" {
+			candidates = appendUniquePath(candidates, filepath.Join(exeDir, "users", userID))
+			if filepath.Base(exeDir) == "dashboard" {
+				candidates = appendUniquePath(candidates, filepath.Join(filepath.Dir(exeDir), "users", userID))
+			}
+		}
+	}
+
+	for _, candidate := range candidates {
+		if hasApplicationsFile(candidate) && (userID == "" || filepath.Base(candidate) == userID) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func resolveCareerOpsPath(pathFlag, usersDirFlag, userID string) (string, string, error) {
+	if userID != "" && !reUserID.MatchString(userID) {
+		return "", "", fmt.Errorf("invalid career-ops user %q. Use letters, numbers, dots, underscores, or hyphens", userID)
+	}
+
+	if pathFlag == "" {
+		if inferred := inferUserPath(userID, usersDirFlag); inferred != "" {
+			if userID == "" {
+				userID = filepath.Base(inferred)
+			}
+			return inferred, userID, nil
+		}
+		if userID == "" {
+			return "", "", fmt.Errorf("no career-ops user folder found. Run the binary from users/<user>/, store the binary there, or pass --path")
+		}
+		return "", "", fmt.Errorf("could not find user folder for %q. Run from the repo root, run the binary stored in users/%s/, or pass --path", userID, userID)
+	}
+
+	projectPath := pathFlag
+	if abs, err := filepath.Abs(projectPath); err == nil {
+		projectPath = abs
+	}
+	if hasApplicationsFile(projectPath) {
+		if userID == "" {
+			userID = filepath.Base(projectPath)
+		}
+		return projectPath, userID, nil
+	}
+	if userID == "" {
+		return "", "", fmt.Errorf("--path points to a project directory; pass --user ID, or point --path at users/<user>")
+	}
+
+	usersDir := usersDirFlag
 	if usersDir == "" {
 		usersDir = os.Getenv("CAREER_OPS_USERS_DIR")
 	}
@@ -185,12 +264,30 @@ func main() {
 		usersDir = filepath.Join(projectPath, usersDir)
 	}
 
-	careerOpsPath := filepath.Join(usersDir, userID)
+	return filepath.Join(usersDir, userID), userID, nil
+}
+
+func main() {
+	pathFlag := flag.String("path", "", "Optional path to career-ops project directory or users/<user> folder")
+	userFlag := flag.String("user", "", "Optional career-ops user ID under users/")
+	usersDirFlag := flag.String("users-dir", "", "Override users directory (defaults to {path}/users or CAREER_OPS_USERS_DIR)")
+	flag.Parse()
+
+	userID := *userFlag
+	if userID == "" {
+		userID = os.Getenv("CAREER_OPS_USER")
+	}
+
+	careerOpsPath, resolvedUserID, err := resolveCareerOpsPath(*pathFlag, *usersDirFlag, userID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Load applications
 	apps := data.ParseApplications(careerOpsPath)
 	if apps == nil {
-		fmt.Fprintf(os.Stderr, "Error: could not find applications.md for user %q in %s or %s/data/\n", userID, careerOpsPath, careerOpsPath)
+		fmt.Fprintf(os.Stderr, "Error: could not find applications.md for user %q in %s or %s/data/\n", resolvedUserID, careerOpsPath, careerOpsPath)
 		os.Exit(1)
 	}
 

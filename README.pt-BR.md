@@ -171,8 +171,8 @@ O dashboard de terminal integrado permite navegar visualmente pelo seu pipeline:
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path ..
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 Recursos: 6 abas de filtro, 4 modos de ordenação, visualização agrupada/plana, prévias com carregamento sob demanda e alterações de status inline.

@@ -171,8 +171,8 @@ career-opsは複数のモードを持つ単一のスラッシュコマンドで�
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path ..
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 機能: 6つのフィルタータブ、4つのソートモード、グループ表示/フラット表示、遅延読み込みプレビュー、インラインステータス変更。

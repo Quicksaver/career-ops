@@ -169,12 +169,20 @@ Future merge notes:
 
 ## Dashboard Improvements
 
-The fork adds a root npm entrypoint and improves date display in the Go dashboard.
+The fork keeps dashboard data per-user and improves date display in the Go dashboard.
 
 Files:
 
-- `run-dashboard.sh`
 - `package.json`
+- `AGENTS.md`
+- `.agents/skills/career-ops/SKILL.md`
+- `README.md`
+- `README.*.md`
+- `CONTRIBUTING.md`
+- `docs/SETUP.md`
+- `docs/ARCHITECTURE.md`
+- `dashboard/main.go`
+- `dashboard/main_test.go`
 - `dashboard/internal/data/career.go`
 - `dashboard/internal/data/career_test.go`
 - `dashboard/internal/model/career.go`
@@ -182,7 +190,10 @@ Files:
 
 What this customizes:
 
-- Adds `npm run dashboard`, implemented by `run-dashboard.sh`, to build and run the Go dashboard from the repository root.
+- Removes the root `npm run dashboard` wrapper and `run-dashboard.sh`.
+- Dashboard binaries are built into `users/{USER}/`, e.g. `cd dashboard && go build -o ../users/{USER}/career-dashboard .`.
+- Cross-compiled dashboard binaries are also written into `users/{USER}/`, e.g. Windows x64 uses `GOOS=windows GOARCH=amd64 go build -o ../users/{USER}/career-dashboard.exe .`.
+- The dashboard infers the user folder from its own location or the current directory, so the per-user binary runs without `--path`; `--path` remains available for unusual layouts.
 - Adds `ListingDate` to dashboard application data.
 - Extracts listing/posting dates from reports when present.
 - Reads `data/scan-history.tsv` before the old root-level fallback.
@@ -191,7 +202,7 @@ What this customizes:
 Future merge notes:
 
 - If upstream changes dashboard models or table rendering, preserve the listing-date fallback behavior unless upstream provides a better equivalent.
-- Keep the root dashboard script if users rely on `npm run dashboard`.
+- Do not reintroduce the root dashboard wrapper unless upstream provides a better per-user binary flow.
 
 ## Scanner Documentation And Defaults
 
@@ -299,7 +310,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - A shared retry/backoff helper for provider fetches.
 - Report-numbered CV artifact naming.
 - Config-driven CV theme tokens.
-- Root-level dashboard launch script.
+- Per-user dashboard binary build/run flow.
 - Dashboard listing-date parsing/display.
 - Generic JD/PDF extraction commands.
 - Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.

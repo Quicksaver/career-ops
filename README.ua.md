@@ -175,8 +175,8 @@ Career-ops — це одна слеш-команда з кількома реж�
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path ..
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 Функції: 6 вкладок фільтрації, 4 режими сортування, групований/плаский вигляд, lazy-load попереднього перегляду, inline зміна статусів.

@@ -174,8 +174,8 @@ career-ops 是一個具有多種模式的單一斜線指令：
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path ..
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 功能：6 個篩選分頁、4 種排序模式、分組/平鋪檢視、延遲載入預覽、內嵌狀態修改。

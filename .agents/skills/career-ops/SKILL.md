@@ -34,6 +34,8 @@ After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 - Read system-layer files from the repo root (`modes/_shared.md`, mode files, scripts, templates, providers, dashboard, docs).
 - Remove the explicit user token or `--user` flag from the invocation before mode routing. Example: `/career-ops scan <username>` routes as mode `scan` with `ACTIVE_USER=<username>`.
 - When running scripts, pass `--user {ACTIVE_USER}` or set `CAREER_OPS_USER={ACTIVE_USER}`.
+- Dashboard TUI binaries belong in `USER_ROOT`. Build from `dashboard/` into the active user folder: current platform `cd dashboard && go build -o ../users/{ACTIVE_USER}/career-dashboard .`; Windows x64 `cd dashboard && GOOS=windows GOARCH=amd64 go build -o ../users/{ACTIVE_USER}/career-dashboard.exe .`; Linux x64 `cd dashboard && GOOS=linux GOARCH=amd64 go build -o ../users/{ACTIVE_USER}/career-dashboard .`; macOS arm64 `cd dashboard && GOOS=darwin GOARCH=arm64 go build -o ../users/{ACTIVE_USER}/career-dashboard .`.
+- Run the per-user dashboard binary without `--path`; it infers `USER_ROOT` from the binary/current directory. Keep `--path` as an optional override for unusual layouts.
 - If delegating to a subagent, include `ACTIVE_USER` and `USER_ROOT` explicitly in the prompt and tell the subagent that all user-layer relative paths resolve inside `USER_ROOT`.
 - If the user explicitly changes user later in the conversation, switch to that user for subsequent `/career-ops` commands.
 

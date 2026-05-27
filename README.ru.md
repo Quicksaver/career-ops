@@ -159,8 +159,8 @@ Career-ops поддерживает ключевые российские джо
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path ..
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 Возможности: 6 табов фильтрации, 4 режима сортировки, группированный/плоский вид, ленивая подгрузка превью, смена статусов inline.

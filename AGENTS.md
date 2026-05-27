@@ -40,7 +40,14 @@ When running scripts, pass the active user explicitly:
 - `node verify-pipeline.mjs --user {USER}`
 - `node merge-tracker.mjs --user {USER}`
 - `batch/batch-runner.sh --user {USER}`
-- `npm run dashboard -- --user {USER}`
+
+Dashboard TUI binaries are per-user artifacts. When building the dashboard, compile from `dashboard/` into the active user's folder:
+- Current platform: `cd dashboard && go build -o ../users/{USER}/career-dashboard .`
+- Windows x64: `cd dashboard && GOOS=windows GOARCH=amd64 go build -o ../users/{USER}/career-dashboard.exe .`
+- Linux x64: `cd dashboard && GOOS=linux GOARCH=amd64 go build -o ../users/{USER}/career-dashboard .`
+- macOS arm64: `cd dashboard && GOOS=darwin GOARCH=arm64 go build -o ../users/{USER}/career-dashboard .`
+
+Run the per-user binary without `--path`; it infers the user folder from its own location or the current directory. Keep `--path` optional for unusual layouts, e.g. `career-dashboard --path /path/to/career-ops --user {USER}` or `career-dashboard --path /path/to/users/{USER}`.
 
 ## Update Check
 

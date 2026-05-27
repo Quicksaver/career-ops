@@ -62,8 +62,8 @@ node verify-pipeline.mjs     # Health check
 node cv-sync-check.mjs        # Config check
 
 # Dashboard
-cd dashboard && go build -o career-dashboard .
-./career-dashboard --path ..
+cd dashboard && go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
 ```
 
 ## Brand and Trademark

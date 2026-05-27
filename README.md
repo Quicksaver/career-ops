@@ -236,9 +236,14 @@ The built-in terminal dashboard lets you browse your pipeline visually:
 
 ```bash
 cd dashboard
-go build -o career-dashboard .
-./career-dashboard --path .. --user <username>
+go build -o ../users/<username>/career-dashboard .
+../users/<username>/career-dashboard
+
+# Cross-compile for Windows x64
+GOOS=windows GOARCH=amd64 go build -o ../users/<username>/career-dashboard.exe .
 ```
+
+The per-user binary infers `users/<username>/` from its own location, so `--path` is optional. Use `--path` only for unusual layouts.
 
 Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.
 

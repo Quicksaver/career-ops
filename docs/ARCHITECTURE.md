@@ -108,3 +108,5 @@ The `dashboard/` directory contains a standalone Go TUI application that visuali
 - Grouped/flat view
 - Lazy-loaded report previews
 - Inline status picker
+
+Dashboard binaries are built into `users/{USER}/` and infer the user-layer path from their own location by default. The optional `--path` flag remains available for non-standard layouts.
