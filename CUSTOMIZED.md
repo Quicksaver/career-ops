@@ -1,0 +1,256 @@
+# Fork Customizations
+
+This file documents what this fork changes relative to `upstream/main` so future upstream updates can be merged without losing local behavior, and so local changes can be retired when upstream makes them redundant.
+
+Generated from:
+
+- Upstream ref: `upstream/main` at `831ef7ff3722fe510ab2b5168678bb4ba89bc03e`
+- Fork ref: `main` at `6f2e9a9e71a0beba4de141a015bbc61a34a592af`
+- Relationship when written: upstream-only commits `0`, fork-only commits `47`
+- Diff size: `46 files changed, 5186 insertions(+), 325 deletions(-)`
+
+## Merge Policy
+
+Upstream changes are the baseline. When merging future `upstream/main`, keep the new upstream behavior by default and adapt the customizations below around it.
+
+Do not place user-specific data in system-layer files. Candidate data, targeting, proof points, portals, reports, outputs, and interview prep belong in the user layer defined by `DATA_CONTRACT.md`.
+
+After each upstream merge, re-run this inventory:
+
+```bash
+git fetch upstream main
+git diff --stat upstream/main..main
+git diff --name-status upstream/main..main
+git log --oneline --left-right --cherry-pick upstream/main...main
+```
+
+Then update this file if a customization is added, removed, or made redundant.
+
+## Custom Provider Layer
+
+The fork adds a large structured provider surface for zero-token scanning.
+
+Files:
+
+- `providers/_custom.mjs`
+- `providers/_custom-fetch.mjs`
+- `providers/pcsx.mjs`
+- `providers/landingjobs.mjs`
+- `providers/swissdevjobs.mjs`
+- `providers/germantechjobs.mjs`
+- `providers/devitjobs.mjs`
+- `providers/devjobsde.mjs`
+- `providers/itjobs.mjs`
+- `providers/sapo.mjs`
+- `providers/portalemprego.mjs`
+- `providers/dice.mjs`
+- `providers/euremotejobs.mjs`
+- `providers/remoteineurope.mjs`
+- `providers/workingnomads.mjs`
+- `providers/nodesk.mjs`
+- `providers/englishjobs.mjs`
+- `providers/jobsinenglish.mjs`
+- `providers/jobsch.mjs`
+- `providers/makeitingermany.mjs`
+- `providers/rustjobs.mjs`
+- `templates/portals.example.yml`
+- `test-all.mjs`
+
+What this customizes:
+
+- Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, Working Nomads, NoDesk, RustJobs.dev, and related English Jobs boards.
+- Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
+- Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
+- Extends the example portal config with these discovery sources and custom notes/parameters.
+- Adds tests for the retry helper, Greenhouse URL safety, and the custom provider fetch wrapper.
+
+Future merge notes:
+
+- If upstream adds one of these providers, compare behavior before keeping both. Prefer upstream modules when they produce equivalent fields and filtering.
+- If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage.
+- `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
+
+## CV Output Naming
+
+The fork standardizes generated CV artifacts around the report number.
+
+Files:
+
+- `modes/pdf.md`
+- `modes/latex.md`
+- `batch/batch-prompt.md`
+- `templates/README.md`
+
+What this customizes:
+
+- Requires generated CV artifacts to use `output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.{html|pdf|tex}`.
+- Removes candidate-name/ad-hoc CV output names from the instructions.
+- Keeps report, tracker, PDF, HTML, and LaTeX artifact names aligned.
+
+Future merge notes:
+
+- Preserve this if local workflows rely on report-numbered artifacts.
+- If upstream adopts the same naming contract, remove the local instruction patches and keep only any wording still needed for this fork.
+
+## CV Theme Overrides
+
+The fork makes the HTML/PDF CV palette configurable from `config/profile.yml`.
+
+Files:
+
+- `generate-pdf.mjs`
+- `templates/cv-template.html`
+- `config/profile.example.yml`
+- `modes/pdf.md`
+- `batch/batch-prompt.md`
+
+What this customizes:
+
+- Adds CSS variables to the HTML CV template.
+- Reads optional `cv.theme` keys from `config/profile.yml`.
+- Injects safe CSS variable overrides at PDF render time.
+- Documents supported keys such as `primary`, `accent`, `background`, `text`, `muted`, `rule`, and related color tokens.
+
+Future merge notes:
+
+- If upstream changes the CV template, keep the variable names stable or provide a migration for existing `cv.theme` configs.
+- If upstream introduces first-class theming, compare key names and remove this local implementation if upstream covers the same use case.
+
+## Dashboard Improvements
+
+The fork adds a root npm entrypoint and improves date display in the Go dashboard.
+
+Files:
+
+- `run-dashboard.sh`
+- `package.json`
+- `dashboard/internal/data/career.go`
+- `dashboard/internal/data/career_test.go`
+- `dashboard/internal/model/career.go`
+- `dashboard/internal/ui/screens/pipeline.go`
+
+What this customizes:
+
+- Adds `npm run dashboard`, implemented by `run-dashboard.sh`, to build and run the Go dashboard from the repository root.
+- Adds `ListingDate` to dashboard application data.
+- Extracts listing/posting dates from reports when present.
+- Reads `data/scan-history.tsv` before the old root-level fallback.
+- Shows listing date in the dashboard, falling back to the tracker processed date when no listing date is known.
+
+Future merge notes:
+
+- If upstream changes dashboard models or table rendering, preserve the listing-date fallback behavior unless upstream provides a better equivalent.
+- Keep the root dashboard script if users rely on `npm run dashboard`.
+
+## Scanner Documentation And Defaults
+
+The fork updates user-facing scanner descriptions to match the expanded structured provider surface.
+
+Files:
+
+- `README.md`
+- `AGENTS.md`
+- `docs/SCRIPTS.md`
+- `docs/CUSTOMIZATION.md`
+- `templates/README.md`
+- `templates/portals.example.yml`
+
+What this customizes:
+
+- Describes direct scanning beyond Greenhouse/Ashby/Lever, including PCSX and structured job portals.
+- Clarifies broad-discovery search queries for boards where direct access is unreliable.
+- Keeps scanner documentation aligned with the fork's provider modules.
+
+Future merge notes:
+
+- Reconcile upstream copy edits first, then update only the provider lists and behavior statements that remain fork-specific.
+
+## Local Maintenance Skill
+
+The fork adds a repo-local skill for upstream merge maintenance.
+
+File:
+
+- `.agents/skills/update-main/SKILL.md`
+
+What this customizes:
+
+- Defines the local `update-main` workflow: fetch `upstream/main`, merge onto the current branch, adapt local work around upstream, and report behavior changes.
+
+Future merge notes:
+
+- Keep this if local agents use `$career-ops:update-main`.
+- If upstream adds an equivalent workflow, either remove this file or reduce it to fork-specific conflict policy.
+
+## Personal Data And Generated Artifact Hygiene
+
+The fork expands ignored local/user artifacts.
+
+Files:
+
+- `.gitignore`
+- `interview-prep/story-bank.md`
+
+What this customizes:
+
+- Ignores `data/scan-summary-*.md`, `interview-prep/*`, `article-digest.md`, and `.vscode/`.
+- Removes the tracked `interview-prep/story-bank.md` document so interview prep remains user-layer data.
+
+Future merge notes:
+
+- Preserve the data-contract intent even if upstream reorganizes user-layer folders.
+- If upstream starts tracking a generic story-bank template, keep the template outside ignored user-specific paths.
+
+## Utility Extraction Scripts
+
+The fork currently includes two small Playwright extraction helpers.
+
+Files:
+
+- `extract-jd.mjs`
+- `extract-pdf.mjs`
+
+What this customizes:
+
+- `extract-jd.mjs` opens a hardcoded English Job Search clickout URL and prints the final page text.
+- `extract-pdf.mjs` opens a hardcoded PDF URL and tries to read browser-rendered PDF text.
+
+Future merge notes:
+
+- Treat these as local debugging utilities, not core product surface.
+- Remove or replace them if upstream adds generic JD/PDF extraction commands.
+- If keeping them long-term, make them parameterized instead of hardcoded.
+
+## Other Small Deltas
+
+Files:
+
+- `README.md`
+- `docs/SCRIPTS.md`
+- `templates/README.md`
+- `AGENTS.md`
+
+What this customizes:
+
+- Keeps references to fork-added commands, providers, and behavior in sync with the code above.
+- Adjusts one Gemini free-tier model reference in `README.md`.
+
+Future merge notes:
+
+- Treat documentation conflicts as a signal to check whether the underlying customization still exists.
+- Remove local documentation lines when the corresponding code customization is removed.
+
+## Redundancy Checklist For Future Upstream Updates
+
+On every upstream update, explicitly check whether upstream now includes:
+
+- Any provider currently implemented in `providers/_custom.mjs`.
+- A shared retry/backoff helper for provider fetches.
+- Report-numbered CV artifact naming.
+- Config-driven CV theme tokens.
+- Root-level dashboard launch script.
+- Dashboard listing-date parsing/display.
+- Generic JD/PDF extraction commands.
+- Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.
+
+If upstream covers one of these, prefer deleting the local customization over carrying duplicate behavior.
