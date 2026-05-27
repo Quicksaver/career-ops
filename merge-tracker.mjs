@@ -11,27 +11,36 @@
  * If duplicate with higher score → update in-place, update report link
  * Validates status against states.yml (rejects non-canonical, logs warning)
  *
- * Run: node career-ops/merge-tracker.mjs [--dry-run] [--verify]
+ * Run: node career-ops/merge-tracker.mjs --user <id> [--dry-run] [--verify]
  */
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, existsSync } from 'fs';
 import { join, basename, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
+import {
+  ensureUserDirs,
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-// Support both layouts: data/applications.md (boilerplate) and applications.md (original)
-const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
-const ADDITIONS_DIR = join(CAREER_OPS, 'batch/tracker-additions');
+let userContext;
+try {
+  userContext = getUserContext(process.argv.slice(2));
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+const APPS_FILE = userPath(userContext, 'data/applications.md');
+const ADDITIONS_DIR = userPath(userContext, 'batch/tracker-additions');
 const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
-const DRY_RUN = process.argv.includes('--dry-run');
-const VERIFY = process.argv.includes('--verify');
+const DRY_RUN = userContext.args.includes('--dry-run');
+const VERIFY = userContext.args.includes('--verify');
 
 // Ensure required directories exist (fresh setup)
-mkdirSync(join(CAREER_OPS, 'data'), { recursive: true });
-mkdirSync(ADDITIONS_DIR, { recursive: true });
+ensureUserDirs(userContext, ['data', 'batch/tracker-additions']);
 
 // Canonical states and aliases
 const CANONICAL_STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Rejected', 'Discarded', 'SKIP'];
@@ -277,7 +286,7 @@ for (const line of appLines) {
   }
 }
 
-console.log(`📊 Existing: ${existingApps.length} entries, max #${maxNum}`);
+console.log(`📊 Existing: ${existingApps.length} entries, max #${maxNum} (user: ${userContext.userId})`);
 
 // Read tracker additions
 if (!existsSync(ADDITIONS_DIR)) {
@@ -400,7 +409,7 @@ if (DRY_RUN) console.log('(dry-run — no changes written)');
 if (VERIFY && !DRY_RUN) {
   console.log('\n--- Running verification ---');
   try {
-    execFileSync('node', [join(CAREER_OPS, 'verify-pipeline.mjs')], { stdio: 'inherit' });
+    execFileSync('node', [join(CAREER_OPS, 'verify-pipeline.mjs'), '--user', userContext.userId], { stdio: 'inherit' });
   } catch (e) {
     process.exit(1);
   }

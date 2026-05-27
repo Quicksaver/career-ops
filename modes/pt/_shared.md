@@ -3,7 +3,7 @@
 <!-- ============================================================
      THIS FILE IS AUTO-UPDATABLE. Don't put personal data here.
      
-     Your customizations go in modes/_profile.md (never auto-updated).
+     Your customizations go in users/{USER}/modes/_profile.md (never auto-updated).
      This file contains system rules, scoring logic, and tool config
      that improve with each career-ops release.
      ============================================================ -->
@@ -12,13 +12,13 @@
 
 | Arquivo | Caminho | Quando |
 |---------|---------|--------|
-| cv.md | `cv.md` (raiz do projeto) | SEMPRE |
-| article-digest.md | `article-digest.md` (se existir) | SEMPRE (proof points detalhados) |
-| profile.yml | `config/profile.yml` | SEMPRE (identidade e vagas-alvo) |
-| _profile.md | `modes/_profile.md` | SEMPRE (arquétipos, narrativa, negociação do usuário) |
+| cv.md | `users/{USER}/cv.md` (raiz do projeto) | SEMPRE |
+| article-digest.md | `users/{USER}/article-digest.md` (se existir) | SEMPRE (proof points detalhados) |
+| profile.yml | `users/{USER}/config/profile.yml` | SEMPRE (identidade e vagas-alvo) |
+| _profile.md | `users/{USER}/modes/_profile.md` | SEMPRE (arquétipos, narrativa, negociação do usuário) |
 
-**REGRA: NUNCA fazer hardcode de métricas de proof points.** Leia-as de `cv.md` e `article-digest.md` no momento da avaliação.
-**REGRA: Para métricas de artigos/projetos, `article-digest.md` tem prioridade sobre `cv.md`** (`cv.md` pode conter números desatualizados).
+**REGRA: NUNCA fazer hardcode de métricas de proof points.** Leia-as de `users/{USER}/cv.md` e `users/{USER}/article-digest.md` no momento da avaliação.
+**REGRA: Para métricas de artigos/projetos, `users/{USER}/article-digest.md` tem prioridade sobre `users/{USER}/cv.md`** (`users/{USER}/cv.md` pode conter números desatualizados).
 **REGRA: Leia `_profile.md` DEPOIS deste arquivo. As personalizações do usuário em `_profile.md` sobrescrevem os valores padrão aqui.**
 
 ---
@@ -64,16 +64,16 @@ O skill trata TODAS as vagas-alvo com o mesmo cuidado. Nenhuma é primária ou s
 
 ### Framing Adaptativo por Arquétipo
 
-> **Métricas concretas: ler de `cv.md` e `article-digest.md` no momento da avaliação. NUNCA fazer hardcode aqui.**
+> **Métricas concretas: ler de `users/{USER}/cv.md` e `users/{USER}/article-digest.md` no momento da avaliação. NUNCA fazer hardcode aqui.**
 
 | Se a vaga é... | Enfatizar no candidato... | Fontes de Proof Points |
 |----------------|--------------------------|------------------------|
-| Platform / LLMOps | Experiência em produção, Observability, Evals, Closed-Loop | article-digest.md + cv.md |
-| Agentic / Automation | Orquestração multi-agent, HITL, Confiabilidade, Custos | article-digest.md + cv.md |
-| Technical AI PM | Product Discovery, PRDs, Métricas, Gestão de stakeholders | cv.md + article-digest.md |
-| Solutions Architect | Design de sistemas, Integrações, Enterprise-ready | article-digest.md + cv.md |
-| Forward Deployed Engineer | Entrega rápida, próximo do cliente, Protótipo a produção | cv.md + article-digest.md |
-| AI Transformation Lead | Gestão de mudança, Enablement de equipe, Adoção | cv.md + article-digest.md |
+| Platform / LLMOps | Experiência em produção, Observability, Evals, Closed-Loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Agentic / Automation | Orquestração multi-agent, HITL, Confiabilidade, Custos | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Technical AI PM | Product Discovery, PRDs, Métricas, Gestão de stakeholders | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Solutions Architect | Design de sistemas, Integrações, Enterprise-ready | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Forward Deployed Engineer | Entrega rápida, próximo do cliente, Protótipo a produção | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| AI Transformation Lead | Gestão de mudança, Enablement de equipe, Adoção | users/{USER}/cv.md + users/{USER}/article-digest.md |
 
 <!-- [PERSONALIZAR] Mapeie seus projetos/artigos concretos para os arquétipos acima -->
 
@@ -83,11 +83,11 @@ O skill trata TODAS as vagas-alvo com o mesmo cuidado. Nenhuma é primária ou s
      - "Construí e vendi minha própria SaaS em 5 anos. Agora foco total em IA aplicada no Enterprise."
      - "Lead de engenharia em uma Series-B durante crescimento 10x. Buscando o próximo desafio."
      - "Transição de consultoria para produto. Buscando vagas com alta responsabilidade."
-     Lido de config/profile.yml -> narrative.exit_story -->
+     Lido de users/{USER}/config/profile.yml -> narrative.exit_story -->
 
-Use a narrativa de transição de `config/profile.yml` para enquadrar TODO o conteúdo:
+Use a narrativa de transição de `users/{USER}/config/profile.yml` para enquadrar TODO o conteúdo:
 - **Em PDF Summaries:** Construir a ponte do passado para o futuro — "Aplico as mesmas [habilidades] agora em [domínio do JD]."
-- **Em histórias STAR:** Referenciar proof points de `article-digest.md`.
+- **Em histórias STAR:** Referenciar proof points de `users/{USER}/article-digest.md`.
 - **Em respostas rascunho (Bloco G):** A narrativa de transição vai na primeira resposta.
 - **Quando a vaga menciona "empreendedor", "ownership", "builder", "end-to-end":** Esse é o diferencial número 1. Aumentar peso de match.
 
@@ -109,7 +109,7 @@ Posicionar "Builder" como sinal profissional — não como "hobbyista". Proof po
        url: "https://seudominio.dev/demo"
        password: "demo-2026"
        when_to_share: "LLMOps, AI-Platform, vagas de Observability"
-     Lido de config/profile.yml -> narrative.proof_points e narrative.dashboard -->
+     Lido de users/{USER}/config/profile.yml -> narrative.proof_points e narrative.dashboard -->
 
 Quando o candidato tem uma demo ao vivo / dashboard (verificar `profile.yml`), oferecer acesso em candidaturas relevantes.
 
@@ -159,7 +159,7 @@ Em vagas e negociações brasileiras, existem termos e práticas que não aparec
 
 ### Política de Localização (Location Policy)
 
-<!-- [PERSONALIZAR] Adapte para sua situação. Lido de config/profile.yml -> location -->
+<!-- [PERSONALIZAR] Adapte para sua situação. Lido de users/{USER}/config/profile.yml -> location -->
 
 **Em formulários:**
 - Perguntas binárias "Você pode trabalhar presencialmente?": responder conforme disponibilidade real de `profile.yml`
@@ -181,7 +181,7 @@ Em vagas e negociações brasileiras, existem termos e práticas que não aparec
 ### NUNCA
 
 1. Inventar experiência ou métricas
-2. Modificar `cv.md` ou arquivos do portfolio
+2. Modificar `users/{USER}/cv.md` ou arquivos do portfolio
 3. Enviar candidaturas em nome do candidato
 4. Compartilhar número de telefone em mensagens geradas
 5. Recomendar remuneração abaixo do mercado
@@ -192,7 +192,7 @@ Em vagas e negociações brasileiras, existem termos e práticas que não aparec
 ### SEMPRE
 
 0. **Carta de apresentação:** Se o formulário permite anexar ou escrever uma carta, SEMPRE inclua uma. PDF no mesmo design visual do currículo. Conteúdo: citações da descrição da vaga mapeadas para proof points, links para case studies relevantes. Máximo 1 página.
-1. Ler `cv.md`, `_profile.md` e `article-digest.md` (se existir) antes de avaliar qualquer vaga
+1. Ler `users/{USER}/cv.md`, `_profile.md` e `users/{USER}/article-digest.md` (se existir) antes de avaliar qualquer vaga
 1b. **Na primeira avaliação de cada sessão:** Executar `node cv-sync-check.mjs` via Bash. Se houver avisos, informar o candidato antes de continuar
 2. Detectar o arquétipo da vaga e adaptar o framing conforme `_profile.md`
 3. Ao fazer matching, citar linhas exatas do currículo

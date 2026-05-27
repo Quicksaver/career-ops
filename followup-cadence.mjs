@@ -5,25 +5,33 @@
  * Parses applications.md + follow-ups.md, calculates follow-up cadence
  * for active applications, extracts contacts, and flags overdue entries.
  *
- * Run: node followup-cadence.mjs             (JSON to stdout)
- *      node followup-cadence.mjs --summary   (human-readable dashboard)
- *      node followup-cadence.mjs --overdue-only
- *      node followup-cadence.mjs --applied-days 10
+ * Run: node followup-cadence.mjs --user <id>             (JSON to stdout)
+ *      node followup-cadence.mjs --user <id> --summary   (human-readable dashboard)
+ *      node followup-cadence.mjs --user <id> --overdue-only
+ *      node followup-cadence.mjs --user <id> --applied-days 10
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
-const FOLLOWUPS_FILE = join(CAREER_OPS, 'data/follow-ups.md');
+let userContext;
+try {
+  userContext = getUserContext(process.argv.slice(2));
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+const APPS_FILE = userPath(userContext, 'data/applications.md');
+const FOLLOWUPS_FILE = userPath(userContext, 'data/follow-ups.md');
 
 
 // --- CLI args ---
-const args = process.argv.slice(2);
+const args = userContext.args;
 const summaryMode = args.includes('--summary');
 const overdueOnly = args.includes('--overdue-only');
 const appliedDaysIdx = args.indexOf('--applied-days');
@@ -148,7 +156,7 @@ function extractContacts(notes) {
 function resolveReportPath(reportField) {
   const match = reportField.match(/\]\(([^)]+)\)/);
   if (!match) return null;
-  const fullPath = join(CAREER_OPS, match[1]);
+  const fullPath = join(userContext.userRoot, match[1]);
   return existsSync(fullPath) ? match[1] : null;
 }
 

@@ -3,7 +3,7 @@
 <!-- ============================================================
      BU DOSYA OTOMATİK GÜNCELLENEBİLİR. Buraya kişisel veri ekleme.
      
-     Özelleştirmeler modes/_profile.md dosyasına gider (hiçbir zaman
+     Özelleştirmeler users/{USER}/modes/_profile.md dosyasına gider (hiçbir zaman
      otomatik güncellenmez). Bu dosya sistem kurallarını, puanlama
      mantığını ve her sürümde gelişen araç yapılandırmasını içerir.
      ============================================================ -->
@@ -12,13 +12,13 @@
 
 | Dosya | Konum | Ne zaman |
 |-------|-------|----------|
-| cv.md | `cv.md` (proje kök dizini) | Her zaman |
-| article-digest.md | `article-digest.md` (varsa) | Her zaman — ayrıntılı kanıtlar |
-| profile.yml | `config/profile.yml` | Her zaman — kişisel bilgiler ve hedef roller |
-| _profile.md | `modes/_profile.md` | Her zaman — kullanıcı arketipleri, anlatı, müzakere |
+| cv.md | `users/{USER}/cv.md` (proje kök dizini) | Her zaman |
+| article-digest.md | `users/{USER}/article-digest.md` (varsa) | Her zaman — ayrıntılı kanıtlar |
+| profile.yml | `users/{USER}/config/profile.yml` | Her zaman — kişisel bilgiler ve hedef roller |
+| _profile.md | `users/{USER}/modes/_profile.md` | Her zaman — kullanıcı arketipleri, anlatı, müzakere |
 
-**KURAL: Kanıt noktalarındaki ölçüm değerlerini ASLA sabit kodlama.** Değerlendirme sırasında bunları cv.md + article-digest.md dosyalarından oku.
-**KURAL: Makale/proje metrikleri için `article-digest.md`, `cv.md`'ye göre önceliklidir.**
+**KURAL: Kanıt noktalarındaki ölçüm değerlerini ASLA sabit kodlama.** Değerlendirme sırasında bunları users/{USER}/cv.md + users/{USER}/article-digest.md dosyalarından oku.
+**KURAL: Makale/proje metrikleri için `users/{USER}/article-digest.md`, `users/{USER}/cv.md`'ye göre önceliklidir.**
 **KURAL: `_profile.md`'yi bu dosyadan SONRA oku. Kullanıcının `_profile.md`'deki özelleştirmeleri buradaki varsayılanları geçersiz kılar.**
 
 ---
@@ -99,28 +99,28 @@ Her ilanı aşağıdaki türlerden birine (ya da en fazla ikisine) sınıflandı
 | AI Forward Deployed | "client-facing", "deploy", "prototype", "fast delivery", "field" |
 | AI Transformation | "change management", "adoption", "enablement", "transformation" |
 
-Arketipi tespit ettikten sonra kullanıcıya özgü çerçeveleme ve kanıt noktaları için `modes/_profile.md` dosyasını oku.
+Arketipi tespit ettikten sonra kullanıcıya özgü çerçeveleme ve kanıt noktaları için `users/{USER}/modes/_profile.md` dosyasını oku.
 
 ### Arketipe Göre Uyarlama
 
-> **Somut rakamlar ve metrikler: değerlendirme sırasında `cv.md` ve `article-digest.md` dosyalarından okunacak. Buraya sabit yazma.**
+> **Somut rakamlar ve metrikler: değerlendirme sırasında `users/{USER}/cv.md` ve `users/{USER}/article-digest.md` dosyalarından okunacak. Buraya sabit yazma.**
 
 
 | Rol ise... | Adayda şunu öne çıkar... | Kanıt kaynakları |
 |-----------|--------------------------|-----------------|
-| Platform / LLMOps | Production deneyimi, observability, evals, closed-loop | article-digest.md + cv.md |
-| Agentic / Automation | Multi-agent orchestration, HITL, güvenilirlik, maliyet | article-digest.md + cv.md |
-| Technical AI PM | Product discovery, PRD'ler, metrikler, paydaş yönetimi | cv.md + article-digest.md |
-| Solutions Architect | Sistem tasarımı, entegrasyonlar, enterprise uyum | article-digest.md + cv.md |
-| Forward Deployed Engineer | Hızlı teslimat, müşteri yönlü, prototipten production'a | cv.md + article-digest.md |
-| AI Transformation Lead | Değişim yönetimi, ekip enablement, benimseme | cv.md + article-digest.md |
+| Platform / LLMOps | Production deneyimi, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Agentic / Automation | Multi-agent orchestration, HITL, güvenilirlik, maliyet | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Technical AI PM | Product discovery, PRD'ler, metrikler, paydaş yönetimi | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Solutions Architect | Sistem tasarımı, entegrasyonlar, enterprise uyum | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Forward Deployed Engineer | Hızlı teslimat, müşteri yönlü, prototipten production'a | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| AI Transformation Lead | Değişim yönetimi, ekip enablement, benimseme | users/{USER}/cv.md + users/{USER}/article-digest.md |
 
 ### Kariyer Anlatısı (Tüm içeriklerde kullanılacak)
 
 
-`config/profile.yml` dosyasındaki kariyer hikayesini tüm içeriklere zemin olarak kullan:
+`users/{USER}/config/profile.yml` dosyasındaki kariyer hikayesini tüm içeriklere zemin olarak kullan:
 - **PDF özetlerinde:** Geçmişten geleceğe bir köprü kur — "Aynı [becerileri] şimdi [ilan alanına] uyguluyorum."
-- **STAR hikayelerinde:** `article-digest.md`'deki somut kanıt noktalarına başvur
+- **STAR hikayelerinde:** `users/{USER}/article-digest.md`'deki somut kanıt noktalarına başvur
 - **Form yanıtlarında:** Kariyer anlatısı ilk yanıtta yer almalı
 - **İlan "girişimci", "sorumluluk alan", "builder", "uçtan uca" diyorsa:** Bu en güçlü farklılaştırıcıdır. Eşleşme ağırlığını artır.
 
@@ -210,7 +210,7 @@ Türkçe iş ilanlarında ve sözleşme müzakerelerinde, yabancı piyasalarda k
 ### ASLA
 
 1. Deneyim veya metrik uydurma
-2. `cv.md` ya da portfolyo dosyalarını değiştirme
+2. `users/{USER}/cv.md` ya da portfolyo dosyalarını değiştirme
 3. Adayın onayı olmadan başvuru gönderme
 4. Üretilen mesajlarda telefon numarası paylaşma
 5. Piyasa fiyatının altında ücret önerme
@@ -221,7 +221,7 @@ Türkçe iş ilanlarında ve sözleşme müzakerelerinde, yabancı piyasalarda k
 ### HER ZAMAN
 
 0. **Ön yazı:** Form izin veriyorsa HER ZAMAN ön yazı ekle. CV ile aynı görsel tasarımda PDF olarak üret. İçerik: ilandan doğrudan alıntılar + kanıt noktalarıyla eşleştirme. Maksimum 1 sayfa.
-1. Herhangi bir ilanı değerlendirmeden önce `cv.md` ve `article-digest.md` dosyalarını oku (varsa)
+1. Herhangi bir ilanı değerlendirmeden önce `users/{USER}/cv.md` ve `users/{USER}/article-digest.md` dosyalarını oku (varsa)
 1b. **Her oturumun ilk değerlendirmesinde:** `node cv-sync-check.mjs` çalıştır. Uyarı varsa adayı bilgilendirmeden devam etme
 2. Rol arketipini belirle ve çerçevelemeyi buna göre uyarla
 3. CV eşleştirmesinde dosyadan tam satır alıntıla

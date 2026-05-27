@@ -6,18 +6,18 @@ Track follow-up cadence for active applications. Flag overdue follow-ups, extrac
 
 ## Inputs
 
-- `data/applications.md` — Application tracker
-- `data/follow-ups.md` — Follow-up history (created on first use)
-- `reports/` — Evaluation reports (for context in drafts)
-- `config/profile.yml` — User profile (name, identity)
-- `cv.md` — CV for proof points in drafts
+- `users/{USER}/data/applications.md` — Application tracker
+- `users/{USER}/data/follow-ups.md` — Follow-up history (created on first use)
+- `users/{USER}/reports/` — Evaluation reports (for context in drafts)
+- `users/{USER}/config/profile.yml` — User profile (name, identity)
+- `users/{USER}/cv.md` — CV for proof points in drafts
 
 ## Step 1 — Run Cadence Script
 
 Execute:
 
 ```bash
-node followup-cadence.mjs
+node followup-cadence.mjs --user {USER}
 ```
 
 Parse the JSON output. It contains:
@@ -53,15 +53,15 @@ Use visual indicators:
 For each **overdue** or **urgent** entry only:
 
 1. Read the linked report (`reportPath` from JSON) for company context
-2. Read `cv.md` for proof points
-3. Read `config/profile.yml` for candidate name and identity
+2. Read `users/{USER}/cv.md` for proof points
+3. Read `users/{USER}/config/profile.yml` for candidate name and identity
 
 ### Email Follow-up Framework (first follow-up, followupCount == 0)
 
 Generate a 3-4 sentence email:
 
 1. **Sentence 1:** Reference the specific role + when you applied. Be specific — mention the company name and role title.
-2. **Sentence 2:** One concrete value-add from the report's Block B match or a proof point from cv.md. Quantify if possible.
+2. **Sentence 2:** One concrete value-add from the report's Block B match or a proof point from `users/{USER}/cv.md`. Quantify if possible.
 3. **Sentence 3:** Soft ask + availability. Offer a specific time window ("this week" or "next Tuesday").
 4. **Sentence 4 (optional):** Brief mention of a relevant recent project or achievement.
 
@@ -72,7 +72,7 @@ Generate a 3-4 sentence email:
 - Reference something specific to THAT company (from report Block A)
 - Keep under 150 words
 - Include a subject line
-- Use the candidate's name from `config/profile.yml`
+- Use the candidate's name from `users/{USER}/config/profile.yml`
 
 **Example tone:**
 > Subject: Re: Senior PHP/Laravel Developer — IxDF
@@ -127,7 +127,7 @@ For each draft, show:
 
 After the user reviews and says they've sent a follow-up, record it:
 
-1. If `data/follow-ups.md` doesn't exist, create it:
+1. If `users/{USER}/data/follow-ups.md` doesn't exist, create it:
    ```markdown
    # Follow-up History
 
@@ -145,7 +145,7 @@ After the user reviews and says they've sent a follow-up, record it:
    - `Contact` = who it was sent to
    - `Notes` = brief note (e.g., "First follow-up, referenced Barbeiro.app")
 
-3. Optionally update the Notes column in `data/applications.md` with "Follow-up {N} sent {YYYY-MM-DD}"
+3. Optionally update the Notes column in `users/{USER}/data/applications.md` with "Follow-up {N} sent {YYYY-MM-DD}"
 
 **IMPORTANT:** Only record follow-ups the user confirms they actually sent. Never record a draft as sent.
 
@@ -170,4 +170,4 @@ After showing all drafts, summarize:
 | Responded | 1 day (urgent reply) | Every 3 days | No limit |
 | Interview | 1 day after (thank-you) | Every 3 days | No limit |
 
-These defaults can be overridden via `node followup-cadence.mjs --applied-days N`.
+These defaults can be overridden via `node followup-cadence.mjs --user {USER} --applied-days N`.

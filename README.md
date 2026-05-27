@@ -86,27 +86,32 @@ git clone https://github.com/santifer/career-ops.git
 cd career-ops && npm install
 npx playwright install chromium   # Required for PDF generation
 
-# 2. Check setup
-npm run doctor                     # Validates all prerequisites
+# 2. Pick a local user id (all personal data stays in users/<username>/)
+export CAREER_OPS_USER=<username>
 
-# 3. Configure
-cp config/profile.example.yml config/profile.yml  # Edit with your details
-cp templates/portals.example.yml portals.yml       # Customize companies
+# 3. Check setup
+npm run doctor -- --user <username>       # Validates all prerequisites
 
-# 4. Add your CV
-# Create cv.md in the project root with your CV in markdown
+# 4. Configure
+mkdir -p users/<username>/config users/<username>/modes
+cp config/profile.example.yml users/<username>/config/profile.yml  # Edit with your details
+cp modes/_profile.template.md users/<username>/modes/_profile.md   # Customize archetypes
+cp templates/portals.example.yml users/<username>/portals.yml       # Customize companies
 
-# 5. Personalize with Claude
+# 5. Add your CV
+# Create users/<username>/cv.md with your CV in markdown
+
+# 6. Personalize with Claude
 claude   # Open Claude Code in this directory
 
 # Then ask Claude to adapt the system to you:
 # "Change the archetypes to backend engineering roles"
 # "Translate the modes to English"
-# "Add these 5 companies to portals.yml"
+# "Add these 5 companies to my portals for <username>"
 # "Update my profile with this CV I'm pasting"
 
-# 6. Start using
-# Paste a job URL or run /career-ops
+# 7. Start using
+# Paste a job URL with --user <username>, or run /career-ops scan <username>
 ```
 
 > **The system is designed to be customized by Claude itself.** Modes, archetypes, scoring weights, negotiation scripts -- just ask Claude to change them. It reads the same files it uses, so it knows exactly what to edit.
@@ -204,7 +209,7 @@ You paste a job URL or description
 
 ## Pre-configured Portals
 
-The scanner comes with **45+ companies** ready to scan and **19 search queries** across major job boards. Copy `templates/portals.example.yml` to `portals.yml` and add your own:
+The scanner comes with **45+ companies** ready to scan and **19 search queries** across major job boards. Copy `templates/portals.example.yml` to `users/{USER}/portals.yml` and add your own:
 
 **AI Labs:** Anthropic, OpenAI, Mistral, Cohere, LangChain, Pinecone
 **Voice AI:** ElevenLabs, PolyAI, Parloa, Hume AI, Deepgram, Vapi, Bland AI
@@ -217,10 +222,10 @@ The scanner comes with **45+ companies** ready to scan and **19 search queries**
 
 **Job boards searched:** Ashby, Greenhouse, Lever, Workable, Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice
 
-By default `node scan.mjs` (a.k.a. `npm run scan`) trusts what each ATS feed returns. Some companies leave stale postings in their public API even after the role is closed, so those expired entries can leak into `pipeline.md`. Pass `--verify` to launch Playwright after the API pass and drop expired postings before they hit the pipeline:
+By default `node scan.mjs --user {USER}` (a.k.a. `npm run scan -- --user {USER}`) trusts what each ATS feed returns. Some companies leave stale postings in their public API even after the role is closed, so those expired entries can leak into `users/{USER}/data/pipeline.md`. Pass `--verify` to launch Playwright after the API pass and drop expired postings before they hit the pipeline:
 
 ```bash
-node scan.mjs --verify          # zero-token discovery + Playwright liveness check
+node scan.mjs --user <username> --verify          # zero-token discovery + Playwright liveness check
 ```
 
 The verification is sequential and only runs against new offers (after dedup), so the cost stays bounded.
@@ -232,7 +237,7 @@ The built-in terminal dashboard lets you browse your pipeline visually:
 ```bash
 cd dashboard
 go build -o career-dashboard .
-./career-dashboard --path ..
+./career-dashboard --path .. --user <username>
 ```
 
 Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.
@@ -243,8 +248,6 @@ Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, 
 career-ops/
 ├── AGENTS.md                    # Canonical agent instructions (all CLIs)
 ├── CLAUDE.md                    # Claude Code wrapper (imports AGENTS.md)
-├── cv.md                        # Your CV (create this)
-├── article-digest.md            # Your proof points (optional)
 ├── config/
 │   └── profile.example.yml      # Template for your profile
 ├── modes/                       # 14 skill modes
@@ -262,9 +265,15 @@ career-ops/
 │   ├── batch-prompt.md          # Self-contained worker prompt
 │   └── batch-runner.sh          # Orchestrator script
 ├── dashboard/                   # Go TUI pipeline viewer
-├── data/                        # Your tracking data (gitignored)
-├── reports/                     # Evaluation reports (gitignored)
-├── output/                      # Generated PDFs (gitignored)
+├── users/                       # Per-user data (gitignored)
+│   └── <username>/
+│       ├── cv.md
+│       ├── config/profile.yml
+│       ├── modes/_profile.md
+│       ├── portals.yml
+│       ├── data/                # Tracking data
+│       ├── reports/             # Evaluation reports
+│       └── output/              # Generated PDFs
 ├── fonts/                       # Space Grotesk + DM Sans
 ├── docs/                        # Setup, customization, architecture
 └── examples/                    # Sample CV, report, proof points

@@ -12,7 +12,8 @@
  */
 
 import { execSync, execFileSync } from 'child_process';
-import { readFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, existsSync, readdirSync, mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
@@ -20,6 +21,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = __dirname;
 const QUICK = process.argv.includes('--quick');
 const NODE = process.execPath;
+const TEST_USERS_DIR = mkdtempSync(join(tmpdir(), 'career-ops-users-'));
+const TEST_USER_ENV = {
+  ...process.env,
+  CAREER_OPS_USERS_DIR: TEST_USERS_DIR,
+  CAREER_OPS_USER: 'test',
+};
 
 let passed = 0;
 let failed = 0;
@@ -49,7 +56,12 @@ console.log('\n🧪 career-ops test suite\n');
 
 console.log('1. Syntax checks');
 
-const mjsFiles = readdirSync(ROOT).filter(f => f.endsWith('.mjs'));
+const mjsFiles = [
+  ...readdirSync(ROOT).filter(f => f.endsWith('.mjs')),
+  ...(existsSync(join(ROOT, 'lib'))
+    ? readdirSync(join(ROOT, 'lib')).filter(f => f.endsWith('.mjs')).map(f => `lib/${f}`)
+    : []),
+];
 for (const f of mjsFiles) {
   const result = run(NODE, ['--check', f]);
   if (result !== null) {
@@ -74,7 +86,7 @@ const scripts = [
 ];
 
 for (const { name, allowFail } of scripts) {
-  const result = run(NODE, name.split(' '), { stdio: ['pipe', 'pipe', 'pipe'] });
+  const result = run(NODE, name.split(' '), { stdio: ['pipe', 'pipe', 'pipe'], env: TEST_USER_ENV });
   if (result !== null) {
     pass(`${name} runs OK`);
   } else if (allowFail) {
@@ -86,7 +98,40 @@ for (const { name, allowFail } of scripts) {
 
 // ── 3. LIVENESS CLASSIFICATION ──────────────────────────────────
 
-console.log('\n3. Liveness classification');
+console.log('\n3. User context resolver');
+
+try {
+  const { getUserContext, UserContextError } = await import(pathToFileURL(join(ROOT, 'lib/user-context.mjs')).href);
+  const parsed = getUserContext(['--user', 'test-user', '--dry-run']);
+  if (
+    parsed.userId === 'test-user'
+    && parsed.userRoot.endsWith('users/test-user')
+    && parsed.args.length === 1
+    && parsed.args[0] === '--dry-run'
+  ) {
+    pass('user-context parses and strips --user from script args');
+  } else {
+    fail(`user-context parsed unexpected result: ${JSON.stringify(parsed)}`);
+  }
+
+  let rejected = false;
+  try {
+    getUserContext(['--user', '../secret']);
+  } catch (err) {
+    rejected = err instanceof UserContextError;
+  }
+  if (rejected) {
+    pass('user-context rejects path-like user IDs');
+  } else {
+    fail('user-context accepted a path-like user ID');
+  }
+} catch (e) {
+  fail(`User context tests crashed: ${e.message}`);
+}
+
+// ── 4. LIVENESS CLASSIFICATION ──────────────────────────────────
+
+console.log('\n4. Liveness classification');
 
 try {
   const { classifyLiveness } = await import(pathToFileURL(join(ROOT, 'liveness-core.mjs')).href);
@@ -139,9 +184,9 @@ try {
   fail(`Liveness classification tests crashed: ${e.message}`);
 }
 
-// ── 4. CUSTOM PROVIDER RETRIES ──────────────────────────────────
+// ── 5. CUSTOM PROVIDER RETRIES ──────────────────────────────────
 
-console.log('\n4. Custom provider retries');
+console.log('\n5. Custom provider retries');
 
 try {
   const {
@@ -353,10 +398,10 @@ try {
   fail(`Custom provider retry tests crashed: ${e.message}`);
 }
 
-// ── 5. DASHBOARD BUILD ──────────────────────────────────────────
+// ── 6. DASHBOARD BUILD ──────────────────────────────────────────
 
 if (!QUICK) {
-  console.log('\n5. Dashboard build');
+  console.log('\n6. Dashboard build');
   const goBuild = run('cd dashboard && go build -o /tmp/career-dashboard-test . 2>&1');
   if (goBuild !== null) {
     pass('Dashboard compiles');
@@ -364,12 +409,12 @@ if (!QUICK) {
     fail('Dashboard build failed');
   }
 } else {
-  console.log('\n5. Dashboard build (skipped --quick)');
+  console.log('\n6. Dashboard build (skipped --quick)');
 }
 
-// ── 6. DATA CONTRACT ────────────────────────────────────────────
+// ── 7. DATA CONTRACT ────────────────────────────────────────────
 
-console.log('\n6. Data contract validation');
+console.log('\n7. Data contract validation');
 
 // Check system files exist
 const systemFiles = [
@@ -377,6 +422,7 @@ const systemFiles = [
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
   'templates/states.yml', 'templates/cv-template.html',
+  'lib/user-context.mjs',
   '.claude/skills/career-ops/SKILL.md',
 ];
 
@@ -391,21 +437,20 @@ for (const f of systemFiles) {
 // Check user files are NOT tracked (gitignored)
 const userFiles = [
   'config/profile.yml', 'modes/_profile.md', 'portals.yml',
+  'users/example/cv.md',
 ];
 for (const f of userFiles) {
-  const tracked = run('git', ['ls-files', f]);
-  if (tracked === '') {
-    pass(`User file gitignored: ${f}`);
-  } else if (tracked === null) {
+  const ignored = run('git', ['check-ignore', f]);
+  if (ignored !== null) {
     pass(`User file gitignored: ${f}`);
   } else {
-    fail(`User file IS tracked (should be gitignored): ${f}`);
+    fail(`User file is not gitignored: ${f}`);
   }
 }
 
-// ── 7. PERSONAL DATA LEAK CHECK ─────────────────────────────────
+// ── 8. PERSONAL DATA LEAK CHECK ─────────────────────────────────
 
-console.log('\n7. Personal data leak check');
+console.log('\n8. Personal data leak check');
 
 const leakPatterns = [
   'Santiago', 'santifer.io', 'Santifer iRepair', 'Zinkee', 'ALMAS',
@@ -453,9 +498,9 @@ if (!leakFound) {
   pass('No personal data leaks outside allowed files');
 }
 
-// ── 8. ABSOLUTE PATH CHECK ──────────────────────────────────────
+// ── 9. ABSOLUTE PATH CHECK ──────────────────────────────────────
 
-console.log('\n8. Absolute path check');
+console.log('\n9. Absolute path check');
 
 // Same git grep approach: only scans tracked files. Untracked AI tool
 // outputs, local debate artifacts, etc. can't false-positive here.
@@ -470,9 +515,9 @@ if (!absPathResult) {
   }
 }
 
-// ── 9. MODE FILE INTEGRITY ──────────────────────────────────────
+// ── 10. MODE FILE INTEGRITY ──────────────────────────────────────
 
-console.log('\n9. Mode file integrity');
+console.log('\n10. Mode file integrity');
 
 const expectedModes = [
   '_shared.md', '_profile.template.md', 'oferta.md', 'pdf.md', 'scan.md',
@@ -496,9 +541,9 @@ if (shared.includes('_profile.md')) {
   fail('_shared.md does NOT reference _profile.md');
 }
 
-// ── 10. LOCAL PARSER CONTRACT ───────────────────────────────────
+// ── 11. LOCAL PARSER CONTRACT ───────────────────────────────────
 
-console.log('\n10. Local parser contract');
+console.log('\n11. Local parser contract');
 
 const scanScript = readFile('scan.mjs');
 if (
@@ -556,9 +601,9 @@ if (
   fail('portals example still points at a bundled Cohere parser');
 }
 
-// ── 11. AGENTS.md INTEGRITY ─────────────────────────────────────
+// ── 12. AGENTS.md INTEGRITY ─────────────────────────────────────
 
-console.log('\n11. AGENTS.md integrity');
+console.log('\n12. AGENTS.md integrity');
 
 const agents = readFile('AGENTS.md');
 const requiredSections = [
@@ -575,9 +620,9 @@ for (const section of requiredSections) {
   }
 }
 
-// ── 12. VERSION FILE ─────────────────────────────────────────────
+// ── 13. VERSION FILE ─────────────────────────────────────────────
 
-console.log('\n12. Version file');
+console.log('\n13. Version file');
 
 if (fileExists('VERSION')) {
   const version = readFile('VERSION').trim();
@@ -590,9 +635,9 @@ if (fileExists('VERSION')) {
   fail('VERSION file missing');
 }
 
-// ── 11. LOCATION FILTER — always_allow tier ───────────────────────
+// ── 14. LOCATION FILTER — always_allow tier ───────────────────────
 
-console.log('\n11. Location filter — always_allow tier');
+console.log('\n14. Location filter — always_allow tier');
 
 try {
   const { buildLocationFilter } = await import(pathToFileURL(join(ROOT, 'scan.mjs')).href);

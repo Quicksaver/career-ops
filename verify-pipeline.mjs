@@ -11,26 +11,37 @@
  * 6. No pending TSVs in tracker-additions/ (only in merged/ or archived/)
  * 7. states.yml canonical IDs for cross-system consistency
  *
- * Run: node career-ops/verify-pipeline.mjs
+ * Run: node career-ops/verify-pipeline.mjs --user <id>
  */
 
 import { readFileSync, readdirSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  ensureUserDirs,
+  getUserContext,
+  printUserContextErrorAndExit,
+  systemPath,
+  userPath,
+} from './lib/user-context.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-// Support both layouts: data/applications.md (boilerplate) and applications.md (original)
-const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
-const ADDITIONS_DIR = join(CAREER_OPS, 'batch/tracker-additions');
-const REPORTS_DIR = join(CAREER_OPS, 'reports');
-const STATES_FILE = existsSync(join(CAREER_OPS, 'templates/states.yml'))
-  ? join(CAREER_OPS, 'templates/states.yml')
+let userContext;
+try {
+  userContext = getUserContext(process.argv.slice(2));
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+const APPS_FILE = userPath(userContext, 'data/applications.md');
+const ADDITIONS_DIR = userPath(userContext, 'batch/tracker-additions');
+const REPORTS_DIR = userPath(userContext, 'reports');
+const STATES_FILE = existsSync(systemPath('templates/states.yml'))
+  ? systemPath('templates/states.yml')
   : join(CAREER_OPS, 'states.yml');
 
 // Ensure required directories exist (fresh setup)
-mkdirSync(join(CAREER_OPS, 'data'), { recursive: true });
+ensureUserDirs(userContext, ['data', 'batch/tracker-additions']);
 mkdirSync(REPORTS_DIR, { recursive: true });
 
 const CANONICAL_STATUSES = [
@@ -79,7 +90,7 @@ for (const line of lines) {
   });
 }
 
-console.log(`\n📊 Checking ${entries.length} entries in applications.md\n`);
+console.log(`\n📊 Checking ${entries.length} entries in applications.md for user "${userContext.userId}"\n`);
 
 // --- Check 1: Canonical statuses ---
 let badStatuses = 0;
@@ -129,7 +140,7 @@ let brokenReports = 0;
 for (const e of entries) {
   const match = e.report.match(/\]\(([^)]+)\)/);
   if (!match) continue;
-  const reportPath = join(CAREER_OPS, match[1]);
+  const reportPath = join(userContext.userRoot, match[1]);
   if (!existsSync(reportPath)) {
     error(`#${e.num}: Report not found: ${match[1]}`);
     brokenReports++;

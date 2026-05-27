@@ -13,17 +13,28 @@
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = __dirname;
+let userContext;
+try {
+  userContext = getUserContext(process.argv.slice(2));
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
 
 const warnings = [];
 const errors = [];
 
 // 1. Check cv.md exists
-const cvPath = join(projectRoot, 'cv.md');
+const cvPath = userPath(userContext, 'cv.md');
 if (!existsSync(cvPath)) {
-  errors.push('cv.md not found in project root. Create it with your CV in markdown format.');
+  errors.push(`cv.md not found for user "${userContext.userId}". Create users/${userContext.userId}/cv.md with your CV in markdown format.`);
 } else {
   const cvContent = readFileSync(cvPath, 'utf-8');
   if (cvContent.trim().length < 100) {
@@ -32,9 +43,9 @@ if (!existsSync(cvPath)) {
 }
 
 // 2. Check profile.yml exists
-const profilePath = join(projectRoot, 'config', 'profile.yml');
+const profilePath = userPath(userContext, 'config/profile.yml');
 if (!existsSync(profilePath)) {
-  errors.push('config/profile.yml not found. Copy from config/profile.example.yml and fill in your details.');
+  errors.push(`config/profile.yml not found for user "${userContext.userId}". Copy config/profile.example.yml to users/${userContext.userId}/config/profile.yml and fill in your details.`);
 } else {
   const profileContent = readFileSync(profilePath, 'utf-8');
   const requiredFields = ['full_name', 'email', 'location'];
@@ -46,7 +57,13 @@ if (!existsSync(profilePath)) {
   }
 }
 
-// 3. Check for hardcoded metrics in prompt files
+// 3. Check user profile mode exists
+const profileModePath = userPath(userContext, 'modes/_profile.md');
+if (!existsSync(profileModePath)) {
+  errors.push(`modes/_profile.md not found for user "${userContext.userId}". Copy modes/_profile.template.md to users/${userContext.userId}/modes/_profile.md and customize it.`);
+}
+
+// 4. Check for hardcoded metrics in prompt files
 const filesToCheck = [
   { path: join(projectRoot, 'modes', '_shared.md'), name: '_shared.md' },
   { path: join(projectRoot, 'batch', 'batch-prompt.md'), name: 'batch-prompt.md' },
@@ -71,8 +88,8 @@ for (const { path, name } of filesToCheck) {
   }
 }
 
-// 4. Check article-digest.md freshness
-const digestPath = join(projectRoot, 'article-digest.md');
+// 5. Check article-digest.md freshness
+const digestPath = userPath(userContext, 'article-digest.md');
 if (existsSync(digestPath)) {
   const stats = statSync(digestPath);
   const daysSinceModified = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60 * 24);
@@ -82,7 +99,7 @@ if (existsSync(digestPath)) {
 }
 
 // Output results
-console.log('\n=== career-ops sync check ===\n');
+console.log(`\n=== career-ops sync check (${userContext.userId}) ===\n`);
 
 if (errors.length === 0 && warnings.length === 0) {
   console.log('All checks passed.');

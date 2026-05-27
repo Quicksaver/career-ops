@@ -5,7 +5,7 @@
      ============================================================
      Diese Datei enthält den geteilten Kontext für alle career-ops-Modi
      in der deutschen Variante. Bevor du career-ops verwendest, MUSST du:
-     1. config/profile.yml mit deinen persönlichen Daten ausfüllen
+     1. users/{USER}/config/profile.yml mit deinen persönlichen Daten ausfüllen
      2. cv.md im Projekt-Root anlegen (Lebenslauf in Markdown)
      3. (Optional) article-digest.md mit deinen Proof Points anlegen
      4. Die mit [ANPASSEN] markierten Abschnitte unten anpassen
@@ -15,12 +15,12 @@
 
 | Datei | Pfad | Wann |
 |-------|------|------|
-| cv.md | `cv.md` (Projekt-Root) | IMMER |
-| article-digest.md | `article-digest.md` (falls vorhanden) | IMMER (detaillierte Proof Points) |
-| profile.yml | `config/profile.yml` | IMMER (Identität und Zielrollen) |
+| cv.md | `users/{USER}/cv.md` (Projekt-Root) | IMMER |
+| article-digest.md | `users/{USER}/article-digest.md` (falls vorhanden) | IMMER (detaillierte Proof Points) |
+| profile.yml | `users/{USER}/config/profile.yml` | IMMER (Identität und Zielrollen) |
 
-**REGEL: Niemals Kennzahlen aus Proof Points hartcodieren.** Lies sie zur Bewertungszeit aus `cv.md` und `article-digest.md`.
-**REGEL: Bei Kennzahlen zu Artikeln/Projekten hat `article-digest.md` Vorrang vor `cv.md`** (in `cv.md` können ältere Zahlen stehen).
+**REGEL: Niemals Kennzahlen aus Proof Points hartcodieren.** Lies sie zur Bewertungszeit aus `users/{USER}/cv.md` und `users/{USER}/article-digest.md`.
+**REGEL: Bei Kennzahlen zu Artikeln/Projekten hat `users/{USER}/article-digest.md` Vorrang vor `users/{USER}/cv.md`** (in `users/{USER}/cv.md` können ältere Zahlen stehen).
 
 ---
 
@@ -46,16 +46,16 @@ Die Skill behandelt ALLE Zielrollen mit gleicher Sorgfalt. Keine ist primär ode
 
 ### Adaptives Framing nach Archetyp
 
-> **Konkrete Kennzahlen: zur Bewertungszeit aus `cv.md` und `article-digest.md` lesen. NIEMALS hier hartcodieren.**
+> **Konkrete Kennzahlen: zur Bewertungszeit aus `users/{USER}/cv.md` und `users/{USER}/article-digest.md` lesen. NIEMALS hier hartcodieren.**
 
 | Wenn die Rolle ist... | Beim Kandidaten betonen... | Quellen für Proof Points |
 |-----------------------|----------------------------|--------------------------|
-| Platform / LLMOps | Production-Erfahrung, Observability, Evals, Closed-Loop | article-digest.md + cv.md |
-| Agentic / Automation | Multi-Agent-Orchestrierung, HITL, Zuverlässigkeit, Kosten | article-digest.md + cv.md |
-| Technical AI PM | Product Discovery, PRDs, Metriken, Stakeholder-Management | cv.md + article-digest.md |
-| Solutions Architect | Systemdesign, Integrationen, Enterprise-tauglich | article-digest.md + cv.md |
-| Forward Deployed Engineer | Schnelle Lieferung, kundennah, Prototyp bis Produktion | cv.md + article-digest.md |
-| AI Transformation Lead | Change Management, Team-Enablement, Adoption | cv.md + article-digest.md |
+| Platform / LLMOps | Production-Erfahrung, Observability, Evals, Closed-Loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Agentic / Automation | Multi-Agent-Orchestrierung, HITL, Zuverlässigkeit, Kosten | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Technical AI PM | Product Discovery, PRDs, Metriken, Stakeholder-Management | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Solutions Architect | Systemdesign, Integrationen, Enterprise-tauglich | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Forward Deployed Engineer | Schnelle Lieferung, kundennah, Prototyp bis Produktion | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| AI Transformation Lead | Change Management, Team-Enablement, Adoption | users/{USER}/cv.md + users/{USER}/article-digest.md |
 
 <!-- [ANPASSEN] Ordne deine konkreten Projekte/Artikel den Archetypen oben zu -->
 
@@ -65,11 +65,11 @@ Die Skill behandelt ALLE Zielrollen mit gleicher Sorgfalt. Keine ist primär ode
      - "Eigene SaaS nach 5 Jahren aufgebaut und verkauft. Jetzt voller Fokus auf angewandte KI im Enterprise."
      - "Engineering-Lead in einer Series-B während 10x-Wachstum. Suche jetzt die nächste Herausforderung."
      - "Wechsel von Beratung zu Produktentwicklung. Suche Rollen mit hoher Verantwortung."
-     Wird gelesen aus config/profile.yml → narrative.exit_story -->
+     Wird gelesen aus users/{USER}/config/profile.yml → narrative.exit_story -->
 
-Verwende das Exit-Narrativ aus `config/profile.yml`, um ALLE Inhalte zu rahmen:
+Verwende das Exit-Narrativ aus `users/{USER}/config/profile.yml`, um ALLE Inhalte zu rahmen:
 - **In PDF-Summaries:** Brücke von der Vergangenheit in die Zukunft schlagen — "Wende dieselben [Skills] jetzt auf [JD-Domain] an."
-- **In STAR-Stories:** Auf Proof Points aus `article-digest.md` referenzieren.
+- **In STAR-Stories:** Auf Proof Points aus `users/{USER}/article-digest.md` referenzieren.
 - **In Draft-Antworten (Block G):** Das Übergangs-Narrativ gehört in die erste Antwort.
 - **Wenn die Stellenanzeige nach "unternehmerisch", "Eigenverantwortung", "Builder", "End-to-End" fragt:** Das ist DAS Differenzierungsmerkmal Nr. 1. Match-Gewicht erhöhen.
 
@@ -91,7 +91,7 @@ Profil framen als **"Technischer Builder mit nachweisbarer Praxis"**, der das Fr
        url: "https://deinedomain.dev/demo"
        password: "demo-2026"
        when_to_share: "LLMOps, AI-Platform, Observability-Rollen"
-     Wird gelesen aus config/profile.yml → narrative.proof_points und narrative.dashboard -->
+     Wird gelesen aus users/{USER}/config/profile.yml → narrative.proof_points und narrative.dashboard -->
 
 Wenn der Kandidat eine Live-Demo / ein Dashboard hat (`profile.yml` prüfen), in passenden Bewerbungen den Zugang anbieten.
 
@@ -142,7 +142,7 @@ In deutschen Stellenanzeigen und Vertragsverhandlungen tauchen Begriffe auf, die
 
 ### Standort-Politik (Location Policy)
 
-<!-- [ANPASSEN] An deine Situation anpassen. Wird gelesen aus config/profile.yml → location -->
+<!-- [ANPASSEN] An deine Situation anpassen. Wird gelesen aus users/{USER}/config/profile.yml → location -->
 
 **In Formularen:**
 - Binäre "Können Sie vor Ort sein?"-Fragen: nach tatsächlicher Verfügbarkeit aus `profile.yml` antworten
@@ -164,7 +164,7 @@ In deutschen Stellenanzeigen und Vertragsverhandlungen tauchen Begriffe auf, die
 ### NIEMALS
 
 1. Erfahrung oder Kennzahlen erfinden
-2. `cv.md` oder Portfolio-Dateien verändern
+2. `users/{USER}/cv.md` oder Portfolio-Dateien verändern
 3. Bewerbungen im Namen des Kandidaten absenden
 4. Telefonnummer in generierten Nachrichten teilen
 5. Vergütung unter Marktniveau empfehlen
@@ -175,7 +175,7 @@ In deutschen Stellenanzeigen und Vertragsverhandlungen tauchen Begriffe auf, die
 ### IMMER
 
 0. **Anschreiben:** Wenn das Formular die Möglichkeit bietet, ein Anschreiben anzuhängen oder zu schreiben, IMMER eines mitliefern. PDF im selben visuellen Design wie der Lebenslauf erzeugen. Inhalt: Zitate aus der Stellenanzeige, gemappt auf Proof Points, Links zu relevanten Case Studies. Maximal 1 Seite.
-1. `cv.md` und `article-digest.md` (falls vorhanden) lesen, bevor irgendeine Stellenanzeige bewertet wird
+1. `users/{USER}/cv.md` und `users/{USER}/article-digest.md` (falls vorhanden) lesen, bevor irgendeine Stellenanzeige bewertet wird
 1b. **Bei der ersten Bewertung jeder Session:** `node cv-sync-check.mjs` per Bash ausführen. Bei Warnungen den Kandidaten informieren, bevor weitergearbeitet wird
 2. Den Rollen-Archetyp erkennen und das Framing anpassen
 3. Beim Matching exakte Zeilen aus dem Lebenslauf zitieren

@@ -22,12 +22,12 @@ Execute the same as the `oferta` mode (read `modes/oferta.md` for all A-F blocks
 
 ## Step 2 — Save Report .md
 
-Save the full evaluation in `reports/{###}-{company-slug}-{YYYY-MM-DD}.md` (see format in `modes/oferta.md`).
+Save the full evaluation in `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-DD}.md` (see format in `modes/oferta.md`).
 Include Block G in the saved report. Add **URL:** {url} and **Legitimacy:** {tier} to the report header.
 
 ## Step 3 — Generate PDF
 
-Read `config/profile.yml`. Check `cv.output_format`:
+Read `users/{USER}/config/profile.yml`. Check `cv.output_format`:
 
 - If `"latex"`, execute the full pipeline from `modes/latex.md`
 - Otherwise (default), execute the full pipeline from `modes/pdf.md`
@@ -70,6 +70,6 @@ If the final score is >= 4.5, generate a draft of responses for the application 
 
 ## Step 5 — Update Tracker
 
-Record it in `data/applications.md` with all columns including Report and PDF as ✅.
+Record it via a TSV in `users/{USER}/batch/tracker-additions/` with all columns including Report and PDF as ✅, then run `node merge-tracker.mjs --user {USER}`.
 
 **If any step fails**, continue with the next ones and mark the failed step as pending in the tracker.

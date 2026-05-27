@@ -8,9 +8,20 @@
 import { existsSync, mkdirSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = __dirname;
+let userContext;
+try {
+  userContext = getUserContext(process.argv.slice(2));
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
 
 // ANSI colors (only on TTY)
 const isTTY = process.stdout.isTTY;
@@ -63,42 +74,56 @@ async function checkPlaywright() {
 }
 
 function checkCv() {
-  if (existsSync(join(projectRoot, 'cv.md'))) {
-    return { pass: true, label: 'cv.md found' };
+  if (existsSync(userPath(userContext, 'cv.md'))) {
+    return { pass: true, label: `cv.md found for user "${userContext.userId}"` };
   }
   return {
     pass: false,
     label: 'cv.md not found',
     fix: [
-      'Create cv.md in the project root with your CV in markdown',
+      `Create users/${userContext.userId}/cv.md with your CV in markdown`,
       'See examples/ for reference CVs',
     ],
   };
 }
 
 function checkProfile() {
-  if (existsSync(join(projectRoot, 'config', 'profile.yml'))) {
-    return { pass: true, label: 'config/profile.yml found' };
+  if (existsSync(userPath(userContext, 'config/profile.yml'))) {
+    return { pass: true, label: `config/profile.yml found for user "${userContext.userId}"` };
   }
   return {
     pass: false,
     label: 'config/profile.yml not found',
     fix: [
-      'Run: cp config/profile.example.yml config/profile.yml',
+      `Run: mkdir -p users/${userContext.userId}/config && cp config/profile.example.yml users/${userContext.userId}/config/profile.yml`,
       'Then edit it with your details',
     ],
   };
 }
 
+function checkProfileMode() {
+  if (existsSync(userPath(userContext, 'modes/_profile.md'))) {
+    return { pass: true, label: `modes/_profile.md found for user "${userContext.userId}"` };
+  }
+  return {
+    pass: false,
+    label: 'modes/_profile.md not found',
+    fix: [
+      `Run: mkdir -p users/${userContext.userId}/modes && cp modes/_profile.template.md users/${userContext.userId}/modes/_profile.md`,
+      'Then customize it with your archetypes, narrative, and negotiation notes',
+    ],
+  };
+}
+
 function checkPortals() {
-  if (existsSync(join(projectRoot, 'portals.yml'))) {
-    return { pass: true, label: 'portals.yml found' };
+  if (existsSync(userPath(userContext, 'portals.yml'))) {
+    return { pass: true, label: `portals.yml found for user "${userContext.userId}"` };
   }
   return {
     pass: false,
     label: 'portals.yml not found',
     fix: [
-      'Run: cp templates/portals.example.yml portals.yml',
+      `Run: mkdir -p users/${userContext.userId} && cp templates/portals.example.yml users/${userContext.userId}/portals.yml`,
       'Then customize with your target companies',
     ],
   };
@@ -133,18 +158,18 @@ function checkFonts() {
 }
 
 function checkAutoDir(name) {
-  const dirPath = join(projectRoot, name);
+  const dirPath = userPath(userContext, name);
   if (existsSync(dirPath)) {
-    return { pass: true, label: `${name}/ directory ready` };
+    return { pass: true, label: `users/${userContext.userId}/${name}/ directory ready` };
   }
   try {
     mkdirSync(dirPath, { recursive: true });
-    return { pass: true, label: `${name}/ directory ready (auto-created)` };
+    return { pass: true, label: `users/${userContext.userId}/${name}/ directory ready (auto-created)` };
   } catch {
     return {
       pass: false,
-      label: `${name}/ directory could not be created`,
-      fix: `Run: mkdir ${name}`,
+      label: `users/${userContext.userId}/${name}/ directory could not be created`,
+      fix: `Run: mkdir -p users/${userContext.userId}/${name}`,
     };
   }
 }
@@ -152,6 +177,7 @@ function checkAutoDir(name) {
 async function main() {
   console.log('\ncareer-ops doctor');
   console.log('================\n');
+  console.log(`User: ${userContext.userId}\n`);
 
   const checks = [
     checkNodeVersion(),
@@ -159,6 +185,7 @@ async function main() {
     await checkPlaywright(),
     checkCv(),
     checkProfile(),
+    checkProfileMode(),
     checkPortals(),
     checkFonts(),
     checkAutoDir('data'),
@@ -183,7 +210,7 @@ async function main() {
 
   console.log('');
   if (failures > 0) {
-    console.log(`Result: ${failures} issue${failures === 1 ? '' : 's'} found. Fix them and run \`npm run doctor\` again.`);
+    console.log(`Result: ${failures} issue${failures === 1 ? '' : 's'} found. Fix them and run \`npm run doctor -- --user ${userContext.userId}\` again.`);
     process.exit(1);
   } else {
     console.log('Result: All checks passed. You\'re ready to go! Run `claude` to start.');

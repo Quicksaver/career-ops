@@ -16,7 +16,7 @@ Conductor (headed browser mode)
   ├─ Job 2: click next, read JD + URL
   │    └─► headless worker → report .md + PDF + tracker-line
   │
-  └─ End: merge tracker-additions → applications.md + summary
+  └─ End: merge user tracker-additions → applications.md + summary
 ```
 
 Each worker is a headless child process with a clean 200K token context. The conductor only orchestrates. See the **Headless / Batch Mode** table in `AGENTS.md` for the correct command per CLI.
@@ -25,19 +25,20 @@ Each worker is a headless child process with a clean 200K token context. The con
 
 ```text
 batch/
-  batch-input.tsv               # URLs (from conductor or manual)
-  batch-state.tsv               # Progress (auto-generated, gitignored)
   batch-runner.sh               # Standalone orchestrator script
   batch-prompt.md               # Prompt template for workers
+users/{USER}/batch/
+  batch-input.tsv               # URLs (from conductor or manual)
+  batch-state.tsv               # Progress (auto-generated, gitignored)
   logs/                         # One log per job (gitignored)
   tracker-additions/            # Tracker lines (gitignored)
 ```
 
 ## Mode A: Conductor --chrome
 
-1. **Read state**: `batch/batch-state.tsv` → identify what has already been processed
+1. **Read state**: `users/{USER}/batch/batch-state.tsv` → identify what has already been processed
 2. **Navigate portal**: Chrome → search URL
-3. **Extract URLs**: Read results DOM → extract URL list → append to `batch-input.tsv`
+3. **Extract URLs**: Read results DOM → extract URL list → append to `users/{USER}/batch/batch-input.tsv`
 4. **For each pending URL**:
    a. Chrome: click on the job → read JD text from the DOM
    b. Save JD to `/tmp/batch-jd-{id}.txt`
@@ -49,19 +50,20 @@ batch/
       <headless-cmd> "Process this job. URL: {url}. JD: /tmp/batch-jd-{id}.txt. Report: {num}. ID: {id}"
       ```
 
-   e. Update `batch-state.tsv` (completed/failed + score + report_num)
-   f. Log to `logs/{report_num}-{id}.log`
+   e. Update `users/{USER}/batch/batch-state.tsv` (completed/failed + score + report_num)
+   f. Log to `users/{USER}/batch/logs/{report_num}-{id}.log`
    g. Chrome: go back → next job
 5. **Pagination**: If no more jobs → click "Next" → repeat
-6. **End**: Merge `tracker-additions/` → `applications.md` + summary
+6. **End**: Merge `users/{USER}/batch/tracker-additions/` → `users/{USER}/data/applications.md` + summary
 
 ## Mode B: Standalone script
 
 ```bash
-batch/batch-runner.sh [OPTIONS]
+batch/batch-runner.sh --user {USER} [OPTIONS]
 ```
 
 Options:
+- `--user ID` — required user folder under `users/`
 - `--dry-run` — list pending jobs without executing
 - `--retry-failed` — retry only failed jobs
 - `--start-from N` — start from ID N
@@ -79,7 +81,7 @@ id	url	status	started_at	completed_at	report_num	score	error	retries
 
 ## Resumability
 
-- If it crashes → re-run → reads `batch-state.tsv` → skip completed jobs
+- If it crashes → re-run → reads `users/{USER}/batch/batch-state.tsv` → skip completed jobs
 - Lock file (`batch-runner.pid`) prevents double execution
 - Each worker is independent: failure in job #47 does not affect the others
 
@@ -88,9 +90,9 @@ id	url	status	started_at	completed_at	report_num	score	error	retries
 Each worker receives `batch-prompt.md` as a system prompt. It is self-contained. Use your CLI's headless command — see the **Headless / Batch Mode** table in `AGENTS.md`.
 
 The worker produces:
-1. `.md` report in `reports/`
-2. PDF in `output/`
-3. Tracker line in `batch/tracker-additions/{id}.tsv`
+1. `.md` report in `users/{USER}/reports/`
+2. PDF in `users/{USER}/output/`
+3. Tracker line in `users/{USER}/batch/tracker-additions/{id}.tsv`
 4. Result JSON via stdout
 
 ## Error handling

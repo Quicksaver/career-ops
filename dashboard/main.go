@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +16,8 @@ import (
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 	"github.com/santifer/career-ops/dashboard/internal/ui/screens"
 )
+
+var reUserID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 type viewState int
 
@@ -152,15 +156,41 @@ func (m appModel) View() string {
 }
 
 func main() {
-	pathFlag := flag.String("path", ".", "Path to career-ops directory")
+	pathFlag := flag.String("path", ".", "Path to career-ops project directory")
+	userFlag := flag.String("user", "", "Required career-ops user ID under users/")
+	usersDirFlag := flag.String("users-dir", "", "Override users directory (defaults to {path}/users or CAREER_OPS_USERS_DIR)")
 	flag.Parse()
 
-	careerOpsPath := *pathFlag
+	projectPath := *pathFlag
+	userID := *userFlag
+	if userID == "" {
+		userID = os.Getenv("CAREER_OPS_USER")
+	}
+	if userID == "" {
+		fmt.Fprintln(os.Stderr, "Error: no career-ops user selected. Pass --user ID or set CAREER_OPS_USER.")
+		os.Exit(1)
+	}
+	if !reUserID.MatchString(userID) {
+		fmt.Fprintf(os.Stderr, "Error: invalid career-ops user %q. Use letters, numbers, dots, underscores, or hyphens.\n", userID)
+		os.Exit(1)
+	}
+
+	usersDir := *usersDirFlag
+	if usersDir == "" {
+		usersDir = os.Getenv("CAREER_OPS_USERS_DIR")
+	}
+	if usersDir == "" {
+		usersDir = filepath.Join(projectPath, "users")
+	} else if !filepath.IsAbs(usersDir) {
+		usersDir = filepath.Join(projectPath, usersDir)
+	}
+
+	careerOpsPath := filepath.Join(usersDir, userID)
 
 	// Load applications
 	apps := data.ParseApplications(careerOpsPath)
 	if apps == nil {
-		fmt.Fprintf(os.Stderr, "Error: could not find applications.md in %s or %s/data/\n", careerOpsPath, careerOpsPath)
+		fmt.Fprintf(os.Stderr, "Error: could not find applications.md for user %q in %s or %s/data/\n", userID, careerOpsPath, careerOpsPath)
 		os.Exit(1)
 	}
 

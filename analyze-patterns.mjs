@@ -6,22 +6,20 @@
  * (archetype, seniority, remote, gaps, scores), classifies outcomes,
  * and outputs structured JSON with actionable patterns.
  *
- * Run: node analyze-patterns.mjs          (JSON to stdout)
- *      node analyze-patterns.mjs --summary (human-readable table)
- *      node analyze-patterns.mjs --min-threshold 3
+ * Run: node analyze-patterns.mjs --user <id>          (JSON to stdout)
+ *      node analyze-patterns.mjs --user <id> --summary (human-readable table)
+ *      node analyze-patterns.mjs --user <id> --min-threshold 3
  *      node analyze-patterns.mjs --self-test
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { load as yamlLoad } from 'js-yaml';
-
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
-const REPORTS_DIR = join(CAREER_OPS, 'reports');
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const MACHINE_SUMMARY_FIELDS = new Set([
   'company',
@@ -44,7 +42,15 @@ const MACHINE_SUMMARY_FIELDS = new Set([
 ]);
 
 // --- CLI args ---
-const args = process.argv.slice(2);
+let userContext = null;
+try {
+  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.argv.includes('--self-test') });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+const args = userContext.args;
+const APPS_FILE = userContext.userRoot ? userPath(userContext, 'data/applications.md') : '';
 const summaryMode = args.includes('--summary');
 const minThresholdIdx = args.indexOf('--min-threshold');
 const MIN_THRESHOLD = minThresholdIdx !== -1 && args[minThresholdIdx + 1] !== undefined
@@ -352,7 +358,7 @@ function analyze() {
   // Enrich entries with report data and classification
   const enriched = entries.map(e => {
     const reportMatch = e.report.match(/\]\(([^)]+)\)/);
-    const reportPath = reportMatch ? join(CAREER_OPS, reportMatch[1]) : null;
+    const reportPath = reportMatch ? join(userContext.userRoot, reportMatch[1]) : null;
     const reportData = reportPath ? parseReport(reportPath) : null;
     const outcome = classifyOutcome(e.status);
     const trackerScore = parseFloat(e.score);

@@ -12,17 +12,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BATCH_DIR="$SCRIPT_DIR"
-INPUT_FILE="$BATCH_DIR/batch-input.tsv"
-STATE_FILE="$BATCH_DIR/batch-state.tsv"
-PROMPT_FILE="$BATCH_DIR/batch-prompt.md"
-LOGS_DIR="$BATCH_DIR/logs"
-TRACKER_DIR="$BATCH_DIR/tracker-additions"
-REPORTS_DIR="$PROJECT_DIR/reports"
-APPLICATIONS_FILE="$PROJECT_DIR/data/applications.md"
-LOCK_FILE="$BATCH_DIR/batch-runner.pid"
-STATE_LOCK_DIR="$BATCH_DIR/.batch-state.lock"
-STATE_LOCK_PID_FILE="$STATE_LOCK_DIR/pid"
+USER_ID="${CAREER_OPS_USER:-}"
+USERS_DIR="${CAREER_OPS_USERS_DIR:-$PROJECT_DIR/users}"
+USER_ROOT=""
+BATCH_DIR=""
+INPUT_FILE=""
+STATE_FILE=""
+PROMPT_FILE="$SCRIPT_DIR/batch-prompt.md"
+LOGS_DIR=""
+TRACKER_DIR=""
+REPORTS_DIR=""
+LOCK_FILE=""
+STATE_LOCK_DIR=""
+STATE_LOCK_PID_FILE=""
 STATE_LOCK_TIMEOUT_SECONDS=30
 MAIN_PID="${BASHPID:-$$}"
 
@@ -43,6 +45,7 @@ Uses your default Claude model (Claude Max subscription).
 Usage: batch-runner.sh [OPTIONS]
 
 Options:
+  --user ID           Required. User folder under users/ID
   --parallel N         Number of parallel workers (default: 1)
   --dry-run            Show what would be processed, don't execute
   --retry-failed       Only retry offers marked as "failed" in state
@@ -63,22 +66,24 @@ Files:
 
 Examples:
   # Dry run to see pending offers
-  ./batch-runner.sh --dry-run
+  ./batch-runner.sh --user <username> --dry-run
 
   # Process all pending
-  ./batch-runner.sh
+  ./batch-runner.sh --user <username>
 
   # Retry only failed offers
-  ./batch-runner.sh --retry-failed
+  ./batch-runner.sh --user <username> --retry-failed
 
   # Process 2 at a time starting from ID 10
-  ./batch-runner.sh --parallel 2 --start-from 10
+  ./batch-runner.sh --user <username> --parallel 2 --start-from 10
 USAGE
 }
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --user) USER_ID="$2"; shift 2 ;;
+    --user=*) USER_ID="${1#--user=}"; shift ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --retry-failed) RETRY_FAILED=true; shift ;;
@@ -90,6 +95,39 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
+
+validate_user() {
+  if [[ -z "$USER_ID" ]]; then
+    echo "ERROR: No career-ops user selected. Specify --user ID or set CAREER_OPS_USER."
+    echo "Example: batch/batch-runner.sh --user <username>"
+    exit 1
+  fi
+  if [[ ! "$USER_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; then
+    echo "ERROR: Invalid career-ops user \"$USER_ID\". Use letters, numbers, dots, underscores, or hyphens."
+    exit 1
+  fi
+}
+
+configure_user_paths() {
+  case "$USERS_DIR" in
+    /*) ;;
+    *) USERS_DIR="$PROJECT_DIR/$USERS_DIR" ;;
+  esac
+
+  USER_ROOT="$USERS_DIR/$USER_ID"
+  BATCH_DIR="$USER_ROOT/batch"
+  INPUT_FILE="$BATCH_DIR/batch-input.tsv"
+  STATE_FILE="$BATCH_DIR/batch-state.tsv"
+  LOGS_DIR="$BATCH_DIR/logs"
+  TRACKER_DIR="$BATCH_DIR/tracker-additions"
+  REPORTS_DIR="$USER_ROOT/reports"
+  LOCK_FILE="$BATCH_DIR/batch-runner.pid"
+  STATE_LOCK_DIR="$BATCH_DIR/.batch-state.lock"
+  STATE_LOCK_PID_FILE="$STATE_LOCK_DIR/pid"
+
+  export CAREER_OPS_USER="$USER_ID"
+  export CAREER_OPS_USERS_DIR="$USERS_DIR"
+}
 
 # Lock file to prevent double execution
 acquire_lock() {
@@ -344,7 +382,7 @@ process_offer() {
   # Prepare system prompt with placeholders resolved
   local resolved_prompt="$BATCH_DIR/.resolved-prompt-${id}.md"
   # Escape sed delimiter characters in variables to prevent substitution breakage
-  local esc_url esc_jd_file esc_report_num esc_date esc_id
+  local esc_url esc_jd_file esc_report_num esc_date esc_id esc_user esc_user_root
   esc_url="${url//\\/\\\\}"
   esc_url="${esc_url//|/\\|}"
   esc_jd_file="${jd_file//\\/\\\\}"
@@ -352,12 +390,18 @@ process_offer() {
   esc_report_num="${report_num//|/\\|}"
   esc_date="${date//|/\\|}"
   esc_id="${id//|/\\|}"
+  esc_user="${USER_ID//\\/\\\\}"
+  esc_user="${esc_user//|/\\|}"
+  esc_user_root="${USER_ROOT//\\/\\\\}"
+  esc_user_root="${esc_user_root//|/\\|}"
   sed \
     -e "s|{{URL}}|${esc_url}|g" \
     -e "s|{{JD_FILE}}|${esc_jd_file}|g" \
     -e "s|{{REPORT_NUM}}|${esc_report_num}|g" \
     -e "s|{{DATE}}|${esc_date}|g" \
     -e "s|{{ID}}|${esc_id}|g" \
+    -e "s|{{USER}}|${esc_user}|g" \
+    -e "s|{{USER_ROOT}}|${esc_user_root}|g" \
     "$PROMPT_FILE" > "$resolved_prompt"
 
   # Launch claude -p worker.
@@ -411,10 +455,10 @@ process_offer() {
 merge_tracker() {
   echo ""
   echo "=== Merging tracker additions ==="
-  node "$PROJECT_DIR/merge-tracker.mjs"
+  node "$PROJECT_DIR/merge-tracker.mjs" --user "$USER_ID"
   echo ""
   echo "=== Verifying pipeline integrity ==="
-  node "$PROJECT_DIR/verify-pipeline.mjs" || echo "⚠️  Verification found issues (see above)"
+  node "$PROJECT_DIR/verify-pipeline.mjs" --user "$USER_ID" || echo "⚠️  Verification found issues (see above)"
 }
 
 # Print summary
@@ -456,6 +500,8 @@ print_summary() {
 
 # Main
 main() {
+  validate_user
+  configure_user_paths
   check_prerequisites
 
   if [[ "$DRY_RUN" == "false" ]]; then
@@ -475,6 +521,7 @@ main() {
   fi
 
   echo "=== career-ops batch runner ==="
+  echo "User: $USER_ID"
   echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
   echo "Input: $total_input offers"
   echo ""

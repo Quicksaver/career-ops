@@ -1,12 +1,12 @@
 # Mode: pipeline — URL Inbox (Second Brain)
 
-Process job URLs stored in `data/pipeline.md`. The user adds URLs at any time and then executes `/career-ops pipeline` to process them all.
+Process job URLs stored in `users/{USER}/data/pipeline.md`. The user adds URLs at any time and then executes `/career-ops pipeline` to process them all.
 
 ## Workflow
 
-1. **Read** `data/pipeline.md` → search for `- [ ]` items in the "Pending" section
+1. **Read** `users/{USER}/data/pipeline.md` → search for `- [ ]` items in the "Pending" section
 2. **For each pending URL**:
-   a. Calculate the next sequential `REPORT_NUM` (read `reports/`, take the highest number + 1)
+   a. Calculate the next sequential `REPORT_NUM` (read `users/{USER}/reports/`, take the highest number + 1)
    b. **Extract JD** using Playwright (browser_navigate + browser_snapshot) → WebFetch → WebSearch
    c. If the URL is not accessible → mark as `- [!]` with a note and continue
    d. **Execute full auto-pipeline**: Evaluation A-F → Report .md → PDF (if score >= 3.0) → Tracker
@@ -40,11 +40,11 @@ Process job URLs stored in `data/pipeline.md`. The user adds URLs at any time an
 **Special cases:**
 - **LinkedIn**: May require login → mark `[!]` and ask the user to paste the text
 - **PDF**: If the URL points to a PDF, read it directly with the Read tool
-- **`local:` prefix**: Read the local file. Example: `local:jds/linkedin-pm-ai.md` → read `jds/linkedin-pm-ai.md`
+- **`local:` prefix**: Read the local file under the active user root. Example: `local:jds/linkedin-pm-ai.md` → read `users/{USER}/jds/linkedin-pm-ai.md`
 
 ## Automatic numbering
 
-1. List all files in `reports/`
+1. List all files in `users/{USER}/reports/`
 2. Extract the number from the prefix (e.g., `142-medispend...` → 142)
 3. New number = maximum found + 1
 
@@ -52,6 +52,6 @@ Process job URLs stored in `data/pipeline.md`. The user adds URLs at any time an
 
 Before processing any URL, verify sync:
 ```bash
-node cv-sync-check.mjs
+node cv-sync-check.mjs --user {USER}
 ```
 If there is a desynchronization, warn the user before continuing.

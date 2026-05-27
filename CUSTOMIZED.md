@@ -13,7 +13,9 @@ Generated from:
 
 Upstream changes are the baseline. When merging future `upstream/main`, keep the new upstream behavior by default and adapt the customizations below around it.
 
-Do not place user-specific data in system-layer files. Candidate data, targeting, proof points, portals, reports, outputs, and interview prep belong in the user layer defined by `DATA_CONTRACT.md`.
+Do not place user-specific data in system-layer files. Candidate data, targeting, proof points, portals, reports, outputs, and interview prep belong in the per-user layer defined by `DATA_CONTRACT.md`.
+
+Do not hardcode local user IDs in tracked/system files. Use placeholders such as `{USER}`, `<username>`, or `<id>` outside the ignored `users/{USER}/` folder.
 
 After each upstream merge, re-run this inventory:
 
@@ -25,6 +27,55 @@ git log --oneline --left-right --cherry-pick upstream/main...main
 ```
 
 Then update this file if a customization is added, removed, or made redundant.
+
+## Multi-User User Layer
+
+The fork centralizes all local candidate data under an ignored per-user folder and requires commands to resolve an active user before reading or writing user-layer files.
+
+Files:
+
+- `lib/user-context.mjs`
+- `.agents/skills/career-ops/SKILL.md`
+- `AGENTS.md`
+- `DATA_CONTRACT.md`
+- `.gitignore`
+- `scan.mjs`
+- `verify-pipeline.mjs`
+- `merge-tracker.mjs`
+- `normalize-statuses.mjs`
+- `dedup-tracker.mjs`
+- `cv-sync-check.mjs`
+- `doctor.mjs`
+- `analyze-patterns.mjs`
+- `followup-cadence.mjs`
+- `gemini-eval.mjs`
+- `generate-pdf.mjs`
+- `batch/batch-runner.sh`
+- `dashboard/main.go`
+- `modes/*.md`
+- `modes/*/_shared.md`
+- `batch/batch-prompt.md`
+- `README.md`
+- `docs/SETUP.md`
+- `docs/SCRIPTS.md`
+- `test-all.mjs`
+- `update-system.mjs`
+
+What this customizes:
+
+- User-specific files now live under `users/{USER}/`, including `cv.md`, `config/profile.yml`, `modes/_profile.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state.
+- `users/` is gitignored. The older root-level user paths remain ignored only for migration safety; new work should use `users/{USER}/...`.
+- Career-ops commands must have an active user before any user-layer access. Explicit user selection is accepted via command text such as `/career-ops scan <username>`, via `--user <id>` / `--user=<id>`, or via `CAREER_OPS_USER`.
+- In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
+- The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
+- Docs and help text must use placeholders like `{USER}`, `<username>`, or `<id>`. Do not hardcode a real local username outside its own ignored `users/{USER}/` directory.
+
+Future merge notes:
+
+- Preserve the explicit-user requirement. Do not silently fall back to root `cv.md`, root `portals.yml`, or other legacy single-user paths.
+- If upstream introduces its own profile/user abstraction, compare it against this flow before replacing it. Keep the conversation-context behavior unless upstream provides an equivalent.
+- When adapting upstream script changes, route every read/write of user-layer data through `lib/user-context.mjs` or equivalent active-user resolution.
+- Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
 
 ## Custom Provider Layer
 

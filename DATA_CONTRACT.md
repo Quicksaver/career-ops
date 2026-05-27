@@ -4,24 +4,35 @@ This document defines which files belong to the **system** (auto-updatable) and 
 
 ## User Layer (NEVER auto-updated)
 
-These files contain your personal data, customizations, and work product. Updates will NEVER modify them.
+These files contain personal data, customizations, and work product. Updates will NEVER modify them.
+
+All user data is centralized under a gitignored per-user folder:
+
+```
+users/{USER}/
+```
+
+Commands must resolve an active user before reading or writing any user-layer file. The root-level user files from older versions remain ignored for migration safety, but new work should use `users/{USER}/...`.
 
 | File | Purpose |
 |------|---------|
-| `cv.md` | Your CV in markdown |
-| `config/profile.yml` | Your identity, targets, comp range |
-| `modes/_profile.md` | Your archetypes, narrative, negotiation scripts |
-| `article-digest.md` | Your proof points from portfolio |
-| `interview-prep/story-bank.md` | Your accumulated STAR+R stories |
-| `portals.yml` | Your customized company list |
-| `data/applications.md` | Your application tracker |
-| `data/pipeline.md` | Your URL inbox |
-| `data/scan-history.tsv` | Your scan history |
-| `data/follow-ups.md` | Your follow-up history |
-| `writing-samples/*` | Your personal writing samples for style calibration (except `writing-samples/README.md`, which is system-owned documentation delivered by updates) |
-| `reports/*` | Your evaluation reports |
-| `output/*` | Your generated PDFs |
-| `jds/*` | Your saved job descriptions |
+| `users/{USER}/cv.md` | CV in markdown |
+| `users/{USER}/config/profile.yml` | Identity, targets, comp range |
+| `users/{USER}/modes/_profile.md` | Archetypes, narrative, negotiation scripts |
+| `users/{USER}/article-digest.md` | Proof points from portfolio |
+| `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
+| `users/{USER}/interview-prep/*` | Company-specific interview prep |
+| `users/{USER}/portals.yml` | Customized company list |
+| `users/{USER}/data/applications.md` | Application tracker |
+| `users/{USER}/data/pipeline.md` | URL inbox |
+| `users/{USER}/data/scan-history.tsv` | Scan history |
+| `users/{USER}/data/follow-ups.md` | Follow-up history |
+| `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
+| `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |
+| `users/{USER}/writing-samples/*` | Personal writing samples for style calibration |
+| `users/{USER}/reports/*` | Evaluation reports |
+| `users/{USER}/output/*` | Generated PDFs |
+| `users/{USER}/jds/*` | Saved job descriptions |
 
 ## System Layer (safe to auto-update)
 
@@ -53,6 +64,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `CLAUDE.md` | Agent instructions |
 | `AGENTS.md` | Codex instructions |
 | `*.mjs` | Utility scripts |
+| `lib/*` | Shared system helpers |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `dashboard/*` | Go TUI dashboard |
@@ -66,6 +78,6 @@ These files contain system logic, scripts, templates, and instructions that impr
 
 ## The Rule
 
-**If a file is in the User Layer, no update process may read, modify, or delete it.**
+**If a file is in the User Layer, no update process may modify or delete it.**
 
 **If a file is in the System Layer, it can be safely replaced with the latest version from the upstream repo.**

@@ -21,10 +21,10 @@
  * Zero Claude API tokens — pure HTTP + JSON.
  *
  * Usage:
- *   node scan.mjs                  # scan all enabled companies
- *   node scan.mjs --dry-run        # preview without writing files
- *   node scan.mjs --company Cohere # scan a single company
- *   node scan.mjs --verify         # Playwright-check each new URL; drop expired postings
+ *   node scan.mjs --user <username>                  # scan all enabled companies
+ *   node scan.mjs --user <username> --dry-run        # preview without writing files
+ *   node scan.mjs --user <username> --company Cohere # scan a single company
+ *   node scan.mjs --user <username> --verify         # Playwright-check each new URL; drop expired postings
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
@@ -33,21 +33,34 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 import { makeHttpCtx } from './providers/_http.mjs';
+import {
+  ensureUserDirs,
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const parseYaml = yaml.load;
 
 // ── Config ──────────────────────────────────────────────────────────
 
-const PORTALS_PATH = process.env.CAREER_OPS_PORTALS || 'portals.yml';
-const SCAN_HISTORY_PATH = 'data/scan-history.tsv';
-const PIPELINE_PATH = 'data/pipeline.md';
-const APPLICATIONS_PATH = 'data/applications.md';
+let PORTALS_PATH = 'portals.yml';
+let SCAN_HISTORY_PATH = 'data/scan-history.tsv';
+let PIPELINE_PATH = 'data/pipeline.md';
+let APPLICATIONS_PATH = 'data/applications.md';
 const PROVIDERS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'providers');
 
-// Ensure required directories exist (fresh setup)
-mkdirSync('data', { recursive: true });
-
 const CONCURRENCY = 10;
+
+function configureUserPaths(ctx) {
+  ensureUserDirs(ctx, ['data']);
+  PORTALS_PATH = process.env.CAREER_OPS_PORTALS
+    ? path.resolve(process.env.CAREER_OPS_PORTALS)
+    : userPath(ctx, 'portals.yml');
+  SCAN_HISTORY_PATH = userPath(ctx, 'data/scan-history.tsv');
+  PIPELINE_PATH = userPath(ctx, 'data/pipeline.md');
+  APPLICATIONS_PATH = userPath(ctx, 'data/applications.md');
+}
 
 // ── Provider loading ────────────────────────────────────────────────
 
@@ -227,6 +240,10 @@ function loadSeenCompanyRoles() {
 function appendToPipeline(offers) {
   if (offers.length === 0) return;
 
+  if (!existsSync(PIPELINE_PATH)) {
+    writeFileSync(PIPELINE_PATH, '# Pipeline\n\n## Pendientes\n\n## Procesadas\n', 'utf-8');
+  }
+
   let text = readFileSync(PIPELINE_PATH, 'utf-8');
 
   // Find "## Pendientes" section and append after it
@@ -375,7 +392,16 @@ function guardStatusFor(code) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  let userContext;
+  try {
+    userContext = getUserContext(process.argv.slice(2));
+  } catch (err) {
+    printUserContextErrorAndExit(err);
+  }
+
+  configureUserPaths(userContext);
+
+  const args = userContext.args;
   const dryRun = args.includes('--dry-run');
   const verify = args.includes('--verify');
   const companyFlag = args.indexOf('--company');
@@ -419,6 +445,7 @@ async function main() {
 
   const localParserCount = targets.filter(t => t._provider.id === 'local-parser').length;
   console.log(`Scanning ${targets.length} companies via providers (${localParserCount} local parser; ${skippedCount} skipped — no provider matched)`);
+  console.log(`User: ${userContext.userId}`);
   if (dryRun) console.log('(dry run — no files will be written)\n');
 
   // 4. Load dedup sets
@@ -567,7 +594,7 @@ async function main() {
     }
   }
 
-  console.log(`\n→ Run /career-ops pipeline to evaluate new offers.`);
+  console.log(`\n→ Run /career-ops pipeline ${userContext.userId} to evaluate new offers.`);
   console.log('→ Share results and get help: https://discord.gg/8pRpHETxa4');
 }
 

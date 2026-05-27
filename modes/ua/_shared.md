@@ -4,14 +4,14 @@
      ЦЕ — СИСТЕМНИЙ AUTO-UPDATABLE ФАЙЛ.
      НЕ додавайте сюди персональні дані.
      ============================================================
-     Персоналізація → modes/_profile.md та config/profile.yml.
+     Персоналізація → users/{USER}/modes/_profile.md та users/{USER}/config/profile.yml.
      Цей файл містить спільний контекст, архетипи та правила
      для україномовних режимів.
      Примітка: modes/ua/ поки не включено до auto-update
      (update-system.mjs). Оновлення застосовуються вручну.
 
      Перед використанням career-ops переконайтеся:
-     1. config/profile.yml заповнений вашими даними
+     1. users/{USER}/config/profile.yml заповнений вашими даними
      2. cv.md створений у корені проєкту (резюме в Markdown)
      3. (Опціонально) article-digest.md з proof points
      ============================================================ -->
@@ -20,13 +20,13 @@
 
 | Файл              | Шлях                         | Коли                                                 |
 | ----------------- | ---------------------------- | ---------------------------------------------------- |
-| cv.md             | `cv.md` (корінь проєкту)     | ЗАВЖДИ                                               |
-| article-digest.md | `article-digest.md` (якщо є) | ЗАВЖДИ (детальні proof points)                       |
-| profile.yml       | `config/profile.yml`         | ЗАВЖДИ (ідентичність кандидата і цільові ролі)       |
-| \_profile.md      | `modes/_profile.md`          | ЗАВЖДИ (користувацькі архетипи, наратив, переговори) |
+| cv.md             | `users/{USER}/cv.md` (корінь проєкту)     | ЗАВЖДИ                                               |
+| article-digest.md | `users/{USER}/article-digest.md` (якщо є) | ЗАВЖДИ (детальні proof points)                       |
+| profile.yml       | `users/{USER}/config/profile.yml`         | ЗАВЖДИ (ідентичність кандидата і цільові ролі)       |
+| \_profile.md      | `users/{USER}/modes/_profile.md`          | ЗАВЖДИ (користувацькі архетипи, наратив, переговори) |
 
-**ПРАВИЛО: НІКОЛИ не хардкодити метрики з proof points.** Читати їх з cv.md + article-digest.md під час оцінки.
-**ПРАВИЛО: Для метрик статей/проєктів `article-digest.md` має пріоритет над `cv.md`.**
+**ПРАВИЛО: НІКОЛИ не хардкодити метрики з proof points.** Читати їх з users/{USER}/cv.md + users/{USER}/article-digest.md під час оцінки.
+**ПРАВИЛО: Для метрик статей/проєктів `users/{USER}/article-digest.md` має пріоритет над `users/{USER}/cv.md`.**
 **ПРАВИЛО: Читати `_profile.md` ПІСЛЯ цього файлу. Користувацькі налаштування в `_profile.md` перезаписують значення за замовчуванням.**
 
 ---
@@ -112,19 +112,19 @@
 | **Tech Lead / Engineering Manager** | People management, tech strategy, delivery, найм                     |
 | **Solution Architect**              | Системний дизайн, інтеграції, масштабування, стандарти               |
 
-Після визначення архетипу — читати `modes/_profile.md` для специфічного фреймінгу та proof points кандидата.
+Після визначення архетипу — читати `users/{USER}/modes/_profile.md` для специфічного фреймінгу та proof points кандидата.
 
 ### Адаптивний фреймінг за архетипом
 
-> **Конкретні метрики: читати під час оцінки з `cv.md` та `article-digest.md`. НІКОЛИ не хардкодити.**
+> **Конкретні метрики: читати під час оцінки з `users/{USER}/cv.md` та `users/{USER}/article-digest.md`. НІКОЛИ не хардкодити.**
 
 | Якщо роль...              | Підкреслити про кандидата...                          | Джерела proof points      |
 | ------------------------- | ----------------------------------------------------- | ------------------------- |
-| Platform / LLMOps         | Production systems, observability, evals, reliability | article-digest.md + cv.md |
-| Agentic / Automation      | Multi-agent orchestration, HITL, fault tolerance      | article-digest.md + cv.md |
-| Technical AI PM           | Product discovery, PRD, metrics, delivery             | cv.md + article-digest.md |
-| Solutions Architect       | System design, integrations, enterprise-ready         | article-digest.md + cv.md |
-| Forward Deployed Engineer | Fast delivery, client-facing, prototype → prod        | cv.md + article-digest.md |
+| Platform / LLMOps         | Production systems, observability, evals, reliability | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Agentic / Automation      | Multi-agent orchestration, HITL, fault tolerance      | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Technical AI PM           | Product discovery, PRD, metrics, delivery             | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Solutions Architect       | System design, integrations, enterprise-ready         | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Forward Deployed Engineer | Fast delivery, client-facing, prototype → prod        | users/{USER}/cv.md + users/{USER}/article-digest.md |
 | Backend                   | Highload, microservices, scaling, distributed systems | cv.md                     |
 | DevOps/SRE                | Infrastructure, CI/CD, monitoring, automation         | cv.md                     |
 | Tech Lead / EM            | Leadership, hiring, tech strategy, delivery           | cv.md                     |

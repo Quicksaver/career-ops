@@ -4,7 +4,7 @@
  * generate-pdf.mjs — HTML → PDF via Playwright
  *
  * Usage:
- *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4]
+ *   node career-ops/generate-pdf.mjs [--user <id>] <input.html> <output.pdf> [--format=letter|a4]
  *
  * Requires: @playwright/test (or playwright) installed.
  * Uses Chromium headless to render the HTML and produce a clean, ATS-parseable PDF.
@@ -16,6 +16,11 @@ import { readFile } from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { load as yamlLoad } from 'js-yaml';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,11 +44,16 @@ const THEME_VARIABLES = {
   accent: '--cv-accent',
 };
 
-// Ensure output directory exists (fresh setup)
-mkdirSync(resolve(__dirname, 'output'), { recursive: true });
+let userContext;
+try {
+  userContext = getUserContext(process.argv.slice(2), { requireUser: false });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
 
 async function loadThemeOverrides() {
-  const profilePath = resolve(__dirname, 'config', 'profile.yml');
+  if (!userContext.userRoot) return {};
+  const profilePath = userPath(userContext, 'config/profile.yml');
   if (!existsSync(profilePath)) return {};
 
   try {
@@ -153,7 +163,7 @@ function normalizeTextForATS(html) {
 }
 
 async function generatePDF() {
-  const args = process.argv.slice(2);
+  const args = userContext.args;
 
   // Parse arguments
   let inputPath, outputPath, format = 'a4';
@@ -169,12 +179,13 @@ async function generatePDF() {
   }
 
   if (!inputPath || !outputPath) {
-    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4]');
+    console.error('Usage: node generate-pdf.mjs [--user <id>] <input.html> <output.pdf> [--format=letter|a4]');
     process.exit(1);
   }
 
   inputPath = resolve(inputPath);
   outputPath = resolve(outputPath);
+  mkdirSync(dirname(outputPath), { recursive: true });
 
   // Validate format
   const validFormats = ['a4', 'letter'];

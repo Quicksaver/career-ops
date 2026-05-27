@@ -2,7 +2,7 @@
 
 ## Full pipeline
 
-1. Read `cv.md` as the source of truth
+1. Read `users/{USER}/cv.md` as the source of truth
 2. Ask the user for the JD if it is not in context (text or URL)
 3. Extract 15-20 keywords from the JD
 4. Detect JD language → CV language (EN default)
@@ -17,11 +17,11 @@
 11. Inject keywords naturally into existing achievements (NEVER invent)
 12. Generate full HTML from template + personalized content
 13. Read the associated report number (`REPORT_NUM`, 3 digits), company slug, and report date (`YYYY-MM-DD`)
-14. Write HTML to `output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html`
-15. Execute: `node generate-pdf.mjs output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf --format={letter|a4}`
+14. Write HTML to `users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html`
+15. Execute: `node generate-pdf.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf --format={letter|a4}`
 16. Report: PDF path, number of pages, keyword coverage %
 
-**Naming rule:** All generated CV artifacts in `output/` MUST use the same report-linked basename:
+**Naming rule:** All generated CV artifacts in `users/{USER}/output/` MUST use the same report-linked basename:
 `{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.{html|pdf}`.
 Do not use candidate-name prefixes (`cv-{candidate}-...`) or ad-hoc filenames. The `REPORT_NUM`
 must match the evaluation report and tracker row for that company/role.
@@ -49,11 +49,11 @@ must match the evaluation report and tracker row for that company/role.
 
 ### CV theme customization
 
-The HTML template defines default CSS variables that preserve the current palette. Before writing the final HTML, read optional overrides from `config/profile.yml` under `cv.theme` and replace only the corresponding `:root` variable values. Missing keys must keep the defaults from `templates/cv-template.html`. `generate-pdf.mjs` also applies the same overrides at render time, so the PDF stays themed even if the HTML still contains template defaults.
+The HTML template defines default CSS variables that preserve the current palette. Before writing the final HTML, read optional overrides from `users/{USER}/config/profile.yml` under `cv.theme` and replace only the corresponding `:root` variable values. Missing keys must keep the defaults from `templates/cv-template.html`. `generate-pdf.mjs` also applies the same overrides at render time, so the PDF stays themed even if the HTML still contains template defaults.
 
 Supported keys:
 
-| `config/profile.yml` key | CSS variable | Default |
+| `users/{USER}/config/profile.yml` key | CSS variable | Default |
 |---|---|---|
 | `background` | `--cv-background` | `#ffffff` |
 | `text` | `--cv-text` | `#1a1a2e` |
@@ -137,7 +137,7 @@ Use the template in `cv-template.html`. Replace the `{{...}}` placeholders with 
 
 ## Canva CV Generation (optional)
 
-If `config/profile.yml` has `cv.canva_resume_design_id` set, offer the user a choice before generating:
+If `users/{USER}/config/profile.yml` has `cv.canva_resume_design_id` set, offer the user a choice before generating:
 - **"HTML/PDF (fast, ATS-optimized)"** — existing flow above
 - **"Canva CV (visual, design-preserving)"** — new flow below
 
@@ -157,7 +157,7 @@ a. `get-design-content` on the new design → returns all text elements (richtex
 b. Map text elements to CV sections by content matching:
    - Look for the candidate's name → header section
    - Look for "Summary" or "Professional Summary" → summary section
-   - Look for company names from cv.md → experience sections
+   - Look for company names from `users/{USER}/cv.md` → experience sections
    - Look for degree/school names → education section
    - Look for skill keywords → skills section
 c. If mapping fails, show the user what was found and ask for guidance
@@ -200,12 +200,12 @@ f. `commit-editing-transaction` to save (ONLY after user approval)
 a. `export-design` the duplicate as PDF (format: a4 or letter based on JD location)
 b. **IMMEDIATELY** download the PDF using Bash:
    ```bash
-   curl -sL -o "output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf" "{download_url}"
+   curl -sL -o "users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf" "{download_url}"
    ```
    The export URL is a pre-signed S3 link that expires in ~2 hours. Download it right away.
 c. Verify the download:
    ```bash
-   file output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf
+   file users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf
    ```
    Must show "PDF document". If it shows XML or HTML, the URL expired — re-export and retry.
 d. Report: PDF path, file size, Canva design URL (for manual tweaking)

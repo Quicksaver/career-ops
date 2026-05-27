@@ -4,14 +4,14 @@
      ЭТОТ ФАЙЛ — СИСТЕМНЫЙ.
      НЕ добавляйте сюда персональные данные.
      ============================================================
-     Персонализация → modes/_profile.md и config/profile.yml.
+     Персонализация → users/{USER}/modes/_profile.md и users/{USER}/config/profile.yml.
      Этот файл содержит общий контекст, архетипы и правила
      для русскоязычных режимов.
      Примечание: modes/ru/ пока не включён в auto-update
      (update-system.mjs). Обновления применяются вручную.
      
      Перед использованием career-ops убедитесь:
-     1. config/profile.yml заполнен вашими данными
+     1. users/{USER}/config/profile.yml заполнен вашими данными
      2. cv.md создан в корне проекта (резюме в Markdown)
      3. (Опционально) article-digest.md с proof points
      ============================================================ -->
@@ -20,13 +20,13 @@
 
 | Файл | Путь | Когда |
 |------|------|-------|
-| cv.md | `cv.md` (корень проекта) | ВСЕГДА |
-| article-digest.md | `article-digest.md` (если есть) | ВСЕГДА (детальные proof points) |
-| profile.yml | `config/profile.yml` | ВСЕГДА (идентичность кандидата и целевые роли) |
-| _profile.md | `modes/_profile.md` | ВСЕГДА (пользовательские архетипы, нарратив, переговоры) |
+| cv.md | `users/{USER}/cv.md` (корень проекта) | ВСЕГДА |
+| article-digest.md | `users/{USER}/article-digest.md` (если есть) | ВСЕГДА (детальные proof points) |
+| profile.yml | `users/{USER}/config/profile.yml` | ВСЕГДА (идентичность кандидата и целевые роли) |
+| _profile.md | `users/{USER}/modes/_profile.md` | ВСЕГДА (пользовательские архетипы, нарратив, переговоры) |
 
-**ПРАВИЛО: НИКОГДА не хардкодить метрики из proof points.** Читать их из cv.md + article-digest.md во время оценки.
-**ПРАВИЛО: Для метрик статей/проектов `article-digest.md` имеет приоритет над `cv.md`.**
+**ПРАВИЛО: НИКОГДА не хардкодить метрики из proof points.** Читать их из users/{USER}/cv.md + users/{USER}/article-digest.md во время оценки.
+**ПРАВИЛО: Для метрик статей/проектов `users/{USER}/article-digest.md` имеет приоритет над `users/{USER}/cv.md`.**
 **ПРАВИЛО: Читать `_profile.md` ПОСЛЕ этого файла. Пользовательские настройки в `_profile.md` перезаписывают значения по умолчанию.**
 
 ---
@@ -69,15 +69,15 @@
 
 ### Адаптивный фрейминг по архетипу
 
-> **Конкретные метрики: читать во время оценки из `cv.md` и `article-digest.md`. НИКОГДА не хардкодить.**
+> **Конкретные метрики: читать во время оценки из `users/{USER}/cv.md` и `users/{USER}/article-digest.md`. НИКОГДА не хардкодить.**
 
 | Если роль... | Подчеркнуть о кандидате... | Источники proof points |
 |--------------|---------------------------|------------------------|
-| Platform / LLMOps | Продакшн-системы, observability, evals | article-digest.md + cv.md |
-| Agentic / Automation | Мульти-агентная оркестрация, HITL, надёжность | article-digest.md + cv.md |
-| Technical AI PM | Product discovery, PRD, метрики | cv.md + article-digest.md |
-| Solutions Architect | Системный дизайн, интеграции, enterprise-ready | article-digest.md + cv.md |
-| Forward Deployed Engineer | Быстрая поставка, клиентский фокус, прототип → прод | cv.md + article-digest.md |
+| Platform / LLMOps | Продакшн-системы, observability, evals | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Agentic / Automation | Мульти-агентная оркестрация, HITL, надёжность | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Technical AI PM | Product discovery, PRD, метрики | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Solutions Architect | Системный дизайн, интеграции, enterprise-ready | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Forward Deployed Engineer | Быстрая поставка, клиентский фокус, прототип → прод | users/{USER}/cv.md + users/{USER}/article-digest.md |
 | Backend-разработчик | Highload, микросервисы, масштабирование | cv.md |
 | DevOps/SRE | Инфраструктура, автоматизация, мониторинг | cv.md |
 | Тимлид / EM | Лидерство, найм, техническая стратегия | cv.md |

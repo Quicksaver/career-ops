@@ -12,7 +12,7 @@ Interactive mode for when the candidate is filling out an application form in Ch
 ```text
 1. DETECT      → Read active Chrome tab (screenshot/URL/title)
 2. IDENTIFY    → Extract company + role from the page
-3. SEARCH      → Match against existing reports in reports/
+3. SEARCH      → Match against existing reports in users/{USER}/reports/
 4. LOAD        → Read full report + Section G (if it exists)
 5. COMPARE     → Does the role on screen match the one evaluated? If it changed → notify
 6. ANALYZE     → Identify ALL visible form questions
@@ -32,7 +32,7 @@ Interactive mode for when the candidate is filling out an application form in Ch
 ## Step 2 — Identify and search for context
 
 1. Extract company name and role title from the page
-2. Search in `reports/` by company name (case-insensitive grep)
+2. Search in `users/{USER}/reports/` by company name (case-insensitive grep)
 3. If there is a match → load the full report
 4. If there is a Section G → load previous draft answers as a base
 5. If there is NO match → notify and offer to run a quick auto-pipeline
@@ -43,7 +43,7 @@ If the role on screen differs from the one evaluated:
 - **Notify the candidate**: "The role has changed from [X] to [Y]. Do you want me to re-evaluate or adapt the responses to the new title?"
 - **If adapt**: Adjust responses to the new role without re-evaluating
 - **If re-evaluate**: Execute full A-F evaluation, update report, regenerate Section G
-- **Update tracker**: Change role title in applications.md if applicable
+- **Update tracker**: Change role title in `users/{USER}/data/applications.md` if applicable
 
 ## Step 4 — Analyze form questions
 
@@ -56,7 +56,7 @@ Identify ALL visible questions:
 
 Classify each question:
 - **Already answered in Section G** → adapt the existing response
-- **New question** → generate response from the report + cv.md
+- **New question** → generate response from the report + `users/{USER}/cv.md`
 
 ## Step 5 — Generate responses
 

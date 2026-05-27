@@ -5,7 +5,7 @@
      ============================================================
      Ce fichier contient le contexte partage pour tous les modes
      career-ops en version francaise. Avant d'utiliser career-ops, tu DOIS :
-     1. Remplir config/profile.yml avec tes informations personnelles
+     1. Remplir users/{USER}/config/profile.yml avec tes informations personnelles
      2. Creer cv.md a la racine du projet (CV en Markdown)
      3. (Optionnel) Creer article-digest.md avec tes proof points
      4. Adapter les sections marquees [PERSONNALISER] ci-dessous
@@ -15,12 +15,12 @@
 
 | Fichier | Chemin | Quand |
 |---------|--------|-------|
-| cv.md | `cv.md` (racine du projet) | TOUJOURS |
-| article-digest.md | `article-digest.md` (si existant) | TOUJOURS (proof points detailles) |
-| profile.yml | `config/profile.yml` | TOUJOURS (identite et roles cibles) |
+| cv.md | `users/{USER}/cv.md` (racine du projet) | TOUJOURS |
+| article-digest.md | `users/{USER}/article-digest.md` (si existant) | TOUJOURS (proof points detailles) |
+| profile.yml | `users/{USER}/config/profile.yml` | TOUJOURS (identite et roles cibles) |
 
-**REGLE : Ne JAMAIS coder en dur des metriques issues des proof points.** Les lire depuis `cv.md` et `article-digest.md` au moment de l'evaluation.
-**REGLE : Pour les metriques d'articles/projets, `article-digest.md` a priorite sur `cv.md`** (`cv.md` peut contenir des chiffres plus anciens).
+**REGLE : Ne JAMAIS coder en dur des metriques issues des proof points.** Les lire depuis `users/{USER}/cv.md` et `users/{USER}/article-digest.md` au moment de l'evaluation.
+**REGLE : Pour les metriques d'articles/projets, `users/{USER}/article-digest.md` a priorite sur `users/{USER}/cv.md`** (`users/{USER}/cv.md` peut contenir des chiffres plus anciens).
 
 ---
 
@@ -46,16 +46,16 @@ Le skill traite TOUS les roles cibles avec le meme soin. Aucun n'est primaire ou
 
 ### Framing adaptatif par archetype
 
-> **Metriques concretes : les lire depuis `cv.md` et `article-digest.md` au moment de l'evaluation. JAMAIS les coder en dur ici.**
+> **Metriques concretes : les lire depuis `users/{USER}/cv.md` et `users/{USER}/article-digest.md` au moment de l'evaluation. JAMAIS les coder en dur ici.**
 
 | Si le role est... | Mettre en avant chez le candidat... | Sources de proof points |
 |-------------------|-------------------------------------|-------------------------|
-| Platform / LLMOps | Experience production, observability, evals, closed-loop | article-digest.md + cv.md |
-| Agentic / Automation | Orchestration multi-agent, HITL, fiabilite, couts | article-digest.md + cv.md |
-| Technical AI PM | Product discovery, PRDs, metriques, gestion des parties prenantes | cv.md + article-digest.md |
-| Solutions Architect | Conception systeme, integrations, pret pour l'entreprise | article-digest.md + cv.md |
-| Forward Deployed Engineer | Livraison rapide, proximite client, prototype a production | cv.md + article-digest.md |
-| AI Transformation Lead | Conduite du changement, enablement d'equipe, adoption | cv.md + article-digest.md |
+| Platform / LLMOps | Experience production, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Agentic / Automation | Orchestration multi-agent, HITL, fiabilite, couts | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Technical AI PM | Product discovery, PRDs, metriques, gestion des parties prenantes | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Solutions Architect | Conception systeme, integrations, pret pour l'entreprise | users/{USER}/article-digest.md + users/{USER}/cv.md |
+| Forward Deployed Engineer | Livraison rapide, proximite client, prototype a production | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| AI Transformation Lead | Conduite du changement, enablement d'equipe, adoption | users/{USER}/cv.md + users/{USER}/article-digest.md |
 
 <!-- [PERSONNALISER] Associe tes projets/articles concrets aux archetypes ci-dessus -->
 
@@ -65,11 +65,11 @@ Le skill traite TOUS les roles cibles avec le meme soin. Aucun n'est primaire ou
      - "SaaS construite et vendue apres 5 ans. Desormais 100% focus sur l'IA appliquee en entreprise."
      - "Lead engineering dans une Series-B pendant une croissance x10. En quete du prochain defi."
      - "Transition du conseil vers le produit. Recherche de roles a forte responsabilite."
-     Lu depuis config/profile.yml -> narrative.exit_story -->
+     Lu depuis users/{USER}/config/profile.yml -> narrative.exit_story -->
 
-Utiliser le narratif de transition depuis `config/profile.yml` pour cadrer TOUS les contenus :
+Utiliser le narratif de transition depuis `users/{USER}/config/profile.yml` pour cadrer TOUS les contenus :
 - **Dans les summaries PDF :** Faire le pont entre le passe et le futur -- "Applique desormais les memes [competences] au domaine [de l'offre]."
-- **Dans les stories STAR :** Faire reference aux proof points de `article-digest.md`.
+- **Dans les stories STAR :** Faire reference aux proof points de `users/{USER}/article-digest.md`.
 - **Dans les reponses draft (Bloc G) :** Le narratif de transition va dans la premiere reponse.
 - **Quand l'offre mentionne "entrepreneurial", "autonomie", "builder", "end-to-end" :** C'est LE differenciateur n.1. Augmenter le poids du match.
 
@@ -91,7 +91,7 @@ Positionner "Builder" comme signal professionnel -- pas comme "bricoleur". Les p
        url: "https://tondomaine.dev/demo"
        password: "demo-2026"
        when_to_share: "Roles LLMOps, AI Platform, Observability"
-     Lu depuis config/profile.yml -> narrative.proof_points et narrative.dashboard -->
+     Lu depuis users/{USER}/config/profile.yml -> narrative.proof_points et narrative.dashboard -->
 
 Si le candidat a une demo live / un dashboard (verifier `profile.yml`), proposer l'acces dans les candidatures pertinentes.
 
@@ -146,7 +146,7 @@ Dans les offres et negociations francophones, certains termes n'existent pas sur
 
 ### Politique de localisation (Location Policy)
 
-<!-- [PERSONNALISER] Adapte a ta situation. Lu depuis config/profile.yml -> location -->
+<!-- [PERSONNALISER] Adapte a ta situation. Lu depuis users/{USER}/config/profile.yml -> location -->
 
 **Dans les formulaires :**
 - Questions binaires "Pouvez-vous etre sur site ?" : repondre selon la disponibilite reelle dans `profile.yml`
@@ -168,7 +168,7 @@ Dans les offres et negociations francophones, certains termes n'existent pas sur
 ### JAMAIS
 
 1. Inventer de l'experience ou des metriques
-2. Modifier `cv.md` ou les fichiers portfolio
+2. Modifier `users/{USER}/cv.md` ou les fichiers portfolio
 3. Soumettre des candidatures au nom du candidat
 4. Partager un numero de telephone dans les messages generes
 5. Recommander une remuneration en dessous du marche
@@ -179,7 +179,7 @@ Dans les offres et negociations francophones, certains termes n'existent pas sur
 ### TOUJOURS
 
 0. **Lettre de motivation :** Si le formulaire le permet, TOUJOURS en inclure une. PDF dans le meme design visuel que le CV. Citations de l'offre mappees sur les proof points. 1 page max.
-1. Lire `cv.md` et `article-digest.md` (si existant) avant d'evaluer une offre
+1. Lire `users/{USER}/cv.md` et `users/{USER}/article-digest.md` (si existant) avant d'evaluer une offre
 1b. **Premiere evaluation de chaque session :** Lancer `node cv-sync-check.mjs` via Bash. En cas d'alertes, prevenir le candidat
 2. Detecter l'archetype du role et adapter le framing
 3. Citer des lignes exactes du CV lors du matching

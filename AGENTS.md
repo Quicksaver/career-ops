@@ -13,14 +13,34 @@ The portfolio that goes with this system is also open source: [cv-santiago](http
 There are two layers. Read `DATA_CONTRACT.md` for the full list.
 
 **User Layer (NEVER auto-updated, personalization goes HERE):**
-- `cv.md`, `config/profile.yml`, `modes/_profile.md`, `article-digest.md`, `portals.yml`
-- `data/*`, `reports/*`, `output/*`, `interview-prep/*`
+- `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, `users/{USER}/article-digest.md`, `users/{USER}/portals.yml`
+- `users/{USER}/data/*`, `users/{USER}/reports/*`, `users/{USER}/output/*`, `users/{USER}/interview-prep/*`, `users/{USER}/jds/*`, `users/{USER}/writing-samples/*`, `users/{USER}/batch/*`
 
 **System Layer (auto-updatable, DON'T put user data here):**
 - `modes/_shared.md`, `modes/oferta.md`, all other modes
 - `AGENTS.md`, `CLAUDE.md`, `*.mjs` scripts, `dashboard/*`, `templates/*`, `batch/*`
 
-**THE RULE: When the user asks to customize anything (archetypes, narrative, negotiation scripts, proof points, location policy, comp targets), ALWAYS write to `modes/_profile.md` or `config/profile.yml`. NEVER edit `modes/_shared.md` for user-specific content.** This ensures system updates don't overwrite their customizations.
+**THE RULE: When the user asks to customize anything (archetypes, narrative, negotiation scripts, proof points, location policy, comp targets), ALWAYS write to `users/{USER}/modes/_profile.md` or `users/{USER}/config/profile.yml`. NEVER edit `modes/_shared.md` for user-specific content.** This ensures system updates don't overwrite their customizations.
+
+## Active User (CRITICAL)
+
+All career-ops commands require an active user. User-specific data is centralized under `users/{USER}/`, which is gitignored.
+
+Resolve the user before any career-ops work:
+1. If the current command explicitly includes a user (`/career-ops scan <username>`, `/career-ops pipeline <username>`, or `--user <username>`), use it.
+2. Otherwise, if this conversation already established an active user from a previous career-ops command, reuse it.
+3. Otherwise, stop immediately and ask which career-ops user to use. Do not inspect or modify user-layer files before the user is known.
+
+Valid user IDs use letters, numbers, dots, underscores, or hyphens. Do not accept path-like IDs.
+
+After resolving the active user, remove the explicit user token or `--user` flag before mode routing. Example: `/career-ops scan <username>` means mode `scan` with user `<username>`.
+
+When running scripts, pass the active user explicitly:
+- `node scan.mjs --user {USER}`
+- `node verify-pipeline.mjs --user {USER}`
+- `node merge-tracker.mjs --user {USER}`
+- `batch/batch-runner.sh --user {USER}`
+- `npm run dashboard -- --user {USER}`
 
 ## Update Check
 
@@ -50,40 +70,41 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 
 | File | Function |
 |------|----------|
-| `data/applications.md` | Application tracker |
-| `data/pipeline.md` | Inbox of pending URLs |
-| `data/scan-history.tsv` | Scanner dedup history |
-| `portals.yml` | Query and company config |
+| `users/{USER}/data/applications.md` | Application tracker |
+| `users/{USER}/data/pipeline.md` | Inbox of pending URLs |
+| `users/{USER}/data/scan-history.tsv` | Scanner dedup history |
+| `users/{USER}/portals.yml` | Query and company config |
 | `templates/cv-template.html` | HTML template for CVs |
 | `templates/cv-template.tex` | LaTeX/Overleaf template for CVs |
 | `generate-pdf.mjs` | Playwright: HTML to PDF |
 | `generate-latex.mjs` | LaTeX CV validator + pdflatex compiler |
-| `article-digest.md` | Compact proof points from portfolio (optional) |
-| `interview-prep/story-bank.md` | Accumulated STAR+R stories across evaluations |
-| `interview-prep/{company}-{role}.md` | Company-specific interview intel reports |
+| `users/{USER}/article-digest.md` | Compact proof points from portfolio (optional) |
+| `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories across evaluations |
+| `users/{USER}/interview-prep/{company}-{role}.md` | Company-specific interview intel reports |
 | `analyze-patterns.mjs` | Pattern analysis script (JSON output) |
 | `followup-cadence.mjs` | Follow-up cadence calculator (JSON output) |
 | `data/follow-ups.md` | Follow-up history tracker |
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever/PCSX APIs plus structured providers such as Landing.jobs, SwissDevJobs, GermanTechJobs, DevITJobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, Working Nomads, and NoDesk directly, zero LLM cost |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
-| `reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy). Header includes `**Legitimacy:** {tier}`. |
+| `users/{USER}/reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy). Header includes `**Legitimacy:** {tier}`. |
 
 ### First Run — Onboarding (IMPORTANT)
 
 **Before doing ANYTHING else, check if the system is set up.** Run these checks silently every time a session starts:
 
-1. Does `cv.md` exist?
-2. Does `config/profile.yml` exist (not just profile.example.yml)?
-3. Does `modes/_profile.md` exist (not just _profile.template.md)?
-4. Does `portals.yml` exist (not just templates/portals.example.yml)?
+0. Has an active user been explicitly specified in this conversation? If not, stop and ask which user to use.
+1. Does `users/{USER}/cv.md` exist?
+2. Does `users/{USER}/config/profile.yml` exist (not just profile.example.yml)?
+3. Does `users/{USER}/modes/_profile.md` exist (not just _profile.template.md)?
+4. Does `users/{USER}/portals.yml` exist (not just templates/portals.example.yml)?
 
-If `modes/_profile.md` is missing, copy from `modes/_profile.template.md` silently. This is the user's customization file — it will never be overwritten by updates.
+If `users/{USER}/modes/_profile.md` is missing, copy from `modes/_profile.template.md` silently. This is the user's customization file — it will never be overwritten by updates.
 
 **If ANY of these is missing, enter onboarding mode.** Do NOT proceed with evaluations, scans, or any other mode until the basics are in place. Guide the user step by step:
 
 #### Step 1: CV (required)
-If `cv.md` is missing, ask:
+If `users/{USER}/cv.md` is missing, ask:
 > "I don't have your CV yet. You can either:
 > 1. Paste your CV here and I'll convert it to markdown
 > 2. Paste your LinkedIn URL and I'll extract the key info
@@ -91,10 +112,10 @@ If `cv.md` is missing, ask:
 >
 > Which do you prefer?"
 
-Create `cv.md` from whatever they provide. Make it clean markdown with standard sections (Summary, Experience, Projects, Education, Skills).
+Create `users/{USER}/cv.md` from whatever they provide. Make it clean markdown with standard sections (Summary, Experience, Projects, Education, Skills).
 
 #### Step 2: Profile (required)
-If `config/profile.yml` is missing, copy from `config/profile.example.yml` and then ask:
+If `users/{USER}/config/profile.yml` is missing, copy from `config/profile.example.yml` and then ask:
 > "I need a few details to personalize the system:
 > - Your full name and email
 > - Your location and timezone
@@ -103,16 +124,16 @@ If `config/profile.yml` is missing, copy from `config/profile.example.yml` and t
 >
 > I'll set everything up for you."
 
-Fill in `config/profile.yml` with their answers. For archetypes and targeting narrative, store the user-specific mapping in `modes/_profile.md` or `config/profile.yml` rather than editing `modes/_shared.md`.
+Fill in `users/{USER}/config/profile.yml` with their answers. For archetypes and targeting narrative, store the user-specific mapping in `users/{USER}/modes/_profile.md` or `users/{USER}/config/profile.yml` rather than editing `modes/_shared.md`.
 
 #### Step 3: Portals (recommended)
-If `portals.yml` is missing:
+If `users/{USER}/portals.yml` is missing:
 > "I'll set up the job scanner with 45+ pre-configured companies. Want me to customize the search keywords for your target roles?"
 
-Copy `templates/portals.example.yml` → `portals.yml`. If they gave target roles in Step 2, update `title_filter.positive` to match.
+Copy `templates/portals.example.yml` → `users/{USER}/portals.yml`. If they gave target roles in Step 2, update `title_filter.positive` to match.
 
 #### Step 4: Tracker
-If `data/applications.md` doesn't exist, create it:
+If `users/{USER}/data/applications.md` doesn't exist, create it:
 ```markdown
 # Applications Tracker
 
@@ -133,9 +154,9 @@ After the basics are set up, proactively ask for more context. The more you know
 >
 > The more context you give me, the better I filter. Think of it as onboarding a recruiter — the first week I need to learn about you, then I become invaluable."
 
-Store any insights the user shares in `config/profile.yml` (under narrative), `modes/_profile.md`, or in `article-digest.md` if they share proof points. Do not put user-specific archetypes or framing into `modes/_shared.md`.
+Store any insights the user shares in `users/{USER}/config/profile.yml` (under narrative), `users/{USER}/modes/_profile.md`, or in `users/{USER}/article-digest.md` if they share proof points. Do not put user-specific archetypes or framing into `modes/_shared.md`.
 
-**After every evaluation, learn.** If the user says "this score is too high, I wouldn't apply here" or "you missed that I have experience in X", update your understanding in `modes/_profile.md`, `config/profile.yml`, or `article-digest.md`. The system should get smarter with every interaction without putting personalization into system-layer files.
+**After every evaluation, learn.** If the user says "this score is too high, I wouldn't apply here" or "you missed that I have experience in X", update your understanding in `users/{USER}/modes/_profile.md`, `users/{USER}/config/profile.yml`, or `users/{USER}/article-digest.md`. The system should get smarter with every interaction without putting personalization into system-layer files.
 
 #### Step 6: Ready
 Once all files exist, confirm:
@@ -158,12 +179,12 @@ If the user accepts, use the `/loop` or `/schedule` skill (if available) to set 
 This system is designed to be customized by YOU (AI Agent). When the user asks you to change archetypes, translate modes, adjust scoring, add companies, or modify negotiation scripts -- do it directly. You read the same files you use, so you know exactly what to edit.
 
 **Common customization requests:**
-- "Change the archetypes to [backend/frontend/data/devops] roles" → edit `modes/_profile.md` or `config/profile.yml`
+- "Change the archetypes to [backend/frontend/data/devops] roles" → edit `users/{USER}/modes/_profile.md` or `users/{USER}/config/profile.yml`
 - "Translate the modes to English" → edit all files in `modes/`
-- "Add these companies to my portals" → edit `portals.yml`
-- "Update my profile" → edit `config/profile.yml`
+- "Add these companies to my portals" → edit `users/{USER}/portals.yml`
+- "Update my profile" → edit `users/{USER}/config/profile.yml`
 - "Change the CV template design" → edit `templates/cv-template.html`
-- "Adjust the scoring weights" → edit `modes/_profile.md` for user-specific weighting, or edit `modes/_shared.md` and `batch/batch-prompt.md` only when changing the shared system defaults for everyone
+- "Adjust the scoring weights" → edit `users/{USER}/modes/_profile.md` for user-specific weighting, or edit `modes/_shared.md` and `batch/batch-prompt.md` only when changing the shared system defaults for everyone
 
 ### Language Modes
 
@@ -176,25 +197,25 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 
 **When to use German modes:** If the user is targeting German-language job postings, lives in DACH, or asks for German output. Either:
 1. User says "use German modes" → read from `modes/de/` instead of `modes/`
-2. User sets `language.modes_dir: modes/de` in `config/profile.yml` → always use German modes
+2. User sets `language.modes_dir: modes/de` in `users/{USER}/config/profile.yml` → always use German modes
 3. You detect a German JD → suggest switching to German modes
 
 **When to use French modes:** If the user is targeting French-language job postings, lives in France/Belgium/Switzerland/Luxembourg/Quebec, or asks for French output. Either:
 1. User says "use French modes" → read from `modes/fr/` instead of `modes/`
-2. User sets `language.modes_dir: modes/fr` in `config/profile.yml` → always use French modes
+2. User sets `language.modes_dir: modes/fr` in `users/{USER}/config/profile.yml` → always use French modes
 3. You detect a French JD → suggest switching to French modes
 
 **When to use Japanese modes:** If the user is targeting Japanese-language job postings, lives in Japan, or asks for Japanese output. Either:
 1. User says "use Japanese modes" → read from `modes/ja/` instead of `modes/`
-2. User sets `language.modes_dir: modes/ja` in `config/profile.yml` → always use Japanese modes
+2. User sets `language.modes_dir: modes/ja` in `users/{USER}/config/profile.yml` → always use Japanese modes
 3. You detect a Japanese JD → suggest switching to Japanese modes
 
 **When to use Turkish modes:** If the user is targeting Turkish-language job postings, lives in Turkey, or asks for Turkish output. Either:
 1. User says "use Turkish modes" → read from `modes/tr/` instead of `modes/`
-2. User sets `language.modes_dir: modes/tr` in `config/profile.yml` → always use Turkish modes
+2. User sets `language.modes_dir: modes/tr` in `users/{USER}/config/profile.yml` → always use Turkish modes
 3. You detect a Turkish JD → suggest switching to Turkish modes
 
-**When NOT to:** If the user applies to English-language roles, even at French, German, Japanese, or Turkish companies, use the default English modes — *unless* the user has explicitly requested another mode in this conversation, or `language.modes_dir` is set in `config/profile.yml` (the explicit user preference always wins over JD-language detection).
+**When NOT to:** If the user applies to English-language roles, even at French, German, Japanese, or Turkish companies, use the default English modes — *unless* the user has explicitly requested another mode in this conversation, or `language.modes_dir` is set in `users/{USER}/config/profile.yml` (the explicit user preference always wins over JD-language detection).
 
 ### Skill Modes
 
@@ -220,8 +241,8 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 
 ### CV Source of Truth
 
-- `cv.md` in project root is the canonical CV
-- `article-digest.md` has detailed proof points (optional)
+- `users/{USER}/cv.md` is the canonical CV for the active user
+- `users/{USER}/article-digest.md` has detailed proof points (optional)
 - **NEVER hardcode metrics** -- read them from these files at evaluation time
 
 ---
@@ -280,16 +301,16 @@ When spawning headless workers for batch processing, use the appropriate command
 
 - Node.js (mjs modules), Playwright (PDF + scraping), YAML (config), HTML/CSS (template), Markdown (data), Canva MCP (optional visual CV)
 - Scripts in `.mjs`, configuration in YAML
-- Output in `output/` (gitignored), Reports in `reports/`
-- JDs in `jds/` (referenced as `local:jds/{file}` in pipeline.md)
-- Batch in `batch/` (gitignored except scripts and prompt)
+- Output in `users/{USER}/output/` (gitignored), Reports in `users/{USER}/reports/`
+- JDs in `users/{USER}/jds/` (referenced as `local:jds/{file}` in `users/{USER}/data/pipeline.md`)
+- Batch state/input/logs/tracker additions in `users/{USER}/batch/`; shared batch scripts and prompts stay in root `batch/`
 - Report numbering: sequential 3-digit zero-padded, max existing + 1
-- **RULE: After each batch of evaluations, run `node merge-tracker.mjs`** to merge tracker additions and avoid duplications.
+- **RULE: After each batch of evaluations, run `node merge-tracker.mjs --user {USER}`** to merge tracker additions and avoid duplications.
 - **RULE: NEVER create new entries in applications.md if company+role already exists.** Update the existing entry.
 
 ### TSV Format for Tracker Additions
 
-Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slug}.tsv`. Single line, 9 tab-separated columns:
+Write one TSV file per evaluation to `users/{USER}/batch/tracker-additions/{num}-{company-slug}.tsv`. Single line, 9 tab-separated columns:
 
 ```
 {num}\t{date}\t{company}\t{role}\t{status}\t{score}/5\t{pdf_emoji}\t[{num}](reports/{num}-{slug}-{date}.md)\t{note}
@@ -310,13 +331,13 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 
 ### Pipeline Integrity
 
-1. **NEVER edit applications.md to ADD new entries** -- Write TSV in `batch/tracker-additions/` and `merge-tracker.mjs` handles the merge.
-2. **YES you can edit applications.md to UPDATE status/notes of existing entries.**
+1. **NEVER edit applications.md to ADD new entries** -- Write TSV in `users/{USER}/batch/tracker-additions/` and `merge-tracker.mjs --user {USER}` handles the merge.
+2. **YES you can edit `users/{USER}/data/applications.md` to UPDATE status/notes of existing entries.**
 3. All reports MUST include `**URL:**` in the header (between Score and PDF). Include `**Legitimacy:** {tier}` (see Block G in `modes/oferta.md`).
 4. All statuses MUST be canonical (see `templates/states.yml`).
-5. Health check: `node verify-pipeline.mjs`
-6. Normalize statuses: `node normalize-statuses.mjs`
-7. Dedup: `node dedup-tracker.mjs`
+5. Health check: `node verify-pipeline.mjs --user {USER}`
+6. Normalize statuses: `node normalize-statuses.mjs --user {USER}`
+7. Dedup: `node dedup-tracker.mjs --user {USER}`
 
 ### Canonical States (applications.md)
 

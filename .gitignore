@@ -1,4 +1,7 @@
 # Personal data (user fills these)
+users/
+
+# Legacy root user files (kept ignored for existing checkouts)
 cv.md
 data/applications.md
 data/pipeline.md

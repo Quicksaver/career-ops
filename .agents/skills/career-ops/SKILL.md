@@ -9,13 +9,41 @@ license: MIT
 
 # career-ops -- Router
 
+## User Context (Mandatory)
+
+Every `/career-ops` invocation runs against exactly one active user ID. User data lives under:
+
+```
+users/{USER}/
+```
+
+Resolve the active user before doing mode routing, reading files, launching subagents, or running scripts:
+
+1. If the current invocation explicitly names a user, set that as `ACTIVE_USER`.
+   - Preferred: `/career-ops scan <username>`, `/career-ops pipeline <username>`
+   - For commands with free-form arguments, prefer: `/career-ops pdf --user <username> some-job`
+   - `--user <username>` and `--user=<username>` are always explicit.
+2. Otherwise, if this conversation already established an active user from a prior `/career-ops` invocation, reuse that user.
+3. Otherwise, stop immediately and ask the user to specify the career-ops user. Do not inspect or modify user-layer files.
+
+Valid user IDs use letters, numbers, dots, underscores, or hyphens. Do not accept path-like user IDs.
+
+After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
+
+- Read/write user-layer files only inside `USER_ROOT` (`cv.md`, `config/profile.yml`, `modes/_profile.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state).
+- Read system-layer files from the repo root (`modes/_shared.md`, mode files, scripts, templates, providers, dashboard, docs).
+- Remove the explicit user token or `--user` flag from the invocation before mode routing. Example: `/career-ops scan <username>` routes as mode `scan` with `ACTIVE_USER=<username>`.
+- When running scripts, pass `--user {ACTIVE_USER}` or set `CAREER_OPS_USER={ACTIVE_USER}`.
+- If delegating to a subagent, include `ACTIVE_USER` and `USER_ROOT` explicitly in the prompt and tell the subagent that all user-layer relative paths resolve inside `USER_ROOT`.
+- If the user explicitly changes user later in the conversation, switch to that user for subsequent `/career-ops` commands.
+
 ## Mode Routing
 
 Determine the mode from `$mode`:
 
 | Input | Mode |
 |-------|------|
-| (empty / no args) | `discovery` -- Show command menu |
+| (empty / no args, after user context is resolved) | `discovery` -- Show command menu |
 | JD text or URL (no sub-command) | **`auto-pipeline`** |
 | `oferta` | `oferta` |
 | `ofertas` | `ofertas` |
@@ -48,9 +76,9 @@ Show this menu:
 career-ops -- Command Center
 
 Available commands:
-  /career-ops {JD}      → AUTO-PIPELINE: evaluate + report + PDF + tracker (paste text or URL)
-  /career-ops pipeline  → Process pending URLs from inbox (data/pipeline.md)
-  /career-ops oferta    → Evaluation only A-F (no auto PDF)
+  /career-ops {JD} --user <username> → AUTO-PIPELINE: evaluate + report + PDF + tracker (paste text or URL)
+  /career-ops pipeline <username>    → Process pending URLs from inbox (users/<username>/data/pipeline.md)
+  /career-ops oferta --user <username> → Evaluation only A-F (no auto PDF)
   /career-ops ofertas   → Compare and rank multiple offers
   /career-ops contacto  → LinkedIn power move: find contacts + draft message
   /career-ops deep      → Deep research prompt about company
@@ -66,8 +94,10 @@ Available commands:
   /career-ops followup  → Follow-up cadence tracker: flag overdue, generate drafts
   /career-ops update    → Update career-ops system files with diff preview + compat check
 
-Inbox: add URLs to data/pipeline.md → /career-ops pipeline
+Inbox: add URLs to users/{ACTIVE_USER}/data/pipeline.md → /career-ops pipeline
 Or paste a JD directly to run the full pipeline.
+
+Active user: {ACTIVE_USER}
 ```
 
 ---
@@ -77,12 +107,12 @@ Or paste a JD directly to run the full pipeline.
 After determining the mode, load the necessary files before executing:
 
 ### Modes that require `_shared.md` + their mode file:
-Read `modes/_shared.md` + `modes/{mode}.md`
+Read `modes/_shared.md` + `modes/{mode}.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present).
 
 Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `batch`
 
 ### Standalone modes (only their mode file):
-Read `modes/{mode}.md`
+Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_USER}/`.
 
 Applies to: `tracker`, `deep`, `interview-prep`, `training`, `project`, `patterns`, `followup`
 
@@ -92,7 +122,7 @@ For `scan`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as Agent
 ```
 Agent(
   subagent_type="general-purpose",
-  prompt="[content of modes/_shared.md]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
+  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
   description="career-ops {mode}"
 )
 ```

@@ -8,8 +8,8 @@
  * passed as a command-line argument.
  *
  * Usage:
- *   node gemini-eval.mjs "Paste full JD text here"
- *   node gemini-eval.mjs --file ./jds/my-job.txt
+ *   node gemini-eval.mjs --user <id> "Paste full JD text here"
+ *   node gemini-eval.mjs --user <id> --file ./jds/my-job.txt
  *
  * Requires:
  *   GEMINI_API_KEY in .env (or environment variable)
@@ -31,6 +31,11 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 // ---------------------------------------------------------------------------
 // Bootstrap: load .env before anything else
@@ -48,6 +53,14 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // Paths
 // ---------------------------------------------------------------------------
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const rawArgs = process.argv.slice(2);
+const wantsHelp = rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs.length === 0;
+let userContext;
+try {
+  userContext = getUserContext(rawArgs, { requireUser: !wantsHelp });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
 
 const PATHS = {
   // Primary evaluation logic lives in these two mode files
@@ -55,17 +68,17 @@ const PATHS = {
   oferta:      join(ROOT, 'modes', 'oferta.md'),
   // Canonical skill path referenced in Issue #344
   evaluate:    join(ROOT, '.claude', 'skills', 'career-ops', 'SKILL.md'),
-  cv:          join(ROOT, 'cv.md'),
-  profile:     join(ROOT, 'modes', '_profile.md'),
-  profileYml:  join(ROOT, 'config', 'profile.yml'),
-  reports:     join(ROOT, 'reports'),
-  tracker:     join(ROOT, 'data', 'applications.md'),
+  cv:          userPath(userContext, 'cv.md'),
+  profile:     userPath(userContext, 'modes/_profile.md'),
+  profileYml:  userPath(userContext, 'config/profile.yml'),
+  reports:     userPath(userContext, 'reports'),
+  tracker:     userPath(userContext, 'data/applications.md'),
 };
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
 // ---------------------------------------------------------------------------
-const args = process.argv.slice(2);
+const args = userContext.args;
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
   console.log(`
@@ -76,11 +89,12 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
   Evaluate a job offer using Google Gemini instead of Claude.
 
   USAGE
-    node gemini-eval.mjs "<JD text>"
-    node gemini-eval.mjs --file ./jds/my-job.txt
-    node gemini-eval.mjs --model gemini-2.5-flash "<JD text>"
+    node gemini-eval.mjs --user <username> "<JD text>"
+    node gemini-eval.mjs --user <username> --file ./jds/my-job.txt
+    node gemini-eval.mjs --user <username> --model gemini-2.5-flash "<JD text>"
 
   OPTIONS
+    --user <id>      Required. User folder under users/<id>/
     --file <path>    Read JD from a file instead of inline text
     --model <name>   Gemini model to use (default: gemini-2.5-flash)
     --no-save        Do not save report to reports/ directory
@@ -92,8 +106,8 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     3. Run: npm install   (installs @google/generative-ai + dotenv)
 
   EXAMPLES
-    node gemini-eval.mjs "We are looking for a Senior AI Engineer..."
-    node gemini-eval.mjs --file ./jds/openai-swe.txt
+    node gemini-eval.mjs --user <username> "We are looking for a Senior AI Engineer..."
+    node gemini-eval.mjs --user <username> --file ./jds/openai-swe.txt
 `);
   process.exit(0);
 }
@@ -174,7 +188,7 @@ if (!readdirSync) {
 // ---------------------------------------------------------------------------
 // Load context files
 // ---------------------------------------------------------------------------
-console.log('\n📂  Loading context files...');
+console.log(`\n📂  Loading context files for user "${userContext.userId}"...`);
 
 const sharedContext  = readFile(PATHS.shared,      'modes/_shared.md');
 const ofertaLogic    = readFile(PATHS.oferta,      'modes/oferta.md');
@@ -337,10 +351,10 @@ ${evaluationText.replace(/---SCORE_SUMMARY---[\s\S]*?---END_SUMMARY---/, '').tri
 `;
 
     writeFileSync(reportPath, reportContent, 'utf-8');
-    console.log(`\n✅  Report saved: reports/${filename}`);
+    console.log(`\n✅  Report saved: users/${userContext.userId}/reports/${filename}`);
 
     // Append tracker entry reminder
-    console.log(`\n📊  Tracker entry (add to data/applications.md):`);
+    console.log(`\n📊  Tracker entry (add to users/${userContext.userId}/data/applications.md):`);
     console.log(`    | ${num} | ${today} | ${company} | ${role} | ${score} | Evaluada | ❌ | [${num}](reports/${filename}) |`);
   } catch (err) {
     console.warn(`⚠️   Could not save report: ${err.message}`);
