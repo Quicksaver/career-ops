@@ -638,6 +638,16 @@ if (
 }
 
 if (
+  scanScript.includes('function buildCompanyFilter') &&
+  scanScript.includes('config.company_filter') &&
+  scanScript.includes('Filtered by company')
+) {
+  pass('scan.mjs supports company block filtering');
+} else {
+  fail('scan.mjs does not support company block filtering');
+}
+
+if (
   scanScript.includes("skipIds: ['local-parser']") &&
   scanScript.includes('local parser failed, used API fallback') &&
   scanScript.includes('resolveProvider(company, providers')
@@ -721,7 +731,7 @@ if (fileExists('VERSION')) {
 console.log('\n15. Location filter — always_allow tier');
 
 try {
-  const { buildLocationFilter } = await import(pathToFileURL(join(ROOT, 'scan.mjs')).href);
+  const { buildCompanyFilter, buildLocationFilter } = await import(pathToFileURL(join(ROOT, 'scan.mjs')).href);
 
   const filter = buildLocationFilter({
     always_allow: ['belgium', 'brussels'],
@@ -842,6 +852,17 @@ try {
   // step rather than being silently dropped here.
   if (filter(42) === true) pass('non-string locations are passed through to downstream evaluation, not silently dropped');
   else fail('non-string locations should pass through');
+
+  const companyFilter = buildCompanyFilter({ block: ['Noesis', 'Retail Consult'] });
+  if (
+    companyFilter('Noesis Portugal') === false &&
+    companyFilter('Retail Consult') === false &&
+    companyFilter('Bosch') === true
+  ) {
+    pass('company block filter rejects configured employers only');
+  } else {
+    fail('company block filter should reject configured employers and pass unrelated companies');
+  }
 
 } catch (e) {
   fail(`always_allow tests crashed: ${e.message}`);

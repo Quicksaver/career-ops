@@ -146,6 +146,32 @@ Future merge notes:
 - If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
 
+## Scan Company Block Filter
+
+The fork adds a generic company-name block filter to the zero-token scanner so per-user portal configs can reject forbidden employers before they are added to the pipeline.
+
+Files:
+
+- `scan.mjs`
+- `test-all.mjs`
+- `users/{USER}/portals.yml`
+
+What this customizes:
+
+- Adds exported `buildCompanyFilter(company_filter)` support in `scan.mjs`.
+- Reads optional `company_filter.block` from the active user's `portals.yml`.
+- Rejects provider results whose `job.company` contains a blocked company keyword, case-insensitively.
+- Applies the company block before title, location, URL, and company-role dedupe checks, so forbidden employers do not consume dedupe slots or enter `data/pipeline.md`.
+- Prints `Filtered by company: N removed` in scan summaries when a company block list is configured.
+- Adds `test-all.mjs` coverage that checks the scanner advertises the company block path and verifies `buildCompanyFilter` rejects configured employers while passing unrelated companies.
+
+Future merge notes:
+
+- Preserve this hook while user profiles need hard employer exclusions such as direct partners, conflicts of interest, or blocked industries.
+- If upstream adds first-class employer/company exclusion support, migrate `company_filter.block` configs to the upstream schema or keep this key as a compatibility alias.
+- Keep the filter tolerant of missing or malformed company names; unknown company values should pass to downstream evaluation rather than being silently dropped.
+- Keep LinkedIn authenticated scanning's `linkedin_searches.employer_blocklist` separate unless upstream unifies authenticated and zero-token scan filtering under one shared company-block schema.
+
 ## CV Output Naming
 
 The fork standardizes generated CV artifacts around the report number.

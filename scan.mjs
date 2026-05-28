@@ -143,6 +143,21 @@ function buildTitleFilter(titleFilter) {
   };
 }
 
+// ── Company filter ─────────────────────────────────────────────────
+// Optional. If `company_filter.block` is present in portals.yml, any provider
+// result whose company name contains one of those keywords is rejected.
+export function buildCompanyFilter(companyFilter) {
+  if (!companyFilter) return () => true;
+  const block = normalizeKeywordList(companyFilter.block);
+
+  return (company) => {
+    if (block.length === 0) return true;
+    if (typeof company !== 'string' || company.trim() === '') return true;
+    const lower = company.toLowerCase();
+    return !block.some(k => lower.includes(k));
+  };
+}
+
 // ── Location filter ─────────────────────────────────────────────────
 // Optional. If `location_filter` is absent from portals.yml, all locations pass.
 // Semantics (case-insensitive substring, in this order):
@@ -423,6 +438,7 @@ async function main() {
   const config = parseYaml(readFileSync(PORTALS_PATH, 'utf-8'));
   const companies = config.tracked_companies || [];
   const titleFilter = buildTitleFilter(config.title_filter);
+  const companyFilter = buildCompanyFilter(config.company_filter);
   const locationFilter = buildLocationFilter(config.location_filter);
 
   // 3. Resolve a provider for each enabled company
@@ -455,6 +471,7 @@ async function main() {
   // 5. Fetch from each target
   const date = new Date().toISOString().slice(0, 10);
   let totalFound = 0;
+  let totalFilteredCompany = 0;
   let totalFilteredTitle = 0;
   let totalFilteredLocation = 0;
   let totalDupes = 0;
@@ -487,6 +504,10 @@ async function main() {
       totalFound += jobs.length;
 
       for (const job of jobs) {
+        if (!companyFilter(job.company)) {
+          totalFilteredCompany++;
+          continue;
+        }
         if (!titleFilter(job.title)) {
           totalFilteredTitle++;
           continue;
@@ -565,6 +586,9 @@ async function main() {
   console.log(`${'━'.repeat(45)}`);
   console.log(`Companies scanned:     ${targets.length}`);
   console.log(`Total jobs found:      ${totalFound}`);
+  if (config.company_filter?.block?.length) {
+    console.log(`Filtered by company:   ${totalFilteredCompany} removed`);
+  }
   console.log(`Filtered by title:     ${totalFilteredTitle} removed`);
   console.log(`Filtered by location:  ${totalFilteredLocation} removed`);
   console.log(`Duplicates:            ${totalDupes} skipped`);
