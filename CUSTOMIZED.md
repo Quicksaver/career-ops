@@ -168,6 +168,29 @@ Future merge notes:
 - Preserve this if local workflows rely on report-numbered artifacts.
 - If upstream adopts the same naming contract, remove the local instruction patches and keep only any wording still needed for this fork.
 
+## Batch PDF Gate
+
+The fork prevents batch workers from generating tailored CV PDFs for low-fit or explicitly skipped roles.
+
+File:
+
+- `batch/batch-prompt.md`
+
+What this customizes:
+
+- Adds a PDF gate before the batch worker creates CV HTML or calls `generate-pdf.mjs`.
+- Skips HTML/PDF generation when `score < 3.0`.
+- Skips HTML/PDF generation when `final_decision` is `Skip`, even if the numeric score is higher.
+- Skips HTML/PDF generation when `_profile.md` applies an explicit hard stop, such as a blocked company/domain or consultancy/staff-augmentation model.
+- Requires the report header to say `**PDF:** Not generated - score below 3.0 or final decision is Skip` when the gate blocks PDF generation.
+- Requires the tracker TSV PDF column to use `❌` and the worker JSON summary to use `"pdf": null` when no PDF is generated.
+
+Future merge notes:
+
+- Preserve this gate unless upstream adds an equivalent policy to avoid wasting time and artifacts on offers the candidate should not apply to.
+- Keep the gate aligned with `modes/pipeline.md`, which says the full auto-pipeline only generates PDFs for offers scoring at least `3.0`.
+- If upstream changes the batch worker prompt format, reapply the rule at the first point after score/final decision are known and before any HTML/PDF artifact is written.
+
 ## CV Theme Overrides
 
 The fork makes the HTML/PDF CV palette configurable from `config/profile.yml`.
@@ -371,6 +394,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Batch runner support for both Claude and Codex workers.
 - Bounded batch runs through `--limit`.
 - `local:jds/...` batch input handling.
+- Conditional batch PDF generation for scores below `3.0`, `Skip` decisions, and profile hard stops.
 - Generic JD/PDF extraction commands.
 - Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.
 

@@ -1,9 +1,9 @@
-# career-ops Batch Worker — Evaluación Completa + PDF + Tracker Line
+# career-ops Batch Worker — Evaluación Completa + Conditional PDF + Tracker Line
 
 Eres un worker de evaluación de ofertas de empleo for the active candidate `{{USER}}` (read name from `{{USER_ROOT}}/config/profile.yml`). Recibes una oferta (URL + JD text) y produces:
 
 1. Evaluación completa A-G (report .md)
-2. PDF personalizado ATS-optimizado
+2. PDF personalizado ATS-optimizado solo si pasa el PDF gate
 3. Línea de tracker para merge posterior
 
 **IMPORTANTE**: Este prompt es self-contained. Tienes TODO lo necesario aquí. No dependes de ningún otro skill ni sistema.
@@ -230,7 +230,7 @@ Donde `{company-slug}` es el nombre de empresa en lowercase, sin espacios, con g
 **Score:** {X/5}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
 **URL:** {URL de la oferta original}
-**PDF:** output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.pdf
+**PDF:** {output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.pdf | Not generated - score below 3.0 or final decision is Skip}
 **Batch ID:** {{ID}}
 
 ---
@@ -282,7 +282,15 @@ next_action: "{one concrete next step}"
 (15-20 keywords del JD para ATS)
 ```
 
-### Paso 4 — Generar PDF
+### Paso 4 — PDF gate y generación
+
+Antes de crear HTML o ejecutar `generate-pdf.mjs`, aplica este gate:
+
+- Si `score < 3.0`, NO generes HTML ni PDF.
+- Si `final_decision` es `Skip`, NO generes HTML ni PDF aunque el score sea >= 3.0.
+- Si hay un hard stop explícito de `_profile.md` (por ejemplo empresa bloqueada, crypto/Web3, consultancy/staff augmentation), NO generes HTML ni PDF.
+- En esos casos, salta directamente al Paso 5: no crees HTML, no llames a `generate-pdf.mjs`, el report debe usar `**PDF:** Not generated - score below 3.0 or final decision is Skip`, el TSV debe usar `❌`, y el JSON final debe usar `"pdf": null`.
+- Ejecuta los pasos 1-14 de esta sección solo cuando `score >= 3.0`, `final_decision` no es `Skip`, y no hay hard stop.
 
 1. Lee `{{USER_ROOT}}/cv.md` + `i18n.ts`
 2. Extrae 15-20 keywords del JD
@@ -385,7 +393,7 @@ Formato TSV (una sola línea, sin header, 9 columnas tab-separated):
 | 4 | role | string | `Staff AI Engineer` | Título del rol |
 | 5 | status | canonical | `Evaluada` | DEBE ser canónico (ver states.yml) |
 | 6 | score | X.XX/5 | `4.55/5` | O `N/A` si no evaluable |
-| 7 | pdf | emoji | `✅` o `❌` | Si se generó PDF |
+| 7 | pdf | emoji | `✅` o `❌` | `✅` solo si el PDF gate generó un PDF; si no, `❌` |
 | 8 | report | md link | `[647](reports/647-...)` | Link al report |
 | 9 | notes | string | `APPLY HIGH...` | Resumen 1 frase |
 
@@ -408,7 +416,7 @@ Al terminar, imprime por stdout un resumen JSON para que el orquestador lo parse
   "role": "{rol}",
   "score": {score_num},
   "legitimacy": "{High Confidence|Proceed with Caution|Suspicious}",
-  "pdf": "{ruta_pdf}",
+  "pdf": {null | "{ruta_pdf}"},
   "report": "{ruta_report}",
   "error": null
 }
