@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# career-ops batch runner — standalone orchestrator for claude -p workers
-# Reads batch-input.tsv, delegates each offer to a claude -p worker,
+# career-ops batch runner — standalone orchestrator for headless workers
+# Reads batch-input.tsv, delegates each offer to a headless worker,
 # tracks state in batch-state.tsv for resumability.
-#
-# NOTE: This script is Claude Code-specific. It uses claude -p with
-# --dangerously-skip-permissions and --append-system-prompt-file flags
-# that are not available in other CLIs. Multi-CLI support is out of scope
-# for now — contributions welcome.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -36,6 +31,8 @@ START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
 MODEL=""  # empty = let claude -p use the Claude Max default
+CLI="${CAREER_OPS_BATCH_CLI:-claude}"
+LIMIT=0
 
 usage() {
   cat <<'USAGE'
@@ -52,6 +49,9 @@ Options:
   --start-from N       Start from offer ID N (skip earlier IDs)
   --max-retries N      Max retry attempts per offer (default: 2)
   --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
+  --cli NAME           Headless CLI to use: claude or codex (default: claude,
+                       or CAREER_OPS_BATCH_CLI)
+  --limit N            Process at most N pending offers in this run (default: 0 = all)
   --model NAME         Claude model passed to `claude -p --model` (default:
                        unset = Claude Max default). Use a cheaper model for
                        large batches, e.g. `--model claude-sonnet-4-6`.
@@ -90,6 +90,8 @@ while [[ $# -gt 0 ]]; do
     --start-from) START_FROM="$2"; shift 2 ;;
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
+    --cli) CLI="$2"; shift 2 ;;
+    --limit) LIMIT="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -167,8 +169,13 @@ check_prerequisites() {
     exit 1
   fi
 
-  if ! command -v claude &>/dev/null; then
-    echo "ERROR: 'claude' CLI not found in PATH."
+  case "$CLI" in
+    claude|codex) ;;
+    *) echo "ERROR: Unsupported --cli \"$CLI\". Use claude or codex."; exit 1 ;;
+  esac
+
+  if ! command -v "$CLI" &>/dev/null; then
+    echo "ERROR: '$CLI' CLI not found in PATH."
     exit 1
   fi
 
@@ -366,6 +373,18 @@ process_offer() {
   date=$(date +%Y-%m-%d)
   local jd_file="/tmp/batch-jd-${id}.txt"
 
+  if [[ "$url" == local:* ]]; then
+    local local_path="${url#local:}"
+    local source_jd="$USER_ROOT/$local_path"
+    if [[ -f "$source_jd" ]]; then
+      cp "$source_jd" "$jd_file"
+    else
+      printf '' > "$jd_file"
+    fi
+  else
+    printf '' > "$jd_file"
+  fi
+
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
 
   # Build the prompt with placeholders replaced
@@ -404,17 +423,29 @@ process_offer() {
     -e "s|{{USER_ROOT}}|${esc_user_root}|g" \
     "$PROMPT_FILE" > "$resolved_prompt"
 
-  # Launch claude -p worker.
-  # Model defaults to the Claude Max subscription default unless --model was
-  # passed. Building the command in an array keeps quoting safe regardless.
-  local -a claude_args=(-p --dangerously-skip-permissions)
-  if [[ -n "$MODEL" ]]; then
-    claude_args+=(--model "$MODEL")
+  # Launch worker. Building the command in an array keeps quoting safe
+  # regardless of URL/title contents.
+  local -a worker_args=()
+  if [[ "$CLI" == "claude" ]]; then
+    worker_args=(-p --dangerously-skip-permissions)
+    if [[ -n "$MODEL" ]]; then
+      worker_args+=(--model "$MODEL")
+    fi
+    worker_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
+  else
+    local combined_prompt
+    combined_prompt="$(cat "$resolved_prompt")
+
+$prompt"
+    worker_args=(exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR")
+    if [[ -n "$MODEL" ]]; then
+      worker_args+=(--model "$MODEL")
+    fi
+    worker_args+=("$combined_prompt")
   fi
-  claude_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
 
   local exit_code=0
-  claude "${claude_args[@]}" > "$log_file" 2>&1 || exit_code=$?
+  "$CLI" "${worker_args[@]}" > "$log_file" 2>&1 || exit_code=$?
 
   # Cleanup resolved prompt
   rm -f "$resolved_prompt"
@@ -523,6 +554,7 @@ main() {
   echo "=== career-ops batch runner ==="
   echo "User: $USER_ID"
   echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
+  echo "CLI: $CLI | Limit: $LIMIT"
   echo "Input: $total_input offers"
   echo ""
 
@@ -579,6 +611,9 @@ main() {
     pending_urls+=("$url")
     pending_sources+=("$source")
     pending_notes+=("$notes")
+    if (( LIMIT > 0 && ${#pending_ids[@]} >= LIMIT )); then
+      break
+    fi
   done < "$INPUT_FILE"
 
   local pending_count=${#pending_ids[@]}

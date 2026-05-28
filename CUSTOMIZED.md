@@ -77,6 +77,31 @@ Future merge notes:
 - When adapting upstream script changes, route every read/write of user-layer data through `lib/user-context.mjs` or equivalent active-user resolution.
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
 
+## Batch Runner Multi-CLI Processing
+
+The fork makes the batch runner usable with Codex as well as Claude, and adds smaller resumable processing controls for long pipeline runs.
+
+File:
+
+- `batch/batch-runner.sh`
+
+What this customizes:
+
+- Replaces the Claude-only worker assumption with a generic headless worker setting.
+- Adds `--cli claude|codex`, defaulting to `claude`, and supports `CAREER_OPS_BATCH_CLI` so local runs can select Codex without editing the script.
+- Keeps Claude behavior on `claude -p --dangerously-skip-permissions --append-system-prompt-file ...`.
+- Adds Codex behavior through `codex exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR"`, combining the resolved batch system prompt and per-offer prompt into one prompt because Codex does not use Claude's `--append-system-prompt-file` interface.
+- Adds `--limit N` so a batch run can process only the next N pending offers, useful for smoke tests, quota-aware batches, and resuming large queues in smaller chunks.
+- Copies `local:jds/...` input rows from `users/{USER}/jds/...` into the temporary JD file passed to the worker. Missing local JD files intentionally become an empty temporary file so the worker can fail or recover using the URL/context path consistently.
+- Logs the selected CLI and limit at run start so batch logs show which worker backend handled the run.
+
+Future merge notes:
+
+- If upstream changes `batch/batch-runner.sh`, preserve the CLI abstraction unless upstream adds equivalent multi-agent worker support.
+- Keep the Codex command rooted at `PROJECT_DIR` so generated reports, tracker additions, and user-layer paths resolve the same way as normal career-ops commands.
+- Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
+- Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
+
 ## Custom Provider Layer
 
 The fork adds a large structured provider surface for zero-token scanning.
@@ -343,6 +368,9 @@ On every upstream update, explicitly check whether upstream now includes:
 - Config-driven CV theme tokens.
 - Per-user dashboard binary build/run flow.
 - Dashboard listing-date parsing/display.
+- Batch runner support for both Claude and Codex workers.
+- Bounded batch runs through `--limit`.
+- `local:jds/...` batch input handling.
 - Generic JD/PDF extraction commands.
 - Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.
 
