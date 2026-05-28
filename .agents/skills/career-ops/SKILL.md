@@ -3,7 +3,7 @@ name: career-ops
 description: AI job search command center -- evaluate offers, generate CVs, scan portals, track applications
 arguments: mode # Claude Code specific
 user-invocable: true
-argument-hint: "[scan | deep | pdf | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | update]"
+argument-hint: "[scan | scan-auth | deep | pdf | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | update]"
 license: MIT
 ---
 
@@ -20,7 +20,7 @@ users/{USER}/
 Resolve the active user before doing mode routing, reading files, launching subagents, or running scripts:
 
 1. If the current invocation explicitly names a user, set that as `ACTIVE_USER`.
-   - Preferred: `/career-ops scan <username>`, `/career-ops pipeline <username>`
+   - Preferred: `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`
    - For commands with free-form arguments, prefer: `/career-ops pdf --user <username> some-job`
    - `--user <username>` and `--user=<username>` are always explicit.
 2. Otherwise, if this conversation already established an active user from a prior `/career-ops` invocation, reuse that user.
@@ -59,6 +59,7 @@ Determine the mode from `$mode`:
 | `pipeline` | `pipeline` |
 | `apply` | `apply` |
 | `scan` | `scan` |
+| `scan-auth` | `scan-auth` |
 | `batch` | `batch` |
 | `patterns` | `patterns` |
 | `followup` | `followup` |
@@ -91,6 +92,7 @@ Available commands:
   /career-ops tracker   → Application status overview
   /career-ops apply     → Live application assistant (reads form + generates answers)
   /career-ops scan      → Scan portals and discover new offers
+  /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
   /career-ops batch     → Batch processing with parallel workers
   /career-ops patterns  → Analyze rejection patterns and improve targeting
   /career-ops followup  → Follow-up cadence tracker: flag overdue, generate drafts
@@ -116,7 +118,7 @@ Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `p
 ### Standalone modes (only their mode file):
 Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_USER}/`.
 
-Applies to: `tracker`, `deep`, `interview-prep`, `training`, `project`, `patterns`, `followup`
+Applies to: `tracker`, `deep`, `interview-prep`, `training`, `project`, `patterns`, `followup`, `scan-auth`
 
 ### Modes delegated to subagent:
 For `scan`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as Agent with the content of `_shared.md` + `modes/{mode}.md` injected into the subagent prompt.

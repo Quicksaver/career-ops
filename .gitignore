@@ -38,6 +38,7 @@ article-digest.md
 
 # Secrets (never commit — use .env.example as template)
 .env
+.scan-auth/
 
 # Generated
 .resolved-prompt-*

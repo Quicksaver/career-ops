@@ -61,6 +61,9 @@ const mjsFiles = [
   ...(existsSync(join(ROOT, 'lib'))
     ? readdirSync(join(ROOT, 'lib')).filter(f => f.endsWith('.mjs')).map(f => `lib/${f}`)
     : []),
+  ...(existsSync(join(ROOT, 'scan-auth'))
+    ? readdirSync(join(ROOT, 'scan-auth')).filter(f => f.endsWith('.mjs')).map(f => `scan-auth/${f}`)
+    : []),
 ];
 for (const f of mjsFiles) {
   const result = run(NODE, ['--check', f]);
@@ -102,6 +105,7 @@ console.log('\n3. User context resolver');
 
 try {
   const { getUserContext, UserContextError } = await import(pathToFileURL(join(ROOT, 'lib/user-context.mjs')).href);
+  const { getProfileDir, parseCliArgs } = await import(pathToFileURL(join(ROOT, 'scan-auth.mjs')).href);
   const parsed = getUserContext(['--user', 'test-user', '--dry-run']);
   if (
     parsed.userId === 'test-user'
@@ -125,13 +129,89 @@ try {
   } else {
     fail('user-context accepted a path-like user ID');
   }
+
+  const scanAuthCli = parseCliArgs(['--login', 'linkedin']);
+  if (scanAuthCli.portalId === 'linkedin' && scanAuthCli.login === true) {
+    pass('scan-auth parses --login and portal after user args are stripped');
+  } else {
+    fail(`scan-auth parsed unexpected CLI result: ${JSON.stringify(scanAuthCli)}`);
+  }
+
+  const originalAuthDir = process.env.CAREER_OPS_SCAN_AUTH_DIR;
+  const authBase = join(tmpdir(), 'career-ops-scan-auth-test');
+  process.env.CAREER_OPS_SCAN_AUTH_DIR = authBase;
+  const authProfile = getProfileDir({ userId: 'test-user' }, 'linkedin');
+  if (authProfile === join(authBase, 'test-user', 'linkedin', 'profile')) {
+    pass('scan-auth profile path is scoped by user and portal');
+  } else {
+    fail(`scan-auth profile path is not user-scoped: ${authProfile}`);
+  }
+  if (originalAuthDir === undefined) {
+    delete process.env.CAREER_OPS_SCAN_AUTH_DIR;
+  } else {
+    process.env.CAREER_OPS_SCAN_AUTH_DIR = originalAuthDir;
+  }
 } catch (e) {
   fail(`User context tests crashed: ${e.message}`);
 }
 
-// ── 4. LIVENESS CLASSIFICATION ──────────────────────────────────
+// ── 4. AUTHENTICATED SCAN SESSION DETECTION ─────────────────────
 
-console.log('\n4. Liveness classification');
+console.log('\n4. Authenticated scan session detection');
+
+try {
+  const LinkedInScanner = (await import(pathToFileURL(join(ROOT, 'scan-auth/linkedin.mjs')).href)).default;
+  const scanner = new LinkedInScanner();
+
+  const makePage = ({ url = 'https://www.linkedin.com/feed/', matches = {}, cookies = [] }) => ({
+    url: () => url,
+    $: async selector => matches[selector] ? { selector } : null,
+    context: () => ({
+      cookies: async () => cookies,
+    }),
+  });
+
+  const localizedNavSelector = 'a[href*="/mynetwork"], a[href*="/jobs/"], a[href*="/messaging/"], a[href*="/notifications/"], a[href*="/in/"]';
+
+  if (await scanner.isLoggedIn(makePage({
+    matches: {
+      [localizedNavSelector]: true,
+    },
+  }))) {
+    pass('LinkedIn login detection accepts localized authenticated nav links');
+  } else {
+    fail('LinkedIn login detection rejected localized authenticated nav links');
+  }
+
+  if (await scanner.isLoggedIn(makePage({
+    matches: {
+      'main, .global-nav, nav[aria-label]': true,
+    },
+    cookies: [{ name: 'li_at' }],
+  }))) {
+    pass('LinkedIn login detection accepts auth cookie plus feed shell');
+  } else {
+    fail('LinkedIn login detection rejected auth cookie plus feed shell');
+  }
+
+  if (!await scanner.isLoggedIn(makePage({
+    url: 'https://www.linkedin.com/login',
+    matches: {
+      [localizedNavSelector]: true,
+    },
+    cookies: [{ name: 'li_at' }],
+  }))) {
+    pass('LinkedIn login detection rejects login pages');
+  } else {
+    fail('LinkedIn login detection accepted a login page');
+  }
+} catch (e) {
+  fail(`Authenticated scan session detection tests crashed: ${e.message}`);
+}
+
+// ── 5. LIVENESS CLASSIFICATION ──────────────────────────────────
+
+console.log('\n5. Liveness classification');
 
 try {
   const { classifyLiveness } = await import(pathToFileURL(join(ROOT, 'liveness-core.mjs')).href);
@@ -184,9 +264,9 @@ try {
   fail(`Liveness classification tests crashed: ${e.message}`);
 }
 
-// ── 5. CUSTOM PROVIDER RETRIES ──────────────────────────────────
+// ── 6. CUSTOM PROVIDER RETRIES ──────────────────────────────────
 
-console.log('\n5. Custom provider retries');
+console.log('\n6. Custom provider retries');
 
 try {
   const {
@@ -398,10 +478,10 @@ try {
   fail(`Custom provider retry tests crashed: ${e.message}`);
 }
 
-// ── 6. DASHBOARD BUILD ──────────────────────────────────────────
+// ── 7. DASHBOARD BUILD ──────────────────────────────────────────
 
 if (!QUICK) {
-  console.log('\n6. Dashboard build');
+  console.log('\n7. Dashboard build');
   const goBuild = run('cd dashboard && go build -o /tmp/career-dashboard-test . 2>&1');
   if (goBuild !== null) {
     pass('Dashboard compiles');
@@ -409,18 +489,19 @@ if (!QUICK) {
     fail('Dashboard build failed');
   }
 } else {
-  console.log('\n6. Dashboard build (skipped --quick)');
+  console.log('\n7. Dashboard build (skipped --quick)');
 }
 
-// ── 7. DATA CONTRACT ────────────────────────────────────────────
+// ── 8. DATA CONTRACT ────────────────────────────────────────────
 
-console.log('\n7. Data contract validation');
+console.log('\n8. Data contract validation');
 
 // Check system files exist
 const systemFiles = [
   'CLAUDE.md', 'VERSION', 'DATA_CONTRACT.md',
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
+  'modes/scan-auth.md', 'scan-auth.mjs', 'scan-auth/linkedin.mjs',
   'templates/states.yml', 'templates/cv-template.html',
   'lib/user-context.mjs',
   '.claude/skills/career-ops/SKILL.md',
@@ -448,9 +529,9 @@ for (const f of userFiles) {
   }
 }
 
-// ── 8. PERSONAL DATA LEAK CHECK ─────────────────────────────────
+// ── 9. PERSONAL DATA LEAK CHECK ─────────────────────────────────
 
-console.log('\n8. Personal data leak check');
+console.log('\n9. Personal data leak check');
 
 const leakPatterns = [
   'Santiago', 'santifer.io', 'Santifer iRepair', 'Zinkee', 'ALMAS',
@@ -498,9 +579,9 @@ if (!leakFound) {
   pass('No personal data leaks outside allowed files');
 }
 
-// ── 9. ABSOLUTE PATH CHECK ──────────────────────────────────────
+// ── 10. ABSOLUTE PATH CHECK ─────────────────────────────────────
 
-console.log('\n9. Absolute path check');
+console.log('\n10. Absolute path check');
 
 // Same git grep approach: only scans tracked files. Untracked AI tool
 // outputs, local debate artifacts, etc. can't false-positive here.
@@ -515,13 +596,13 @@ if (!absPathResult) {
   }
 }
 
-// ── 10. MODE FILE INTEGRITY ──────────────────────────────────────
+// ── 11. MODE FILE INTEGRITY ─────────────────────────────────────
 
-console.log('\n10. Mode file integrity');
+console.log('\n11. Mode file integrity');
 
 const expectedModes = [
   '_shared.md', '_profile.template.md', 'oferta.md', 'pdf.md', 'scan.md',
-  'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
+  'scan-auth.md', 'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
   'ofertas.md', 'pipeline.md', 'project.md', 'tracker.md', 'training.md',
 ];
 
@@ -541,9 +622,9 @@ if (shared.includes('_profile.md')) {
   fail('_shared.md does NOT reference _profile.md');
 }
 
-// ── 11. LOCAL PARSER CONTRACT ───────────────────────────────────
+// ── 12. LOCAL PARSER CONTRACT ───────────────────────────────────
 
-console.log('\n11. Local parser contract');
+console.log('\n12. Local parser contract');
 
 const scanScript = readFile('scan.mjs');
 if (
@@ -601,9 +682,9 @@ if (
   fail('portals example still points at a bundled Cohere parser');
 }
 
-// ── 12. AGENTS.md INTEGRITY ─────────────────────────────────────
+// ── 13. AGENTS.md INTEGRITY ─────────────────────────────────────
 
-console.log('\n12. AGENTS.md integrity');
+console.log('\n13. AGENTS.md integrity');
 
 const agents = readFile('AGENTS.md');
 const requiredSections = [
@@ -620,9 +701,9 @@ for (const section of requiredSections) {
   }
 }
 
-// ── 13. VERSION FILE ─────────────────────────────────────────────
+// ── 14. VERSION FILE ────────────────────────────────────────────
 
-console.log('\n13. Version file');
+console.log('\n14. Version file');
 
 if (fileExists('VERSION')) {
   const version = readFile('VERSION').trim();
@@ -635,9 +716,9 @@ if (fileExists('VERSION')) {
   fail('VERSION file missing');
 }
 
-// ── 14. LOCATION FILTER — always_allow tier ───────────────────────
+// ── 15. LOCATION FILTER — always_allow tier ─────────────────────
 
-console.log('\n14. Location filter — always_allow tier');
+console.log('\n15. Location filter — always_allow tier');
 
 try {
   const { buildLocationFilter } = await import(pathToFileURL(join(ROOT, 'scan.mjs')).href);

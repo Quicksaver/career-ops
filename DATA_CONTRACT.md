@@ -33,6 +33,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/reports/*` | Evaluation reports |
 | `users/{USER}/output/*` | Generated PDFs |
 | `users/{USER}/jds/*` | Saved job descriptions |
+| `~/.scan-auth/users/{USER}/{PORTAL}/profile/` | Browser profile for authenticated scanning |
 
 ## System Layer (safe to auto-update)
 
@@ -44,6 +45,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
 | `modes/scan.md` | Portal scanner instructions |
+| `modes/scan-auth.md` | Authenticated portal scanner instructions |
 | `modes/batch.md` | Batch processing instructions |
 | `modes/apply.md` | Application assistant instructions |
 | `modes/auto-pipeline.md` | Auto-pipeline instructions |
@@ -65,6 +67,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `AGENTS.md` | Codex instructions |
 | `*.mjs` | Utility scripts |
 | `lib/*` | Shared system helpers |
+| `scan-auth/*.mjs` | Authenticated portal scanner classes |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `dashboard/*` | Go TUI dashboard |

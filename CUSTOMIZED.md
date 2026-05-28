@@ -227,6 +227,37 @@ Future merge notes:
 
 - Reconcile upstream copy edits first, then update only the provider lists and behavior statements that remain fork-specific.
 
+## Authenticated Scan Sessions
+
+The fork adds a Playwright-backed authenticated scanner and keeps its browser sessions per career-ops user.
+
+Files:
+
+- `scan-auth.mjs`
+- `scan-auth/linkedin.mjs`
+- `modes/scan-auth.md`
+- `package.json`
+- `DATA_CONTRACT.md`
+- `AGENTS.md`
+- `.agents/skills/career-ops/SKILL.md`
+- `README.md`
+- `docs/SCRIPTS.md`
+- `test-all.mjs`
+
+What this customizes:
+
+- Adds `node scan-auth.mjs --user <id> [--login] linkedin` / `npm run scan-auth -- --user <id> ...`.
+- Routes authenticated scan data through the active user layer: `users/{USER}/portals.yml`, `users/{USER}/jds/`, `users/{USER}/data/pipeline.md`, and `users/{USER}/data/scan-history.tsv`.
+- Stores persistent browser sessions outside the repo under `~/.scan-auth/users/{USER}/{PORTAL}/profile/`, so different users can keep separate LinkedIn sessions.
+- Refuses to silently reuse the older shared profile path `~/.scan-auth/{PORTAL}/profile/`; if that legacy profile exists, the scanner warns and asks for a per-user login.
+- Treats browser profiles as credential material and keeps `.scan-auth/` ignored if someone overrides the auth directory into the checkout.
+
+Future merge notes:
+
+- If upstream adds authenticated scanning, preserve per-user session isolation unless upstream has an equivalent user-scoped profile model.
+- Do not move browser profiles into tracked system paths. They contain cookies/local storage and should remain ignored credential data.
+- Keep `scan-auth` aligned with `lib/user-context.mjs` whenever user resolution changes.
+
 ## Local Maintenance Skill
 
 The fork adds a repo-local skill for upstream merge maintenance.

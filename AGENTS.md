@@ -27,7 +27,7 @@ There are two layers. Read `DATA_CONTRACT.md` for the full list.
 All career-ops commands require an active user. User-specific data is centralized under `users/{USER}/`, which is gitignored.
 
 Resolve the user before any career-ops work:
-1. If the current command explicitly includes a user (`/career-ops scan <username>`, `/career-ops pipeline <username>`, or `--user <username>`), use it.
+1. If the current command explicitly includes a user (`/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`, or `--user <username>`), use it.
 2. Otherwise, if this conversation already established an active user from a previous career-ops command, reuse it.
 3. Otherwise, stop immediately and ask which career-ops user to use. Do not inspect or modify user-layer files before the user is known.
 
@@ -92,6 +92,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `followup-cadence.mjs` | Follow-up cadence calculator (JSON output) |
 | `data/follow-ups.md` | Follow-up history tracker |
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever/PCSX APIs plus structured providers such as Landing.jobs, SwissDevJobs, GermanTechJobs, DevITJobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, Working Nomads, and NoDesk directly, zero LLM cost |
+| `scan-auth.mjs` | Authenticated portal scanner — uses per-user Playwright browser profiles under `~/.scan-auth/users/{USER}/{PORTAL}/profile` |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
 | `users/{USER}/reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy). Header includes `**Legitimacy:** {tier}`. |
@@ -240,6 +241,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 | Asks about application status | `tracker` |
 | Fills out application form | `apply` |
 | Searches for new offers | `scan` |
+| Searches authenticated portals | `scan-auth` |
 | Processes pending URLs | `pipeline` |
 | Batch processes offers | `batch` |
 | Asks about rejection patterns or wants to improve targeting | `patterns` |
@@ -310,6 +312,7 @@ When spawning headless workers for batch processing, use the appropriate command
 - Scripts in `.mjs`, configuration in YAML
 - Output in `users/{USER}/output/` (gitignored), Reports in `users/{USER}/reports/`
 - JDs in `users/{USER}/jds/` (referenced as `local:jds/{file}` in `users/{USER}/data/pipeline.md`)
+- Authenticated scan browser sessions live outside the repo at `~/.scan-auth/users/{USER}/{PORTAL}/profile/`; treat them as credentials and never copy another user's session automatically.
 - Batch state/input/logs/tracker additions in `users/{USER}/batch/`; shared batch scripts and prompts stay in root `batch/`
 - Report numbering: sequential 3-digit zero-padded, max existing + 1
 - **RULE: After each batch of evaluations, run `node merge-tracker.mjs --user {USER}`** to merge tracker additions and avoid duplications.

@@ -61,6 +61,7 @@ Then paste a job offer URL or description. Career-ops will automatically evaluat
 |--------|-----|
 | Evaluate an offer | Paste a URL or JD text |
 | Search for offers | `/career-ops scan <username>` |
+| Search authenticated portals | `/career-ops scan-auth <username> linkedin` |
 | Process pending URLs | `/career-ops pipeline` |
 | Generate a PDF | `/career-ops pdf` |
 | Batch evaluate | `/career-ops batch` |

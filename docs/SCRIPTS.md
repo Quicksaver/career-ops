@@ -218,3 +218,24 @@ npm run scan -- --user <username>
 ```
 
 **Exit codes:** `0` scan completed, `1` configuration error or no `users/{USER}/portals.yml` found.
+
+---
+
+## scan-auth
+
+Authenticated portal scanner for sources that need a browser login. Currently supports LinkedIn. It reads `users/{USER}/portals.yml`, writes JDs to `users/{USER}/jds/`, appends `local:jds/...` entries to `users/{USER}/data/pipeline.md`, and records history in `users/{USER}/data/scan-history.tsv`.
+
+Each user gets a separate persistent browser profile outside the repo:
+
+```text
+~/.scan-auth/users/{USER}/{PORTAL}/profile/
+```
+
+Treat those profiles as credentials because they contain cookies and local storage.
+
+```bash
+npm run scan-auth -- --user <username> --login linkedin
+npm run scan-auth -- --user <username> linkedin
+```
+
+**Exit codes:** `0` scan completed, `1` configuration, login, or portal error.

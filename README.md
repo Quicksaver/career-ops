@@ -172,6 +172,7 @@ Career-ops is a single slash command with multiple modes:
 /career-ops                → Show all available commands
 /career-ops {paste a JD}   → Full auto-pipeline (evaluate + PDF + tracker)
 /career-ops scan           → Scan portals for new offers
+/career-ops scan-auth      → Scan authenticated portals like LinkedIn
 /career-ops pdf            → Generate ATS-optimized CV
 /career-ops batch          → Batch evaluate multiple offers
 /career-ops tracker        → View application status
@@ -229,6 +230,15 @@ node scan.mjs --user <username> --verify          # zero-token discovery + Playw
 ```
 
 The verification is sequential and only runs against new offers (after dedup), so the cost stays bounded.
+
+Authenticated portals use a separate scanner and a per-user browser profile. For LinkedIn:
+
+```bash
+node scan-auth.mjs --user <username> --login linkedin  # one-time interactive login
+node scan-auth.mjs --user <username> linkedin          # scan using that user's session
+```
+
+Sessions are stored outside the repo at `~/.scan-auth/users/{USER}/{PORTAL}/profile/` and should be treated as credentials.
 
 ## Dashboard TUI
 
