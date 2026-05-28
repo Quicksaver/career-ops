@@ -84,13 +84,16 @@ The fork makes the batch runner usable with Codex as well as Claude, and adds sm
 File:
 
 - `batch/batch-runner.sh`
+- `batch/batch-output-schema.json`
 
 What this customizes:
 
 - Replaces the Claude-only worker assumption with a generic headless worker setting.
 - Adds `--cli claude|codex`, defaulting to `claude`, and supports `CAREER_OPS_BATCH_CLI` so local runs can select Codex without editing the script.
 - Keeps Claude behavior on `claude -p --dangerously-skip-permissions --append-system-prompt-file ...`.
-- Adds Codex behavior through `codex exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR"`, combining the resolved batch system prompt and per-offer prompt into one prompt because Codex does not use Claude's `--append-system-prompt-file` interface.
+- Adds Codex behavior through `codex exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR"`, passing the combined resolved prompt through stdin rather than a huge argv string.
+- Requires Codex workers to write their final message through `--output-last-message` and validate it against `batch/batch-output-schema.json`.
+- Treats clean Codex completion as `exit 0` plus valid final JSON with `status: "completed"` plus report and tracker artifacts. Timeout-based artifact recovery remains a fallback, not the primary success path.
 - Adds `--limit N` so a batch run can process only the next N pending offers, useful for smoke tests, quota-aware batches, and resuming large queues in smaller chunks.
 - Copies `local:jds/...` input rows from `users/{USER}/jds/...` into the temporary JD file passed to the worker. Missing local JD files intentionally become an empty temporary file so the worker can fail or recover using the URL/context path consistently.
 - Logs the selected CLI and limit at run start so batch logs show which worker backend handled the run.
@@ -99,6 +102,7 @@ Future merge notes:
 
 - If upstream changes `batch/batch-runner.sh`, preserve the CLI abstraction unless upstream adds equivalent multi-agent worker support.
 - Keep the Codex command rooted at `PROJECT_DIR` so generated reports, tracker additions, and user-layer paths resolve the same way as normal career-ops commands.
+- Preserve the schema-checked final JSON contract for Codex workers; do not regress to parsing the free-form transcript as the main completion signal.
 - Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 
@@ -418,6 +422,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Per-user dashboard binary build/run flow.
 - Dashboard listing-date parsing/display.
 - Batch runner support for both Claude and Codex workers.
+- Schema-checked Codex batch worker final JSON via `--output-last-message`.
 - Bounded batch runs through `--limit`.
 - `local:jds/...` batch input handling.
 - Conditional batch PDF generation for scores below `3.0`, `Skip` decisions, and profile hard stops.

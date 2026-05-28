@@ -416,11 +416,13 @@ Al terminar, imprime por stdout un resumen JSON para que el orquestador lo parse
   "role": "{rol}",
   "score": {score_num},
   "legitimacy": "{High Confidence|Proceed with Caution|Suspicious}",
-  "pdf": {null | "{ruta_pdf}"},
+  "pdf": null,
   "report": "{ruta_report}",
   "error": null
 }
 ```
+
+For `pdf`, output a string path when a PDF was generated and `null` when the PDF gate skipped generation. Do not output placeholders or explanatory text inside the JSON.
 
 Si algo falla:
 ```json

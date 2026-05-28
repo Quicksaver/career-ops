@@ -14,6 +14,7 @@ BATCH_DIR=""
 INPUT_FILE=""
 STATE_FILE=""
 PROMPT_FILE="$SCRIPT_DIR/batch-prompt.md"
+CODEX_OUTPUT_SCHEMA="$SCRIPT_DIR/batch-output-schema.json"
 LOGS_DIR=""
 TRACKER_DIR=""
 REPORTS_DIR=""
@@ -170,6 +171,11 @@ check_prerequisites() {
 
   if [[ ! -f "$PROMPT_FILE" ]]; then
     echo "ERROR: $PROMPT_FILE not found."
+    exit 1
+  fi
+
+  if [[ "$CLI" == "codex" && ! -f "$CODEX_OUTPUT_SCHEMA" ]]; then
+    echo "ERROR: $CODEX_OUTPUT_SCHEMA not found."
     exit 1
   fi
 
@@ -378,11 +384,56 @@ find_tracker_for_id() {
   find "$TRACKER_DIR" -maxdepth 1 -type f -name "${id}.tsv" -print -quit 2>/dev/null || true
 }
 
+validate_worker_json() {
+  local final_file="$1"
+  [[ -f "$final_file" ]] || return 1
+
+  node -e '
+const fs = require("fs");
+const path = process.argv[1];
+let payload;
+try {
+  payload = JSON.parse(fs.readFileSync(path, "utf8"));
+} catch {
+  process.exit(1);
+}
+const ok =
+  payload &&
+  (payload.status === "completed" || payload.status === "failed") &&
+  typeof payload.id === "string" &&
+  typeof payload.report_num === "string" &&
+  typeof payload.company === "string" &&
+  typeof payload.role === "string" &&
+  (typeof payload.score === "number" || payload.score === null) &&
+  (typeof payload.legitimacy === "string" || payload.legitimacy === null) &&
+  (typeof payload.pdf === "string" || payload.pdf === null) &&
+  (typeof payload.report === "string" || payload.report === null) &&
+  (typeof payload.error === "string" || payload.error === null);
+process.exit(ok ? 0 : 1);
+' "$final_file"
+}
+
+worker_json_field() {
+  local final_file="$1" field="$2"
+  [[ -f "$final_file" ]] || return 0
+  node -e '
+const fs = require("fs");
+const [path, field] = process.argv.slice(1);
+try {
+  const value = JSON.parse(fs.readFileSync(path, "utf8"))[field];
+  if (value !== null && value !== undefined) process.stdout.write(String(value));
+} catch {}
+' "$final_file" "$field"
+}
+
 extract_score_from_artifacts() {
-  local report_file="$1" tracker_file="$2" log_file="$3"
+  local final_file="$1" report_file="$2" tracker_file="$3" log_file="$4"
   local score="-"
 
-  if [[ -n "$log_file" && -f "$log_file" ]]; then
+  if [[ -n "$final_file" && -f "$final_file" ]]; then
+    score=$(worker_json_field "$final_file" score)
+  fi
+  if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$log_file" && -f "$log_file" ]]; then
     score=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
   fi
   if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$report_file" && -f "$report_file" ]]; then
@@ -425,7 +476,7 @@ process_offer() {
 
   # Build the prompt with placeholders replaced
   local prompt
-  prompt="Procesa esta oferta de empleo. Ejecuta el pipeline completo: evaluación A-F + report .md + PDF + tracker line."
+  prompt="Procesa esta oferta de empleo. Ejecuta el pipeline completo: evaluación A-G + report .md + conditional PDF + tracker line."
   prompt="$prompt URL: $url"
   prompt="$prompt JD file: $jd_file"
   prompt="$prompt Report number: $report_num"
@@ -433,9 +484,12 @@ process_offer() {
   prompt="$prompt Batch ID: $id"
 
   local log_file="$LOGS_DIR/${report_num}-${id}.log"
+  local final_file="$LOGS_DIR/${report_num}-${id}.final.json"
+  rm -f "$final_file"
 
   # Prepare system prompt with placeholders resolved
   local resolved_prompt="$BATCH_DIR/.resolved-prompt-${id}.md"
+  local combined_prompt_file=""
   # Escape sed delimiter characters in variables to prevent substitution breakage
   local esc_url esc_jd_file esc_report_num esc_date esc_id esc_user esc_user_root
   esc_url="${url//\\/\\\\}"
@@ -469,20 +523,32 @@ process_offer() {
     fi
     worker_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
   else
-    local combined_prompt
-    combined_prompt="$(cat "$resolved_prompt")
+    combined_prompt_file="$BATCH_DIR/.combined-prompt-${id}.md"
+    {
+      cat "$resolved_prompt"
+      printf '\n%s\n' "$prompt"
+    } > "$combined_prompt_file"
 
-$prompt"
-    worker_args=(exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR")
+    worker_args=(
+      exec
+      --dangerously-bypass-approvals-and-sandbox
+      -C "$PROJECT_DIR"
+      --output-schema "$CODEX_OUTPUT_SCHEMA"
+      --output-last-message "$final_file"
+    )
     if [[ -n "$MODEL" ]]; then
       worker_args+=(--model "$MODEL")
     fi
-    worker_args+=("$combined_prompt")
+    worker_args+=(-)
   fi
 
   local exit_code=0
   local timed_out=false
-  "$CLI" "${worker_args[@]}" > "$log_file" 2>&1 &
+  local stdin_file="/dev/null"
+  if [[ -n "$combined_prompt_file" ]]; then
+    stdin_file="$combined_prompt_file"
+  fi
+  "$CLI" "${worker_args[@]}" < "$stdin_file" > "$log_file" 2>&1 &
   local worker_pid=$!
   local elapsed=0
 
@@ -509,18 +575,31 @@ $prompt"
   fi
 
   # Cleanup resolved prompt
-  rm -f "$resolved_prompt"
+  rm -f "$resolved_prompt" "$combined_prompt_file"
 
   local completed_at
   completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local report_file tracker_file
   report_file=$(find_report_for_num "$report_num")
   tracker_file=$(find_tracker_for_id "$id")
+  local final_json_valid=false
+  local final_json_status=""
+  if [[ "$CLI" == "codex" ]]; then
+    if validate_worker_json "$final_file"; then
+      final_json_valid=true
+      final_json_status=$(worker_json_field "$final_file" status)
+    else
+      echo "WARN: Worker #$id did not return valid final JSON at $final_file." >> "$log_file"
+    fi
+  else
+    final_json_valid=true
+    final_json_status="completed"
+  fi
 
-  if [[ $exit_code -eq 0 || ( -n "$report_file" && -n "$tracker_file" ) ]]; then
+  if [[ ( $exit_code -eq 0 && "$final_json_valid" == "true" && "$final_json_status" == "completed" && -n "$report_file" && -n "$tracker_file" ) || ( "$timed_out" == "true" && -n "$report_file" && -n "$tracker_file" ) ]]; then
     # Try to extract score from worker output
     local score="-"
-    score=$(extract_score_from_artifacts "$report_file" "$tracker_file" "$log_file")
+    score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file" "$log_file")
 
     # Check min-score gate
     if [[ "$score" != "-" && -n "$score" ]] && (( $(echo "$MIN_SCORE > 0" | bc -l) )); then
@@ -540,7 +619,10 @@ $prompt"
   else
     retries=$((retries + 1))
     local error_msg
-    error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
+    error_msg=$(worker_json_field "$final_file" error)
+    if [[ -z "$error_msg" ]]; then
+      error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
+    fi
     update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries"
     echo "    ❌ Failed (attempt $retries, exit code $exit_code)"
   fi
