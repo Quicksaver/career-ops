@@ -320,24 +320,26 @@ When spawning headless workers for batch processing, use the appropriate command
 
 ### TSV Format for Tracker Additions
 
-Write one TSV file per evaluation to `users/{USER}/batch/tracker-additions/{num}-{company-slug}.tsv`. Single line, 9 tab-separated columns:
+Write one TSV file per evaluation to `users/{USER}/batch/tracker-additions/{ID}.tsv`. Single line, 9 tab-separated columns:
 
 ```
-{num}\t{date}\t{company}\t{role}\t{status}\t{score}/5\t{pdf_emoji}\t[{num}](reports/{num}-{slug}-{date}.md)\t{note}
+{REPORT_NUM}\t{date}\t{company}\t{role}\t{status}\t{score}/5\t{pdf_emoji}\t[{REPORT_NUM}](reports/{REPORT_NUM}-{slug}-{date}.md)\t{note}
 ```
 
 **Column order (IMPORTANT -- status BEFORE score):**
-1. `num` -- sequential number (integer)
+1. `num` -- the report number reserved by the batch runner (integer)
 2. `date` -- YYYY-MM-DD
 3. `company` -- short company name
 4. `role` -- job title
 5. `status` -- canonical status (e.g., `Evaluated`)
 6. `score` -- format `X.X/5` (e.g., `4.2/5`)
 7. `pdf` -- `✅` or `❌`
-8. `report` -- markdown link `[num](reports/...)`
+8. `report` -- markdown link `[REPORT_NUM](reports/...)`
 9. `notes` -- one-line summary
 
 **Note:** In applications.md, score comes BEFORE status. The merge script handles this column swap automatically.
+
+**Batch numbering rule:** Do not recalculate the tracker number from `applications.md` inside workers. Parallel workers can race and choose the same value. Use the runner-reserved `REPORT_NUM` for the TSV first column, report link, and artifact names.
 
 ### Pipeline Integrity
 

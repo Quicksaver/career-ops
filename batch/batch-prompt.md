@@ -380,14 +380,14 @@ Escribir una línea TSV a:
 
 Formato TSV (una sola línea, sin header, 9 columnas tab-separated):
 ```
-{next_num}\t{{DATE}}\t{empresa}\t{rol}\t{status}\t{score}/5\t{pdf_emoji}\t[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)\t{nota_1_frase}
+{{REPORT_NUM}}\t{{DATE}}\t{empresa}\t{rol}\t{status}\t{score}/5\t{pdf_emoji}\t[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)\t{nota_1_frase}
 ```
 
 **Columnas TSV (orden exacto):**
 
 | # | Campo | Tipo | Ejemplo | Validación |
 |---|-------|------|---------|------------|
-| 1 | num | int | `647` | Secuencial, max existente + 1 |
+| 1 | num | int | `{{REPORT_NUM}}` | Usa exactamente el report number reservado por el batch runner |
 | 2 | date | YYYY-MM-DD | `2026-03-14` | Fecha de evaluación |
 | 3 | company | string | `Datadog` | Nombre corto de empresa |
 | 4 | role | string | `Staff AI Engineer` | Título del rol |
@@ -403,7 +403,7 @@ Formato TSV (una sola línea, sin header, 9 columnas tab-separated):
 
 Use `SKIP` when the final decision is `Skip` or the PDF gate is blocked by a hard stop. Use `Evaluated` for non-skip reports that are pending a decision. Do not use translated status labels in the TSV.
 
-Donde `{next_num}` se calcula leyendo la última línea de `{{USER_ROOT}}/data/applications.md`.
+No recalcules el número de tracker desde `applications.md`; en batch paralelo eso crea colisiones. El único número válido para la columna 1, el link del report y los nombres de artefactos es `{{REPORT_NUM}}`.
 
 ### Paso 6 — Output final
 
@@ -462,6 +462,7 @@ Si algo falla:
 4. Recomendar comp por debajo de mercado
 5. Generar PDF sin leer primero el JD
 6. Usar corporate-speak
+7. Modificar archivos compartidos del sistema (`batch/`, `modes/`, `templates/`, scripts root, `AGENTS.md`, `CUSTOMIZED.md`); en batch solo escribe reportes, output y tracker additions dentro de `{{USER_ROOT}}`
 
 ### SIEMPRE
 1. Leer `{{USER_ROOT}}/cv.md`, llms.txt y `{{USER_ROOT}}/article-digest.md` antes de evaluar
