@@ -33,11 +33,12 @@ MIN_SCORE=0
 MODEL=""  # empty = let claude -p use the Claude Max default
 CLI="${CAREER_OPS_BATCH_CLI:-claude}"
 LIMIT=0
+WORKER_TIMEOUT_SECONDS="${CAREER_OPS_WORKER_TIMEOUT_SECONDS:-900}"
 
 usage() {
   cat <<'USAGE'
-career-ops batch runner — process job offers in batch via claude -p workers
-Uses your default Claude model (Claude Max subscription).
+career-ops batch runner — process job offers in batch via headless workers
+Supports Claude or Codex workers.
 
 Usage: batch-runner.sh [OPTIONS]
 
@@ -52,6 +53,8 @@ Options:
   --cli NAME           Headless CLI to use: claude or codex (default: claude,
                        or CAREER_OPS_BATCH_CLI)
   --limit N            Process at most N pending offers in this run (default: 0 = all)
+  --worker-timeout N   Seconds before a worker is killed and artifact recovery
+                       is attempted (default: 900, or CAREER_OPS_WORKER_TIMEOUT_SECONDS)
   --model NAME         Claude model passed to `claude -p --model` (default:
                        unset = Claude Max default). Use a cheaper model for
                        large batches, e.g. `--model claude-sonnet-4-6`.
@@ -92,6 +95,7 @@ while [[ $# -gt 0 ]]; do
     --min-score) MIN_SCORE="$2"; shift 2 ;;
     --cli) CLI="$2"; shift 2 ;;
     --limit) LIMIT="$2"; shift 2 ;;
+    --worker-timeout) WORKER_TIMEOUT_SECONDS="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -176,6 +180,11 @@ check_prerequisites() {
 
   if ! command -v "$CLI" &>/dev/null; then
     echo "ERROR: '$CLI' CLI not found in PATH."
+    exit 1
+  fi
+
+  if [[ ! "$WORKER_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || (( WORKER_TIMEOUT_SECONDS < 1 )); then
+    echo "ERROR: --worker-timeout must be a positive integer."
     exit 1
   fi
 
@@ -359,6 +368,33 @@ reserve_report_num() {
   run_with_state_lock reserve_report_num_unlocked "$@"
 }
 
+find_report_for_num() {
+  local report_num="$1"
+  find "$REPORTS_DIR" -maxdepth 1 -type f -name "${report_num}-*.md" -print -quit 2>/dev/null || true
+}
+
+find_tracker_for_id() {
+  local id="$1"
+  find "$TRACKER_DIR" -maxdepth 1 -type f -name "${id}.tsv" -print -quit 2>/dev/null || true
+}
+
+extract_score_from_artifacts() {
+  local report_file="$1" tracker_file="$2" log_file="$3"
+  local score="-"
+
+  if [[ -n "$log_file" && -f "$log_file" ]]; then
+    score=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
+  fi
+  if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$report_file" && -f "$report_file" ]]; then
+    score=$(sed -nE 's/^[*]*Score:[*]*[[:space:]]*([0-9.]+)\\/5.*/\1/p; s/^score:[[:space:]]*"?([0-9.]+)"?.*/\1/p' "$report_file" 2>/dev/null | head -1 || true)
+  fi
+  if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$tracker_file" && -f "$tracker_file" ]]; then
+    score=$(awk -F'\t' 'NR == 1 { sub(/\/5$/, "", $6); print $6 }' "$tracker_file" 2>/dev/null | head -1 || true)
+  fi
+
+  printf '%s\n' "${score:-"-"}"
+}
+
 # Process a single offer
 process_offer() {
   local id="$1" url="$2" source="$3" notes="$4"
@@ -445,22 +481,46 @@ $prompt"
   fi
 
   local exit_code=0
-  "$CLI" "${worker_args[@]}" > "$log_file" 2>&1 || exit_code=$?
+  local timed_out=false
+  "$CLI" "${worker_args[@]}" > "$log_file" 2>&1 &
+  local worker_pid=$!
+  local elapsed=0
+
+  while kill -0 "$worker_pid" 2>/dev/null; do
+    if (( elapsed >= WORKER_TIMEOUT_SECONDS )); then
+      timed_out=true
+      echo "WARN: Worker #$id timed out after ${WORKER_TIMEOUT_SECONDS}s; attempting artifact recovery." >> "$log_file"
+      kill "$worker_pid" 2>/dev/null || true
+      sleep 2
+      if kill -0 "$worker_pid" 2>/dev/null; then
+        kill -9 "$worker_pid" 2>/dev/null || true
+      fi
+      break
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  if [[ "$timed_out" == "true" ]]; then
+    wait "$worker_pid" 2>/dev/null || true
+    exit_code=124
+  else
+    wait "$worker_pid" || exit_code=$?
+  fi
 
   # Cleanup resolved prompt
   rm -f "$resolved_prompt"
 
   local completed_at
   completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  local report_file tracker_file
+  report_file=$(find_report_for_num "$report_num")
+  tracker_file=$(find_tracker_for_id "$id")
 
-  if [[ $exit_code -eq 0 ]]; then
+  if [[ $exit_code -eq 0 || ( -n "$report_file" && -n "$tracker_file" ) ]]; then
     # Try to extract score from worker output
     local score="-"
-    local score_match
-   score_match=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
-    if [[ -n "$score_match" ]]; then
-      score="$score_match"
-    fi
+    score=$(extract_score_from_artifacts "$report_file" "$tracker_file" "$log_file")
 
     # Check min-score gate
     if [[ "$score" != "-" && -n "$score" ]] && (( $(echo "$MIN_SCORE > 0" | bc -l) )); then
@@ -472,7 +532,11 @@ $prompt"
     fi
 
     update_state "$id" "$url" "completed" "$started_at" "$completed_at" "$report_num" "$score" "-" "$retries"
-    echo "    ✅ Completed (score: $score, report: $report_num)"
+    if [[ $exit_code -ne 0 ]]; then
+      echo "    ✅ Completed via artifact recovery (score: $score, report: $report_num, worker exit: $exit_code)"
+    else
+      echo "    ✅ Completed (score: $score, report: $report_num)"
+    fi
   else
     retries=$((retries + 1))
     local error_msg
@@ -554,7 +618,7 @@ main() {
   echo "=== career-ops batch runner ==="
   echo "User: $USER_ID"
   echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
-  echo "CLI: $CLI | Limit: $LIMIT"
+  echo "CLI: $CLI | Limit: $LIMIT | Worker timeout: ${WORKER_TIMEOUT_SECONDS}s"
   echo "Input: $total_input offers"
   echo ""
 
