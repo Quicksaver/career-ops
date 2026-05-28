@@ -76,8 +76,9 @@ const NAV_TIMEOUT_MS = 30000;
 const DEFAULT_DELAY_PAGES_MS = [3000, 8000];
 const DEFAULT_DELAY_SEARCHES_MS = [5000, 15000];
 
-function randomDelay(range) {
-  const [min, max] = range;
+export function randomDelay(range) {
+  if (typeof range === 'number' && Number.isFinite(range)) return Math.max(0, range);
+  const [min, max] = Array.isArray(range) ? range : DEFAULT_DELAY_PAGES_MS;
   return Math.floor(Math.random() * (max - min) + min);
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

@@ -160,7 +160,9 @@ try {
 console.log('\n4. Authenticated scan session detection');
 
 try {
-  const LinkedInScanner = (await import(pathToFileURL(join(ROOT, 'scan-auth/linkedin.mjs')).href)).default;
+  const linkedInModule = await import(pathToFileURL(join(ROOT, 'scan-auth/linkedin.mjs')).href);
+  const LinkedInScanner = linkedInModule.default;
+  const { randomDelay } = linkedInModule;
   const scanner = new LinkedInScanner();
 
   const makePage = ({ url = 'https://www.linkedin.com/feed/', matches = {}, cookies = [] }) => ({
@@ -204,6 +206,19 @@ try {
     pass('LinkedIn login detection rejects login pages');
   } else {
     fail('LinkedIn login detection accepted a login page');
+  }
+
+  if (randomDelay(1500) === 1500) {
+    pass('LinkedIn numeric delay config is accepted as a fixed delay');
+  } else {
+    fail('LinkedIn numeric delay config should return the fixed delay');
+  }
+
+  const rangedDelay = randomDelay([10, 20]);
+  if (rangedDelay >= 10 && rangedDelay < 20) {
+    pass('LinkedIn ranged delay config still returns a value in range');
+  } else {
+    fail(`LinkedIn ranged delay config returned out-of-range value: ${rangedDelay}`);
   }
 } catch (e) {
   fail(`Authenticated scan session detection tests crashed: ${e.message}`);

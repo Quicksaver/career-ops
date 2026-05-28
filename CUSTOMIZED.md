@@ -94,6 +94,8 @@ What this customizes:
 - Adds Codex behavior through `codex exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR"`, passing the combined resolved prompt through stdin rather than a huge argv string.
 - Requires Codex workers to write their final message through `--output-last-message` and validate it against `batch/batch-output-schema.json`.
 - Treats clean Codex completion as `exit 0` plus valid final JSON with `status: "completed"` plus report and tracker artifacts. Timeout-based artifact recovery remains a fallback, not the primary success path.
+- Records Codex contract failures explicitly when the final JSON, report, or tracker TSV is missing, instead of leaving the offer in `processing`.
+- Recovers stale `processing` rows at the start of a new non-dry-run batch by marking them failed with `stale-processing-state`, so interrupted workers do not block or hide the next run.
 - Adds `--limit N` so a batch run can process only the next N pending offers, useful for smoke tests, quota-aware batches, and resuming large queues in smaller chunks.
 - Copies `local:jds/...` input rows from `users/{USER}/jds/...` into the temporary JD file passed to the worker. Missing local JD files intentionally become an empty temporary file so the worker can fail or recover using the URL/context path consistently.
 - Logs the selected CLI and limit at run start so batch logs show which worker backend handled the run.
@@ -103,6 +105,7 @@ Future merge notes:
 - If upstream changes `batch/batch-runner.sh`, preserve the CLI abstraction unless upstream adds equivalent multi-agent worker support.
 - Keep the Codex command rooted at `PROJECT_DIR` so generated reports, tracker additions, and user-layer paths resolve the same way as normal career-ops commands.
 - Preserve the schema-checked final JSON contract for Codex workers; do not regress to parsing the free-form transcript as the main completion signal.
+- Preserve stale-state recovery and explicit missing-artifact failure reasons. They are needed because a headless worker can write partial artifacts or transcript JSON without producing the required final-message JSON.
 - Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 
@@ -329,12 +332,15 @@ What this customizes:
 - Stores persistent browser sessions outside the repo under `~/.scan-auth/users/{USER}/{PORTAL}/profile/`, so different users can keep separate LinkedIn sessions.
 - Refuses to silently reuse the older shared profile path `~/.scan-auth/{PORTAL}/profile/`; if that legacy profile exists, the scanner warns and asks for a per-user login.
 - Treats browser profiles as credential material and keeps `.scan-auth/` ignored if someone overrides the auth directory into the checkout.
+- Exports LinkedIn `randomDelay()` for test coverage and accepts both fixed numeric delays and `[min, max]` ranges, falling back to default page delays for malformed config.
+- Extends `test-all.mjs` authenticated-scan coverage to verify fixed numeric delays and ranged delays, so future upstream merges do not regress LinkedIn delay config compatibility.
 
 Future merge notes:
 
 - If upstream adds authenticated scanning, preserve per-user session isolation unless upstream has an equivalent user-scoped profile model.
 - Do not move browser profiles into tracked system paths. They contain cookies/local storage and should remain ignored credential data.
 - Keep `scan-auth` aligned with `lib/user-context.mjs` whenever user resolution changes.
+- Preserve numeric delay compatibility for LinkedIn scan throttling if upstream rewrites scan-auth timing helpers.
 
 ## Local Maintenance Skill
 

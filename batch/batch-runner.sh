@@ -290,6 +290,45 @@ get_retries() {
   echo "${retries:-0}"
 }
 
+mark_stale_processing_unlocked() {
+  if [[ ! -f "$STATE_FILE" ]]; then
+    return 0
+  fi
+
+  local tmp="$STATE_FILE.tmp"
+  local now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  local found=false
+
+  head -1 "$STATE_FILE" > "$tmp"
+  while IFS=$'\t' read -r sid surl sstatus sstarted scompleted sreport sscore serror sretries; do
+    [[ "$sid" == "id" ]] && continue
+    if [[ "$sstatus" == "processing" ]]; then
+      local next_retries="${sretries:-0}"
+      if [[ "$next_retries" =~ ^[0-9]+$ ]]; then
+        next_retries=$((next_retries + 1))
+      else
+        next_retries=1
+      fi
+      printf '%s\t%s\tfailed\t%s\t%s\t%s\t%s\tstale-processing-state\t%s\n' \
+        "$sid" "$surl" "$sstarted" "$now" "$sreport" "$sscore" "$next_retries" >> "$tmp"
+      found=true
+    else
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$sid" "$surl" "$sstatus" "$sstarted" "$scompleted" "$sreport" "$sscore" "$serror" "$sretries" >> "$tmp"
+    fi
+  done < "$STATE_FILE"
+
+  mv "$tmp" "$STATE_FILE"
+  if [[ "$found" == "true" ]]; then
+    echo "WARN: Recovered stale processing rows from a previous interrupted run."
+  fi
+}
+
+mark_stale_processing() {
+  run_with_state_lock mark_stale_processing_unlocked
+}
+
 # Calculate next report number.
 # Caller must hold STATE_LOCK_DIR while this runs.
 next_report_num_unlocked() {
@@ -424,6 +463,31 @@ try {
   if (value !== null && value !== undefined) process.stdout.write(String(value));
 } catch {}
 ' "$final_file" "$field"
+}
+
+build_contract_error() {
+  local exit_code="$1" timed_out="$2" final_file="$3" final_json_valid="$4" final_json_status="$5" report_file="$6" tracker_file="$7"
+  local -a reasons=()
+
+  if [[ "$timed_out" == "true" ]]; then
+    reasons+=("worker-timeout")
+  elif [[ "$exit_code" -ne 0 ]]; then
+    reasons+=("worker-exit-$exit_code")
+  fi
+  if [[ "$CLI" == "codex" ]]; then
+    if [[ ! -f "$final_file" ]]; then
+      reasons+=("missing-final-json")
+    elif [[ "$final_json_valid" != "true" ]]; then
+      reasons+=("invalid-final-json")
+    elif [[ "$final_json_status" != "completed" ]]; then
+      reasons+=("worker-status-${final_json_status:-unknown}")
+    fi
+  fi
+  [[ -n "$report_file" ]] || reasons+=("missing-report")
+  [[ -n "$tracker_file" ]] || reasons+=("missing-tracker")
+
+  local IFS=","
+  printf '%s\n' "${reasons[*]:-unknown-worker-contract-failure}"
 }
 
 extract_score_from_artifacts() {
@@ -606,7 +670,7 @@ process_offer() {
       if (( $(echo "$score < $MIN_SCORE" | bc -l) )); then
         update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$score" "below-min-score" "$retries"
         echo "    ⏭️  Skipped (score: $score < min-score: $MIN_SCORE)"
-        continue
+        return 0
       fi
     fi
 
@@ -619,13 +683,21 @@ process_offer() {
   else
     retries=$((retries + 1))
     local error_msg
-    error_msg=$(worker_json_field "$final_file" error)
+    error_msg=$(build_contract_error "$exit_code" "$timed_out" "$final_file" "$final_json_valid" "$final_json_status" "$report_file" "$tracker_file")
+    local worker_error
+    worker_error=$(worker_json_field "$final_file" error)
+    if [[ -n "$worker_error" ]]; then
+      error_msg="$error_msg: $worker_error"
+    fi
     if [[ -z "$error_msg" ]]; then
       error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
     fi
     update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries"
-    echo "    ❌ Failed (attempt $retries, exit code $exit_code)"
+    echo "WARN: Worker #$id contract failure: $error_msg" >> "$log_file"
+    echo "    ❌ Failed (attempt $retries, exit code $exit_code, $error_msg)"
   fi
+
+  return 0
 }
 
 # Merge tracker additions into applications.md
@@ -686,6 +758,9 @@ main() {
   fi
 
   init_state
+  if [[ "$DRY_RUN" == "false" ]]; then
+    mark_stale_processing
+  fi
 
   # Count input offers (skip header, ignore blank lines)
   local total_input

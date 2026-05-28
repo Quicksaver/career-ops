@@ -391,7 +391,7 @@ Formato TSV (una sola línea, sin header, 9 columnas tab-separated):
 | 2 | date | YYYY-MM-DD | `2026-03-14` | Fecha de evaluación |
 | 3 | company | string | `Datadog` | Nombre corto de empresa |
 | 4 | role | string | `Staff AI Engineer` | Título del rol |
-| 5 | status | canonical | `Evaluada` | DEBE ser canónico (ver states.yml) |
+| 5 | status | canonical | `Evaluated` | DEBE ser canónico (ver states.yml) |
 | 6 | score | X.XX/5 | `4.55/5` | O `N/A` si no evaluable |
 | 7 | pdf | emoji | `✅` o `❌` | `✅` solo si el PDF gate generó un PDF; si no, `❌` |
 | 8 | report | md link | `[647](reports/647-...)` | Link al report |
@@ -399,11 +399,22 @@ Formato TSV (una sola línea, sin header, 9 columnas tab-separated):
 
 **IMPORTANTE:** El orden TSV tiene status ANTES de score (col 5→status, col 6→score). En applications.md el orden es inverso (col 5→score, col 6→status). merge-tracker.mjs maneja la conversión.
 
-**Estados canónicos válidos:** `Evaluada`, `Aplicado`, `Respondido`, `Entrevista`, `Oferta`, `Rechazado`, `Descartado`, `NO APLICAR`
+**Estados canónicos válidos:** `Evaluated`, `Applied`, `Responded`, `Interview`, `Offer`, `Rejected`, `Discarded`, `SKIP`
+
+Use `SKIP` when the final decision is `Skip` or the PDF gate is blocked by a hard stop. Use `Evaluated` for non-skip reports that are pending a decision. Do not use translated status labels in the TSV.
 
 Donde `{next_num}` se calcula leyendo la última línea de `{{USER_ROOT}}/data/applications.md`.
 
 ### Paso 6 — Output final
+
+Antes de imprimir el JSON final, verifica los artefactos obligatorios:
+
+```bash
+test -s "{{USER_ROOT}}/reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md"
+test -s "{{USER_ROOT}}/batch/tracker-additions/{{ID}}.tsv"
+```
+
+Si cualquiera de esos checks falla, devuelve `status: "failed"` con `error` explicando el archivo que falta. No imprimas un JSON `completed` hasta que el report y el TSV existan en disco. No incluyas prosa antes ni después del JSON final.
 
 Al terminar, imprime por stdout un resumen JSON para que el orquestador lo parsee:
 
@@ -423,6 +434,7 @@ Al terminar, imprime por stdout un resumen JSON para que el orquestador lo parse
 ```
 
 For `pdf`, output a string path when a PDF was generated and `null` when the PDF gate skipped generation. Do not output placeholders or explanatory text inside the JSON.
+For `report`, output the actual report path you wrote. Do not output `null` for a completed worker.
 
 Si algo falla:
 ```json
