@@ -47,7 +47,7 @@ Aplicación durante la evaluación A-G:
 
 | Placeholder | Descripción |
 |-------------|-------------|
-| `{{URL}}` | URL de la oferta |
+| `{{URL}}` | URL publica de la oferta para guardar en el report. Si el batch input usa `local:jds/...`, el orquestador la resuelve desde el frontmatter del JD (`application_url`, luego `source_url`). |
 | `{{JD_FILE}}` | Ruta al archivo con el texto del JD |
 | `{{REPORT_NUM}}` | Número de report (3 dígitos, zero-padded: 001, 002...) |
 | `{{DATE}}` | Fecha actual YYYY-MM-DD |

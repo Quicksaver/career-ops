@@ -290,6 +290,60 @@ get_retries() {
   echo "${retries:-0}"
 }
 
+frontmatter_value() {
+  local file="$1" key="$2"
+  awk -v key="$key" '
+    NR == 1 && $0 == "---" { in_fm = 1; next }
+    in_fm && $0 == "---" { exit }
+    in_fm && index($0, key ":") == 1 {
+      value = $0
+      sub(/^[^:]+:[[:space:]]*/, "", value)
+      sub(/\r$/, "", value)
+      if ((value ~ /^".*"$/) || (value ~ /^'\''.*'\''$/)) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "$file"
+}
+
+resolve_report_url() {
+  local url="$1"
+
+  if [[ "$url" != local:* ]]; then
+    printf '%s\n' "$url"
+    return
+  fi
+
+  local local_path="${url#local:}"
+  local source_jd="$USER_ROOT/$local_path"
+  if [[ ! -f "$source_jd" ]]; then
+    printf '%s\n' "$url"
+    return
+  fi
+
+  local application_url source_url
+  application_url=$(frontmatter_value "$source_jd" "application_url" || true)
+  source_url=$(frontmatter_value "$source_jd" "source_url" || true)
+
+  if [[ -n "$application_url" ]]; then
+    printf '%s\n' "$application_url"
+  elif [[ -n "$source_url" ]]; then
+    printf '%s\n' "$source_url"
+  else
+    printf '%s\n' "$url"
+  fi
+}
+
+sed_replacement_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//&/\\&}"
+  value="${value//|/\\|}"
+  printf '%s\n' "$value"
+}
+
 mark_stale_processing_unlocked() {
   if [[ ! -f "$STATE_FILE" ]]; then
     return 0
@@ -523,6 +577,8 @@ process_offer() {
   local date
   date=$(date +%Y-%m-%d)
   local jd_file="/tmp/batch-jd-${id}.txt"
+  local report_url
+  report_url=$(resolve_report_url "$url")
 
   if [[ "$url" == local:* ]]; then
     local local_path="${url#local:}"
@@ -541,11 +597,12 @@ process_offer() {
   # Build the prompt with placeholders replaced
   local prompt
   prompt="Procesa esta oferta de empleo. Ejecuta el pipeline completo: evaluación A-G + report .md + conditional PDF + tracker line."
-  prompt="$prompt URL: $url"
-  prompt="$prompt JD file: $jd_file"
-  prompt="$prompt Report number: $report_num"
-  prompt="$prompt Date: $date"
-  prompt="$prompt Batch ID: $id"
+  prompt="$prompt URL: $report_url."
+  prompt="$prompt JD file: $jd_file."
+  prompt="$prompt Report number: $report_num."
+  prompt="$prompt Date: $date."
+  prompt="$prompt Batch ID: $id."
+  prompt="$prompt Internal batch locator: $url."
 
   local log_file="$LOGS_DIR/${report_num}-${id}.log"
   local final_file="$LOGS_DIR/${report_num}-${id}.final.json"
@@ -556,17 +613,13 @@ process_offer() {
   local combined_prompt_file=""
   # Escape sed delimiter characters in variables to prevent substitution breakage
   local esc_url esc_jd_file esc_report_num esc_date esc_id esc_user esc_user_root
-  esc_url="${url//\\/\\\\}"
-  esc_url="${esc_url//|/\\|}"
-  esc_jd_file="${jd_file//\\/\\\\}"
-  esc_jd_file="${esc_jd_file//|/\\|}"
-  esc_report_num="${report_num//|/\\|}"
-  esc_date="${date//|/\\|}"
-  esc_id="${id//|/\\|}"
-  esc_user="${USER_ID//\\/\\\\}"
-  esc_user="${esc_user//|/\\|}"
-  esc_user_root="${USER_ROOT//\\/\\\\}"
-  esc_user_root="${esc_user_root//|/\\|}"
+  esc_url=$(sed_replacement_escape "$report_url")
+  esc_jd_file=$(sed_replacement_escape "$jd_file")
+  esc_report_num=$(sed_replacement_escape "$report_num")
+  esc_date=$(sed_replacement_escape "$date")
+  esc_id=$(sed_replacement_escape "$id")
+  esc_user=$(sed_replacement_escape "$USER_ID")
+  esc_user_root=$(sed_replacement_escape "$USER_ROOT")
   sed \
     -e "s|{{URL}}|${esc_url}|g" \
     -e "s|{{JD_FILE}}|${esc_jd_file}|g" \
