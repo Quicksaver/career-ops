@@ -344,6 +344,31 @@ Future merge notes:
 - Keep `scan-auth` aligned with `lib/user-context.mjs` whenever user resolution changes.
 - Preserve numeric delay compatibility for LinkedIn scan throttling if upstream rewrites scan-auth timing helpers.
 
+## LinkedIn Native Age Filter
+
+The fork enforces authenticated LinkedIn search age limits through LinkedIn's native URL parameter rather than keyword text.
+
+Files:
+
+- `scan-auth/linkedin.mjs`
+- `test-all.mjs`
+- `users/{USER}/portals.yml`
+
+What this customizes:
+
+- Reads `linkedin_searches.date_posted` from the active user's `portals.yml`.
+- Maps supported values to LinkedIn's native `f_TPR` search parameter: `24 -> r86400`, `Week -> r604800`, and `Month -> r2592000`.
+- Builds URLs such as `https://www.linkedin.com/jobs/search-results/?keywords=Senior+Backend+Engineer&f_TPR=r604800`.
+- Leaves the `keywords` query clean instead of appending text such as `posted in the past week`.
+- Exports `buildLinkedInSearches(config)` so URL construction can be regression-tested without launching an authenticated browser session.
+- Extends `test-all.mjs` coverage for `Week`, numeric YAML `24`, clean keyword text, and the unset case.
+
+Future merge notes:
+
+- Preserve URL-level age filtering while LinkedIn supports `f_TPR`; keyword suffixes are weaker and should not be restored as the primary filter.
+- If upstream adds first-class LinkedIn age filtering, retire this local mapping only if upstream preserves the same `linkedin_searches.date_posted` contract or provides a clear migration for user portal configs.
+- Keep the exported search builder or an equivalent testable boundary so future changes can verify generated URLs without touching per-user pipeline data.
+
 ## Quiet Long-Running Command Monitoring
 
 The fork instructs agents to avoid routine 30-second "still running" messages during multi-minute `scan`, `scan-auth`, and `pipeline` runs.
