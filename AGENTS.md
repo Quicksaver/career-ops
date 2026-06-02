@@ -49,6 +49,15 @@ Dashboard TUI binaries are per-user artifacts. When building the dashboard, comp
 
 Run the per-user binary without `--path`; it infers the user folder from its own location or the current directory. Keep `--path` optional for unusual layouts, e.g. `career-dashboard --path /path/to/career-ops --user {USER}` or `career-dashboard --path /path/to/users/{USER}`.
 
+## Long-Running Command Quiet Mode
+
+When the user asks you to run `scan`, `scan-auth`, or `pipeline`, keep the conversation quiet while the command is running:
+- Start the command, then do not send routine "still running" or "currently at phase X" updates.
+- Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
+- Treat command stdout/stderr as the progress source. Do not paraphrase every phase back to the user.
+- Report immediately only when the command completes, fails, asks for login/CAPTCHA/user action, appears hung, or produces a concrete warning that changes what the user should do.
+- If a user explicitly asks for status while the command is running, answer once with the current observed state, then return to quiet monitoring.
+
 ## Update Check
 
 On the first message of each session, run the update checker silently:

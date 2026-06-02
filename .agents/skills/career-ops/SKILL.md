@@ -39,6 +39,16 @@ After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 - If delegating to a subagent, include `ACTIVE_USER` and `USER_ROOT` explicitly in the prompt and tell the subagent that all user-layer relative paths resolve inside `USER_ROOT`.
 - If the user explicitly changes user later in the conversation, switch to that user for subsequent `/career-ops` commands.
 
+## Long-Running Command Quiet Mode
+
+For `scan`, `scan-auth`, and `pipeline`, keep process monitoring quiet:
+
+- Start the command, then do not send routine "still running" or "currently at phase X" updates.
+- Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
+- Treat command stdout/stderr as the progress source. Do not paraphrase every phase back to the user.
+- Report immediately only when the command completes, fails, asks for login/CAPTCHA/user action, appears hung, or produces a concrete warning that changes what the user should do.
+- If the user explicitly asks for status while the command is running, answer once with the current observed state, then return to quiet monitoring.
+
 ## Mode Routing
 
 Determine the mode from `$mode`:
@@ -126,7 +136,7 @@ For `scan`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as Agent
 ```
 Agent(
   subagent_type="general-purpose",
-  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
+  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-auth/pipeline monitoring, stay quiet while the process runs; report completion, failure, required user action, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
   description="career-ops {mode}"
 )
 ```

@@ -344,6 +344,29 @@ Future merge notes:
 - Keep `scan-auth` aligned with `lib/user-context.mjs` whenever user resolution changes.
 - Preserve numeric delay compatibility for LinkedIn scan throttling if upstream rewrites scan-auth timing helpers.
 
+## Quiet Long-Running Command Monitoring
+
+The fork instructs agents to avoid routine 30-second "still running" messages during multi-minute `scan`, `scan-auth`, and `pipeline` runs.
+
+Files:
+
+- `AGENTS.md`
+- `.agents/skills/career-ops/SKILL.md`
+- `modes/scan.md`
+- `modes/scan-auth.md`
+- `modes/pipeline.md`
+
+What this customizes:
+
+- Keeps scanner and pipeline monitoring quiet after command start.
+- Allows internal liveness polling, but limits normal user-visible status updates to at most once every 10 minutes.
+- Still requires immediate reporting for completion, failure, required login/CAPTCHA/user action, suspected hangs, or warnings that change what the user should do.
+- Preserves one-off status answers when the user explicitly asks, then returns to quiet monitoring.
+
+Future merge notes:
+
+- Preserve the quiet long-running command monitoring rule unless upstream provides an equivalent low-noise policy.
+
 ## Local Maintenance Skill
 
 The fork adds a repo-local skill for upstream merge maintenance.

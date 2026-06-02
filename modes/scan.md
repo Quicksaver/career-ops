@@ -18,6 +18,10 @@ Agent(
 )
 ```
 
+## Politica de ruido durante ejecucion
+
+Mientras `node scan.mjs --user {USER}` o el flujo de scan del agente siga activo, no enviar mensajes rutinarios de "sigue corriendo" ni narrar cada fase. Usar stdout/stderr como fuente de progreso, verificar liveness internamente, y solo informar al usuario al completar, fallar, requerir accion, detectar bloqueo, o como maximo una vez cada 10 minutos si todo sigue normal. Si el usuario pide estado explicitamente, responder una vez con el estado observado y volver a monitoreo silencioso.
+
 ## Configuración
 
 Leer `users/{USER}/portals.yml` que contiene:
