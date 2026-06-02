@@ -4,7 +4,7 @@ Process job URLs stored in `users/{USER}/data/pipeline.md`. The user adds URLs a
 
 ## Quiet monitoring
 
-While `/career-ops pipeline` or its delegated workers are running, do not send routine "still running" updates or narrate each evaluation phase. Use command stdout/stderr and written artifacts as the progress source, check liveness internally, and report only completion, failure, required login/CAPTCHA/user action, a suspected hang, or at most one normal liveness update every 10 minutes. If the user explicitly asks for status, answer once with the current observed state and then return to quiet monitoring.
+While `/career-ops pipeline` or its delegated workers are running, do not send routine "still running" updates or narrate each evaluation phase. Use command stdout/stderr and written artifacts as the progress source, check liveness internally, and report only completion, failure, required login/CAPTCHA/user action, a suspected hang, or at most one normal liveness update every 10 minutes. In Codex tool sessions, do not narrate routine `write_stdin` polls; use the longest supported wait and keep waiting silently if the tool returns before 10 minutes. If the user explicitly asks for status, answer once with the current observed state and then return to quiet monitoring.
 
 ## Workflow
 

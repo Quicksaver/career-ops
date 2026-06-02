@@ -51,10 +51,12 @@ Run the per-user binary without `--path`; it infers the user folder from its own
 
 ## Long-Running Command Quiet Mode
 
-When the user asks you to run `scan`, `scan-auth`, or `pipeline`, keep the conversation quiet while the command is running:
+When the user asks you to run `scan`, `scan-auth`, `pipeline`, or `batch`, keep the conversation quiet while the command is running:
 - Start the command, then do not send routine "still running" or "currently at phase X" updates.
 - Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
 - Treat command stdout/stderr as the progress source. Do not paraphrase every phase back to the user.
+- For Codex tool sessions, do not send commentary before or after routine `write_stdin` polls. Poll with the longest supported wait, and if the tool returns before 10 minutes, continue polling silently until the command completes or a real action is needed.
+- Do not emit filler such as "Continuing quietly", "still processing", "worker remains active", or "no failure output" during routine polls.
 - Report immediately only when the command completes, fails, asks for login/CAPTCHA/user action, appears hung, or produces a concrete warning that changes what the user should do.
 - If a user explicitly asks for status while the command is running, answer once with the current observed state, then return to quiet monitoring.
 

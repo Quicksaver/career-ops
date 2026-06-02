@@ -22,7 +22,7 @@ Do not reuse or copy a different user's session automatically. Browser profiles 
 
 ## Quiet monitoring
 
-While `node scan-auth.mjs --user {USER} <portal>` is running, do not send routine "still running" updates or narrate each scanner phase. Use stdout/stderr as the progress source, check liveness internally, and report only completion, failure, required login/CAPTCHA/user action, a suspected hang, or at most one normal liveness update every 10 minutes. If the user explicitly asks for status, answer once with the current observed state and then return to quiet monitoring.
+While `node scan-auth.mjs --user {USER} <portal>` is running, do not send routine "still running" updates or narrate each scanner phase. Use stdout/stderr as the progress source, check liveness internally, and report only completion, failure, required login/CAPTCHA/user action, a suspected hang, or at most one normal liveness update every 10 minutes. In Codex tool sessions, do not narrate routine `write_stdin` polls; use the longest supported wait and keep waiting silently if the tool returns before 10 minutes. If the user explicitly asks for status, answer once with the current observed state and then return to quiet monitoring.
 
 ## Workflow
 

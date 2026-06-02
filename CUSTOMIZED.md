@@ -371,7 +371,7 @@ Future merge notes:
 
 ## Quiet Long-Running Command Monitoring
 
-The fork instructs agents to avoid routine 30-second "still running" messages during multi-minute `scan`, `scan-auth`, and `pipeline` runs.
+The fork instructs agents to avoid routine 30-second "still running" messages during multi-minute `scan`, `scan-auth`, `pipeline`, and `batch` runs.
 
 Files:
 
@@ -380,11 +380,13 @@ Files:
 - `modes/scan.md`
 - `modes/scan-auth.md`
 - `modes/pipeline.md`
+- `modes/batch.md`
 
 What this customizes:
 
 - Keeps scanner and pipeline monitoring quiet after command start.
 - Allows internal liveness polling, but limits normal user-visible status updates to at most once every 10 minutes.
+- Requires Codex tool polling to stay silent and use the longest supported wait instead of narrating each `write_stdin` poll.
 - Still requires immediate reporting for completion, failure, required login/CAPTCHA/user action, suspected hangs, or warnings that change what the user should do.
 - Preserves one-off status answers when the user explicitly asks, then returns to quiet monitoring.
 
