@@ -238,6 +238,16 @@ try {
     fail(`LinkedIn date_posted leaked into keywords: ${weeklySearch.url}`);
   }
 
+  const monthlySearch = buildLinkedInSearches({
+    keywords: ['Backend Engineer'],
+    date_posted: 'Month',
+  })[0];
+  if (new URL(monthlySearch.url).searchParams.get('f_TPR') === 'r2592000') {
+    pass('LinkedIn date_posted Month maps to native f_TPR filter');
+  } else {
+    fail(`LinkedIn Month date_posted produced wrong f_TPR: ${monthlySearch.url}`);
+  }
+
   const dailySearch = buildLinkedInSearches({
     keywords: ['Backend Engineer'],
     date_posted: 24,

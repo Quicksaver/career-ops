@@ -88,13 +88,19 @@ function warn(msg) { console.warn(`[linkedin] ⚠ ${msg}`); }
 
 const LINKEDIN_DATE_POSTED_FILTERS = new Map([
   ['24', 'r86400'],
-  ['Week', 'r604800'],
-  ['Month', 'r2592000'],
+  ['day', 'r86400'],
+  ['past 24 hours', 'r86400'],
+  ['week', 'r604800'],
+  ['month', 'r2592000'],
+  ['3 months', 'r7776000'],
+  ['90', 'r7776000'],
+  ['90 days', 'r7776000'],
+  ['quarter', 'r7776000'],
 ]);
 
 function getLinkedInDatePostedParam(datePosted) {
   if (datePosted === undefined || datePosted === null) return '';
-  return LINKEDIN_DATE_POSTED_FILTERS.get(String(datePosted).trim()) || '';
+  return LINKEDIN_DATE_POSTED_FILTERS.get(String(datePosted).trim().toLowerCase()) || '';
 }
 
 export function buildLinkedInSearches(config) {
