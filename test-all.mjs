@@ -162,7 +162,7 @@ console.log('\n4. Authenticated scan session detection');
 try {
   const linkedInModule = await import(pathToFileURL(join(ROOT, 'scan-auth/linkedin.mjs')).href);
   const LinkedInScanner = linkedInModule.default;
-  const { randomDelay } = linkedInModule;
+  const { buildLinkedInSearches, randomDelay } = linkedInModule;
   const scanner = new LinkedInScanner();
 
   const makePage = ({ url = 'https://www.linkedin.com/feed/', matches = {}, cookies = [] }) => ({
@@ -220,6 +220,43 @@ try {
   } else {
     fail(`LinkedIn ranged delay config returned out-of-range value: ${rangedDelay}`);
   }
+
+  const weeklySearch = buildLinkedInSearches({
+    keywords: ['Backend Engineer'],
+    date_posted: 'Week',
+    experience_level: ['Senior'],
+  })[0];
+  const weeklyUrl = new URL(weeklySearch.url);
+  if (weeklyUrl.searchParams.get('f_TPR') === 'r604800') {
+    pass('LinkedIn date_posted Week maps to native f_TPR filter');
+  } else {
+    fail(`LinkedIn Week date_posted produced wrong f_TPR: ${weeklySearch.url}`);
+  }
+  if (weeklyUrl.searchParams.get('keywords') === 'Senior Backend Engineer') {
+    pass('LinkedIn date_posted does not mutate the keyword query');
+  } else {
+    fail(`LinkedIn date_posted leaked into keywords: ${weeklySearch.url}`);
+  }
+
+  const dailySearch = buildLinkedInSearches({
+    keywords: ['Backend Engineer'],
+    date_posted: 24,
+  })[0];
+  if (new URL(dailySearch.url).searchParams.get('f_TPR') === 'r86400') {
+    pass('LinkedIn numeric date_posted 24 maps to past-day f_TPR filter');
+  } else {
+    fail(`LinkedIn numeric 24 date_posted produced wrong f_TPR: ${dailySearch.url}`);
+  }
+
+  const unfilteredSearch = buildLinkedInSearches({
+    keywords: ['Backend Engineer'],
+  })[0];
+  if (!new URL(unfilteredSearch.url).searchParams.has('f_TPR')) {
+    pass('LinkedIn search omits f_TPR when date_posted is not configured');
+  } else {
+    fail(`LinkedIn search unexpectedly added f_TPR without date_posted: ${unfilteredSearch.url}`);
+  }
+
 } catch (e) {
   fail(`Authenticated scan session detection tests crashed: ${e.message}`);
 }

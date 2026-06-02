@@ -86,6 +86,30 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function log(msg) { console.log(`[linkedin] ${msg}`); }
 function warn(msg) { console.warn(`[linkedin] ⚠ ${msg}`); }
 
+const LINKEDIN_DATE_POSTED_FILTERS = new Map([
+  ['24', 'r86400'],
+  ['Week', 'r604800'],
+  ['Month', 'r2592000'],
+]);
+
+function getLinkedInDatePostedParam(datePosted) {
+  if (datePosted === undefined || datePosted === null) return '';
+  return LINKEDIN_DATE_POSTED_FILTERS.get(String(datePosted).trim()) || '';
+}
+
+export function buildLinkedInSearches(config) {
+  const datePostedParam = getLinkedInDatePostedParam(config.date_posted);
+  const levels = config.experience_level || [];
+  const levelPrefix = levels.length ? levels.join(' or ') : '';
+
+  return config.keywords.map(kw => {
+    const query = levelPrefix ? `${levelPrefix} ${kw}` : kw;
+    const params = new URLSearchParams({ keywords: query });
+    if (datePostedParam) params.set('f_TPR', datePostedParam);
+    return { name: kw, url: `https://www.linkedin.com/jobs/search-results/?${params}` };
+  });
+}
+
 export default class LinkedInScanner {
   name = 'LinkedIn';
   portalId = 'linkedin';
@@ -392,17 +416,7 @@ export default class LinkedInScanner {
   // -------------------------------------------------------------------------
 
   #buildSearches(config) {
-    const datePostedMap = { '24': 'past 24 hours', 'Week': 'past week', 'Month': 'past month' };
-    const dateSuffix = datePostedMap[config.date_posted] || '';
-    const levels = config.experience_level || [];
-    const levelPrefix = levels.length ? levels.join(' or ') : '';
-
-    return config.keywords.map(kw => {
-      let query = levelPrefix ? `${levelPrefix} ${kw}` : kw;
-      if (dateSuffix) query += ` posted in the ${dateSuffix}`;
-      const params = new URLSearchParams({ keywords: query });
-      return { name: kw, url: `https://www.linkedin.com/jobs/search-results/?${params}` };
-    });
+    return buildLinkedInSearches(config);
   }
 
   // -------------------------------------------------------------------------
