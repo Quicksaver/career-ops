@@ -1,7 +1,9 @@
 package screens
 
 import (
+	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -29,14 +31,21 @@ type ViewerModel struct {
 
 // NewViewerModel creates a new file viewer for the given path.
 func NewViewerModel(t theme.Theme, path, title string, width, height int) ViewerModel {
+	return NewViewerModelWithFileRoot(t, path, title, "", width, height)
+}
+
+// NewViewerModelWithFileRoot creates a viewer and rewrites local file references
+// against the resolved user folder before rendering.
+func NewViewerModelWithFileRoot(t theme.Theme, path, title, fileRoot string, width, height int) ViewerModel {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		content = []byte("Error reading file: " + err.Error())
 	}
+	renderContent := rewriteLocalPDFURLs(string(content), fileRoot)
 
 	var lines []string
-	if len(content) > 0 {
-		lines = strings.Split(string(content), "\n")
+	if renderContent != "" {
+		lines = strings.Split(renderContent, "\n")
 	}
 
 	m := ViewerModel{
@@ -422,7 +431,34 @@ var (
 	reBareURL    = regexp.MustCompile(`https?://\S*[^\s\)\]\.,;:!?]`)
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
 	reListNumber = regexp.MustCompile(`^(\s*\d+\.\s+)(.*)$`)
+	rePDFHeader  = regexp.MustCompile(`(?m)^(\*\*PDF:\*\*\s*)` + "`?" + `((?:\./)?output/[^\s` + "`" + `]+\.pdf)` + "`?")
 )
+
+func fileURLForPath(path string) string {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+	pathSlash := filepath.ToSlash(absPath)
+	if !strings.HasPrefix(pathSlash, "/") {
+		pathSlash = "/" + pathSlash
+	}
+	return (&url.URL{Scheme: "file", Path: pathSlash}).String()
+}
+
+func rewriteLocalPDFURLs(content, userRoot string) string {
+	if userRoot == "" {
+		return content
+	}
+	return rePDFHeader.ReplaceAllStringFunc(content, func(match string) string {
+		parts := rePDFHeader.FindStringSubmatch(match)
+		if len(parts) != 3 {
+			return match
+		}
+		relPath := strings.TrimPrefix(parts[2], "./")
+		return parts[1] + fileURLForPath(filepath.Join(userRoot, relPath))
+	})
+}
 
 func isHeadingLine(line string) bool {
 	return strings.HasPrefix(line, "# ") ||

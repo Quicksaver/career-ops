@@ -1,6 +1,8 @@
 package screens
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,6 +28,29 @@ func TestViewerRebuildRenderClampsScrollOffset(t *testing.T) {
 	}
 	if m.scrollOffset > maxScroll {
 		t.Fatalf("expected scrollOffset <= %d after rebuild, got %d", maxScroll, m.scrollOffset)
+	}
+}
+
+func TestViewerRewritesRelativePDFHeaderToUserFileURL(t *testing.T) {
+	tempDir := t.TempDir()
+	userRoot := filepath.Join(tempDir, "moved-user")
+	reportsDir := filepath.Join(userRoot, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("mkdir reports dir: %v", err)
+	}
+	reportPath := filepath.Join(reportsDir, "001-example.md")
+	if err := os.WriteFile(reportPath, []byte("**PDF:** output/001-example.pdf\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	m := NewViewerModelWithFileRoot(theme.NewTheme("catppuccin-mocha"), reportPath, "Report", userRoot, 120, 20)
+	plain := strings.Join(m.lines, "\n")
+	want := fileURLForPath(filepath.Join(userRoot, "output", "001-example.pdf"))
+	if !strings.Contains(plain, want) {
+		t.Fatalf("expected rendered report to contain %q, got %q", want, plain)
+	}
+	if strings.Contains(plain, "**PDF:** output/001-example.pdf") {
+		t.Fatalf("expected relative PDF path to be rewritten, got %q", plain)
 	}
 }
 

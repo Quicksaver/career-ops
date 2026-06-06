@@ -3,11 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -84,9 +86,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case screens.PipelineOpenReportMsg:
-		m.viewer = screens.NewViewerModel(
+		m.viewer = screens.NewViewerModelWithFileRoot(
 			m.theme,
-			msg.Path, msg.Title,
+			msg.Path, msg.Title, m.careerOpsPath,
 			m.pipeline.Width(), m.pipeline.Height(),
 		)
 		m.state = viewReport
@@ -110,7 +112,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case screens.PipelineOpenURLMsg:
-		url := msg.URL
+		url := dashboardOpenTarget(m.careerOpsPath, msg.URL)
 		return m, func() tea.Msg {
 			var cmd *exec.Cmd
 			switch runtime.GOOS {
@@ -220,6 +222,37 @@ func inferUserPath(userID, usersDirFlag string) string {
 		}
 	}
 	return ""
+}
+
+func dashboardFileURL(path string) string {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+	pathSlash := filepath.ToSlash(absPath)
+	if !strings.HasPrefix(pathSlash, "/") {
+		pathSlash = "/" + pathSlash
+	}
+	return (&url.URL{Scheme: "file", Path: pathSlash}).String()
+}
+
+func dashboardOpenTarget(userRoot, target string) string {
+	trimmed := strings.TrimSpace(target)
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "file://") ||
+		strings.HasPrefix(lower, "mailto:") {
+		return trimmed
+	}
+	if filepath.IsAbs(trimmed) {
+		return dashboardFileURL(trimmed)
+	}
+	relPath := strings.TrimPrefix(filepath.ToSlash(trimmed), "./")
+	if strings.HasPrefix(relPath, "output/") && strings.HasSuffix(strings.ToLower(relPath), ".pdf") && userRoot != "" {
+		return dashboardFileURL(filepath.Join(userRoot, filepath.FromSlash(relPath)))
+	}
+	return target
 }
 
 func resolveCareerOpsPath(pathFlag, usersDirFlag, userID string) (string, string, error) {

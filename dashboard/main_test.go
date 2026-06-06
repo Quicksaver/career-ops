@@ -36,6 +36,24 @@ func TestResolveCareerOpsPathAcceptsUserFolderPath(t *testing.T) {
 	}
 }
 
+func TestDashboardOpenTargetResolvesRelativeOutputPDFUnderUserRoot(t *testing.T) {
+	tempDir := t.TempDir()
+	userRoot := filepath.Join(tempDir, "users", "alice")
+
+	got := dashboardOpenTarget(userRoot, "output/001-example.pdf")
+	want := dashboardFileURL(filepath.Join(userRoot, "output", "001-example.pdf"))
+	if got != want {
+		t.Fatalf("open target = %q, want %q", got, want)
+	}
+}
+
+func TestDashboardOpenTargetLeavesHTTPURLUnchanged(t *testing.T) {
+	got := dashboardOpenTarget("/tmp/user", "https://example.com/jobs/1")
+	if got != "https://example.com/jobs/1" {
+		t.Fatalf("open target = %q, want unchanged HTTP URL", got)
+	}
+}
+
 func TestResolveCareerOpsPathUsesProjectPathAndUser(t *testing.T) {
 	t.Setenv("CAREER_OPS_USERS_DIR", "")
 	projectRoot := t.TempDir()
