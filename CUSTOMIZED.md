@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `831ef7ff3722fe510ab2b5168678bb4ba89bc03e`
-- Fork ref: `main` at `6f2e9a9e71a0beba4de141a015bbc61a34a592af`
-- Relationship when written: upstream-only commits `0`, fork-only commits `47`
-- Diff size: `46 files changed, 5186 insertions(+), 325 deletions(-)`
+- Upstream ref: `upstream/main` at `238a12d603c0321bc8d34c795cc9d6123edc7294`
+- Fork ref: current `main` after the upstream merge and this inventory refresh
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `67`
+- Diff-size baseline after merge, before this inventory-only refresh: `100 files changed, 9044 insertions(+), 1384 deletions(-)`
 
 ## Merge Policy
 
@@ -76,6 +76,7 @@ Future merge notes:
 - If upstream introduces its own profile/user abstraction, compare it against this flow before replacing it. Keep the conversation-context behavior unless upstream provides an equivalent.
 - When adapting upstream script changes, route every read/write of user-layer data through `lib/user-context.mjs` or equivalent active-user resolution.
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
+- When upstream makes script helpers import-safe for tests, keep that behavior without resolving a user at module import time; resolve the active user only when the script runtime path needs user-layer files.
 
 ## Batch Runner Multi-CLI Processing
 
@@ -97,6 +98,7 @@ What this customizes:
 - Records Codex contract failures explicitly when the final JSON, report, or tracker TSV is missing, instead of leaving the offer in `processing`.
 - Recovers stale `processing` rows at the start of a new non-dry-run batch by marking them failed with `stale-processing-state`, so interrupted workers do not block or hide the next run.
 - Uses the runner-reserved `REPORT_NUM` as the TSV first column, report link number, and artifact number so parallel workers do not race while calculating tracker numbers from `applications.md`.
+- Adapts upstream tracker report-link normalization to the per-user layout: workers still write user-root-relative `[REPORT_NUM](reports/...)` links, and `merge-tracker.mjs --user {USER}` rewrites them relative to `users/{USER}/data/applications.md` before merging.
 - Adds `--limit N` so a batch run can process only the next N pending offers, useful for smoke tests, quota-aware batches, and resuming large queues in smaller chunks.
 - Copies `local:jds/...` input rows from `users/{USER}/jds/...` into the temporary JD file passed to the worker. Missing local JD files intentionally become an empty temporary file so the worker can fail or recover using the URL/context path consistently.
 - Logs the selected CLI and limit at run start so batch logs show which worker backend handled the run.
@@ -108,6 +110,7 @@ Future merge notes:
 - Preserve the schema-checked final JSON contract for Codex workers; do not regress to parsing the free-form transcript as the main completion signal.
 - Preserve stale-state recovery and explicit missing-artifact failure reasons. They are needed because a headless worker can write partial artifacts or transcript JSON without producing the required final-message JSON.
 - Preserve runner-reserved report numbering for tracker TSVs if upstream changes batch merge behavior. Worker-side `applications.md` max calculations are unsafe under parallelism.
+- Preserve upstream report-link normalization, but keep its filesystem roots user-scoped. Do not reintroduce root-level `data/applications.md`, root `reports/`, or `CAREER_OPS_TRACKER` as the normal production path.
 - Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 
@@ -144,6 +147,7 @@ Files:
 What this customizes:
 
 - Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, Working Nomads, NoDesk, RustJobs.dev, and related English Jobs boards.
+- Upstream now also supplies first-party Workable, SmartRecruiters, and Recruitee provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
 - Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
 - Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
 - Extends the example portal config with these discovery sources and custom notes/parameters.
@@ -152,7 +156,8 @@ What this customizes:
 Future merge notes:
 
 - If upstream adds one of these providers, compare behavior before keeping both. Prefer upstream modules when they produce equivalent fields and filtering.
-- If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage.
+- If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage. Upstream's Ashby-specific timeout/backoff is not yet a full replacement for the custom helper because the fork uses the helper across several custom structured providers.
+- Keep upstream Workable, SmartRecruiters, and Recruitee tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
 
 ## Scan Company Block Filter
@@ -214,16 +219,17 @@ File:
 What this customizes:
 
 - Adds a PDF gate before the batch worker creates CV HTML or calls `generate-pdf.mjs`.
-- Skips HTML/PDF generation when `score < 3.0`.
+- Uses upstream's shared `auto_pdf_score_threshold` config from `users/{USER}/config/profile.yml`, defaulting to `3.0`, so interactive pipeline and batch processing share the same score threshold.
 - Skips HTML/PDF generation when `final_decision` is `Skip`, even if the numeric score is higher.
 - Skips HTML/PDF generation when `_profile.md` applies an explicit hard stop, such as a blocked company/domain or consultancy/staff-augmentation model.
-- Requires the report header to say `**PDF:** Not generated - score below 3.0 or final decision is Skip` when the gate blocks PDF generation.
+- Requires the report header to say `**PDF:** not generated - run /career-ops pdf {company-slug} to create on demand` when the gate blocks PDF generation.
 - Requires the tracker TSV PDF column to use `❌` and the worker JSON summary to use `"pdf": null` when no PDF is generated.
 
 Future merge notes:
 
-- Preserve this gate unless upstream adds an equivalent policy to avoid wasting time and artifacts on offers the candidate should not apply to.
-- Keep the gate aligned with `modes/pipeline.md`, which says the full auto-pipeline only generates PDFs for offers scoring at least `3.0`.
+- The configurable score threshold is now upstream behavior and should be preserved. The remaining fork-specific gate is the extra block for `Skip` decisions and `_profile.md` hard stops.
+- Preserve the Skip/hard-stop gate unless upstream adds an equivalent policy to avoid wasting time and artifacts on offers the candidate should not apply to.
+- Keep the gate aligned with `modes/pipeline.md`, which now says the full auto-pipeline generates PDFs only when the offer score meets the resolved `auto_pdf_score_threshold`.
 - If upstream changes the batch worker prompt format, reapply the rule at the first point after score/final decision are known and before any HTML/PDF artifact is written.
 
 ## CV Theme Overrides
@@ -244,6 +250,7 @@ What this customizes:
 - Reads optional `cv.theme` keys from `config/profile.yml`.
 - Injects safe CSS variable overrides at PDF render time.
 - Documents supported keys such as `primary`, `accent`, `background`, `text`, `muted`, `rule`, and related color tokens.
+- Preserves upstream ATS text normalization in `generate-pdf.mjs`; the theme override should layer on the normalized HTML rather than bypassing it.
 
 Future merge notes:
 
@@ -483,7 +490,8 @@ On every upstream update, explicitly check whether upstream now includes:
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
 - Bounded batch runs through `--limit`.
 - `local:jds/...` batch input handling.
-- Conditional batch PDF generation for scores below `3.0`, `Skip` decisions, and profile hard stops.
+- Conditional batch PDF generation for `Skip` decisions and profile hard stops. Score-threshold configuration is now upstream behavior through `auto_pdf_score_threshold`.
+- Per-user adaptation for upstream tracker report-link normalization and `merge-tracker.mjs --migrate`.
 - Generic JD/PDF extraction commands.
 - Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.
 
