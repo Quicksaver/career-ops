@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, exists
 import { join, basename, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
+import { normalizeReportLink as normalizeLink } from './tracker-links.mjs';
 import {
   ensureUserDirs,
   getUserContext,
@@ -36,8 +37,14 @@ try {
 const APPS_FILE = userPath(userContext, 'data/applications.md');
 const ADDITIONS_DIR = userPath(userContext, 'batch/tracker-additions');
 const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
+const TRACKER_DIR = dirname(APPS_FILE);
+const REPORTS_ROOT = userContext.userRoot;
 const DRY_RUN = userContext.args.includes('--dry-run');
 const VERIFY = userContext.args.includes('--verify');
+const MIGRATE = userContext.args.includes('--migrate');
+
+// Normalize a report link relative to the active user's tracker file (#760).
+const normalizeReportLink = (reportField) => normalizeLink(reportField, TRACKER_DIR, REPORTS_ROOT);
 
 // Ensure required directories exist (fresh setup)
 ensureUserDirs(userContext, ['data', 'batch/tracker-additions']);
@@ -272,6 +279,25 @@ if (!existsSync(APPS_FILE)) {
   process.exit(0);
 }
 const appContent = readFileSync(APPS_FILE, 'utf-8');
+
+// One-time migration: rewrite existing report links so they resolve relative
+// to the tracker file's directory (see #760). Run with: node merge-tracker.mjs --migrate
+if (MIGRATE) {
+  const migrated = appContent
+    .split('\n')
+    .map(line => (line.startsWith('|') ? normalizeReportLink(line) : line));
+  const before = appContent.split('\n');
+  const changed = migrated.filter((l, i) => l !== before[i]).length;
+
+  if (DRY_RUN) {
+    console.log(`🔎 Migration (dry-run): ${changed} row(s) would be rewritten in ${basename(APPS_FILE)}`);
+  } else {
+    writeFileSync(APPS_FILE, migrated.join('\n'));
+    console.log(`✅ Migration: rewrote ${changed} report link(s) in ${basename(APPS_FILE)} relative to ${basename(TRACKER_DIR)}/`);
+  }
+  process.exit(0);
+}
+
 const appLines = appContent.split('\n');
 const existingApps = [];
 let maxNum = 0;
@@ -318,6 +344,11 @@ for (const file of tsvFiles) {
   const content = readFileSync(join(ADDITIONS_DIR, file), 'utf-8').trim();
   const addition = parseTsvContent(content, file);
   if (!addition) { skipped++; continue; }
+
+  // Normalize the report link to be relative to the tracker file's directory.
+  // The TSV convention carries a root-relative `reports/...` link; rewrite it
+  // so it resolves correctly when clicked from applications.md (see #760).
+  addition.report = normalizeReportLink(addition.report);
 
   // Check for duplicate by:
   // 1. Exact report number match

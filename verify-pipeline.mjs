@@ -136,13 +136,18 @@ for (const [key, group] of companyRoleMap) {
 if (dupes === 0) ok('No exact duplicates found');
 
 // --- Check 3: Report links ---
+// Markdown links resolve relative to the file that contains them, so report
+// links must resolve against the tracker's own directory (see #760). For the
+// transition we also accept legacy root-relative links: try the tracker dir
+// first, then fall back to the active user root before flagging a link broken.
+const TRACKER_DIR = dirname(APPS_FILE);
 let brokenReports = 0;
 for (const e of entries) {
   const match = e.report.match(/\]\(([^)]+)\)/);
   if (!match) continue;
-  const reportPath = join(userContext.userRoot, match[1]);
-  if (!existsSync(reportPath)) {
-    error(`#${e.num}: Report not found: ${match[1]}`);
+  const link = match[1];
+  if (!existsSync(join(TRACKER_DIR, link)) && !existsSync(join(userContext.userRoot, link))) {
+    error(`#${e.num}: Report not found: ${link}`);
     brokenReports++;
   }
 }

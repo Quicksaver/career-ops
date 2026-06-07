@@ -12,26 +12,34 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
+import { pathToFileURL } from 'url';
 import {
   getUserContext,
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
 
-let userContext;
-try {
-  userContext = getUserContext(process.argv.slice(2));
-} catch (err) {
-  printUserContextErrorAndExit(err);
+let runtimeContext;
+function getRuntimeContext() {
+  if (runtimeContext) return runtimeContext;
+  let userContext;
+  try {
+    userContext = getUserContext(process.argv.slice(2));
+  } catch (err) {
+    printUserContextErrorAndExit(err);
+  }
+  runtimeContext = {
+    userContext,
+    appsFile: userPath(userContext, 'data/applications.md'),
+    followupsFile: userPath(userContext, 'data/follow-ups.md'),
+    args: userContext.args,
+  };
+  return runtimeContext;
 }
 
-const APPS_FILE = userPath(userContext, 'data/applications.md');
-const FOLLOWUPS_FILE = userPath(userContext, 'data/follow-ups.md');
-
-
 // --- CLI args ---
-const args = userContext.args;
+const args = process.argv.slice(2);
 const summaryMode = args.includes('--summary');
 const overdueOnly = args.includes('--overdue-only');
 const appliedDaysIdx = args.indexOf('--applied-days');
@@ -64,7 +72,7 @@ const ALIASES = {
 
 const ACTIONABLE_STATUSES = ['applied', 'responded', 'interview'];
 
-function normalizeStatus(raw) {
+export function normalizeStatus(raw) {
   const clean = raw.replace(/\*\*/g, '').trim().toLowerCase()
     .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
   return ALIASES[clean] || clean;
@@ -75,16 +83,16 @@ function today() {
   return new Date(new Date().toISOString().split('T')[0]);
 }
 
-function parseDate(dateStr) {
+export function parseDate(dateStr) {
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) return null;
   return new Date(dateStr.trim());
 }
 
-function daysBetween(d1, d2) {
+export function daysBetween(d1, d2) {
   return Math.floor((d2 - d1) / (1000 * 60 * 60 * 24));
 }
 
-function addDays(date, days) {
+export function addDays(date, days) {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + days);
   return result.toISOString().split('T')[0];
@@ -92,8 +100,9 @@ function addDays(date, days) {
 
 // --- Parse applications.md ---
 function parseTracker() {
-  if (!existsSync(APPS_FILE)) return [];
-  const content = readFileSync(APPS_FILE, 'utf-8');
+  const { appsFile } = getRuntimeContext();
+  if (!existsSync(appsFile)) return [];
+  const content = readFileSync(appsFile, 'utf-8');
   const entries = [];
   for (const line of content.split('\n')) {
     if (!line.startsWith('|')) continue;
@@ -112,8 +121,9 @@ function parseTracker() {
 
 // --- Parse follow-ups.md ---
 function parseFollowups() {
-  if (!existsSync(FOLLOWUPS_FILE)) return [];
-  const content = readFileSync(FOLLOWUPS_FILE, 'utf-8');
+  const { followupsFile } = getRuntimeContext();
+  if (!existsSync(followupsFile)) return [];
+  const content = readFileSync(followupsFile, 'utf-8');
   const entries = [];
   for (const line of content.split('\n')) {
     if (!line.startsWith('|')) continue;
@@ -156,12 +166,15 @@ function extractContacts(notes) {
 function resolveReportPath(reportField) {
   const match = reportField.match(/\]\(([^)]+)\)/);
   if (!match) return null;
-  const fullPath = join(userContext.userRoot, match[1]);
-  return existsSync(fullPath) ? match[1] : null;
+  const { appsFile, userContext } = getRuntimeContext();
+  const link = match[1];
+  const trackerRelativePath = join(dirname(appsFile), link);
+  const userRootRelativePath = join(userContext.userRoot, link);
+  return existsSync(trackerRelativePath) || existsSync(userRootRelativePath) ? link : null;
 }
 
 // --- Compute urgency ---
-function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, followupCount) {
+export function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, followupCount) {
   if (status === 'applied') {
     if (followupCount >= CADENCE.applied_max_followups) return 'cold';
     if (followupCount === 0 && daysSinceApp >= CADENCE.applied_first) return 'overdue';
@@ -181,7 +194,7 @@ function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, followupCou
 }
 
 // --- Compute next follow-up date ---
-function computeNextFollowupDate(status, appDate, lastFollowupDate, followupCount) {
+export function computeNextFollowupDate(status, appDate, lastFollowupDate, followupCount) {
   if (status === 'applied') {
     if (followupCount >= CADENCE.applied_max_followups) return null; // cold
     if (followupCount === 0) return addDays(parseDate(appDate), CADENCE.applied_first);
@@ -335,13 +348,15 @@ function printSummary(result) {
   console.log('');
 }
 
-// --- Run ---
-const result = analyze();
+// --- Run (CLI only; guarded so the module is safely importable for tests) ---
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const result = analyze();
 
-if (summaryMode) {
-  printSummary(result);
-} else {
-  console.log(JSON.stringify(result, null, 2));
+  if (summaryMode) {
+    printSummary(result);
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
+
+  if (result.error) process.exit(1);
 }
-
-if (result.error) process.exit(1);

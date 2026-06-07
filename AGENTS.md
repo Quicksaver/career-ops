@@ -345,12 +345,14 @@ Write one TSV file per evaluation to `users/{USER}/batch/tracker-additions/{ID}.
 5. `status` -- canonical status (e.g., `Evaluated`)
 6. `score` -- format `X.X/5` (e.g., `4.2/5`)
 7. `pdf` -- `✅` or `❌`
-8. `report` -- markdown link `[REPORT_NUM](reports/...)`
+8. `report` -- markdown link, always written user-root-relative: `[REPORT_NUM](reports/...)`
 9. `notes` -- one-line summary
 
 **Note:** In applications.md, score comes BEFORE status. The merge script handles this column swap automatically.
 
 **Batch numbering rule:** Do not recalculate the tracker number from `applications.md` inside workers. Parallel workers can race and choose the same value. Use the runner-reserved `REPORT_NUM` for the TSV first column, report link, and artifact names.
+
+**Report link normalization:** The TSV always carries a user-root-relative `[num](reports/...)` link. `merge-tracker.mjs` rewrites it so the link is relative to the tracker file's own directory before writing it into the tracker — `../reports/...` when the tracker is at `users/{USER}/data/applications.md`. This keeps links clickable from the tracker because markdown links resolve relative to the file that contains them. Normalization is idempotent. To fix links in an existing tracker, run `node merge-tracker.mjs --user {USER} --migrate` (see #760).
 
 ### Pipeline Integrity
 

@@ -230,7 +230,7 @@ Donde `{company-slug}` es el nombre de empresa en lowercase, sin espacios, con g
 **Score:** {X/5}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
 **URL:** {URL de la oferta original}
-**PDF:** {output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.pdf | Not generated - score below 3.0 or final decision is Skip}
+**PDF:** {output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.pdf if score >= the resolved `auto_pdf_score_threshold` from Paso 4 and final decision is not Skip, else `not generated - run /career-ops pdf {company-slug} to create on demand`}
 **Batch ID:** {{ID}}
 
 ---
@@ -282,15 +282,20 @@ next_action: "{one concrete next step}"
 (15-20 keywords del JD para ATS)
 ```
 
-### Paso 4 — PDF gate y generación
+### Paso 4 — Generar PDF (configurable)
 
-Antes de crear HTML o ejecutar `generate-pdf.mjs`, aplica este gate:
+**Gate:** Read `{{USER_ROOT}}/config/profile.yml` → `auto_pdf_score_threshold`. If the key is absent, default to **`3.0`** (the original gate of Path A). This step ONLY runs when the score from Paso 2 is **>= the resolved threshold**, the final decision is not `Skip`, and `_profile.md` did not apply a hard stop. For everything below it, skip this entire step — the user can generate a tailored PDF on demand later via `/career-ops pdf {company-slug}` using the report from Paso 3 as input.
 
-- Si `score < 3.0`, NO generes HTML ni PDF.
-- Si `final_decision` es `Skip`, NO generes HTML ni PDF aunque el score sea >= 3.0.
-- Si hay un hard stop explícito de `_profile.md` (por ejemplo empresa bloqueada, crypto/Web3, consultancy/staff augmentation), NO generes HTML ni PDF.
-- En esos casos, salta directamente al Paso 5: no crees HTML, no llames a `generate-pdf.mjs`, el report debe usar `**PDF:** Not generated - score below 3.0 or final decision is Skip`, el TSV debe usar `❌`, y el JSON final debe usar `"pdf": null`.
-- Ejecuta los pasos 1-14 de esta sección solo cuando `score >= 3.0`, `final_decision` no es `Skip`, y no hay hard stop.
+**Rationale:** Generating a tailored PDF costs ~30–60s per offer (Playwright launch + HTML render) and produces files that often go unused — most roles score 2.x/3.x and never reach application. The `3.0` default matches Path A's original behavior; raise `auto_pdf_score_threshold` (e.g. `4.0`) to pre-generate fewer PDFs, or set `0` to generate one for every offer. Both Path A (`/career-ops pipeline`) and Path B (this batch worker) read the same config key for consistency.
+
+**If score < threshold, final_decision is `Skip`, or there is a hard stop:**
+- Skip steps 1–14 below.
+- In the report header use: `**PDF:** not generated - run /career-ops pdf {company-slug} to create on demand`.
+- In Paso 5 (tracker line) use `pdf_emoji` = `❌`.
+- In Paso 6 (output JSON) set `"pdf": null`.
+- Done — move to Paso 5.
+
+**If score >= threshold**, `final_decision` is not `Skip`, and there is no hard stop, generate the tailored PDF:
 
 1. Lee `{{USER_ROOT}}/cv.md` + `i18n.ts`
 2. Extrae 15-20 keywords del JD
@@ -312,6 +317,8 @@ node generate-pdf.mjs --user {{USER}} \
   --format={letter|a4}
 ```
 14. Reporta: ruta PDF, nº páginas, % cobertura keywords
+
+On success, in Paso 5 use `pdf_emoji` = `✅` and in Paso 6 set `"pdf"` to the output path.
 
 **Reglas ATS:**
 - Single-column (sin sidebars)
@@ -394,7 +401,7 @@ Formato TSV (una sola línea, sin header, 9 columnas tab-separated):
 | 5 | status | canonical | `Evaluated` | DEBE ser canónico (ver states.yml) |
 | 6 | score | X.XX/5 | `4.55/5` | O `N/A` si no evaluable |
 | 7 | pdf | emoji | `✅` o `❌` | `✅` solo si el PDF gate generó un PDF; si no, `❌` |
-| 8 | report | md link | `[647](reports/647-...)` | Link al report |
+| 8 | report | md link | `[647](reports/647-...)` | Link root-relative; merge-tracker.mjs lo normaliza relativo al tracker (ej. `../reports/...`, #760) |
 | 9 | notes | string | `APPLY HIGH...` | Resumen 1 frase |
 
 **IMPORTANTE:** El orden TSV tiene status ANTES de score (col 5→status, col 6→score). En applications.md el orden es inverso (col 5→score, col 6→status). merge-tracker.mjs maneja la conversión.
