@@ -10,7 +10,7 @@ While `/career-ops pipeline` or its delegated workers are running, do not send r
 
 1. **Read** `users/{USER}/data/pipeline.md` → search for `- [ ]` items in the "Pending" section
 2. **For each pending URL**:
-   a. Calculate the next sequential `REPORT_NUM` (read `users/{USER}/reports/`, take the highest number + 1)
+   a. Claim the next sequential `REPORT_NUM` atomically by running `node reserve-report-num.mjs --user {USER}` (and release the sentinel using `node reserve-report-num.mjs --user {USER} --release <num>` after the report is written)
    b. **Extract JD** using Playwright (browser_navigate + browser_snapshot) → WebFetch → WebSearch
    c. If the URL is not accessible → mark as `- [!]` with a note and continue
    d. **Execute full auto-pipeline**: Evaluation A-F → Report .md → PDF (if score >= `auto_pdf_score_threshold`) → Tracker
@@ -52,9 +52,9 @@ While `/career-ops pipeline` or its delegated workers are running, do not send r
 
 ## Automatic numbering
 
-1. List all files in `users/{USER}/reports/`
-2. Extract the number from the prefix (e.g., `142-medispend...` → 142)
-3. New number = maximum found + 1
+1. Run `node reserve-report-num.mjs --user {USER}` to claim the next sequential number (stdout returns `{###}`).
+2. Write the report file using that number.
+3. Release the sentinel by running `node reserve-report-num.mjs --user {USER} --release {###}` once the report is written.
 
 ## Source synchronization
 

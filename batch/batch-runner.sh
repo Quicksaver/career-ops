@@ -19,6 +19,7 @@ LOGS_DIR=""
 TRACKER_DIR=""
 REPORTS_DIR=""
 LOCK_FILE=""
+PAUSE_FILE=""
 STATE_LOCK_DIR=""
 STATE_LOCK_PID_FILE=""
 STATE_LOCK_TIMEOUT_SECONDS=30
@@ -28,6 +29,7 @@ MAIN_PID="${BASHPID:-$$}"
 PARALLEL=1
 DRY_RUN=false
 RETRY_FAILED=false
+RESUME_PAUSED=false
 START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
@@ -35,6 +37,8 @@ MODEL=""  # empty = let claude -p use the Claude Max default
 CLI="${CAREER_OPS_BATCH_CLI:-claude}"
 LIMIT=0
 WORKER_TIMEOUT_SECONDS="${CAREER_OPS_WORKER_TIMEOUT_SECONDS:-900}"
+RATE_LIMIT_SLEEP=300
+BATCH_PAUSED=false
 
 usage() {
   cat <<'USAGE'
@@ -48,6 +52,7 @@ Options:
   --parallel N         Number of parallel workers (default: 1)
   --dry-run            Show what would be processed, don't execute
   --retry-failed       Only retry offers marked as "failed" in state
+  --resume-paused      Resume offers paused by a Claude session/rate limit
   --start-from N       Start from offer ID N (skip earlier IDs)
   --max-retries N      Max retry attempts per offer (default: 2)
   --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
@@ -56,6 +61,8 @@ Options:
   --limit N            Process at most N pending offers in this run (default: 0 = all)
   --worker-timeout N   Seconds before a worker is killed and artifact recovery
                        is attempted (default: 900, or CAREER_OPS_WORKER_TIMEOUT_SECONDS)
+  --rate-limit-sleep N Seconds to wait before retrying a rate-limited worker
+                       (default: 300)
   --model NAME         Claude model passed to `claude -p --model` (default:
                        unset = Claude Max default). Use a cheaper model for
                        large batches, e.g. `--model claude-sonnet-4-6`.
@@ -91,12 +98,18 @@ while [[ $# -gt 0 ]]; do
     --parallel) PARALLEL="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --retry-failed) RETRY_FAILED=true; shift ;;
+    --resume-paused) RESUME_PAUSED=true; shift ;;
     --start-from) START_FROM="$2"; shift 2 ;;
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
     --cli) CLI="$2"; shift 2 ;;
     --limit) LIMIT="$2"; shift 2 ;;
     --worker-timeout) WORKER_TIMEOUT_SECONDS="$2"; shift 2 ;;
+    --rate-limit-sleep)
+      [[ $# -ge 2 ]] || { echo "ERROR: --rate-limit-sleep requires an argument"; exit 1; }
+      RATE_LIMIT_SLEEP="$2"
+      shift 2
+      ;;
     --model) MODEL="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -129,12 +142,18 @@ configure_user_paths() {
   TRACKER_DIR="$BATCH_DIR/tracker-additions"
   REPORTS_DIR="$USER_ROOT/reports"
   LOCK_FILE="$BATCH_DIR/batch-runner.pid"
+  PAUSE_FILE="$BATCH_DIR/batch-runner.paused"
   STATE_LOCK_DIR="$BATCH_DIR/.batch-state.lock"
   STATE_LOCK_PID_FILE="$STATE_LOCK_DIR/pid"
 
   export CAREER_OPS_USER="$USER_ID"
   export CAREER_OPS_USERS_DIR="$USERS_DIR"
 }
+
+if ! [[ "$RATE_LIMIT_SLEEP" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: --rate-limit-sleep must be a non-negative integer (seconds)."
+  exit 1
+fi
 
 # Lock file to prevent double execution
 acquire_lock() {
@@ -452,6 +471,27 @@ update_state() {
   run_with_state_lock update_state_unlocked "$@"
 }
 
+is_rate_limit_log() {
+  local log_file="$1"
+  grep -Eiq '(rate limit|rate_limit|too many requests|429|quota exceeded|try again later|temporarily unavailable)' "$log_file"
+}
+
+is_session_limit_log() {
+  local log_file="$1"
+  grep -Eiq '(session limit|resets [0-9:]+[ap]m|usage limit|limit[[:space:]]+reached)' "$log_file"
+}
+
+mark_paused_rate_limit() {
+  local id="$1" url="$2" started_at="$3" report_num="$4" retries="$5" log_file="$6"
+  local completed_at
+  completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  local error_msg
+  error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "session/rate limit reached")
+  update_state "$id" "$url" "paused_rate_limit" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries"
+  printf '%s\t%s\t%s\n' "$id" "$report_num" "$error_msg" > "$PAUSE_FILE"
+  BATCH_PAUSED=true
+}
+
 reserve_report_num_unlocked() {
   local id="$1" url="$2" started="$3" retries="$4"
 
@@ -630,11 +670,27 @@ process_offer() {
     -e "s|{{USER_ROOT}}|${esc_user_root}|g" \
     "$PROMPT_FILE" > "$resolved_prompt"
 
+  # Inject user-layer personalization into the temporary worker prompt.
+  # The resolved prompt is gitignored runtime state, so user profile data stays
+  # out of the system layer while batch scoring matches interactive scoring.
+  for context_file in "$USER_ROOT/modes/_profile.md" "$USER_ROOT/config/profile.yml"; do
+    if [[ -f "$context_file" ]]; then
+      {
+        printf '\n\n---\n\n'
+        printf '## Runtime personalization: %s\n\n' "${context_file#$USER_ROOT/}"
+        sed 's/^/    /' "$context_file"
+        printf '\n'
+      } >> "$resolved_prompt"
+    fi
+  done
+
   # Launch worker. Building the command in an array keeps quoting safe
   # regardless of URL/title contents.
   local -a worker_args=()
   if [[ "$CLI" == "claude" ]]; then
-    worker_args=(-p --dangerously-skip-permissions)
+    # --strict-mcp-config (with no --mcp-config) starts workers with no MCP
+    # servers, avoiding parallel workers deadlocking over shared MCP resources.
+    worker_args=(-p --dangerously-skip-permissions --strict-mcp-config)
     if [[ -n "$MODEL" ]]; then
       worker_args+=(--model "$MODEL")
     fi
@@ -661,35 +717,70 @@ process_offer() {
 
   local exit_code=0
   local timed_out=false
+  local terminal_failure_recorded=false
   local stdin_file="/dev/null"
   if [[ -n "$combined_prompt_file" ]]; then
     stdin_file="$combined_prompt_file"
   fi
-  "$CLI" "${worker_args[@]}" < "$stdin_file" > "$log_file" 2>&1 &
-  local worker_pid=$!
-  local elapsed=0
 
-  while kill -0 "$worker_pid" 2>/dev/null; do
-    if (( elapsed >= WORKER_TIMEOUT_SECONDS )); then
-      timed_out=true
-      echo "WARN: Worker #$id timed out after ${WORKER_TIMEOUT_SECONDS}s; attempting artifact recovery." >> "$log_file"
-      kill "$worker_pid" 2>/dev/null || true
-      sleep 2
-      if kill -0 "$worker_pid" 2>/dev/null; then
-        kill -9 "$worker_pid" 2>/dev/null || true
+  while true; do
+    exit_code=0
+    timed_out=false
+    "$CLI" "${worker_args[@]}" < "$stdin_file" > "$log_file" 2>&1 &
+    local worker_pid=$!
+    local elapsed=0
+
+    while kill -0 "$worker_pid" 2>/dev/null; do
+      if (( elapsed >= WORKER_TIMEOUT_SECONDS )); then
+        timed_out=true
+        echo "WARN: Worker #$id timed out after ${WORKER_TIMEOUT_SECONDS}s; attempting artifact recovery." >> "$log_file"
+        kill "$worker_pid" 2>/dev/null || true
+        sleep 2
+        if kill -0 "$worker_pid" 2>/dev/null; then
+          kill -9 "$worker_pid" 2>/dev/null || true
+        fi
+        break
       fi
+      sleep 1
+      elapsed=$((elapsed + 1))
+    done
+
+    if [[ "$timed_out" == "true" ]]; then
+      wait "$worker_pid" 2>/dev/null || true
+      exit_code=124
+    else
+      wait "$worker_pid" || exit_code=$?
+    fi
+
+    if [[ $exit_code -eq 0 || "$CLI" != "claude" ]]; then
       break
     fi
-    sleep 1
-    elapsed=$((elapsed + 1))
-  done
 
-  if [[ "$timed_out" == "true" ]]; then
-    wait "$worker_pid" 2>/dev/null || true
-    exit_code=124
-  else
-    wait "$worker_pid" || exit_code=$?
-  fi
+    if is_session_limit_log "$log_file"; then
+      mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$log_file"
+      echo "    ⏸️  Session/rate limit reached; pausing batch without consuming retry budget."
+      terminal_failure_recorded=true
+      break
+    fi
+
+    if is_rate_limit_log "$log_file" && (( retries < MAX_RETRIES )); then
+      if (( RATE_LIMIT_SLEEP <= 0 )); then
+        mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$log_file"
+        echo "    ⏸️  Rate limited and --rate-limit-sleep is 0; pausing batch without consuming retry budget."
+        terminal_failure_recorded=true
+        break
+      fi
+      retries=$((retries + 1))
+      local retry_completed_at
+      retry_completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      update_state "$id" "$url" "rate_limited" "$started_at" "$retry_completed_at" "$report_num" "-" "rate-limit; retrying after ${RATE_LIMIT_SLEEP}s" "$retries"
+      echo "    ⏳ Rate limited (attempt $retries/$MAX_RETRIES). Waiting ${RATE_LIMIT_SLEEP}s before retry..."
+      sleep "$RATE_LIMIT_SLEEP"
+      continue
+    fi
+
+    break
+  done
 
   # Cleanup resolved prompt
   rm -f "$resolved_prompt" "$combined_prompt_file"
@@ -733,8 +824,10 @@ process_offer() {
     else
       echo "    ✅ Completed (score: $score, report: $report_num)"
     fi
-  else
-    retries=$((retries + 1))
+  elif [[ "$terminal_failure_recorded" == "false" ]]; then
+    if (( retries < MAX_RETRIES )); then
+      retries=$((retries + 1))
+    fi
     local error_msg
     error_msg=$(build_contract_error "$exit_code" "$timed_out" "$final_file" "$final_json_valid" "$final_json_status" "$report_file" "$tracker_file")
     local worker_error
@@ -773,7 +866,7 @@ print_summary() {
     return
   fi
 
-  local total=0 completed=0 failed=0 pending=0
+  local total=0 completed=0 skipped=0 failed=0 pending=0
   local score_sum=0 score_count=0
 
   while IFS=$'\t' read -r sid _ sstatus _ _ _ sscore _ _; do
@@ -786,12 +879,13 @@ print_summary() {
           score_count=$((score_count + 1))
         fi
         ;;
+      skipped) skipped=$((skipped + 1)) ;;
       failed) failed=$((failed + 1)) ;;
       *) pending=$((pending + 1)) ;;
     esac
   done < "$STATE_FILE"
 
-  echo "Total: $total | Completed: $completed | Failed: $failed | Pending: $pending"
+  echo "Total: $total | Completed: $completed | Skipped: $skipped | Failed: $failed | Pending: $pending"
 
   if (( score_count > 0 )); then
     local avg
@@ -808,6 +902,7 @@ main() {
 
   if [[ "$DRY_RUN" == "false" ]]; then
     acquire_lock
+    rm -f "$PAUSE_FILE"
   fi
 
   init_state
@@ -853,7 +948,11 @@ main() {
     local status
     status=$(get_status "$id")
 
-    if [[ "$RETRY_FAILED" == "true" ]]; then
+    if [[ "$RESUME_PAUSED" == "true" ]]; then
+      if [[ "$status" != "paused_rate_limit" ]]; then
+        continue
+      fi
+    elif [[ "$RETRY_FAILED" == "true" ]]; then
       # Only process failed offers
       if [[ "$status" != "failed" ]]; then
         continue
@@ -866,8 +965,12 @@ main() {
         continue
       fi
     else
-      # Skip completed offers
-      if [[ "$status" == "completed" ]]; then
+      # Skip terminal offers
+      if [[ "$status" == "completed" || "$status" == "skipped" ]]; then
+        continue
+      fi
+      # Paused rate-limit offers resume explicitly with --resume-paused.
+      if [[ "$status" == "paused_rate_limit" ]]; then
         continue
       fi
       # Skip failed offers that hit retry limit (unless --retry-failed)
@@ -919,6 +1022,10 @@ main() {
     # Sequential processing
     for i in "${!pending_ids[@]}"; do
       process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}"
+      if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
+        echo "=== Batch paused: session/rate limit reached. Resume later with --resume-paused. ==="
+        break
+      fi
     done
   else
     # Parallel processing with job control
@@ -927,6 +1034,11 @@ main() {
     local -a pid_ids=()
 
     for i in "${!pending_ids[@]}"; do
+      if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
+        echo "=== Batch paused: session/rate limit reached. Waiting for running workers, not scheduling new offers. ==="
+        break
+      fi
+
       # Wait if we're at parallel limit
       while (( running >= PARALLEL )); do
         # Wait for any child to finish
@@ -941,8 +1053,16 @@ main() {
         # Compact arrays
         pids=("${pids[@]}")
         pid_ids=("${pid_ids[@]}")
+        if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
+          echo "=== Batch paused: session/rate limit reached. Waiting for running workers, not scheduling new offers. ==="
+          break
+        fi
         sleep 1
       done
+
+      if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
+        break
+      fi
 
       # Launch worker in background
       process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" &

@@ -19,6 +19,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
+import yaml from 'js-yaml';
 
 let runtimeContext;
 function getRuntimeContext() {
@@ -33,6 +34,7 @@ function getRuntimeContext() {
     userContext,
     appsFile: userPath(userContext, 'data/applications.md'),
     followupsFile: userPath(userContext, 'data/follow-ups.md'),
+    profileFile: userPath(userContext, 'config/profile.yml'),
     args: userContext.args,
   };
   return runtimeContext;
@@ -43,17 +45,66 @@ const args = process.argv.slice(2);
 const summaryMode = args.includes('--summary');
 const overdueOnly = args.includes('--overdue-only');
 const appliedDaysIdx = args.indexOf('--applied-days');
-const APPLIED_FIRST = appliedDaysIdx !== -1 ? parseInt(args[appliedDaysIdx + 1]) || 7 : 7;
+const appliedDaysOverride = appliedDaysIdx !== -1 ? parseInt(args[appliedDaysIdx + 1], 10) : null;
 
 // --- Cadence config ---
-const CADENCE = {
-  applied_first: APPLIED_FIRST,
+export const DEFAULT_CADENCE = {
+  applied_first: 7,
   applied_subsequent: 7,
   applied_max_followups: 2,
   responded_initial: 1,
   responded_subsequent: 3,
   interview_thankyou: 1,
 };
+
+const PROFILE_CADENCE_KEYS = {
+  applied_first_days: 'applied_first',
+  applied_subsequent_days: 'applied_subsequent',
+  applied_max_followups: 'applied_max_followups',
+  responded_initial_days: 'responded_initial',
+  responded_subsequent_days: 'responded_subsequent',
+  interview_thankyou_days: 'interview_thankyou',
+};
+
+function positiveInteger(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export function loadProfileCadence(profilePath = process.env.CAREER_OPS_PROFILE) {
+  if (!profilePath || !existsSync(profilePath)) return {};
+  let raw;
+  try {
+    raw = yaml.load(readFileSync(profilePath, 'utf-8')) || {};
+  } catch {
+    return {};
+  }
+  const source = raw.followup_cadence || {};
+  const cadence = {};
+  for (const [profileKey, cadenceKey] of Object.entries(PROFILE_CADENCE_KEYS)) {
+    const parsed = positiveInteger(source[profileKey]);
+    if (parsed !== null) cadence[cadenceKey] = parsed;
+  }
+  return cadence;
+}
+
+export function resolveCadenceConfig({ profilePath = process.env.CAREER_OPS_PROFILE, appliedDays = appliedDaysOverride } = {}) {
+  const cadence = { ...DEFAULT_CADENCE, ...loadProfileCadence(profilePath) };
+  const cliApplied = positiveInteger(appliedDays);
+  if (cliApplied !== null) cadence.applied_first = cliApplied;
+  return cadence;
+}
+
+let cadenceConfig;
+function getCadenceConfig() {
+  if (cadenceConfig) return cadenceConfig;
+  let profilePath = process.env.CAREER_OPS_PROFILE;
+  if (!profilePath && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    profilePath = getRuntimeContext().profileFile;
+  }
+  cadenceConfig = resolveCadenceConfig({ profilePath });
+  return cadenceConfig;
+}
 
 // --- Status normalization (mirrors verify-pipeline.mjs) ---
 const ALIASES = {
@@ -175,6 +226,7 @@ function resolveReportPath(reportField) {
 
 // --- Compute urgency ---
 export function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, followupCount) {
+  const CADENCE = getCadenceConfig();
   if (status === 'applied') {
     if (followupCount >= CADENCE.applied_max_followups) return 'cold';
     if (followupCount === 0 && daysSinceApp >= CADENCE.applied_first) return 'overdue';
@@ -195,6 +247,7 @@ export function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, foll
 
 // --- Compute next follow-up date ---
 export function computeNextFollowupDate(status, appDate, lastFollowupDate, followupCount) {
+  const CADENCE = getCadenceConfig();
   if (status === 'applied') {
     if (followupCount >= CADENCE.applied_max_followups) return null; // cold
     if (followupCount === 0) return addDays(parseDate(appDate), CADENCE.applied_first);
@@ -297,7 +350,7 @@ function analyze() {
       waiting: entries.filter(e => e.urgency === 'waiting').length,
     },
     entries: filtered,
-    cadenceConfig: CADENCE,
+    cadenceConfig: getCadenceConfig(),
   };
 }
 

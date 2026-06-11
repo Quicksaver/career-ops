@@ -110,17 +110,18 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 
 ### First Run — Onboarding (IMPORTANT)
 
-**Before doing ANYTHING else, check if the system is set up.** Run these checks silently every time a session starts:
+**Before doing ANYTHING else, check if the system is set up.** On the first message of each session, run the cold-start check — one deterministic source of truth (this doc and `doctor.mjs` share the same prerequisite list, so they can never drift):
 
-0. Has an active user been explicitly specified in this conversation? If not, stop and ask which user to use.
-1. Does `users/{USER}/cv.md` exist?
-2. Does `users/{USER}/config/profile.yml` exist (not just profile.example.yml)?
-3. Does `users/{USER}/modes/_profile.md` exist (not just _profile.template.md)?
-4. Does `users/{USER}/portals.yml` exist (not just templates/portals.example.yml)?
+```bash
+node doctor.mjs --user {USER} --json
+```
 
-If `users/{USER}/modes/_profile.md` is missing, copy from `modes/_profile.template.md` silently. This is the user's customization file — it will never be overwritten by updates.
+Output: `{"onboardingNeeded": <bool>, "missing": [...], "warnings": [...]}`, where `missing` lists whichever of `cv.md`, `config/profile.yml`, `modes/_profile.md`, `portals.yml` are absent. `warnings` is reserved for non-blocking setup signals.
 
-**If ANY of these is missing, enter onboarding mode.** Do NOT proceed with evaluations, scans, or any other mode until the basics are in place. Guide the user step by step:
+0. Has an active user been explicitly specified in this conversation? If not, stop and ask which user to use before running the cold-start check.
+
+- If `modes/_profile.md` is in `missing`, copy it silently from `modes/_profile.template.md` to `users/{USER}/modes/_profile.md` (the user's customization file — never overwritten by updates). It's then resolved.
+- **If, after that, `onboardingNeeded` is still true (any of `cv.md` / `config/profile.yml` / `portals.yml` is missing), enter onboarding mode.** Do NOT proceed with evaluations, scans, or any other mode until the basics are in place. Guide the user step by step:
 
 #### Step 1: CV (required)
 If `users/{USER}/cv.md` is missing, ask:
@@ -211,6 +212,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 
 - **German (DACH market):** `modes/de/` — native German translations with DACH-specific vocabulary (13. Monatsgehalt, Probezeit, Kündigungsfrist, AGG, Tarifvertrag, etc.). Includes `_shared.md`, `angebot.md` (evaluation), `bewerben.md` (apply), `pipeline.md`.
 - **French (Francophone market):** `modes/fr/` — native French translations with France/Belgium/Switzerland/Luxembourg-specific vocabulary (CDI/CDD, convention collective SYNTEC, RTT, mutuelle, prévoyance, 13e mois, intéressement/participation, titres-restaurant, CSE, portage salarial, etc.). Includes `_shared.md`, `offre.md` (evaluation), `postuler.md` (apply), `pipeline.md`.
+- **Arabic (Middle East / Arab market):** `modes/ar/` — native Arabic translations with Arab region-specific vocabulary (مكافأة نهاية الخدمة, التأمينات الاجتماعية, راتب إجمالي/صافي, فترة التجربة, فترة الإخطار, البدلات, etc.). Includes `_shared.md`, `fursah.md` (evaluation), `takdeem.md` (apply), `pipeline.md`.
 - **Japanese (Japan market):** `modes/ja/` — native Japanese translations with Japan-specific vocabulary (正社員, 業務委託, 賞与, 退職金, みなし残業, 年俸制, 36協定, 通勤手当, 住宅手当, etc.). Includes `_shared.md`, `kyujin.md` (evaluation), `oubo.md` (apply), `pipeline.md`.
 - **Turkish (Turkey market):** `modes/tr/` — native Turkish translations with Turkey-specific vocabulary (SGK, kıdem tazminatı, ihbar süresi, brüt/net maaş, AGİ, BES, yemek kartı, yol yardımı, TÜFE zammı, etc.). Includes `_shared.md`, `is-ilani.md` (evaluation), `basvuru.md` (apply), `pipeline.md`.
 
@@ -224,6 +226,11 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 2. User sets `language.modes_dir: modes/fr` in `users/{USER}/config/profile.yml` → always use French modes
 3. You detect a French JD → suggest switching to French modes
 
+**When to use Arabic modes:** If the user is targeting Arabic-language job postings, lives in the Middle East / Arab region, or asks for Arabic output. Either:
+1. User says "use Arabic modes" → read from `modes/ar/` instead of `modes/`
+2. User sets `language.modes_dir: modes/ar` in `config/profile.yml` → always use Arabic modes
+3. You detect an Arabic JD → suggest switching to Arabic modes
+
 **When to use Japanese modes:** If the user is targeting Japanese-language job postings, lives in Japan, or asks for Japanese output. Either:
 1. User says "use Japanese modes" → read from `modes/ja/` instead of `modes/`
 2. User sets `language.modes_dir: modes/ja` in `users/{USER}/config/profile.yml` → always use Japanese modes
@@ -234,7 +241,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 2. User sets `language.modes_dir: modes/tr` in `users/{USER}/config/profile.yml` → always use Turkish modes
 3. You detect a Turkish JD → suggest switching to Turkish modes
 
-**When NOT to:** If the user applies to English-language roles, even at French, German, Japanese, or Turkish companies, use the default English modes — *unless* the user has explicitly requested another mode in this conversation, or `language.modes_dir` is set in `users/{USER}/config/profile.yml` (the explicit user preference always wins over JD-language detection).
+**When NOT to:** If the user applies to English-language roles, even at French, German, Arabic, Japanese, or Turkish companies, use the default English modes — *unless* the user has explicitly requested another mode in this conversation, or `language.modes_dir` is set in `users/{USER}/config/profile.yml` (the explicit user preference always wins over JD-language detection).
 
 ### Skill Modes
 

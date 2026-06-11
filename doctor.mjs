@@ -15,10 +15,14 @@ import {
 } from './lib/user-context.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = __dirname;
+const argv = process.argv.slice(2);
+const targetIdx = argv.indexOf('--target');
+const projectRoot =
+  targetIdx !== -1 && argv[targetIdx + 1] ? argv[targetIdx + 1] : __dirname;
+const JSON_OUT = argv.includes('--json');
 let userContext;
 try {
-  userContext = getUserContext(process.argv.slice(2));
+  userContext = getUserContext(argv);
 } catch (err) {
   printUserContextErrorAndExit(err);
 }
@@ -73,60 +77,50 @@ async function checkPlaywright() {
   }
 }
 
-function checkCv() {
-  if (existsSync(userPath(userContext, 'cv.md'))) {
-    return { pass: true, label: `cv.md found for user "${userContext.userId}"` };
-  }
-  return {
-    pass: false,
-    label: 'cv.md not found',
+// Single source of truth for the four user-layer prerequisites (the list
+// AGENTS.md "First Run" documents). BOTH the human checklist (`checkPrereq`)
+// and the machine-readable cold-start state (`onboardingState`) derive from
+// THIS array, so they cannot drift. Paths use "/" and are split for join().
+const USER_LAYER_PREREQS = [
+  {
+    path: 'cv.md',
     fix: [
       `Create users/${userContext.userId}/cv.md with your CV in markdown`,
       'See examples/ for reference CVs',
     ],
-  };
-}
-
-function checkProfile() {
-  if (existsSync(userPath(userContext, 'config/profile.yml'))) {
-    return { pass: true, label: `config/profile.yml found for user "${userContext.userId}"` };
-  }
-  return {
-    pass: false,
-    label: 'config/profile.yml not found',
+  },
+  {
+    path: 'config/profile.yml',
     fix: [
       `Run: mkdir -p users/${userContext.userId}/config && cp config/profile.example.yml users/${userContext.userId}/config/profile.yml`,
       'Then edit it with your details',
     ],
-  };
-}
-
-function checkProfileMode() {
-  if (existsSync(userPath(userContext, 'modes/_profile.md'))) {
-    return { pass: true, label: `modes/_profile.md found for user "${userContext.userId}"` };
-  }
-  return {
-    pass: false,
-    label: 'modes/_profile.md not found',
+  },
+  {
+    path: 'modes/_profile.md',
     fix: [
       `Run: mkdir -p users/${userContext.userId}/modes && cp modes/_profile.template.md users/${userContext.userId}/modes/_profile.md`,
-      'Then customize it with your archetypes, narrative, and negotiation notes',
+      'Then customize your archetypes / targeting narrative',
     ],
-  };
-}
-
-function checkPortals() {
-  if (existsSync(userPath(userContext, 'portals.yml'))) {
-    return { pass: true, label: `portals.yml found for user "${userContext.userId}"` };
-  }
-  return {
-    pass: false,
-    label: 'portals.yml not found',
+  },
+  {
+    path: 'portals.yml',
     fix: [
       `Run: mkdir -p users/${userContext.userId} && cp templates/portals.example.yml users/${userContext.userId}/portals.yml`,
       'Then customize with your target companies',
     ],
-  };
+  },
+];
+
+function prereqPresent(root, path) {
+  return existsSync(join(root, ...path.split('/')));
+}
+
+function checkPrereq({ path, fix }) {
+  if (prereqPresent(userContext.userRoot, path)) {
+    return { pass: true, label: `users/${userContext.userId}/${path} found` };
+  }
+  return { pass: false, label: `users/${userContext.userId}/${path} not found`, fix };
 }
 
 function checkFonts() {
@@ -183,10 +177,7 @@ async function main() {
     checkNodeVersion(),
     checkDependencies(),
     await checkPlaywright(),
-    checkCv(),
-    checkProfile(),
-    checkProfileMode(),
-    checkPortals(),
+    ...USER_LAYER_PREREQS.map(checkPrereq),
     checkFonts(),
     checkAutoDir('data'),
     checkAutoDir('output'),
@@ -220,7 +211,23 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('doctor.mjs failed:', err.message);
-  process.exit(1);
-});
+// Single source of truth for the cold-start state: the same four user-layer
+// prerequisites that AGENTS.md "First Run" lists. `--json` turns the trigger into
+// a deterministic mechanism the agent runs (instead of re-deriving it from prose),
+// and `--target <dir>` lets the test suite point it at a simulated virgin env.
+function onboardingState(root) {
+  const missing = USER_LAYER_PREREQS
+    .filter(({ path }) => !prereqPresent(userContext.userRoot, path))
+    .map(({ path }) => path);
+  return { onboardingNeeded: missing.length > 0, missing, warnings: [] };
+}
+
+if (JSON_OUT) {
+  console.log(JSON.stringify(onboardingState(projectRoot)));
+  process.exit(0);
+} else {
+  main().catch((err) => {
+    console.error('doctor.mjs failed:', err.message);
+    process.exit(1);
+  });
+}

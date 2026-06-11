@@ -31,6 +31,7 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -73,6 +74,7 @@ const PATHS = {
   profileYml:  userPath(userContext, 'config/profile.yml'),
   reports:     userPath(userContext, 'reports'),
   tracker:     userPath(userContext, 'data/applications.md'),
+  trackerAdditions: userPath(userContext, 'batch/tracker-additions'),
 };
 
 // ---------------------------------------------------------------------------
@@ -173,6 +175,23 @@ function nextReportNumber() {
     .filter(n => !isNaN(n));
   if (files.length === 0) return '001';
   return String(Math.max(...files) + 1).padStart(3, '0');
+}
+
+function slugifyCompany(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'unknown';
+}
+
+function tsvSafe(value) {
+  return String(value ?? '').replace(/[\t\r\n]+/g, ' ').trim();
+}
+
+function normalizedTrackerScore(value) {
+  const clean = tsvSafe(value);
+  if (!clean || clean === '?') return 'N/A';
+  return /\/5$/i.test(clean) ? clean : `${clean}/5`;
 }
 
 // Lazy import — only used when saving
@@ -332,9 +351,10 @@ if (saveReport) {
 
     const num         = nextReportNumber();
     const today       = new Date().toISOString().split('T')[0];
-    const companySlug = company.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const companySlug = slugifyCompany(company);
     const filename    = `${num}-${companySlug}-${today}.md`;
     const reportPath  = join(PATHS.reports, filename);
+    const trackerPath = join(PATHS.trackerAdditions, `${num}-${companySlug}.tsv`);
 
     const reportContent = `# Evaluation: ${company} — ${role}
 
@@ -351,13 +371,31 @@ ${evaluationText.replace(/---SCORE_SUMMARY---[\s\S]*?---END_SUMMARY---/, '').tri
 `;
 
     writeFileSync(reportPath, reportContent, 'utf-8');
+    mkdirSync(PATHS.trackerAdditions, { recursive: true });
+    const trackerFields = [
+      String(parseInt(num, 10)),
+      today,
+      tsvSafe(company),
+      tsvSafe(role),
+      'Evaluated',
+      normalizedTrackerScore(score),
+      '❌',
+      `[${num}](reports/${filename})`,
+      'Gemini evaluation',
+    ];
+    writeFileSync(trackerPath, `${trackerFields.join('\t')}\n`, 'utf-8');
     console.log(`\n✅  Report saved: users/${userContext.userId}/reports/${filename}`);
-
-    // Append tracker entry reminder
-    console.log(`\n📊  Tracker entry (add to users/${userContext.userId}/data/applications.md):`);
-    console.log(`    | ${num} | ${today} | ${company} | ${role} | ${score} | Evaluada | ❌ | [${num}](reports/${filename}) |`);
+    console.log(`📊  Tracker addition saved: users/${userContext.userId}/batch/tracker-additions/${num}-${companySlug}.tsv`);
+    const mergeOutput = execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs'), '--user', userContext.userId], {
+      cwd: ROOT,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (mergeOutput.trim()) console.log(mergeOutput.trim());
+    console.log(`📊  Tracker merged into users/${userContext.userId}/data/applications.md.`);
   } catch (err) {
     console.warn(`⚠️   Could not save report: ${err.message}`);
+    process.exitCode = 1;
   }
 }
 
