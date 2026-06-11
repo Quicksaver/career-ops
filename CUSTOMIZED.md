@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `238a12d603c0321bc8d34c795cc9d6123edc7294`
+- Upstream ref: `upstream/main` at `edc971aea3105dcc97e44549bde3ef8f33d402fb`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `67`
-- Diff-size baseline after merge, before this inventory-only refresh: `100 files changed, 9044 insertions(+), 1384 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `69`
+- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9286 insertions(+), 1496 deletions(-)`
 
 ## Merge Policy
 
@@ -27,6 +27,27 @@ git log --oneline --left-right --cherry-pick upstream/main...main
 ```
 
 Then update this file if a customization is added, removed, or made redundant.
+
+## New Upstream Baseline Adopted In This Merge
+
+This merge incorporates upstream 1.9/1.10-era behavior as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+
+New upstream features or behavior now present:
+
+- Docker/scaffolder install surface: `Dockerfile`, `docker-compose.yml`, `DOCKER.md`, `cops`, and `scaffolder/` were adopted. They are system-layer tooling; do not let them write personal data outside `users/{USER}/`.
+- New user-facing modes and docs: cover letters (`modes/cover.md`, `generate-cover-letter.mjs`, `templates/cover-letter-template.html`), interview onboarding (`modes/interview.md`), Arabic modes, and translated README updates were adopted. The cover-letter renderer was adapted so default output goes to `users/{USER}/output/`.
+- Deterministic onboarding: upstream `doctor.mjs --json` is now the cold-start source of truth. The fork version still requires `--user {USER}` or `CAREER_OPS_USER` and checks `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, and `users/{USER}/portals.yml`.
+- Atomic report-number reservation: upstream `reserve-report-num.mjs` was adopted and adapted to `--user {USER}` so sentinels live under `users/{USER}/reports/`, not root `reports/`.
+- Scanner upgrades: upstream salary filtering, scan-history recheck TTL, 404/410 rediscovery, anti-bot headed fallback, throttle controls, Workday/SolidJobs support, `scan-ats-full.mjs`, and `validate-portals.mjs` were adopted. New scan utilities were adapted to active-user portal, pipeline, cache, and history paths.
+- Batch runner upgrades: upstream session/rate-limit pause, `--resume-paused`, `--rate-limit-sleep`, skipped-offer summary behavior, Claude `--strict-mcp-config`, and runtime profile-context injection were adopted while preserving the fork's per-user batch state and Codex worker contract.
+- Dashboard upgrades: upstream derived fields, sorting helpers, and sort/time tests were adopted while preserving the fork's per-user dashboard path flow and listing-date fallback.
+- Liveness/security/updater upgrades: upstream SSRF hardening, headed fallback behavior, updater migration tests, and release/version updates were adopted.
+
+Future merge notes:
+
+- Treat these as baseline behavior on later merges. Only carry local patches where the behavior still needs active-user routing, Codex batch support, custom provider compatibility, or user-layer hygiene.
+- When upstream adds new scripts, check for root `cv.md`, `portals.yml`, `data/`, `reports/`, `output/`, or `batch/` assumptions before considering the merge done.
+- Keep `test-all.mjs` fixtures aligned with the explicit-user contract; upstream tests that create root `data/` or `reports/` fixtures usually need `CAREER_OPS_USERS_DIR` plus `--user test` in this fork.
 
 ## Multi-User User Layer
 
@@ -50,6 +71,10 @@ Files:
 - `followup-cadence.mjs`
 - `gemini-eval.mjs`
 - `generate-pdf.mjs`
+- `generate-cover-letter.mjs`
+- `reserve-report-num.mjs`
+- `scan-ats-full.mjs`
+- `validate-portals.mjs`
 - `batch/batch-runner.sh`
 - `dashboard/main.go`
 - `modes/*.md`
@@ -68,6 +93,7 @@ What this customizes:
 - Career-ops commands must have an active user before any user-layer access. Explicit user selection is accepted via command text such as `/career-ops scan <username>`, via `--user <id>` / `--user=<id>`, or via `CAREER_OPS_USER`.
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
+- Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, and cover-letter PDFs default to `users/{USER}/output/`.
 - Docs and help text must use placeholders like `{USER}`, `<username>`, or `<id>`. Do not hardcode a real local username outside its own ignored `users/{USER}/` directory.
 
 Future merge notes:
@@ -75,6 +101,7 @@ Future merge notes:
 - Preserve the explicit-user requirement. Do not silently fall back to root `cv.md`, root `portals.yml`, or other legacy single-user paths.
 - If upstream introduces its own profile/user abstraction, compare it against this flow before replacing it. Keep the conversation-context behavior unless upstream provides an equivalent.
 - When adapting upstream script changes, route every read/write of user-layer data through `lib/user-context.mjs` or equivalent active-user resolution.
+- New upstream scripts are high-risk until checked for root-path assumptions. Search for bare `portals.yml`, `data/`, `reports/`, `output/`, `batch/`, `cv.md`, and `config/profile.yml`.
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
 - When upstream makes script helpers import-safe for tests, keep that behavior without resolving a user at module import time; resolve the active user only when the script runtime path needs user-layer files.
 
@@ -102,6 +129,9 @@ What this customizes:
 - Adds `--limit N` so a batch run can process only the next N pending offers, useful for smoke tests, quota-aware batches, and resuming large queues in smaller chunks.
 - Copies `local:jds/...` input rows from `users/{USER}/jds/...` into the temporary JD file passed to the worker. Missing local JD files intentionally become an empty temporary file so the worker can fail or recover using the URL/context path consistently.
 - Logs the selected CLI and limit at run start so batch logs show which worker backend handled the run.
+- Preserves upstream session/rate-limit handling: Claude workers can pause a batch with `paused_rate_limit`, resume through `--resume-paused`, and avoid consuming retry budget when a session/rate limit is detected.
+- Preserves upstream Claude MCP isolation through `--strict-mcp-config`, while keeping Codex execution separate through the fork's schema-checked final JSON flow.
+- Injects `users/{USER}/modes/_profile.md` and `users/{USER}/config/profile.yml` into the temporary resolved worker prompt so batch scoring uses the same user-layer personalization as interactive scoring.
 
 Future merge notes:
 
@@ -113,6 +143,7 @@ Future merge notes:
 - Preserve upstream report-link normalization, but keep its filesystem roots user-scoped. Do not reintroduce root-level `data/applications.md`, root `reports/`, or `CAREER_OPS_TRACKER` as the normal production path.
 - Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
+- Preserve upstream rate-limit pause semantics and Claude MCP isolation. If the worker command code is refactored again, test that `paused_rate_limit` does not consume retry budget and Claude workers still include `--strict-mcp-config`.
 
 ## Custom Provider Layer
 
@@ -147,11 +178,12 @@ Files:
 What this customizes:
 
 - Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, Working Nomads, NoDesk, RustJobs.dev, and related English Jobs boards.
-- Upstream now also supplies first-party Workable, SmartRecruiters, and Recruitee provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
+- Upstream now also supplies first-party Workable, SmartRecruiters, Recruitee, SolidJobs, and Workday provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
 - Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
 - Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
 - Extends the example portal config with these discovery sources and custom notes/parameters.
 - Adds tests for the retry helper, Greenhouse URL safety, and the custom provider fetch wrapper.
+- Keeps upstream provider tests intact for Workable, SmartRecruiters, Recruitee, SolidJobs, and scanner rediscovery behavior.
 
 Future merge notes:
 
@@ -288,11 +320,13 @@ What this customizes:
 - Extracts listing/posting dates from reports when present.
 - Reads `data/scan-history.tsv` before the old root-level fallback.
 - Shows listing date in the dashboard, falling back to the tracker processed date when no listing date is known.
+- Preserves upstream derived fields, shared sort comparator, and new dashboard sort modes, but keeps the listing-date sort on the fork's `dashboardDate()` fallback so reports/scan-history listing dates win when available.
 
 Future merge notes:
 
 - If upstream changes dashboard models or table rendering, preserve the listing-date fallback behavior unless upstream provides a better equivalent.
 - Do not reintroduce the root dashboard wrapper unless upstream provides a better per-user binary flow.
+- Keep upstream sort helper tests and add/adjust fork tests around listing-date fallback when dashboard parsing changes.
 
 ## Scanner Documentation And Defaults
 
@@ -312,10 +346,38 @@ What this customizes:
 - Describes direct scanning beyond Greenhouse/Ashby/Lever, including PCSX and structured job portals.
 - Clarifies broad-discovery search queries for boards where direct access is unreliable.
 - Keeps scanner documentation aligned with the fork's provider modules.
+- Documents upstream `scan_history.recheck_after_days`, salary filtering, `scan:full`, and portal validation while keeping all examples user-scoped.
 
 Future merge notes:
 
 - Reconcile upstream copy edits first, then update only the provider lists and behavior statements that remain fork-specific.
+- Keep `scan-ats-full.mjs` and `validate-portals.mjs` user-scoped unless upstream introduces equivalent multi-user routing.
+- If upstream changes scan-history TTL, salary filters, or rediscovery semantics, preserve the fork's company block filter and authenticated scan age filter as separate local policy layers.
+
+## Full ATS Discovery And Portal Validation
+
+Upstream added reverse ATS discovery and portal schema validation. The fork keeps both features but routes their default files through the active user layer.
+
+Files:
+
+- `scan-ats-full.mjs`
+- `validate-portals.mjs`
+- `scan.mjs`
+- `docs/SCRIPTS.md`
+- `package.json`
+- `test-all.mjs`
+
+What this customizes:
+
+- `scan-ats-full.mjs --user <username>` reads `users/{USER}/portals.yml`, writes to `users/{USER}/data/pipeline.md`, records `users/{USER}/data/scan-history.tsv`, and caches public ATS company directories under `users/{USER}/data/cache/ats-companies/`.
+- `scan.mjs` exports `configureScanUserPaths(ctx)` so reverse ATS discovery can reuse the regular pipeline and scan-history writer without duplicating path logic.
+- `validate-portals.mjs --user <username>` defaults to `users/{USER}/portals.yml`, while `--file` and `--self-test` remain data-independent for tests and template validation.
+- `npm run scan:full -- --user <username>` and `npm run validate:portals -- --user <username>` are the normal production commands.
+
+Future merge notes:
+
+- If upstream changes the reverse scan writer or dedupe logic, keep it on the same configured scan helper path as `scan.mjs` so dedupe and pipeline format do not diverge.
+- If upstream makes portal validation part of CI only, keep explicit `--file` support for templates and explicit `--user` support for real user portals.
 
 ## Authenticated Scan Sessions
 
@@ -492,6 +554,9 @@ On every upstream update, explicitly check whether upstream now includes:
 - `local:jds/...` batch input handling.
 - Conditional batch PDF generation for `Skip` decisions and profile hard stops. Score-threshold configuration is now upstream behavior through `auto_pdf_score_threshold`.
 - Per-user adaptation for upstream tracker report-link normalization and `merge-tracker.mjs --migrate`.
+- Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
+- Upstream Docker/scaffolder tooling that preserves the user-layer data contract.
+- Upstream cover-letter and interview modes that route generated artifacts and context through `users/{USER}/`.
 - Generic JD/PDF extraction commands.
 - Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.
 
