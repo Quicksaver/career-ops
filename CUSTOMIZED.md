@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `edc971aea3105dcc97e44549bde3ef8f33d402fb`
+- Upstream ref: `upstream/main` at `0d579944d99276cf85d0d2280cc2697ee7a95140`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `69`
-- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9286 insertions(+), 1496 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `71`
+- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9368 insertions(+), 1507 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This merge incorporates upstream 1.9/1.10-era behavior as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10-era behavior and subsequent upstream fixes through `0d579944d99276cf85d0d2280cc2697ee7a95140` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -42,12 +42,17 @@ New upstream features or behavior now present:
 - Batch runner upgrades: upstream session/rate-limit pause, `--resume-paused`, `--rate-limit-sleep`, skipped-offer summary behavior, Claude `--strict-mcp-config`, and runtime profile-context injection were adopted while preserving the fork's per-user batch state and Codex worker contract.
 - Dashboard upgrades: upstream derived fields, sorting helpers, and sort/time tests were adopted while preserving the fork's per-user dashboard path flow and listing-date fallback.
 - Liveness/security/updater upgrades: upstream SSRF hardening, headed fallback behavior, updater migration tests, and release/version updates were adopted.
+- Tracker safety upgrades: upstream now serializes concurrent `merge-tracker.mjs` runs with a filesystem lock and atomic writes. The fork keeps the lock but binds it to `users/{USER}/data/applications.md`, canonicalizes both tracker and user-root paths before report-link normalization, and keeps `CAREER_OPS_ADDITIONS` only as a test/non-standard additions-dir hook.
+- Evaluation gates: upstream `modes/oferta.md` and `modes/auto-pipeline.md` now gate URL inputs on liveness before scoring, so closed/dead postings should stop before Block A / Step 1 instead of producing misleading evaluations.
+- Doctor warnings: upstream `doctor.mjs` now warns when Playwright MCP tools are not configured. The fork keeps this warning user-scoped through `doctor.mjs --user {USER} --json`.
+- Runtime/tooling fixes: upstream PDF rendering now waits for `load` instead of `networkidle`, `update-system.mjs` parses Release Please component-prefixed tags, the command menus expose `latex`, and the CV template aligns certification organization column widths while preserving fork theme CSS variables.
 
 Future merge notes:
 
 - Treat these as baseline behavior on later merges. Only carry local patches where the behavior still needs active-user routing, Codex batch support, custom provider compatibility, or user-layer hygiene.
 - When upstream adds new scripts, check for root `cv.md`, `portals.yml`, `data/`, `reports/`, `output/`, or `batch/` assumptions before considering the merge done.
 - Keep `test-all.mjs` fixtures aligned with the explicit-user contract; upstream tests that create root `data/` or `reports/` fixtures usually need `CAREER_OPS_USERS_DIR` plus `--user test` in this fork.
+- When upstream adds process-level coordination around user files, preserve the coordination but bind locks, temp files, and canonical paths to `users/{USER}` rather than root `data/`.
 
 ## Multi-User User Layer
 
@@ -94,6 +99,7 @@ What this customizes:
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
 - Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, and cover-letter PDFs default to `users/{USER}/output/`.
+- Upstream tracker merge locking is preserved, but the lock key is derived from the active user's canonical `users/{USER}/data/applications.md` path. Report-link normalization also canonicalizes the user root so symlinked temp/user directories do not produce bogus relative links.
 - Docs and help text must use placeholders like `{USER}`, `<username>`, or `<id>`. Do not hardcode a real local username outside its own ignored `users/{USER}/` directory.
 
 Future merge notes:
@@ -102,6 +108,7 @@ Future merge notes:
 - If upstream introduces its own profile/user abstraction, compare it against this flow before replacing it. Keep the conversation-context behavior unless upstream provides an equivalent.
 - When adapting upstream script changes, route every read/write of user-layer data through `lib/user-context.mjs` or equivalent active-user resolution.
 - New upstream scripts are high-risk until checked for root-path assumptions. Search for bare `portals.yml`, `data/`, `reports/`, `output/`, `batch/`, `cv.md`, and `config/profile.yml`.
+- If upstream changes `merge-tracker.mjs` locking again, preserve the full read/modify/write critical section and atomic write, but keep `APPS_FILE` rooted in `users/{USER}/data/applications.md`; do not restore root `CAREER_OPS_TRACKER` as normal production routing.
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
 - When upstream makes script helpers import-safe for tests, keep that behavior without resolving a user at module import time; resolve the active user only when the script runtime path needs user-layer files.
 
@@ -554,7 +561,11 @@ On every upstream update, explicitly check whether upstream now includes:
 - `local:jds/...` batch input handling.
 - Conditional batch PDF generation for `Skip` decisions and profile hard stops. Score-threshold configuration is now upstream behavior through `auto_pdf_score_threshold`.
 - Per-user adaptation for upstream tracker report-link normalization and `merge-tracker.mjs --migrate`.
+- Per-user adaptation for upstream `merge-tracker.mjs` filesystem locking and atomic writes.
 - Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
+- Upstream dead-link/liveness gates in `modes/oferta.md` and `modes/auto-pipeline.md` that still respect user-layer reports and Playwright verification rules.
+- Upstream Playwright MCP doctor warning that remains available through `doctor.mjs --user {USER} --json`.
+- Upstream Release Please component-tag parsing in `update-system.mjs`.
 - Upstream Docker/scaffolder tooling that preserves the user-layer data contract.
 - Upstream cover-letter and interview modes that route generated artifacts and context through `users/{USER}/`.
 - Generic JD/PDF extraction commands.
