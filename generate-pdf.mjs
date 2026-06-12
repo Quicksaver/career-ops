@@ -359,7 +359,7 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
 
     // Set content with file base URL for any relative resources
     await page.setContent(html, {
-      waitUntil: 'networkidle',
+      waitUntil: 'load',
       baseURL: `file://${baseDir}/`,
     });
 

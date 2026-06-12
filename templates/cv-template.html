@@ -304,12 +304,19 @@
   }
 
   /* === CERTIFICATIONS === */
+  .cert-table {
+    display: table;
+    width: 100%;
+  }
+
   .cert-item {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(90px, max-content) 44px;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 6px;
+    display: table-row;
+  }
+
+  .cert-item > * {
+    display: table-cell;
+    vertical-align: baseline;
+    padding-bottom: 6px;
   }
 
   .cert-title {
@@ -329,6 +336,7 @@
     color: var(--cv-subtle);
     white-space: nowrap;
     text-align: right;
+    width: 44px;
   }
 
   /* === SKILLS === */
@@ -404,6 +412,10 @@
   html[lang="ar"] .cert-year {
     text-align: left;
   }
+
+  html[lang="ar"] .cert-table {
+    direction: rtl;
+  }
 </style>
 </head>
 <body>
@@ -461,7 +473,7 @@
   <!-- CERTIFICATIONS -->
   <div class="section avoid-break">
     <div class="section-title">{{SECTION_CERTIFICATIONS}}</div>
-    {{CERTIFICATIONS}}
+    <div class="cert-table">{{CERTIFICATIONS}}</div>
   </div>
 
   <!-- SKILLS -->
