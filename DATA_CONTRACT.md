@@ -23,7 +23,8 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
 | `users/{USER}/interview-prep/*` | Company-specific interview prep |
 | `users/{USER}/portals.yml` | Customized company list |
-| `users/{USER}/data/applications.md` | Application tracker |
+| `users/{USER}/data/applications.md` | Application tracker source of truth |
+| `users/{USER}/data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync --user {USER}` — safe to delete) |
 | `users/{USER}/data/pipeline.md` | URL inbox |
 | `users/{USER}/data/scan-history.tsv` | Scan history |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
@@ -63,8 +64,9 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/ja/*` | Japanese language modes |
 | `modes/pt/*` | Portuguese language modes |
 | `modes/ru/*` | Russian language modes |
-| `CLAUDE.md` | Agent instructions |
-| `AGENTS.md` | Codex instructions |
+| `CLAUDE.md` | Agent instructions (Claude Code) |
+| `OPENCODE.md` | Agent instructions (OpenCode) |
+| `AGENTS.md` | Canonical agent instructions (imported by CLI-specific wrappers) |
 | `*.mjs` | Utility scripts |
 | `lib/*` | Shared system helpers |
 | `scan-auth/*.mjs` | Authenticated portal scanner classes |
@@ -73,7 +75,8 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `dashboard/*` | Go TUI dashboard |
 | `templates/*` | Base templates |
 | `fonts/*` | Self-hosted fonts |
-| `.claude/skills/*` | Skill definitions |
+| `.claude/skills/*` | Skill definitions (Claude Code) |
+| `.opencode/skills/*` | Skill definitions (OpenCode) |
 | `docs/*` | Documentation |
 | `VERSION` | Current version number |
 | `DATA_CONTRACT.md` | This file |

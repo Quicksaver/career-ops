@@ -15,7 +15,7 @@
  */
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, unlinkSync, statSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import {
   ensureUserDirs,
@@ -28,20 +28,30 @@ import {
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 let userContext;
 try {
-  userContext = getUserContext(process.argv.slice(2));
+  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
 } catch (err) {
   printUserContextErrorAndExit(err);
 }
 
-const APPS_FILE = userPath(userContext, 'data/applications.md');
-const ADDITIONS_DIR = userPath(userContext, 'batch/tracker-additions');
-const REPORTS_DIR = userPath(userContext, 'reports');
+const APPS_FILE = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
+const TRACKER_DIR = dirname(APPS_FILE);
+const TRACKER_ROOT = userContext.userRoot || (basename(TRACKER_DIR) === 'data' ? dirname(TRACKER_DIR) : TRACKER_DIR);
+const ADDITIONS_DIR = process.env.CAREER_OPS_ADDITIONS || (
+  userContext.userRoot
+    ? userPath(userContext, 'batch/tracker-additions')
+    : join(TRACKER_ROOT, 'batch/tracker-additions')
+);
+const REPORTS_DIR = userContext.userRoot ? userPath(userContext, 'reports') : join(TRACKER_ROOT, 'reports');
 const STATES_FILE = existsSync(systemPath('templates/states.yml'))
   ? systemPath('templates/states.yml')
   : join(CAREER_OPS, 'states.yml');
 
 // Ensure required directories exist (fresh setup)
-ensureUserDirs(userContext, ['data', 'batch/tracker-additions']);
+if (userContext.userRoot) ensureUserDirs(userContext, ['data', 'batch/tracker-additions']);
+else {
+  mkdirSync(TRACKER_DIR, { recursive: true });
+  mkdirSync(ADDITIONS_DIR, { recursive: true });
+}
 mkdirSync(REPORTS_DIR, { recursive: true });
 
 const CANONICAL_STATUSES = [
@@ -76,21 +86,53 @@ if (!existsSync(APPS_FILE)) {
 const content = readFileSync(APPS_FILE, 'utf-8');
 const lines = content.split('\n');
 
+// Map columns by header name so the checks work whether the tracker uses the
+// original 9-column layout or a customized one with an extra column (e.g. a
+// Location column after Role). Fixed-position indexing would otherwise read
+// Location where Score is expected and flag false errors. Falls back to the
+// legacy fixed layout when no recognizable header row is found.
+const LEGACY_COLMAP = { num: 1, date: 2, company: 3, role: 4, score: 5, status: 6, pdf: 7, report: 8, notes: 9 };
+const HEADER_ALIASES = {
+  '#': 'num', 'num': 'num', 'date': 'date', 'company': 'company', 'empresa': 'company',
+  'role': 'role', 'puesto': 'role', 'location': 'location', 'score': 'score',
+  'status': 'status', 'pdf': 'pdf', 'report': 'report', 'notes': 'notes',
+};
+function detectColumns(allLines) {
+  for (const line of allLines) {
+    if (!line.startsWith('|')) continue;
+    const cells = line.split('|').map(s => s.trim().toLowerCase());
+    if (!cells.includes('company') || !cells.includes('role')) continue;
+    const map = {};
+    cells.forEach((c, i) => { if (HEADER_ALIASES[c] != null) map[HEADER_ALIASES[c]] = i; });
+    if (['num', 'company', 'role', 'score', 'status'].every(k => map[k] != null)) return map;
+  }
+  return null;
+}
+const COLMAP = detectColumns(lines) || LEGACY_COLMAP;
+const MAX_IDX = Math.max(...Object.values(COLMAP));
+
 const entries = [];
 for (const line of lines) {
   if (!line.startsWith('|')) continue;
   const parts = line.split('|').map(s => s.trim());
-  if (parts.length < 9) continue;
-  const num = parseInt(parts[1]);
+  if (parts.length <= MAX_IDX) continue;
+  const num = parseInt(parts[COLMAP.num]);
   if (isNaN(num)) continue;
   entries.push({
-    num, date: parts[2], company: parts[3], role: parts[4],
-    score: parts[5], status: parts[6], pdf: parts[7], report: parts[8],
-    notes: parts[9] || '',
+    num,
+    date: parts[COLMAP.date],
+    company: parts[COLMAP.company],
+    role: parts[COLMAP.role],
+    location: COLMAP.location != null ? parts[COLMAP.location] : '',
+    score: parts[COLMAP.score],
+    status: parts[COLMAP.status],
+    pdf: parts[COLMAP.pdf],
+    report: parts[COLMAP.report],
+    notes: COLMAP.notes != null ? (parts[COLMAP.notes] || '') : '',
   });
 }
 
-console.log(`\n📊 Checking ${entries.length} entries in applications.md for user "${userContext.userId}"\n`);
+console.log(`\n📊 Checking ${entries.length} entries in applications.md${userContext.userId ? ` for user "${userContext.userId}"` : ''}\n`);
 
 // --- Check 1: Canonical statuses ---
 let badStatuses = 0;
@@ -140,13 +182,12 @@ if (dupes === 0) ok('No exact duplicates found');
 // links must resolve against the tracker's own directory (see #760). For the
 // transition we also accept legacy root-relative links: try the tracker dir
 // first, then fall back to the active user root before flagging a link broken.
-const TRACKER_DIR = dirname(APPS_FILE);
 let brokenReports = 0;
 for (const e of entries) {
   const match = e.report.match(/\]\(([^)]+)\)/);
   if (!match) continue;
   const link = match[1];
-  if (!existsSync(join(TRACKER_DIR, link)) && !existsSync(join(userContext.userRoot, link))) {
+  if (!existsSync(join(TRACKER_DIR, link)) && !existsSync(join(TRACKER_ROOT, link))) {
     error(`#${e.num}: Report not found: ${link}`);
     brokenReports++;
   }
@@ -170,8 +211,8 @@ for (const line of lines) {
   if (!line.startsWith('|')) continue;
   if (line.includes('---') || line.includes('Empresa')) continue;
   const parts = line.split('|');
-  if (parts.length < 9) {
-    error(`Row with <9 columns: ${line.substring(0, 80)}...`);
+  if (parts.length <= MAX_IDX) {
+    error(`Row with too few columns (need ${MAX_IDX} data cols): ${line.substring(0, 80)}...`);
     badRows++;
   }
 }

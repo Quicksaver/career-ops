@@ -1,7 +1,7 @@
 {
   "name": "career-ops",
   "version": "1.10.0",
-  "description": "AI-powered job search pipeline built on Claude Code",
+  "description": "AI-powered job search pipeline — works with any AI coding CLI (Claude Code, OpenCode, Gemini, Codex, Qwen)",
   "private": true,
   "scripts": {
     "doctor": "node doctor.mjs",
@@ -20,6 +20,7 @@
     "scan-auth": "node scan-auth.mjs",
     "scan:full": "node scan-ats-full.mjs",
     "validate:portals": "node validate-portals.mjs",
+    "tracker": "node tracker.mjs",
     "patterns": "node analyze-patterns.mjs",
     "gemini:eval": "node gemini-eval.mjs"
   },
@@ -27,6 +28,7 @@
     "ai",
     "job-search",
     "claude-code",
+    "opencode",
     "career",
     "career-ops",
     "careerops",

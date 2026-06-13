@@ -27,20 +27,25 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
+import { roleFuzzyMatch } from './role-matcher.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 let userContext;
 try {
-  userContext = getUserContext(process.argv.slice(2));
+  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
 } catch (err) {
   printUserContextErrorAndExit(err);
 }
 
-const APPS_FILE = canonicalizeTrackerPath(userPath(userContext, 'data/applications.md'));
-const ADDITIONS_DIR = process.env.CAREER_OPS_ADDITIONS || userPath(userContext, 'batch/tracker-additions');
-const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
+const APPS_FILE = canonicalizeTrackerPath(process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md'));
 const TRACKER_DIR = dirname(APPS_FILE);
-const REPORTS_ROOT = canonicalizeTrackerPath(userContext.userRoot);
+const REPORTS_ROOT = resolveReportsRoot();
+const ADDITIONS_DIR = process.env.CAREER_OPS_ADDITIONS || (
+  userContext.userRoot
+    ? userPath(userContext, 'batch/tracker-additions')
+    : join(REPORTS_ROOT, 'batch/tracker-additions')
+);
+const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
 const DRY_RUN = userContext.args.includes('--dry-run');
 const VERIFY = userContext.args.includes('--verify');
 const MIGRATE = userContext.args.includes('--migrate');
@@ -50,11 +55,25 @@ const MERGE_READY_IPC = process.env.CAREER_OPS_MERGE_READY_IPC === '1';
 const trackerLockKey = createHash('sha256').update(APPS_FILE).digest('hex').slice(0, 16);
 const TRACKER_LOCK_DIR = resolveTrackerLockDir(process.env.CAREER_OPS_TRACKER_LOCK, trackerLockKey);
 
-// Normalize a report link relative to the active user's tracker file (#760).
+/**
+ * Normalize report links before writing them into the tracker file.
+ *
+ * TSV additions use root-relative report links so they are easy for agents to
+ * generate. The tracker may live under `users/{USER}/data/` or in an explicit
+ * fixture path, so this wrapper binds the correct tracker and user/report root
+ * before delegating to the shared link normalizer.
+ *
+ * @param {string} reportField - Raw report cell from a TSV addition.
+ * @returns {string} Markdown report link relative to the tracker file.
+ */
 const normalizeReportLink = (reportField) => normalizeLink(reportField, TRACKER_DIR, REPORTS_ROOT);
 
 // Ensure required directories exist (fresh setup)
-ensureUserDirs(userContext, ['data', 'batch/tracker-additions']);
+if (userContext.userRoot) ensureUserDirs(userContext, ['data', 'batch/tracker-additions']);
+else {
+  mkdirSync(dirname(APPS_FILE), { recursive: true });
+  mkdirSync(ADDITIONS_DIR, { recursive: true });
+}
 
 /**
  * Convert the tracker path into one stable absolute spelling before hashing it.
@@ -74,6 +93,21 @@ function canonicalizeTrackerPath(path) {
   } catch {
     return absolutePath;
   }
+}
+
+/**
+ * Resolve the root used for user-root-relative report links.
+ *
+ * Normal per-user trackers live at `users/{USER}/data/applications.md`, where
+ * reports are rooted at `users/{USER}/reports`. Fixture trackers may point at
+ * either `data/applications.md` or a root-level `applications.md`; infer the
+ * same root shape so environment-based regression tests do not need a user id.
+ *
+ * @returns {string} Canonical root directory for reports and batch data.
+ */
+function resolveReportsRoot() {
+  if (userContext.userRoot) return canonicalizeTrackerPath(userContext.userRoot);
+  return canonicalizeTrackerPath(basename(TRACKER_DIR) === 'data' ? dirname(TRACKER_DIR) : TRACKER_DIR);
 }
 
 /**
@@ -322,6 +356,17 @@ try {
 // Canonical states and aliases
 const CANONICAL_STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Rejected', 'Discarded', 'SKIP'];
 
+/**
+ * Convert raw addition status text into one canonical tracker state.
+ *
+ * Batch workers and older tracker additions may emit Spanish labels, bold
+ * Markdown, legacy date suffixes, or repost markers. The merge script normalizes
+ * all of those variants here so applications.md keeps the states defined by
+ * templates/states.yml.
+ *
+ * @param {string} status - Raw status string from a TSV or pipe-delimited row.
+ * @returns {string} Canonical tracker status.
+ */
 function validateStatus(status) {
   const clean = status.replace(/\*\*/g, '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
   const lower = clean.toLowerCase();
@@ -353,117 +398,134 @@ function validateStatus(status) {
   return 'Evaluated';
 }
 
+/**
+ * Normalize company names for duplicate lookup during tracker merges.
+ *
+ * Company names can contain spaces, punctuation, or branding variants in the
+ * tracker and incoming TSV rows. Removing non-alphanumeric characters gives the
+ * merge step a stable same-company key before it compares report numbers or
+ * fuzzy role titles.
+ *
+ * @param {string} name - Company name from the tracker or addition row.
+ * @returns {string} Lowercase alphanumeric company key.
+ */
 function normalizeCompany(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-// Tokens that almost every role shares — must NOT count as signal.
-// Includes seniority, work-mode, contract, and common locations.
-const ROLE_STOPWORDS = new Set([
-  // seniority / level
-  'junior', 'mid', 'middle', 'senior', 'staff', 'principal', 'lead', 'head',
-  'chief', 'associate', 'intern', 'entry', 'level',
-  // contract / mode
-  'remote', 'hybrid', 'onsite', 'contract', 'contractor', 'freelance',
-  'fulltime', 'parttime', 'permanent', 'temporary', 'intern', 'internship',
-  // generic job words
-  'role', 'position', 'opportunity', 'team', 'based',
-  // very common locations (extend in portals.yml later if needed)
-  'bangalore', 'bengaluru', 'mumbai', 'delhi', 'hyderabad', 'pune', 'chennai',
-  'london', 'berlin', 'paris', 'madrid', 'barcelona', 'amsterdam', 'dublin',
-  'york', 'francisco', 'seattle', 'boston', 'austin', 'chicago', 'toronto',
-  'tokyo', 'singapore', 'sydney', 'melbourne', 'lisbon', 'warsaw',
-  // regions / countries
-  'europe', 'emea', 'apac', 'latam', 'americas', 'india', 'spain', 'germany',
-  'france', 'italy', 'canada', 'brazil', 'mexico', 'japan',
-  // prepositions leaking through length filter
-  'with', 'from', 'into', 'over', 'this', 'that',
-]);
-
-// Short specialty acronyms that ARE discriminating despite their length.
-// Without this allowlist, `length > 3` strips them out, leaving only the
-// generic "Software Engineer" baseline (see Issue #633).
-//
-// Deliberately narrow: includes tokens like 'api' / 'sre' / 'sdk' that name
-// a specific team or technology, and excludes broad ones like 'ai' / 'ml' /
-// 'llm' that appear across many roles (AI Engineer, ML Manager, etc.).
-// Adding the broad ones would regress #329's AI Success/Deployment case.
-const SHORT_SPECIALTY = new Set([
-  'api', 'sre', 'sdk', 'cli', 'gpu', 'cpu',
-  'ios', 'qa', 'ux', 'ui', 'ar', 'vr',
-  'ocr', 'crm', 'erp',
-]);
-
-// Generic role-level descriptors. Two roles whose ONLY overlap is in this
-// set (e.g. [software, engineer]) are NOT the same role — they're just
-// labelled at the same altitude. See Issue #633: "Staff SWE, API" vs
-// "Staff SWE, Kubernetes Platform" share [software, engineer] only.
-const BASELINE_TOKENS = new Set([
-  'software', 'engineer', 'developer', 'manager', 'architect',
-  'analyst', 'designer', 'consultant', 'specialist',
-  'platform', 'systems', 'services',
-  'backend', 'frontend', 'fullstack',
-]);
-
-function roleTokens(s) {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter(w => (w.length > 3 || SHORT_SPECIALTY.has(w)) && !ROLE_STOPWORDS.has(w));
-}
-
-function roleFuzzyMatch(a, b) {
-  const wordsA = roleTokens(a);
-  const wordsB = roleTokens(b);
-  if (wordsA.length === 0 || wordsB.length === 0) return false;
-
-  const setB = new Set(wordsB);
-  const overlap = wordsA.filter(w => setB.has(w));
-  if (overlap.length < 2) return false;
-
-  // Require at least one non-baseline token in the overlap. Roles that
-  // share only generic descriptors like [software, engineer] are NOT the
-  // same role (see Issue #633).
-  const discriminating = overlap.filter(w => !BASELINE_TOKENS.has(w));
-  if (discriminating.length === 0) return false;
-
-  // True Jaccard ratio on content tokens (overlap / union). Dividing by the
-  // smaller side conflated distinct roles that share a long prefix — e.g.
-  // "Full-Stack Engineer 5, AI Insights & Visualizations" vs "Full Stack
-  // Engineer 5, Ads Reporting" (overlap full/stack/engineer = 3, min side 4
-  // → 0.75 "match"). Union punishes the non-shared specialty tokens, while
-  // genuine reposts (identical token sets) still score 1.0.
-  const union = new Set([...wordsA, ...wordsB]).size;
-  const ratio = overlap.length / union;
-  return ratio >= 0.6;
-}
-
+/**
+ * Extract the bracketed report number from a Markdown report link.
+ *
+ * Report-number equality is an exact duplicate signal, but only after company
+ * equality is confirmed by the caller. This helper reads links such as
+ * `[123](../reports/123-company-role-date.md)` and returns the numeric id.
+ *
+ * @param {string} reportStr - Raw report cell from applications.md or TSV input.
+ * @returns {number|null} Parsed report number, or null when absent.
+ */
 function extractReportNum(reportStr) {
   const m = reportStr.match(/\[(\d+)\]/);
   return m ? parseInt(m[1]) : null;
 }
 
+/**
+ * Parse a score cell into a numeric value for score-upgrade decisions.
+ *
+ * The merge path compares old and new scores to decide whether to update an
+ * existing duplicate row. Markdown bolding and `/5` suffixes are presentation
+ * details, so only the first numeric value is used.
+ *
+ * @param {string} s - Raw score cell such as `4.2/5`.
+ * @returns {number} Parsed score, or 0 when no numeric value is present.
+ */
 function parseScore(s) {
   const m = s.replace(/\*\*/g, '').match(/([\d.]+)/);
   return m ? parseFloat(m[1]) : 0;
 }
 
+// Column layout for the applications.md table. The tracker may use the original
+// 9-column layout, or a customized one with an extra/reordered column (e.g. a
+// Location column after Role). We map columns by header NAME rather than fixed
+// position so both work — fixed-position indexing would otherwise read, say,
+// Location where it expects Score. Falls back to the legacy layout when no
+// recognizable header row is found.
+const LEGACY_COLMAP = { num: 1, date: 2, company: 3, role: 4, score: 5, status: 6, pdf: 7, report: 8, notes: 9 };
+let COLMAP = LEGACY_COLMAP;
+
+const HEADER_ALIASES = {
+  '#': 'num', 'num': 'num', 'date': 'date', 'company': 'company', 'empresa': 'company',
+  'role': 'role', 'puesto': 'role', 'location': 'location', 'score': 'score',
+  'status': 'status', 'pdf': 'pdf', 'report': 'report', 'notes': 'notes',
+};
+
+// Scan the table for a header row and build a header-name → column-index map.
+// Indexing matches `line.split('|')` (leading empty cell before the first pipe),
+// the same split parseAppLine uses. Returns null — caller keeps the legacy
+// layout — unless the essential columns are all present, so a stray pipe line
+// can't yield a bogus mapping.
+function detectColumns(lines) {
+  for (const line of lines) {
+    if (!line.startsWith('|')) continue;
+    const cells = line.split('|').map(s => s.trim().toLowerCase());
+    if (!cells.includes('company') || !cells.includes('role')) continue;
+    const map = {};
+    cells.forEach((c, i) => { if (HEADER_ALIASES[c] != null) map[HEADER_ALIASES[c]] = i; });
+    if (['num', 'company', 'role', 'score', 'status'].every(k => map[k] != null)) return map;
+  }
+  return null;
+}
+
+// Build a tracker row string matching the detected layout (with or without the
+// optional Location column) so writes round-trip through the same schema.
+function buildRow(o) {
+  if (COLMAP.location != null) {
+    return `| ${o.num} | ${o.date} | ${o.company} | ${o.role} | ${o.location || '—'} | ${o.score} | ${o.status} | ${o.pdf} | ${o.report} | ${o.notes} |`;
+  }
+  return `| ${o.num} | ${o.date} | ${o.company} | ${o.role} | ${o.score} | ${o.status} | ${o.pdf} | ${o.report} | ${o.notes} |`;
+}
+
+/**
+ * Parse one Markdown applications.md table row into a tracker object.
+ *
+ * Header/separator rows and malformed rows return null. Valid rows preserve the
+ * original raw line so the merge logic can locate and replace the exact tracker
+ * line when a higher-scored re-evaluation arrives.
+ *
+ * @param {string} line - One line from applications.md.
+ * @returns {object|null} Parsed tracker row, or null for non-data rows.
+ */
 function parseAppLine(line) {
   const parts = line.split('|').map(s => s.trim());
-  if (parts.length < 9) return null;
-  const num = parseInt(parts[1]);
+  const maxIdx = Math.max(...Object.values(COLMAP));
+  if (parts.length <= maxIdx) return null;
+  const num = parseInt(parts[COLMAP.num]);
   if (isNaN(num) || num === 0) return null;
   return {
-    num, date: parts[2], company: parts[3], role: parts[4],
-    score: parts[5], status: parts[6], pdf: parts[7], report: parts[8],
-    notes: parts[9] || '', raw: line,
+    num,
+    date: parts[COLMAP.date],
+    company: parts[COLMAP.company],
+    role: parts[COLMAP.role],
+    location: COLMAP.location != null ? parts[COLMAP.location] : '',
+    score: parts[COLMAP.score],
+    status: parts[COLMAP.status],
+    pdf: parts[COLMAP.pdf],
+    report: parts[COLMAP.report],
+    notes: COLMAP.notes != null ? (parts[COLMAP.notes] || '') : '',
+    raw: line,
   };
 }
 
 /**
  * Parse a TSV file content into a structured addition object.
- * Handles: 9-col TSV, 8-col TSV, pipe-delimited markdown.
+ *
+ * Handles 9-column TSV, 8-column TSV, and pipe-delimited Markdown rows. The
+ * parser also tolerates old score/status column ordering, validates status, and
+ * rejects additions without a usable tracker number so malformed batch output
+ * cannot corrupt applications.md.
+ *
+ * @param {string} content - Raw file content from batch/tracker-additions.
+ * @param {string} filename - Source filename used in warning messages.
+ * @returns {object|null} Parsed tracker addition, or null when malformed.
  */
 function parseTsvContent(content, filename) {
   content = content.trim();
@@ -479,7 +541,7 @@ function parseTsvContent(content, filename) {
       console.warn(`⚠️  Skipping malformed pipe-delimited ${filename}: ${parts.length} fields`);
       return null;
     }
-    // Format: num | date | company | role | score | status | pdf | report | notes
+    // Format: num | date | company | role | score | status | pdf | report | notes [| location]
     addition = {
       num: parseInt(parts[0]),
       date: parts[1],
@@ -490,6 +552,7 @@ function parseTsvContent(content, filename) {
       pdf: parts[6],
       report: parts[7],
       notes: parts[8] || '',
+      location: (parts[9] || '').trim(),
     };
   } else {
     // Tab-separated
@@ -533,6 +596,8 @@ function parseTsvContent(content, filename) {
       pdf: parts[6],
       report: parts[7],
       notes: parts[8] || '',
+      // Optional trailing field: tab-separated TSVs may append a location.
+      location: (parts[9] || '').trim(),
     };
   }
 
@@ -581,6 +646,11 @@ if (MIGRATE) {
 }
 
 const appLines = appContent.split('\n');
+// Detect the tracker's column layout via header names so parsing and writing
+// both work whether the table uses the original 9-column layout or a customized
+// one (e.g. with a Location column after Role). Falls back to the legacy layout.
+COLMAP = detectColumns(appLines) || LEGACY_COLMAP;
+if (COLMAP.location != null) console.log('🧭 Detected Location column.');
 const existingApps = [];
 let maxNum = 0;
 
@@ -679,8 +749,13 @@ for (const file of tsvFiles) {
         // Keep the existing tracker/report identity when a duplicate is re-evaluated.
         // The dashboard expects row #N to open report/PDF #N; writing the newer
         // report link here makes old rows appear under a different batch/report ID.
-        const reportLink = duplicate.report || addition.report;
-        const updatedLine = `| ${duplicate.num} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${duplicate.status} | ${duplicate.pdf} | ${reportLink} | Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes} |`;
+        const updatedLine = buildRow({
+          num: duplicate.num, date: addition.date, company: addition.company, role: addition.role,
+          location: addition.location || duplicate.location || '—',
+          score: addition.score, status: duplicate.status, pdf: duplicate.pdf,
+          report: duplicate.report || addition.report,
+          notes: `Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes}`,
+        });
         appLines[lineIdx] = updatedLine;
         updated++;
       }
@@ -693,7 +768,12 @@ for (const file of tsvFiles) {
     const entryNum = addition.num > maxNum ? addition.num : ++maxNum;
     if (addition.num > maxNum) maxNum = addition.num;
 
-    const newLine = `| ${entryNum} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${addition.status} | ${addition.pdf} | ${addition.report} | ${addition.notes} |`;
+    const newLine = buildRow({
+      num: entryNum, date: addition.date, company: addition.company, role: addition.role,
+      location: addition.location || '—',
+      score: addition.score, status: addition.status, pdf: addition.pdf,
+      report: addition.report, notes: addition.notes,
+    });
     newLines.push(newLine);
     added++;
     console.log(`➕ Add #${entryNum}: ${addition.company} — ${addition.role} (${addition.score})`);
@@ -735,7 +815,16 @@ trackerLock.release();
 if (VERIFY && !DRY_RUN) {
   console.log('\n--- Running verification ---');
   try {
-    execFileSync('node', [join(CAREER_OPS, 'verify-pipeline.mjs'), '--user', userContext.userId], { stdio: 'inherit' });
+    const verifyArgs = [join(CAREER_OPS, 'verify-pipeline.mjs')];
+    if (userContext.userId) verifyArgs.push('--user', userContext.userId);
+    execFileSync('node', verifyArgs, {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        CAREER_OPS_TRACKER: process.env.CAREER_OPS_TRACKER || APPS_FILE,
+        CAREER_OPS_ADDITIONS: ADDITIONS_DIR,
+      },
+    });
   } catch (e) {
     process.exit(1);
   }
