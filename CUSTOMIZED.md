@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `0d579944d99276cf85d0d2280cc2697ee7a95140`
+- Upstream ref: `upstream/main` at `57b34c07e01cd106528936398507e1b4552ca295`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `71`
-- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9368 insertions(+), 1507 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `73`
+- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9442 insertions(+), 1514 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10-era behavior and subsequent upstream fixes through `0d579944d99276cf85d0d2280cc2697ee7a95140` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10-era behavior and subsequent upstream fixes through `57b34c07e01cd106528936398507e1b4552ca295` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -43,9 +43,14 @@ New upstream features or behavior now present:
 - Dashboard upgrades: upstream derived fields, sorting helpers, and sort/time tests were adopted while preserving the fork's per-user dashboard path flow and listing-date fallback.
 - Liveness/security/updater upgrades: upstream SSRF hardening, headed fallback behavior, updater migration tests, and release/version updates were adopted.
 - Tracker safety upgrades: upstream now serializes concurrent `merge-tracker.mjs` runs with a filesystem lock and atomic writes. The fork keeps the lock but binds it to `users/{USER}/data/applications.md`, canonicalizes both tracker and user-root paths before report-link normalization, and keeps `CAREER_OPS_ADDITIONS` only as a test/non-standard additions-dir hook.
+- Tracker index and column upgrades: upstream now includes `tracker.mjs`, a Node `node:sqlite` derived index over `applications.md`, header-name column mapping for tracker reads/writes, `tracker-columns-tests.mjs`, shared `role-matcher.mjs`, and safer dedup behavior that avoids deleting distinct same-company roles. The fork keeps those changes and routes normal tracker/index operations through `--user {USER}` so the index is `users/{USER}/data/applications.db`; `CAREER_OPS_TRACKER` remains only an explicit fixture/non-standard override.
 - Evaluation gates: upstream `modes/oferta.md` and `modes/auto-pipeline.md` now gate URL inputs on liveness before scoring, so closed/dead postings should stop before Block A / Step 1 instead of producing misleading evaluations.
 - Doctor warnings: upstream `doctor.mjs` now warns when Playwright MCP tools are not configured. The fork keeps this warning user-scoped through `doctor.mjs --user {USER} --json`.
 - Runtime/tooling fixes: upstream PDF rendering now waits for `load` instead of `networkidle`, `update-system.mjs` parses Release Please component-prefixed tags, the command menus expose `latex`, and the CV template aligns certification organization column widths while preserving fork theme CSS variables.
+- OpenCode support: upstream added first-class OpenCode wrappers/skills (`OPENCODE.md` and `.opencode/skills/career-ops/SKILL.md`) and CLI docs. The fork keeps the OpenCode skill symlinked to the canonical agent skill and preserves active-user, `scan-auth`, and quiet-monitoring instructions there.
+- Updater/dashboard behavior: upstream `update-system.mjs` now detects dashboard Go source changes and rebuilds the dashboard binary after updates. This should be preserved because this fork also builds per-user dashboard binaries under `users/{USER}/`.
+- User-layer hygiene: upstream removed tracked `interview-prep/story-bank.md` and left `interview-prep/.gitkeep`. This aligns with the fork rule that story banks belong under `users/{USER}/interview-prep/story-bank.md`.
+- Cover-letter docs: upstream fixed stale ReportLab wording; the fork keeps the HTML + Playwright cover-letter pipeline and user-scoped output behavior.
 
 Future merge notes:
 
@@ -70,6 +75,7 @@ Files:
 - `merge-tracker.mjs`
 - `normalize-statuses.mjs`
 - `dedup-tracker.mjs`
+- `tracker.mjs`
 - `cv-sync-check.mjs`
 - `doctor.mjs`
 - `analyze-patterns.mjs`
@@ -99,6 +105,7 @@ What this customizes:
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
 - Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, and cover-letter PDFs default to `users/{USER}/output/`.
+- The upstream SQLite tracker index is adapted to the same resolver: `node tracker.mjs sync --user {USER}` reads `users/{USER}/data/applications.md` and writes the derived `users/{USER}/data/applications.db`. The database is disposable derived state, not a replacement for the markdown source of truth.
 - Upstream tracker merge locking is preserved, but the lock key is derived from the active user's canonical `users/{USER}/data/applications.md` path. Report-link normalization also canonicalizes the user root so symlinked temp/user directories do not produce bogus relative links.
 - Docs and help text must use placeholders like `{USER}`, `<username>`, or `<id>`. Do not hardcode a real local username outside its own ignored `users/{USER}/` directory.
 
