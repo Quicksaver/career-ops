@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `57b34c07e01cd106528936398507e1b4552ca295`
+- Upstream ref: `upstream/main` at `4e05cfda98b5dccfd2c664c12335ee20812b451b`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `73`
-- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9442 insertions(+), 1514 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `76`
+- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9427 insertions(+), 1502 deletions(-)`
 
 ## Merge Policy
 
@@ -30,27 +30,34 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10-era behavior and subsequent upstream fixes through `57b34c07e01cd106528936398507e1b4552ca295` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11-era behavior and subsequent upstream fixes through `4e05cfda98b5dccfd2c664c12335ee20812b451b` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
 - Docker/scaffolder install surface: `Dockerfile`, `docker-compose.yml`, `DOCKER.md`, `cops`, and `scaffolder/` were adopted. They are system-layer tooling; do not let them write personal data outside `users/{USER}/`.
-- New user-facing modes and docs: cover letters (`modes/cover.md`, `generate-cover-letter.mjs`, `templates/cover-letter-template.html`), interview onboarding (`modes/interview.md`), Arabic modes, and translated README updates were adopted. The cover-letter renderer was adapted so default output goes to `users/{USER}/output/`.
+- New user-facing modes and docs: cover letters (`modes/cover.md`, `generate-cover-letter.mjs`, `templates/cover-letter-template.html`), interview onboarding (`modes/interview.md`), Arabic modes, and translated README updates were adopted. The cover-letter renderer was adapted so default output goes to `users/{USER}/output/`, while upstream's optional greeting/salutation placeholders and import-safe `buildHtml` behavior are preserved.
 - Deterministic onboarding: upstream `doctor.mjs --json` is now the cold-start source of truth. The fork version still requires `--user {USER}` or `CAREER_OPS_USER` and checks `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, and `users/{USER}/portals.yml`.
 - Atomic report-number reservation: upstream `reserve-report-num.mjs` was adopted and adapted to `--user {USER}` so sentinels live under `users/{USER}/reports/`, not root `reports/`.
 - Scanner upgrades: upstream salary filtering, scan-history recheck TTL, 404/410 rediscovery, anti-bot headed fallback, throttle controls, Workday/SolidJobs support, `scan-ats-full.mjs`, and `validate-portals.mjs` were adopted. New scan utilities were adapted to active-user portal, pipeline, cache, and history paths.
 - Batch runner upgrades: upstream session/rate-limit pause, `--resume-paused`, `--rate-limit-sleep`, skipped-offer summary behavior, Claude `--strict-mcp-config`, and runtime profile-context injection were adopted while preserving the fork's per-user batch state and Codex worker contract.
-- Dashboard upgrades: upstream derived fields, sorting helpers, and sort/time tests were adopted while preserving the fork's per-user dashboard path flow and listing-date fallback.
+- Dashboard upgrades: upstream derived fields, sorting helpers, sort/time tests, and the last-contact calendar-day fix were adopted while preserving the fork's per-user dashboard path flow and listing-date fallback.
 - Liveness/security/updater upgrades: upstream SSRF hardening, headed fallback behavior, updater migration tests, and release/version updates were adopted.
 - Tracker safety upgrades: upstream now serializes concurrent `merge-tracker.mjs` runs with a filesystem lock and atomic writes. The fork keeps the lock but binds it to `users/{USER}/data/applications.md`, canonicalizes both tracker and user-root paths before report-link normalization, and keeps `CAREER_OPS_ADDITIONS` only as a test/non-standard additions-dir hook.
 - Tracker index and column upgrades: upstream now includes `tracker.mjs`, a Node `node:sqlite` derived index over `applications.md`, header-name column mapping for tracker reads/writes, `tracker-columns-tests.mjs`, shared `role-matcher.mjs`, and safer dedup behavior that avoids deleting distinct same-company roles. The fork keeps those changes and routes normal tracker/index operations through `--user {USER}` so the index is `users/{USER}/data/applications.db`; `CAREER_OPS_TRACKER` remains only an explicit fixture/non-standard override.
 - Evaluation gates: upstream `modes/oferta.md` and `modes/auto-pipeline.md` now gate URL inputs on liveness before scoring, so closed/dead postings should stop before Block A / Step 1 instead of producing misleading evaluations.
 - Doctor warnings: upstream `doctor.mjs` now warns when Playwright MCP tools are not configured. The fork keeps this warning user-scoped through `doctor.mjs --user {USER} --json`.
-- Runtime/tooling fixes: upstream PDF rendering now waits for `load` instead of `networkidle`, `update-system.mjs` parses Release Please component-prefixed tags, the command menus expose `latex`, and the CV template aligns certification organization column widths while preserving fork theme CSS variables.
+- Runtime/tooling fixes: upstream PDF rendering now waits for `load` instead of `networkidle`, inlines local fonts as data URLs before Playwright rendering, adds `lang="ja"` CJK font fallbacks for Japanese HTML CVs, guards LaTeX generation against unsupported CJK content, `update-system.mjs` parses Release Please component-prefixed tags and applies the target updater manifest/runtime path list, the command menus expose `latex`, and the CV template aligns certification organization column widths while preserving fork theme CSS variables.
 - OpenCode support: upstream added first-class OpenCode wrappers/skills (`OPENCODE.md` and `.opencode/skills/career-ops/SKILL.md`) and CLI docs. The fork keeps the OpenCode skill symlinked to the canonical agent skill and preserves active-user, `scan-auth`, and quiet-monitoring instructions there.
 - Updater/dashboard behavior: upstream `update-system.mjs` now detects dashboard Go source changes and rebuilds the dashboard binary after updates. This should be preserved because this fork also builds per-user dashboard binaries under `users/{USER}/`.
 - User-layer hygiene: upstream removed tracked `interview-prep/story-bank.md` and left `interview-prep/.gitkeep`. This aligns with the fork rule that story banks belong under `users/{USER}/interview-prep/story-bank.md`.
 - Cover-letter docs: upstream fixed stale ReportLab wording; the fork keeps the HTML + Playwright cover-letter pipeline and user-scoped output behavior.
+- Dependency/release baseline: upstream v1.11.0 release metadata and dependency bumps were merged into `VERSION`, `.release-please-manifest.json`, `package.json`, `scaffolder/package.json`, and `CHANGELOG.md`.
+
+Conflict notes from this merge:
+
+- `CLAUDE.md`: kept the fork's short redirect to `AGENTS.md` because `AGENTS.md` is the merged canonical instruction surface with active-user and user-layer rules.
+- `generate-cover-letter.mjs`: kept upstream's import-safe `buildHtml`, single-pass token replacement, optional greeting block, and lazy Playwright import, then restored user-scoped `--user` resolution and `users/{USER}/output` output paths inside `main()`.
+- `generate-pdf.mjs`: kept upstream's data-URL font inlining and `pathToFileURL` base URL behavior, retained the fork's `cv.theme` overrides, and made section-order validation read `users/{USER}/cv.md` when a user is selected.
 
 Future merge notes:
 
