@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `4e05cfda98b5dccfd2c664c12335ee20812b451b`
+- Upstream ref: `upstream/main` at `349bacc9d9ad377d6d85ae35fe87625c1b3a6114`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `76`
-- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9427 insertions(+), 1502 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `78`
+- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9540 insertions(+), 1511 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11-era behavior and subsequent upstream fixes through `4e05cfda98b5dccfd2c664c12335ee20812b451b` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11-era behavior and subsequent upstream fixes through `349bacc9d9ad377d6d85ae35fe87625c1b3a6114` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -52,12 +52,20 @@ New upstream features or behavior now present:
 - User-layer hygiene: upstream removed tracked `interview-prep/story-bank.md` and left `interview-prep/.gitkeep`. This aligns with the fork rule that story banks belong under `users/{USER}/interview-prep/story-bank.md`.
 - Cover-letter docs: upstream fixed stale ReportLab wording; the fork keeps the HTML + Playwright cover-letter pipeline and user-scoped output behavior.
 - Dependency/release baseline: upstream v1.11.0 release metadata and dependency bumps were merged into `VERSION`, `.release-please-manifest.json`, `package.json`, `scaffolder/package.json`, and `CHANGELOG.md`.
+- README presentation: upstream decluttered the README hero and added the Built with Claude Code badge across translated READMEs. This is presentation-only and does not change fork runtime behavior.
+- Follow-up report links: upstream fixed `followup-cadence.mjs` so report links are resolved relative to the tracker file directory, matching `merge-tracker.mjs --migrate` output such as `../reports/...`. The fork keeps that fix and also tolerates older user-root-relative links during migration.
+- Ashby coverage: upstream now includes `secondaryLocations` when normalizing Ashby jobs, so EU-eligible or multi-location roles should surface more reliably through the existing scan filters.
+- PDF text extraction: upstream changed `templates/cv-template.html` toward ATS-safe system fonts for cleaner CV text extraction. The fork keeps this template direction while preserving `cv.theme` CSS variable overrides in `generate-pdf.mjs`.
+- Tracker dedup safety: upstream now requires company agreement before number-based merge-tracker dedup updates. The fork keeps that safety behavior on the user-scoped tracker path.
+- Provider baseline: upstream now includes first-party `remoteok`, `remotive`, `ibm`, and `workingnomads` provider modules. The fork adopted these modules; `providers/workingnomads.mjs` now uses the upstream direct provider shape plus fork-preserved `api`, inferred region, `api_params.q/category/location/tags`, and `published_within_days` filtering, so the older thin `_custom` dispatcher wrapper is retired for this provider.
 
 Conflict notes from this merge:
 
 - `CLAUDE.md`: kept the fork's short redirect to `AGENTS.md` because `AGENTS.md` is the merged canonical instruction surface with active-user and user-layer rules.
 - `generate-cover-letter.mjs`: kept upstream's import-safe `buildHtml`, single-pass token replacement, optional greeting block, and lazy Playwright import, then restored user-scoped `--user` resolution and `users/{USER}/output` output paths inside `main()`.
 - `generate-pdf.mjs`: kept upstream's data-URL font inlining and `pathToFileURL` base URL behavior, retained the fork's `cv.theme` overrides, and made section-order validation read `users/{USER}/cv.md` when a user is selected.
+- `followup-cadence.mjs`: kept upstream's tracker-directory-relative report-link resolution and layered it onto the fork's active-user context, including a compatibility fallback for older `reports/...` links relative to `users/{USER}/`.
+- `providers/workingnomads.mjs`: replaced the old fork wrapper around `providers/_custom.mjs` with an upstream-style direct provider, but preserved the fork's documented Working Nomads filters and inferred `/remote-europe-jobs` style region handling.
 
 Future merge notes:
 
@@ -168,7 +176,7 @@ Future merge notes:
 
 ## Custom Provider Layer
 
-The fork adds a large structured provider surface for zero-token scanning.
+The fork adds a large structured provider surface for zero-token scanning and keeps local compatibility filters around some providers that upstream later adopted.
 
 Files:
 
@@ -198,8 +206,9 @@ Files:
 
 What this customizes:
 
-- Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, Working Nomads, NoDesk, RustJobs.dev, and related English Jobs boards.
-- Upstream now also supplies first-party Workable, SmartRecruiters, Recruitee, SolidJobs, and Workday provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
+- Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, NoDesk, RustJobs.dev, and related English Jobs boards.
+- Upstream now also supplies first-party Workable, SmartRecruiters, Recruitee, SolidJobs, Workday, RemoteOK, Remotive, IBM, and Working Nomads provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
+- Working Nomads is partly retired from the fork's custom-provider dispatcher: the provider module is now direct/upstream-style, while local config compatibility for `api`, inferred location, `api_params.q/category/location/tags`, and `published_within_days` remains in `providers/workingnomads.mjs`.
 - Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
 - Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
 - Extends the example portal config with these discovery sources and custom notes/parameters.
@@ -208,7 +217,7 @@ What this customizes:
 
 Future merge notes:
 
-- If upstream adds one of these providers, compare behavior before keeping both. Prefer upstream modules when they produce equivalent fields and filtering.
+- If upstream adds one of these providers, compare behavior before keeping both. Prefer upstream modules when they produce equivalent fields and filtering; otherwise keep only the missing compatibility layer, as done for Working Nomads filters in this merge.
 - If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage. Upstream's Ashby-specific timeout/backoff is not yet a full replacement for the custom helper because the fork uses the helper across several custom structured providers.
 - Keep upstream Workable, SmartRecruiters, and Recruitee tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
@@ -564,6 +573,7 @@ Future merge notes:
 On every upstream update, explicitly check whether upstream now includes:
 
 - Any provider currently implemented in `providers/_custom.mjs`.
+- Any fork provider adapter now covered by upstream first-party modules such as RemoteOK, Remotive, IBM, or Working Nomads. Working Nomads is already on the upstream-style module path; only the fork's local filter compatibility should remain unless upstream adds equivalent filters.
 - A shared retry/backoff helper for provider fetches.
 - Report-numbered CV artifact naming.
 - Config-driven CV theme tokens.
