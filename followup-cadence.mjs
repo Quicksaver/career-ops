@@ -219,6 +219,8 @@ function resolveReportPath(reportField) {
   if (!match) return null;
   const { appsFile, userContext } = getRuntimeContext();
   const link = match[1];
+  // Tracker links are normalized relative to applications.md; tolerate older
+  // user-root-relative links while existing trackers are migrated.
   const trackerRelativePath = join(dirname(appsFile), link);
   const userRootRelativePath = join(userContext.userRoot, link);
   return existsSync(trackerRelativePath) || existsSync(userRootRelativePath) ? link : null;
