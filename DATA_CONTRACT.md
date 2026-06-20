@@ -19,8 +19,10 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/cv.md` | CV in markdown |
 | `users/{USER}/config/profile.yml` | Identity, targets, comp range |
 | `users/{USER}/modes/_profile.md` | Archetypes, narrative, negotiation scripts |
+| `users/{USER}/voice-dna.md` | Writing voice guardrail — banned words, anti-AI-slop rules, tone (optional) |
 | `users/{USER}/article-digest.md` | Proof points from portfolio |
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
+| `users/{USER}/interview-prep/{company}-{role}.md` | Company-specific interview prep reports (written by `/career-ops interview-prep`) |
 | `users/{USER}/interview-prep/*` | Company-specific interview prep |
 | `users/{USER}/portals.yml` | Customized company list |
 | `users/{USER}/data/applications.md` | Application tracker source of truth |
@@ -30,7 +32,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |
-| `users/{USER}/writing-samples/*` | Personal writing samples for style calibration |
+| `users/{USER}/writing-samples/*` | Personal writing samples for style calibration (except `writing-samples/README.md`, which is system-owned documentation delivered by updates) |
 | `users/{USER}/reports/*` | Evaluation reports |
 | `users/{USER}/output/*` | Generated PDFs |
 | `users/{USER}/jds/*` | Saved job descriptions |
@@ -77,6 +79,8 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `fonts/*` | Self-hosted fonts |
 | `.claude/skills/*` | Skill definitions (Claude Code) |
 | `.opencode/skills/*` | Skill definitions (OpenCode) |
+| `.qwen/skills/*` | Skill definitions (Qwen Code) |
+| `.antigravitycli/skills/*` | Skill definitions (Antigravity CLI) |
 | `docs/*` | Documentation |
 | `VERSION` | Current version number |
 | `DATA_CONTRACT.md` | This file |
