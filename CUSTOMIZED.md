@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `349bacc9d9ad377d6d85ae35fe87625c1b3a6114`
+- Upstream ref: `upstream/main` at `9d1404f32022b552e2dea1d773e0a10a22e2c004`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `78`
-- Diff-size baseline after merge, before this inventory-only refresh: `104 files changed, 9540 insertions(+), 1511 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `80`
+- Diff-size baseline after merge, before this inventory-only refresh: `106 files changed, 9599 insertions(+), 1761 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11-era behavior and subsequent upstream fixes through `349bacc9d9ad377d6d85ae35fe87625c1b3a6114` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12-era behavior and subsequent upstream fixes through `9d1404f32022b552e2dea1d773e0a10a22e2c004` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -58,6 +58,16 @@ New upstream features or behavior now present:
 - PDF text extraction: upstream changed `templates/cv-template.html` toward ATS-safe system fonts for cleaner CV text extraction. The fork keeps this template direction while preserving `cv.theme` CSS variable overrides in `generate-pdf.mjs`.
 - Tracker dedup safety: upstream now requires company agreement before number-based merge-tracker dedup updates. The fork keeps that safety behavior on the user-scoped tracker path.
 - Provider baseline: upstream now includes first-party `remoteok`, `remotive`, `ibm`, and `workingnomads` provider modules. The fork adopted these modules; `providers/workingnomads.mjs` now uses the upstream direct provider shape plus fork-preserved `api`, inferred region, `api_params.q/category/location/tags`, and `published_within_days` filtering, so the older thin `_custom` dispatcher wrapper is retired for this provider.
+- v1.12 release baseline: upstream `VERSION`, Release Please manifest, and changelog now include v1.12.0 plus follow-up fixes. The fork adopted the release metadata while preserving user-layer update safeguards.
+- CLI/runtime surface: upstream added Antigravity CLI support through `.antigravitycli/skills/career-ops/SKILL.md` and docs. The fork keeps that entrypoint as a symlink/pointer to the canonical `.agents/skills/career-ops/SKILL.md`, and extends updater materialization so Antigravity behaves like Claude/OpenCode on filesystems without symlink support.
+- Pipeline/batch operations: upstream added `batch/batch-runner.sh --status` and `--watch`, replaced `bc` score math with `awk`, added `reconcile-pipeline.mjs` for inbox cleanup after batch runs, and added a pipeline liveness sweep for unconfirmed scan/batch entries. The fork keeps these behaviors on `users/{USER}/batch/` and `users/{USER}/data/pipeline.md`.
+- Scanner/provider upgrades: upstream added content/description filtering, external metadata sanitization before pipeline/history writes, an in-process Arbeitsagentur provider, Indonesian Jobstreet and Glints providers, IBM provider tests, and hardened `local-parser` / `scan-ats-full` command and SSRF handling. The fork adopted the upstream providers and safety fixes while retaining the separate custom provider layer and company block filter.
+- Portal verification: upstream added `verify-portals.mjs` for ATS slug validation and wired `doctor.mjs --strict` to probe portal slugs. The fork keeps this optional network check user-scoped through `users/{USER}/portals.yml`.
+- Dashboard upgrades: upstream added customizable dashboard columns with a column picker, English/Spanish archetype parsing including YAML-style `archetype:`, and OS-specific open helpers that avoid shelling through Windows `cmd`. The fork preserves those while keeping per-user dashboard root inference and listing-date fallback.
+- Voice DNA guardrail: upstream introduced optional `voice-dna.md` writing guardrails. In this fork it is treated as user-layer data at `users/{USER}/voice-dna.md`; the upstream root file was not kept as a tracked system file, and legacy root `voice-dna.md` is gitignored for migration safety.
+- Resume/ATS assets: upstream added `examples/resume-example.md` and `templates/resume-template.html`, plus ATS-safe wording/template updates. The fork adopted these as system-layer examples/templates.
+- Evaluation and tracker fixes: upstream hardened Gemini report-shape validation, preserved tracker notes when rows lack a trailing pipe, used the real application date from notes in follow-up cadence, auto-creates missing pipeline files, and added data-contract coverage for interview-prep outputs. The fork kept those fixes on the active user's files.
+- Chinese modes: upstream added `modes/zh/` and related README updates for China-market job seekers. The fork adopted them as system-layer language modes.
 
 Conflict notes from this merge:
 
@@ -66,6 +76,15 @@ Conflict notes from this merge:
 - `generate-pdf.mjs`: kept upstream's data-URL font inlining and `pathToFileURL` base URL behavior, retained the fork's `cv.theme` overrides, and made section-order validation read `users/{USER}/cv.md` when a user is selected.
 - `followup-cadence.mjs`: kept upstream's tracker-directory-relative report-link resolution and layered it onto the fork's active-user context, including a compatibility fallback for older `reports/...` links relative to `users/{USER}/`.
 - `providers/workingnomads.mjs`: replaced the old fork wrapper around `providers/_custom.mjs` with an upstream-style direct provider, but preserved the fork's documented Working Nomads filters and inferred `/remote-europe-jobs` style region handling.
+- `DATA_CONTRACT.md` and `modes/_shared.md`: kept upstream's new `voice-dna.md` writing guardrail concept but moved it to `users/{USER}/voice-dna.md`, preserving the fork rule that user voice/style data is never tracked at the root.
+- `doctor.mjs`: kept upstream `--strict` portal slug probing and pipeline-file auto-creation, then routed both through `userPath(...)` so strict checks read `users/{USER}/portals.yml` and create `users/{USER}/data/pipeline.md`.
+- `gemini-eval.mjs`: kept upstream's post-save tracker merge flow and report-shape validation, but restored `merge-tracker.mjs --user {USER}` and user-scoped report/tracker-addition messages.
+- `modes/pipeline.md`: kept upstream's liveness sweep for unconfirmed batch/scan entries and rewrote the workflow commands for `users/{USER}/data/pipeline.md` plus `reserve-report-num.mjs --user {USER}`.
+- `scan.mjs`: kept upstream's fresh-install `PIPELINE_SKELETON` and content filter while preserving the fork's `buildCompanyFilter(config.company_filter)` and active-user pipeline path.
+- `test-all.mjs`: kept upstream tests for liveness sweep, content filters, Windows-safe batch fixtures, and Antigravity skill entrypoints while preserving the fork's `CAREER_OPS_USERS_DIR` / `--user test` fixture routing.
+- `update-system.mjs`: kept upstream user-file rollback safety and target manifest behavior, added `voice-dna.md` to the user-path guard, and extended materialized skill entrypoints to Antigravity.
+- `dashboard/internal/data/career.go` and `dashboard/main.go`: combined upstream English/YAML archetype parsing and cross-platform open helpers with the fork's listing-date regexes and user-root PDF target normalization.
+- `voice-dna.md`: upstream added this as a tracked root user file; the fork deleted it from the merge result, added it to legacy root ignores, and documents `users/{USER}/voice-dna.md` as the supported location.
 
 Future merge notes:
 
@@ -101,6 +120,8 @@ Files:
 - `reserve-report-num.mjs`
 - `scan-ats-full.mjs`
 - `validate-portals.mjs`
+- `verify-portals.mjs`
+- `reconcile-pipeline.mjs`
 - `batch/batch-runner.sh`
 - `dashboard/main.go`
 - `modes/*.md`
@@ -114,7 +135,7 @@ Files:
 
 What this customizes:
 
-- User-specific files now live under `users/{USER}/`, including `cv.md`, `config/profile.yml`, `modes/_profile.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state.
+- User-specific files now live under `users/{USER}/`, including `cv.md`, `config/profile.yml`, `modes/_profile.md`, `voice-dna.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state.
 - `users/` is gitignored. The older root-level user paths remain ignored only for migration safety; new work should use `users/{USER}/...`.
 - Career-ops commands must have an active user before any user-layer access. Explicit user selection is accepted via command text such as `/career-ops scan <username>`, via `--user <id>` / `--user=<id>`, or via `CAREER_OPS_USER`.
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
@@ -130,6 +151,7 @@ Future merge notes:
 - If upstream introduces its own profile/user abstraction, compare it against this flow before replacing it. Keep the conversation-context behavior unless upstream provides an equivalent.
 - When adapting upstream script changes, route every read/write of user-layer data through `lib/user-context.mjs` or equivalent active-user resolution.
 - New upstream scripts are high-risk until checked for root-path assumptions. Search for bare `portals.yml`, `data/`, `reports/`, `output/`, `batch/`, `cv.md`, and `config/profile.yml`.
+- Treat upstream voice/style additions such as `voice-dna.md` as user-layer data unless they are explicitly templates or documentation; user-specific writing voice belongs under `users/{USER}/`.
 - If upstream changes `merge-tracker.mjs` locking again, preserve the full read/modify/write critical section and atomic write, but keep `APPS_FILE` rooted in `users/{USER}/data/applications.md`; do not restore root `CAREER_OPS_TRACKER` as normal production routing.
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
 - When upstream makes script helpers import-safe for tests, keep that behavior without resolving a user at module import time; resolve the active user only when the script runtime path needs user-layer files.
@@ -156,6 +178,7 @@ What this customizes:
 - Uses the runner-reserved `REPORT_NUM` as the TSV first column, report link number, and artifact number so parallel workers do not race while calculating tracker numbers from `applications.md`.
 - Adapts upstream tracker report-link normalization to the per-user layout: workers still write user-root-relative `[REPORT_NUM](reports/...)` links, and `merge-tracker.mjs --user {USER}` rewrites them relative to `users/{USER}/data/applications.md` before merging.
 - Adds `--limit N` so a batch run can process only the next N pending offers, useful for smoke tests, quota-aware batches, and resuming large queues in smaller chunks.
+- Preserves upstream `--status` and `--watch` progress monitoring on the fork's user-scoped batch state.
 - Copies `local:jds/...` input rows from `users/{USER}/jds/...` into the temporary JD file passed to the worker. Missing local JD files intentionally become an empty temporary file so the worker can fail or recover using the URL/context path consistently.
 - Logs the selected CLI and limit at run start so batch logs show which worker backend handled the run.
 - Preserves upstream session/rate-limit handling: Claude workers can pause a batch with `paused_rate_limit`, resume through `--resume-paused`, and avoid consuming retry budget when a session/rate limit is detected.
@@ -171,6 +194,7 @@ Future merge notes:
 - Preserve runner-reserved report numbering for tracker TSVs if upstream changes batch merge behavior. Worker-side `applications.md` max calculations are unsafe under parallelism.
 - Preserve upstream report-link normalization, but keep its filesystem roots user-scoped. Do not reintroduce root-level `data/applications.md`, root `reports/`, or `CAREER_OPS_TRACKER` as the normal production path.
 - Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
+- Preserve `--status` and `--watch` or equivalent progress visibility if upstream changes batch state layout; they should keep reading `users/{USER}/batch/batch-state.tsv`.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 - Preserve upstream rate-limit pause semantics and Claude MCP isolation. If the worker command code is refactored again, test that `paused_rate_limit` does not consume retry budget and Claude workers still include `--strict-mcp-config`.
 
@@ -207,7 +231,7 @@ Files:
 What this customizes:
 
 - Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, NoDesk, RustJobs.dev, and related English Jobs boards.
-- Upstream now also supplies first-party Workable, SmartRecruiters, Recruitee, SolidJobs, Workday, RemoteOK, Remotive, IBM, and Working Nomads provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
+- Upstream now also supplies first-party Workable, SmartRecruiters, Recruitee, SolidJobs, Workday, RemoteOK, Remotive, IBM, Working Nomads, Arbeitsagentur, Jobstreet, and Glints provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
 - Working Nomads is partly retired from the fork's custom-provider dispatcher: the provider module is now direct/upstream-style, while local config compatibility for `api`, inferred location, `api_params.q/category/location/tags`, and `published_within_days` remains in `providers/workingnomads.mjs`.
 - Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
 - Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
@@ -219,7 +243,7 @@ Future merge notes:
 
 - If upstream adds one of these providers, compare behavior before keeping both. Prefer upstream modules when they produce equivalent fields and filtering; otherwise keep only the missing compatibility layer, as done for Working Nomads filters in this merge.
 - If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage. Upstream's Ashby-specific timeout/backoff is not yet a full replacement for the custom helper because the fork uses the helper across several custom structured providers.
-- Keep upstream Workable, SmartRecruiters, and Recruitee tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
+- Keep upstream Workable, SmartRecruiters, Recruitee, IBM, Arbeitsagentur, Jobstreet, and Glints tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
 
 ## Scan Company Block Filter
@@ -240,6 +264,7 @@ What this customizes:
 - Applies the company block before title, location, URL, and company-role dedupe checks, so forbidden employers do not consume dedupe slots or enter `data/pipeline.md`.
 - Prints `Filtered by company: N removed` in scan summaries when a company block list is configured.
 - Adds `test-all.mjs` coverage that checks the scanner advertises the company block path and verifies `buildCompanyFilter` rejects configured employers while passing unrelated companies.
+- Preserves upstream `content_filter` as a separate title/description filter; do not collapse it into the company block filter because the two policies answer different questions.
 
 Future merge notes:
 
@@ -247,6 +272,7 @@ Future merge notes:
 - If upstream adds first-class employer/company exclusion support, migrate `company_filter.block` configs to the upstream schema or keep this key as a compatibility alias.
 - Keep the filter tolerant of missing or malformed company names; unknown company values should pass to downstream evaluation rather than being silently dropped.
 - Keep LinkedIn authenticated scanning's `linkedin_searches.employer_blocklist` separate unless upstream unifies authenticated and zero-token scan filtering under one shared company-block schema.
+- Preserve upstream metadata sanitization (`formatPipelineOffer` / `formatScanHistoryRow`) when changing filter order so hostile provider strings cannot write extra pipeline or TSV fields.
 
 ## CV Output Naming
 
@@ -351,12 +377,14 @@ What this customizes:
 - Reads `data/scan-history.tsv` before the old root-level fallback.
 - Shows listing date in the dashboard, falling back to the tracker processed date when no listing date is known.
 - Preserves upstream derived fields, shared sort comparator, and new dashboard sort modes, but keeps the listing-date sort on the fork's `dashboardDate()` fallback so reports/scan-history listing dates win when available.
+- Preserves upstream customizable columns / column picker behavior and cross-platform default-app open helpers while keeping user-root normalization for report/PDF targets.
 
 Future merge notes:
 
 - If upstream changes dashboard models or table rendering, preserve the listing-date fallback behavior unless upstream provides a better equivalent.
 - Do not reintroduce the root dashboard wrapper unless upstream provides a better per-user binary flow.
 - Keep upstream sort helper tests and add/adjust fork tests around listing-date fallback when dashboard parsing changes.
+- Keep upstream column picker and OS-open tests intact when dashboard navigation changes; fork-specific tests should focus on user-root path inference and listing-date fallback.
 
 ## Scanner Documentation And Defaults
 
@@ -582,11 +610,15 @@ On every upstream update, explicitly check whether upstream now includes:
 - Batch runner support for both Claude and Codex workers.
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
 - Bounded batch runs through `--limit`.
+- Batch status/watch progress monitoring through user-scoped batch state.
 - `local:jds/...` batch input handling.
 - Conditional batch PDF generation for `Skip` decisions and profile hard stops. Score-threshold configuration is now upstream behavior through `auto_pdf_score_threshold`.
 - Per-user adaptation for upstream tracker report-link normalization and `merge-tracker.mjs --migrate`.
 - Per-user adaptation for upstream `merge-tracker.mjs` filesystem locking and atomic writes.
 - Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
+- Per-user adaptation for upstream `verify-portals.mjs`, `reconcile-pipeline.mjs`, pipeline liveness sweeps, `doctor.mjs --strict`, and any new scan/batch helpers that read `portals.yml`, `data/`, or `batch/`.
+- User-scoped `voice-dna.md` behavior, if upstream keeps treating root `voice-dna.md` as a user file.
+- Antigravity skill entrypoint materialization in `update-system.mjs`.
 - Upstream dead-link/liveness gates in `modes/oferta.md` and `modes/auto-pipeline.md` that still respect user-layer reports and Playwright verification rules.
 - Upstream Playwright MCP doctor warning that remains available through `doctor.mjs --user {USER} --json`.
 - Upstream Release Please component-tag parsing in `update-system.mjs`.
