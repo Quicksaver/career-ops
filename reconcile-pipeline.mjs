@@ -18,7 +18,7 @@
  * an entry already present in Procesadas is dropped from Pendientes without a
  * second copy. Safe to run after every batch.
  *
- * Run: node reconcile-pipeline.mjs [--dry-run] [--state <path>] [--pipeline <path>]
+ * Run: node reconcile-pipeline.mjs [--dry-run] [--state <path>] [--pipeline <path>] [--reports <dir>]
  */
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync, realpathSync, statSync } from 'fs';
@@ -29,7 +29,7 @@ const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const DRY_RUN = process.argv.includes('--dry-run');
 
 if (process.argv.includes('-h') || process.argv.includes('--help')) {
-  console.log('Usage: node reconcile-pipeline.mjs [--dry-run] [--state <path>] [--pipeline <path>]');
+  console.log('Usage: node reconcile-pipeline.mjs [--dry-run] [--state <path>] [--pipeline <path>] [--reports <dir>]');
   console.log('  Moves batch-processed offers out of pipeline.md "Pendientes" into "Procesadas".');
   process.exit(0);
 }
@@ -69,12 +69,34 @@ function resolveInsideRepo(inputPath, fallbackPath, flag) {
   return abs;
 }
 
+function resolveDirInsideRepo(inputPath, fallbackPath, flag) {
+  const abs = resolve(inputPath || fallbackPath);
+  let repoReal, targetReal;
+  try {
+    repoReal = realpathSync(CAREER_OPS);
+    targetReal = existsSync(abs) ? realpathSync(abs) : realpathSync(dirname(abs));
+  } catch {
+    console.error(`Invalid ${flag}: cannot resolve path (${abs})`);
+    process.exit(1);
+  }
+  const rel = relative(repoReal, targetReal);
+  if (rel.startsWith('..') || isAbsolute(rel)) {
+    console.error(`Invalid ${flag}: path must stay inside the repository (${abs})`);
+    process.exit(1);
+  }
+  if (existsSync(abs) && !statSync(abs).isDirectory()) {
+    console.error(`Invalid ${flag}: expected a directory, not a file (${abs})`);
+    process.exit(1);
+  }
+  return abs;
+}
+
 const defaultPipeline = existsSync(join(CAREER_OPS, 'data/pipeline.md'))
   ? join(CAREER_OPS, 'data/pipeline.md')
   : join(CAREER_OPS, 'pipeline.md');
 const PIPELINE_FILE = resolveInsideRepo(argValue('--pipeline'), defaultPipeline, '--pipeline');
 const STATE_FILE = resolveInsideRepo(argValue('--state'), join(CAREER_OPS, 'batch/batch-state.tsv'), '--state');
-const REPORTS_DIR = join(CAREER_OPS, 'reports');
+const REPORTS_DIR = resolveDirInsideRepo(argValue('--reports'), join(CAREER_OPS, 'reports'), '--reports');
 
 // ---- guards ----
 if (!existsSync(STATE_FILE)) {
@@ -160,15 +182,11 @@ function lineUrl(body) {
   return (i >= 0 ? body.slice(0, i) : body).trim();
 }
 
-let pendStart = -1, procStart = -1;
+const pendingStarts = [];
+const processedStarts = [];
 for (let i = 0; i < lines.length; i++) {
-  if (pendStart < 0 && PENDING_RE.test(lines[i])) pendStart = i;
-  else if (procStart < 0 && PROCESSED_RE.test(lines[i])) procStart = i;
-}
-
-if (pendStart < 0) {
-  console.log('No "Pendientes" section in pipeline.md — nothing to reconcile.');
-  process.exit(0);
+  if (PENDING_RE.test(lines[i])) pendingStarts.push(i);
+  else if (PROCESSED_RE.test(lines[i])) processedStarts.push(i);
 }
 
 function sectionEnd(start) {
@@ -177,6 +195,20 @@ function sectionEnd(start) {
   }
   return lines.length;
 }
+
+let pendStart = -1;
+for (const start of pendingStarts) {
+  const end = sectionEnd(start);
+  if (lines.slice(start + 1, end).some(l => PENDING_ITEM_RE.test(l))) pendStart = start;
+}
+if (pendStart < 0 && pendingStarts.length > 0) pendStart = pendingStarts[0];
+const procStart = processedStarts[0] ?? -1;
+
+if (pendStart < 0) {
+  console.log('No "Pendientes" section in pipeline.md — nothing to reconcile.');
+  process.exit(0);
+}
+
 const pendEnd = sectionEnd(pendStart);
 const procEnd = procStart >= 0 ? sectionEnd(procStart) : -1;
 

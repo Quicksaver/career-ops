@@ -4223,6 +4223,24 @@ try {
   } else {
     fail('normalizeJob should return null when refnr or title is missing');
   }
+  const remoteNorm = normalizeJob({ refnr: 'R', titel: 'Softwareentwickler (Remote)', arbeitgeber: ' ACME ', arbeitsort: { ort: 'Jena' } });
+  if (remoteNorm && remoteNorm.location === 'Remote, Jena') {
+    pass('normalizeJob marks remote-titled postings in the location field');
+  } else {
+    fail(`normalizeJob remote location = ${JSON.stringify(remoteNorm)}`);
+  }
+  const notRemoteNorm = normalizeJob({ refnr: 'NR', titel: 'Senior PHP-Entwickler (m/w/d) | NO REMOTE', arbeitgeber: ' ACME ', arbeitsort: { ort: 'Landsberg am Lech' } });
+  if (notRemoteNorm && notRemoteNorm.location === 'Landsberg am Lech') {
+    pass('normalizeJob does not mark no-remote postings as remote');
+  } else {
+    fail(`normalizeJob no-remote location = ${JSON.stringify(notRemoteNorm)}`);
+  }
+  const missingLocNorm = normalizeJob({ refnr: 'M', titel: 'Softwareentwickler', arbeitgeber: ' ACME ' });
+  if (missingLocNorm && missingLocNorm.location === 'Deutschland') {
+    pass('normalizeJob defaults missing Arbeitsagentur locations to Deutschland');
+  } else {
+    fail(`normalizeJob missing location = ${JSON.stringify(missingLocNorm)}`);
+  }
 
   // fetch() — nationwide single-keyword pass, dedup across keywords, header sent
   let sentApiKey = null;

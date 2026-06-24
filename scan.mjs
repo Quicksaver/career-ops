@@ -889,6 +889,9 @@ async function main() {
         throw new Error(`${provider.id}: fetch() did not return an array`);
       }
       totalFound += jobs.length;
+      const targetLocationFilter = company.location_filter
+        ? buildLocationFilter(company.location_filter)
+        : locationFilter;
 
       for (const job of jobs) {
         if (!companyFilter(job.company)) {
@@ -899,7 +902,7 @@ async function main() {
           totalFilteredTitle++;
           continue;
         }
-        if (!locationFilter(job.location)) {
+        if (!targetLocationFilter(job.location)) {
           totalFilteredLocation++;
           continue;
         }

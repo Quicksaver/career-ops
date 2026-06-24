@@ -68,6 +68,8 @@ New upstream features or behavior now present:
 - Resume/ATS assets: upstream added `examples/resume-example.md` and `templates/resume-template.html`, plus ATS-safe wording/template updates. The fork adopted these as system-layer examples/templates.
 - Evaluation and tracker fixes: upstream hardened Gemini report-shape validation, preserved tracker notes when rows lack a trailing pipe, used the real application date from notes in follow-up cadence, auto-creates missing pipeline files, and added data-contract coverage for interview-prep outputs. The fork kept those fixes on the active user's files.
 - Chinese modes: upstream added `modes/zh/` and related README updates for China-market job seekers. The fork adopted them as system-layer language modes.
+- Current scanner filter follow-ups: the fork now supports per-target `location_filter` overrides in `scan.mjs`, so a specific tracked company or job board can narrow/relax location matching without changing the global portal filter. The Arbeitsagentur provider also marks remote-titled postings as `Remote, {location}`, ignores explicit no-remote/no-homeoffice titles for that remote marker, and defaults missing Arbeitsagentur locations to `Deutschland`.
+- Current pipeline/report-number follow-ups: `reserve-report-num.mjs` now treats any numeric `{N}-` report prefix as occupied while still printing at least 3 digits, so users beyond report 999 do not recycle lower slots. `reconcile-pipeline.mjs` now accepts a validated `--reports <dir>` path and chooses the pending section that actually contains pending items when duplicate `Pending`/`Pendientes` headings exist.
 
 Conflict notes from this merge:
 
@@ -141,6 +143,8 @@ What this customizes:
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
 - Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, and cover-letter PDFs default to `users/{USER}/output/`.
+- Report-number reservation scans all numeric report prefixes under `users/{USER}/reports/`, not only 3-digit prefixes. Keep this when users cross report 999; the printed value remains zero-padded to at least 3 digits for compatibility with existing artifact names.
+- `reconcile-pipeline.mjs` remains path-overridable for batch/user layouts: use `--state users/{USER}/batch/batch-state.tsv --pipeline users/{USER}/data/pipeline.md --reports users/{USER}/reports` when invoking it directly for a per-user batch cleanup. The script validates those paths stay inside the repository and rejects file/directory type mismatches before reading or writing.
 - The upstream SQLite tracker index is adapted to the same resolver: `node tracker.mjs sync --user {USER}` reads `users/{USER}/data/applications.md` and writes the derived `users/{USER}/data/applications.db`. The database is disposable derived state, not a replacement for the markdown source of truth.
 - Upstream tracker merge locking is preserved, but the lock key is derived from the active user's canonical `users/{USER}/data/applications.md` path. Report-link normalization also canonicalizes the user root so symlinked temp/user directories do not produce bogus relative links.
 - Docs and help text must use placeholders like `{USER}`, `<username>`, or `<id>`. Do not hardcode a real local username outside its own ignored `users/{USER}/` directory.
@@ -192,11 +196,13 @@ Future merge notes:
 - Preserve the schema-checked final JSON contract for Codex workers; do not regress to parsing the free-form transcript as the main completion signal.
 - Preserve stale-state recovery and explicit missing-artifact failure reasons. They are needed because a headless worker can write partial artifacts or transcript JSON without producing the required final-message JSON.
 - Preserve runner-reserved report numbering for tracker TSVs if upstream changes batch merge behavior. Worker-side `applications.md` max calculations are unsafe under parallelism.
+- Preserve report numbering beyond 999 if upstream changes `reserve-report-num.mjs`; scans for occupied slots and `--release` validation must accept any positive-width numeric prefix while artifact display can stay padded to at least 3 digits.
 - Preserve upstream report-link normalization, but keep its filesystem roots user-scoped. Do not reintroduce root-level `data/applications.md`, root `reports/`, or `CAREER_OPS_TRACKER` as the normal production path.
 - Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
 - Preserve `--status` and `--watch` or equivalent progress visibility if upstream changes batch state layout; they should keep reading `users/{USER}/batch/batch-state.tsv`.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 - Preserve upstream rate-limit pause semantics and Claude MCP isolation. If the worker command code is refactored again, test that `paused_rate_limit` does not consume retry budget and Claude workers still include `--strict-mcp-config`.
+- If post-batch pipeline reconciliation is refactored, make sure the reconciler receives the user-scoped state, pipeline, and reports paths together; otherwise it can look for report files in the wrong reports directory.
 
 ## Custom Provider Layer
 
@@ -225,6 +231,7 @@ Files:
 - `providers/jobsch.mjs`
 - `providers/makeitingermany.mjs`
 - `providers/rustjobs.mjs`
+- `providers/arbeitsagentur.mjs`
 - `templates/portals.example.yml`
 - `test-all.mjs`
 
@@ -233,6 +240,7 @@ What this customizes:
 - Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, NoDesk, RustJobs.dev, and related English Jobs boards.
 - Upstream now also supplies first-party Workable, SmartRecruiters, Recruitee, SolidJobs, Workday, RemoteOK, Remotive, IBM, Working Nomads, Arbeitsagentur, Jobstreet, and Glints provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
 - Working Nomads is partly retired from the fork's custom-provider dispatcher: the provider module is now direct/upstream-style, while local config compatibility for `api`, inferred location, `api_params.q/category/location/tags`, and `published_within_days` remains in `providers/workingnomads.mjs`.
+- Arbeitsagentur remains an upstream-style provider module, but the fork adds local normalization that prefixes remote-titled postings with `Remote, ...`, avoids doing so for explicit no-remote/no-homeoffice titles, and uses `Deutschland` when the API omits a location. This keeps location filtering useful for nationwide/remote Germany scans without letting `NO REMOTE` titles slip through as remote.
 - Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
 - Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
 - Extends the example portal config with these discovery sources and custom notes/parameters.
@@ -244,11 +252,12 @@ Future merge notes:
 - If upstream adds one of these providers, compare behavior before keeping both. Prefer upstream modules when they produce equivalent fields and filtering; otherwise keep only the missing compatibility layer, as done for Working Nomads filters in this merge.
 - If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage. Upstream's Ashby-specific timeout/backoff is not yet a full replacement for the custom helper because the fork uses the helper across several custom structured providers.
 - Keep upstream Workable, SmartRecruiters, Recruitee, IBM, Arbeitsagentur, Jobstreet, and Glints tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
+- Preserve the Arbeitsagentur remote/no-remote normalization unless upstream adds an equivalent signal in the provider output or scan filtering layer.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
 
-## Scan Company Block Filter
+## Scan Company And Location Filters
 
-The fork adds a generic company-name block filter to the zero-token scanner so per-user portal configs can reject forbidden employers before they are added to the pipeline.
+The fork adds scanner-side policy filters so per-user portal configs can reject forbidden employers and tune location matching before offers are added to the pipeline.
 
 Files:
 
@@ -260,6 +269,7 @@ What this customizes:
 
 - Adds exported `buildCompanyFilter(company_filter)` support in `scan.mjs`.
 - Reads optional `company_filter.block` from the active user's `portals.yml`.
+- Builds the global location filter from `location_filter`, but lets each tracked company or job-board entry override it with its own `location_filter`. This is useful for broad global filters plus source-specific exceptions such as Germany-only Arbeitsagentur boards.
 - Rejects provider results whose `job.company` contains a blocked company keyword, case-insensitively.
 - Applies the company block before title, location, URL, and company-role dedupe checks, so forbidden employers do not consume dedupe slots or enter `data/pipeline.md`.
 - Prints `Filtered by company: N removed` in scan summaries when a company block list is configured.
@@ -271,6 +281,7 @@ Future merge notes:
 - Preserve this hook while user profiles need hard employer exclusions such as direct partners, conflicts of interest, or blocked industries.
 - If upstream adds first-class employer/company exclusion support, migrate `company_filter.block` configs to the upstream schema or keep this key as a compatibility alias.
 - Keep the filter tolerant of missing or malformed company names; unknown company values should pass to downstream evaluation rather than being silently dropped.
+- Preserve per-target `location_filter` precedence over the global filter. If upstream adds provider-specific scan filters, keep the current config shape as a compatibility alias or provide a migration for user portal configs.
 - Keep LinkedIn authenticated scanning's `linkedin_searches.employer_blocklist` separate unless upstream unifies authenticated and zero-token scan filtering under one shared company-block schema.
 - Preserve upstream metadata sanitization (`formatPipelineOffer` / `formatScanHistoryRow`) when changing filter order so hostile provider strings cannot write extra pipeline or TSV fields.
 
@@ -617,6 +628,8 @@ On every upstream update, explicitly check whether upstream now includes:
 - Per-user adaptation for upstream `merge-tracker.mjs` filesystem locking and atomic writes.
 - Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
 - Per-user adaptation for upstream `verify-portals.mjs`, `reconcile-pipeline.mjs`, pipeline liveness sweeps, `doctor.mjs --strict`, and any new scan/batch helpers that read `portals.yml`, `data/`, or `batch/`.
+- Report-number reservation past 999 and reconciler report lookup through explicit `--reports` paths.
+- Per-target scan `location_filter` overrides and Arbeitsagentur remote-title/no-remote normalization.
 - User-scoped `voice-dna.md` behavior, if upstream keeps treating root `voice-dna.md` as a user file.
 - Antigravity skill entrypoint materialization in `update-system.mjs`.
 - Upstream dead-link/liveness gates in `modes/oferta.md` and `modes/auto-pipeline.md` that still respect user-layer reports and Playwright verification rules.

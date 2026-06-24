@@ -25,6 +25,7 @@ const API_URL = 'https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4
 const API_KEY = 'jobboerse-jobsuche'; // public client key the arbeitsagentur.de UI uses
 const DETAIL_BASE = 'https://www.arbeitsagentur.de/jobsuche/jobdetail/';
 const REMOTE_RE = /(remote|homeoffice|home[-\s]?office|ortsunabh|deutschlandweit|bundesweit|100\s*%|full[-\s]?remote|fully remote)/i;
+const NOT_REMOTE_RE = /(no\s+remote|not\s+remote|nicht\s+remote|kein(?:e[nrms]?)?\s+remote|ohne\s+remote|no\s+homeoffice|kein(?:e[nrms]?)?\s+homeoffice)/i;
 
 // Clamp a runtime integer into [min, max], falling back to `def` for NaN, so a
 // stray portals.yml value can't produce empty (size=0) or pathological queries.
@@ -79,11 +80,15 @@ export function normalizeJob(job) {
   const refnr = job && job.refnr;
   const title = String((job && job.titel) || '').trim();
   if (!refnr || !title) return null;
+  const location = buildLocation(job && job.arbeitsort) || 'Deutschland';
+  const normalizedLocation = REMOTE_RE.test(title) && !NOT_REMOTE_RE.test(title)
+    ? ['Remote', location].filter(Boolean).join(', ')
+    : location;
   return {
     title,
     url: DETAIL_BASE + encodeURIComponent(String(refnr)),
     company: String((job && job.arbeitgeber) || '').trim(),
-    location: buildLocation(job && job.arbeitsort),
+    location: normalizedLocation,
     refnr: String(refnr),
   };
 }
