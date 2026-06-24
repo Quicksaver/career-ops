@@ -12,7 +12,7 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, relative, sep } from 'path';
 import { pathToFileURL } from 'url';
 import {
   getUserContext,
@@ -225,16 +225,31 @@ function extractContacts(notes) {
 }
 
 // --- Resolve report path ---
-function resolveReportPath(reportField) {
+export function resolveReportPath(reportField, appsFile = null, repoRoot = null) {
   const match = reportField.match(/\]\(([^)]+)\)/);
   if (!match) return null;
-  const { appsFile, userContext } = getRuntimeContext();
+  const ctx = appsFile && repoRoot ? null : getRuntimeContext();
+  const resolvedAppsFile = appsFile || ctx.appsFile;
+  const resolvedRepoRoot = repoRoot || ctx.userContext.userRoot;
   const link = match[1];
   // Tracker links are normalized relative to applications.md; tolerate older
   // user-root-relative links while existing trackers are migrated.
-  const trackerRelativePath = join(dirname(appsFile), link);
-  const userRootRelativePath = join(userContext.userRoot, link);
-  return existsSync(trackerRelativePath) || existsSync(userRootRelativePath) ? link : null;
+  const trackerRelativePath = join(dirname(resolvedAppsFile), link);
+  const userRootRelativePath = ctx ? join(ctx.userContext.userRoot, link) : null;
+  if (existsSync(trackerRelativePath) || (userRootRelativePath && existsSync(userRootRelativePath))) {
+    const fullPath = existsSync(trackerRelativePath) ? trackerRelativePath : userRootRelativePath;
+    const repoRelative = relative(resolvedRepoRoot, fullPath).split(sep).join('/');
+    if (repoRelative.startsWith('../') || repoRelative === '..') return null;
+    return repoRelative;
+  }
+  // Report links in the tracker are normalized relative to the tracker file's
+  // own directory (see PR #760 — `merge-tracker.mjs --migrate`). Resolve against
+  // dirname(APPS_FILE), not the project root, otherwise relative paths like
+  // `../reports/...` (the data/applications.md layout) escape above the project.
+  const fullPath = join(dirname(resolvedAppsFile), link);
+  const repoRelative = relative(resolvedRepoRoot, fullPath).split(sep).join('/');
+  if (repoRelative.startsWith('../') || repoRelative === '..' || !repoRelative.startsWith('reports/')) return null;
+  return existsSync(fullPath) ? repoRelative : null;
 }
 
 // --- Compute urgency ---

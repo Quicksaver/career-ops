@@ -136,6 +136,7 @@ For companies with a public API or structured feed **that are not in `local_pars
 - **SAPO Emprego**: `https://emprego.sapo.pt/offers` y variantes filtradas (`?pesquisa=ai&categoria=informatica-tecnologias&modelo=teletrabalho,hibrido&pagina=N`)
 - **Portal Emprego**: `https://www.portalemprego.pt/anuncios/` y variantes SEO (`/anuncios/pesquisa-ai/mostrar-20/pagina-N/`)
 - **Dice**: `https://www.dice.com/jobs` y variantes de búsqueda (`?q={query}&page={N}&pageSize=20`), leyendo el payload de resultados embebido en SSR con links canónicos `/job-detail/{guid}`
+- **Breezy**: `https://{company}.breezy.hr/json`
 
 **Parsing Conventions by Provider:**
 - `greenhouse`: `jobs[]` → `title`, `absolute_url`
@@ -143,13 +144,14 @@ For companies with a public API or structured feed **that are not in `local_pars
 - `bamboohr`: list `result[]` → `jobOpeningName`, `id`; build detail URL `https://{company}.bamboohr.com/careers/{id}/detail`; to read full JD, make a GET request to the detail URL and use `result.jobOpening` (`jobOpeningName`, `description`, `datePosted`, `minimumExperience`, `compensation`, `jobOpeningShareUrl`)
 - `lever`: root array `[]` → `text`, `hostedUrl` (fallback: `applyUrl`)
 - `teamtailor`: RSS items → `title`, `link`
-- `workday`: `jobPostings[]`/`jobPostings` (según tenant) → `title`, `externalPath` o URL construida desde el host
+- `workday`: `jobPostings[]`/`jobPostings` (based on tenant) → `title`, `externalPath` or URL built from the host
 - `landingjobs`: Atom `<entry>` → `title`, `id`/URL pública, `author > name` (empresa), `lj:city`, `lj:country`, `lj:remote_policy`, `lj:category`, `lj:job_type`, `published`, `updated`
 - `euremotejobs`: RSS `<item>` → `title`, `link`, `pubDate`, `content:encoded`; extraer `company` y `location` desde párrafos normalizados del contenido
 - `itjobs`: HTML SSR `ul.listing > li` → `div.list-title a` (`title`, `href`), `div.list-name a` (`company`), `div.list-details` (`location` y metadatos como remoto/híbrido/salario)
 - `sapo`: HTML SSR / Vue props `:offers='[...]'` → `offer_name`, `link`, `company_name`, `location`, `job_district`, `job_work_hours`; detalle con JSON-LD `JobPosting`
 - `portalemprego`: HTML SSR `#listCont a.d-flex[href^="/emprego/"]` → `div.title h5` (`title`), `href`, `span.company`, `span.city`, `span.type`, `span.postedDate`
 - `dice`: payload embebido `jobList.data[]` → `title`, `detailsPageUrl`, `companyName`, `jobLocation.displayName`, `salary`, `employmentType`, `easyApply`, `workplaceTypes`, `postedDate`; paginación desde `jobList.meta.pageCount`
+- `breezy`: top-level array `[]` → `name`, `url` (absolute), `location.name` (or city/state/country + `is_remote`), `published_date`
 
 ### Level 3 — WebSearch Queries (BROAD DISCOVERY)
 
@@ -219,11 +221,11 @@ Levels are additive — they are executed in order, and results are merged and d
    f. Accumulate in the candidates list.
    g. If `careers_url` fails (404, redirect), attempt `scan_query` as a fallback and note it to update the URL later.
 
-5. **Nivel 2 — ATS APIs / feeds** (paralelo):
-   Para cada empresa en `tracked_companies` con `api:` definida o `provider:` configurado, `enabled: true`, y **nombre no listado en `local_parser_ok`**:
-   a. WebFetch de la URL de API/feed
-    b. Si `provider` está definido, usar su parser; si no está definido, inferir por dominio (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `landing.jobs/feed`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `www.itjobs.pt/emprego`, `emprego.sapo.pt/offers`, `www.portalemprego.pt/anuncios`, `www.dice.com/jobs`)
-   c. Para **Ashby**, enviar POST con:
+5. **Level 2 — ATS APIs / Feeds** (parallel):
+   For each company in `tracked_companies` with a defined `api:` or configured `provider:`, `enabled: true`, and a **name not listed in `local_parser_ok`**:
+   a. WebFetch the API/feed URL.
+   b. If `provider` / `api_provider` is defined, use its parser; if undefined, infer by domain (`boards-api.greenhouse.io`, `jobs.ashbyhq.com`, `api.lever.co`, `/api/pcsx/search`, `landing.jobs/feed`, `*.bamboohr.com`, `*.teamtailor.com`, `*.myworkdayjobs.com`, `*.breezy.hr`, `www.itjobs.pt/emprego`, `emprego.sapo.pt/offers`, `www.portalemprego.pt/anuncios`, `www.dice.com/jobs`).
+   c. For **Ashby**, send a POST request with:
       - `operationName: ApiJobBoardWithTeams`
       - `variables.organizationHostedJobsPageName: {company}`
       - query GraphQL de `jobBoardWithTeams` + `jobPostings { id title locationName employmentType compensationTierSummary }`
