@@ -42,6 +42,7 @@ RATE_LIMIT_SLEEP=300
 BATCH_PAUSED=false
 STATUS_ONLY=false
 WATCH_MODE=false
+LIMIT=0
 
 # Return success for non-negative integer or decimal strings.
 is_decimal_number() {
@@ -171,6 +172,11 @@ fi
 
 if ! is_decimal_number "$MIN_SCORE"; then
   echo "ERROR: --min-score must be a non-negative number."
+  exit 1
+fi
+
+if ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: --limit must be a non-negative integer."
   exit 1
 fi
 
@@ -1077,8 +1083,12 @@ main() {
 
   echo "=== career-ops batch runner ==="
   echo "User: $USER_ID"
-  echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
-  echo "CLI: $CLI | Limit: $LIMIT | Worker timeout: ${WORKER_TIMEOUT_SECONDS}s"
+  if (( LIMIT > 0 )); then
+    echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES | Limit: $LIMIT"
+  else
+    echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
+  fi
+  echo "CLI: $CLI | Worker timeout: ${WORKER_TIMEOUT_SECONDS}s"
   echo "Input: $total_input offers"
   echo ""
 
@@ -1137,6 +1147,10 @@ main() {
           continue
         fi
       fi
+    fi
+
+    if (( LIMIT > 0 )) && (( ${#pending_ids[@]} >= LIMIT )); then
+      break
     fi
 
     pending_ids+=("$id")
