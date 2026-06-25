@@ -261,6 +261,16 @@ function validateCvSectionOrder(html, cvMarkdown) {
   }
 }
 
+function assertNoUnresolvedPlaceholders(html, inputPath = 'HTML input') {
+  const placeholders = [...new Set(html.match(/\{\{[A-Z_][A-Z0-9_]*\}\}/g) || [])];
+  if (placeholders.length === 0) return;
+
+  throw new Error(
+    `${inputPath} contains unresolved template placeholders: ${placeholders.join(', ')}. `
+    + 'Resolve or omit optional fields before generating the PDF.'
+  );
+}
+
 async function generatePDF() {
   const args = userContext.args;
 
@@ -323,6 +333,7 @@ async function generatePDF() {
     const breakdown = Object.entries(normalized.replacements).map(([k, v]) => `${k}=${v}`).join(', ');
     console.log(`🧹 ATS normalization: ${totalReplacements} replacements (${breakdown})`);
   }
+  assertNoUnresolvedPlaceholders(html, inputPath);
 
   return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath) });
 }
@@ -449,4 +460,4 @@ if (isMain) {
   });
 }
 
-export { normalizeTextForATS };
+export { normalizeTextForATS, assertNoUnresolvedPlaceholders };
