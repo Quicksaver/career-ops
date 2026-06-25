@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `68c0cdf340a6066c21038ae6e8665ffc4d8c22d2`
+- Upstream ref: `upstream/main` at `0607ee57e176c93422732ee1ad1530cd606f70b6`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `83`
-- Diff-size baseline after merge, before this inventory-only refresh: `109 files changed, 9745 insertions(+), 1756 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `86`
+- Diff-size baseline after merge, before this inventory-only refresh: `109 files changed, 9769 insertions(+), 1760 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12-era behavior and subsequent upstream fixes through `68c0cdf340a6066c21038ae6e8665ffc4d8c22d2` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13-era behavior and subsequent upstream fixes through `0607ee57e176c93422732ee1ad1530cd606f70b6` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -78,9 +78,15 @@ New upstream features or behavior now present:
 - Tracker upgrades: upstream added `tracker.mjs delete --num N` for safe row deletion. The fork keeps the command on the user-scoped markdown tracker and made the row-removal helper import-safe so tests/tools can use it without selecting a user.
 - PDF/template upgrades: upstream changed `generate-pdf.mjs` to render a temporary `file://` HTML document via `page.goto(...)`, so relative images and other local resources render correctly; upstream also disabled `fi`/`fl` ligatures in CV, resume, and cover-letter templates for ATS-clean text extraction. The fork keeps those changes while preserving `cv.theme` injection and `users/{USER}/cv.md` section-order validation.
 - Language and docs surface: upstream added Polish modes (`modes/pl/`) and localized README updates. These are system-layer language assets; user-specific Polish targeting still belongs in `users/{USER}/config/profile.yml` or `users/{USER}/modes/_profile.md`.
+- v1.13 release baseline: upstream `VERSION`, Release Please manifest, and `CHANGELOG.md` now include v1.13.0. The fork adopted the release metadata while preserving updater safeguards for user-layer files.
+- Language and docs surface: upstream added Danish modes (`modes/da/`), `README.da.md`, and update-system materialization for Danish locale paths. These are system-layer language assets; user-specific Danish targeting still belongs in `users/{USER}/config/profile.yml` or `users/{USER}/modes/_profile.md`.
+- Batch budget guidance: upstream added `docs/RUNNING_ON_A_BUDGET.md`, linked it from batch docs/modes, and added a base `--limit` flag to `batch/batch-runner.sh`. The fork already had `--limit`; the merged runner keeps upstream's budget-facing documentation and limit semantics while preserving per-user batch state, Codex worker support, schema-checked final JSON, worker timeouts, prompt personalization, and user-scoped reconcile/verify commands.
+- Repository hygiene: upstream added `.github/CODEOWNERS` for hosted entrypoint surfaces and universal ignore rules for nested `.env*.local` and `*.tsbuildinfo` files. The fork kept those while preserving `.scan-auth/` credential-profile hygiene.
 
 Conflict notes from this merge:
 
+- `.gitignore`: kept the fork's `.scan-auth/` credential-profile ignore and added upstream's universal nested local-env / TypeScript build-cache ignore rules.
+- `batch/batch-runner.sh`: removed duplicate `--limit` help/parser entries, adopted upstream's limit-aware startup summary, and kept the fork's user banner plus CLI/worker-timeout logging so per-user Codex and Claude batch runs remain auditable.
 - `CLAUDE.md`: kept the fork's short redirect to `AGENTS.md` because `AGENTS.md` is the merged canonical instruction surface with active-user and user-layer rules.
 - `generate-cover-letter.mjs`: kept upstream's import-safe `buildHtml`, single-pass token replacement, optional greeting block, and lazy Playwright import, then restored user-scoped `--user` resolution and `users/{USER}/output` output paths inside `main()`.
 - `generate-pdf.mjs`: in the current merge, kept upstream's temp-file `page.goto(file://...)` renderer and `randomUUID` cleanup path so local images/resources render, while retaining fork user resolution, `cv.theme` overrides, and `users/{USER}/cv.md` section-order validation. A focused smoke test confirmed `--user`, theme injection, ATS normalization, and PDF output together.
@@ -193,7 +199,7 @@ What this customizes:
 - Recovers stale `processing` rows at the start of a new non-dry-run batch by marking them failed with `stale-processing-state`, so interrupted workers do not block or hide the next run.
 - Uses the runner-reserved `REPORT_NUM` as the TSV first column, report link number, and artifact number so parallel workers do not race while calculating tracker numbers from `applications.md`.
 - Adapts upstream tracker report-link normalization to the per-user layout: workers still write user-root-relative `[REPORT_NUM](reports/...)` links, and `merge-tracker.mjs --user {USER}` rewrites them relative to `users/{USER}/data/applications.md` before merging.
-- Adds `--limit N` so a batch run can process only the next N pending offers, useful for smoke tests, quota-aware batches, and resuming large queues in smaller chunks.
+- Preserves upstream `--limit N` so a batch run can process only the next N pending offers, while keeping the fork's existing user-scoped state, Codex worker, and timeout behavior around that bounded-run flow.
 - Preserves upstream `--status` and `--watch` progress monitoring on the fork's user-scoped batch state.
 - Preserves upstream `--skip-pdf`, but the flag still runs under the fork's active-user contract and writes user-scoped tracker additions with `❌` / `"pdf": null` rather than bypassing `users/{USER}/batch/`.
 - Preserves upstream `awk`-based score arithmetic and malicious-score-safe status summaries; keep these in future merges so batch status rendering does not depend on `bc` and does not interpolate untrusted score text into shell arithmetic.
@@ -212,7 +218,7 @@ Future merge notes:
 - Preserve runner-reserved report numbering for tracker TSVs if upstream changes batch merge behavior. Worker-side `applications.md` max calculations are unsafe under parallelism.
 - Preserve report numbering beyond 999 if upstream changes `reserve-report-num.mjs`; scans for occupied slots and `--release` validation must accept any positive-width numeric prefix while artifact display can stay padded to at least 3 digits.
 - Preserve upstream report-link normalization, but keep its filesystem roots user-scoped. Do not reintroduce root-level `data/applications.md`, root `reports/`, or `CAREER_OPS_TRACKER` as the normal production path.
-- Keep `--limit` or an equivalent bounded-run mechanism; it is operationally useful when processing queues under usage limits.
+- Keep upstream `--limit` or an equivalent bounded-run mechanism wired through the fork's user-scoped batch state; it is operationally useful when processing queues under usage limits.
 - Preserve `--status` and `--watch` or equivalent progress visibility if upstream changes batch state layout; they should keep reading `users/{USER}/batch/batch-state.tsv`.
 - Preserve the active-user requirement for `--status` and `--watch`; upstream root-batch fixtures need `CAREER_OPS_USERS_DIR` plus `--user test` in this fork.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
@@ -643,7 +649,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Dashboard listing-date parsing/display.
 - Batch runner support for both Claude and Codex workers.
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
-- Bounded batch runs through `--limit`.
+- Bounded batch runs through `--limit` are now upstream baseline; preserve only the fork-specific user-scoped/Codex integration around the flag.
 - Batch status/watch progress monitoring through user-scoped batch state.
 - `local:jds/...` batch input handling.
 - Conditional batch PDF generation for `Skip` decisions and profile hard stops. Score-threshold configuration is now upstream behavior through `auto_pdf_score_threshold`.
