@@ -304,7 +304,7 @@ next_action: "{one concrete next step}"
 5. Detecta arquetipo → adapta framing
 6. Reescribe Professional Summary inyectando keywords
 7. Selecciona top 3-4 proyectos más relevantes
-8. Reordena bullets de experiencia por relevancia al JD
+8. Reordena bullets de experiencia por relevancia al JD, pero conserva los bloques de Work Experience en orden cronológico inverso. No subas una empresa anterior por encima de una experiencia más reciente; solo cambia el orden y redacción de bullets dentro de cada bloque.
 9. Construye competency grid (6-8 keyword phrases)
 10. Inyecta keywords en logros existentes (**NUNCA inventa**)
 11. Genera HTML completo desde template (lee `templates/cv-template.html`)
