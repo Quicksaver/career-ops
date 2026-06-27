@@ -30,6 +30,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync --user {USER}` — safe to delete) |
 | `users/{USER}/data/pipeline.md` | URL inbox |
 | `users/{USER}/data/scan-history.tsv` | Scan history |
+| `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |
@@ -50,6 +51,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
 | `modes/scan.md` | Portal scanner instructions |
+| `modes/scan-handoff.md` | Agent/WebSearch scan handoff instructions |
 | `modes/scan-auth.md` | Authenticated portal scanner instructions |
 | `modes/batch.md` | Batch processing instructions |
 | `modes/apply.md` | Application assistant instructions |

@@ -331,11 +331,14 @@ Filtered by title: N relevant
 Duplicates: N (already evaluated or in pipeline)
 Expired discarded: N (dead links, Level 3)
 New added to pipeline.md: N
+Agent/WebSearch handoff: N
+Handoff file: users/{USER}/data/scan-handoff.json
 
   + {company} | {title} | {query_name}
   ...
 
 → Run /career-ops pipeline to evaluate the new offers.
+→ Run /career-ops scan-handoff to process unsupported companies from the saved handoff file.
 ```
 
 ## Managing careers_url

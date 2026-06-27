@@ -242,6 +242,7 @@ Career-ops is a single slash command with multiple modes:
 /career-ops                → Show all available commands
 /career-ops {paste a JD}   → Full auto-pipeline (evaluate + PDF + tracker)
 /career-ops scan           → Scan portals for new offers
+/career-ops scan-handoff   → Process unsupported companies from the latest scan
 /career-ops scan-auth      → Scan authenticated portals like LinkedIn
 /career-ops pdf            → Generate ATS-optimized CV
 /career-ops cover          → Cover letter generator (paste JD or /career-ops cover {slug})
@@ -301,6 +302,8 @@ node scan.mjs --user <username> --verify          # zero-token discovery + Playw
 ```
 
 The verification is sequential and only runs against new offers (after dedup), so the cost stays bounded.
+
+When the zero-token scan finds companies that need agent/WebSearch discovery, it writes the full list to `users/{USER}/data/scan-handoff.json`. Run `/career-ops scan-handoff` to process that saved handoff without rerunning the zero-token scan.
 
 Authenticated portals use a separate scanner and a per-user browser profile. For LinkedIn:
 

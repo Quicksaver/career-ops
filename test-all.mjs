@@ -1975,6 +1975,7 @@ try {
     shouldDedupScanHistoryRow,
     formatPipelineOffer,
     formatScanHistoryRow,
+    buildScanHandoffPayload,
   } = await import(pathToFileURL(join(ROOT, 'scan.mjs')).href);
 
   const filter = buildLocationFilter({
@@ -2160,6 +2161,29 @@ try {
     pass('scan-history writer preserves row shape and neutralizes spreadsheet formulas');
   } else {
     fail(`scan-history metadata sanitizer produced unsafe TSV row: ${JSON.stringify(historyColumns)}`);
+  }
+
+  const handoffPayload = buildScanHandoffPayload([
+    {
+      company: 'Acme\nCorp',
+      method: '',
+      query: 'https://jobs.example.com\t?q=engineer',
+    },
+  ], {
+    date: '2026-06-27',
+    generatedAt: '2026-06-27T00:00:00.000Z',
+  });
+  if (
+    handoffPayload.schema === 'career-ops.scan-handoff.v1' &&
+    handoffPayload.count === 1 &&
+    handoffPayload.scan_date === '2026-06-27' &&
+    handoffPayload.items[0].company === 'Acme Corp' &&
+    handoffPayload.items[0].method === 'websearch' &&
+    handoffPayload.items[0].query === 'https://jobs.example.com ?q=engineer'
+  ) {
+    pass('scan handoff JSON payload preserves full structured handoff with sanitized fields');
+  } else {
+    fail(`scan handoff payload shape unexpected: ${JSON.stringify(handoffPayload)}`);
   }
 
   // ── content_filter (#734) ──

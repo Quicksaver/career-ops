@@ -465,13 +465,42 @@ What this customizes:
 - Describes direct scanning beyond Greenhouse/Ashby/Lever, including PCSX and structured job portals.
 - Clarifies broad-discovery search queries for boards where direct access is unreliable.
 - Keeps scanner documentation aligned with the fork's provider modules.
-- Documents upstream `scan_history.recheck_after_days`, salary filtering, `scan:full`, and portal validation while keeping all examples user-scoped.
+- Documents upstream `scan_history.recheck_after_days`, salary filtering, `scan:full`, scan handoff follow-up, and portal validation while keeping all examples user-scoped.
 
 Future merge notes:
 
 - Reconcile upstream copy edits first, then update only the provider lists and behavior statements that remain fork-specific.
 - Keep `scan-ats-full.mjs` and `validate-portals.mjs` user-scoped unless upstream introduces equivalent multi-user routing.
 - If upstream changes scan-history TTL, salary filters, or rediscovery semantics, preserve the fork's company block filter and authenticated scan age filter as separate local policy layers.
+
+## Scan Handoff Artifact And Mode
+
+The fork persists the full Agent/WebSearch follow-up list from the zero-token scan and exposes a separate command mode to process it on demand.
+
+Files:
+
+- `scan.mjs`
+- `modes/scan.md`
+- `modes/scan-handoff.md`
+- `.agents/skills/career-ops/SKILL.md`
+- `AGENTS.md`
+- `DATA_CONTRACT.md`
+- `README.md`
+- `test-all.mjs`
+
+What this customizes:
+
+- `scan.mjs` writes `users/{USER}/data/scan-handoff.json` on every non-dry-run scan, using schema `career-ops.scan-handoff.v1` and including the complete handoff list even when terminal output truncates after the first 25 entries.
+- The handoff artifact is user-layer data because it reflects the active user's `portals.yml` and latest scan state; updates must not modify or delete it.
+- `/career-ops scan` remains a zero-token scanner command and does not automatically continue into the handoff flow.
+- `/career-ops scan-handoff` reads the saved artifact and runs the agent/WebSearch follow-up workflow from `modes/scan-handoff.md`, including Playwright liveness verification before WebSearch-derived URLs reach `users/{USER}/data/pipeline.md`.
+- `test-all.mjs` covers the handoff JSON payload shape and field sanitization.
+
+Future merge notes:
+
+- Preserve the separation between `scan.mjs` as the deterministic zero-token producer and `scan-handoff` as the agent/WebSearch consumer unless upstream ships an equivalent explicit resume command.
+- If upstream adds a handoff artifact, migrate to the upstream schema only if it remains user-scoped and stores the complete list, not just the terminal preview.
+- Keep WebSearch-derived additions gated by Playwright liveness verification; search snippets must not decide posting activity.
 
 ## Full ATS Discovery And Portal Validation
 
@@ -680,6 +709,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Per-user adaptation for upstream `merge-tracker.mjs` filesystem locking and atomic writes.
 - Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
 - Per-user adaptation for upstream `verify-portals.mjs`, `reconcile-pipeline.mjs`, pipeline liveness sweeps, `doctor.mjs --strict`, and any new scan/batch helpers that read `portals.yml`, `data/`, or `batch/`.
+- User-scoped scan handoff artifacts at `users/{USER}/data/scan-handoff.json` plus the explicit `/career-ops scan-handoff` follow-up mode.
 - Report-number reservation past 999 and reconciler report lookup through explicit `--reports` paths.
 - Per-target scan `location_filter` overrides and Arbeitsagentur remote-title/no-remote normalization.
 - User-scoped `voice-dna.md` behavior, if upstream keeps treating root `voice-dna.md` as a user file.

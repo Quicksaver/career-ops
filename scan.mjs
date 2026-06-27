@@ -52,6 +52,7 @@ let PORTALS_PATH = 'portals.yml';
 let SCAN_HISTORY_PATH = 'data/scan-history.tsv';
 let PIPELINE_PATH = 'data/pipeline.md';
 let APPLICATIONS_PATH = 'data/applications.md';
+let SCAN_HANDOFF_PATH = 'data/scan-handoff.json';
 const PROVIDERS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'providers');
 
 const CONCURRENCY = 10;
@@ -64,6 +65,7 @@ function configureUserPaths(ctx) {
   SCAN_HISTORY_PATH = userPath(ctx, 'data/scan-history.tsv');
   PIPELINE_PATH = userPath(ctx, 'data/pipeline.md');
   APPLICATIONS_PATH = userPath(ctx, 'data/applications.md');
+  SCAN_HANDOFF_PATH = userPath(ctx, 'data/scan-handoff.json');
 }
 
 export function configureScanUserPaths(ctx) {
@@ -616,6 +618,27 @@ export function appendToScanHistory(offers, date, status = 'added') {
   appendFileSync(SCAN_HISTORY_PATH, lines, 'utf-8');
 }
 
+export function buildScanHandoffPayload(items, { date, generatedAt = new Date().toISOString() } = {}) {
+  const normalized = items.map(item => ({
+    company: normalizeScanScalar(item.company),
+    method: normalizeScanScalar(item.method || 'websearch'),
+    query: normalizeScanScalar(item.query),
+  }));
+  return {
+    generated_at: generatedAt,
+    scan_date: date,
+    schema: 'career-ops.scan-handoff.v1',
+    count: normalized.length,
+    items: normalized,
+  };
+}
+
+function writeScanHandoff(items, { date, dryRun = false } = {}) {
+  if (dryRun) return;
+  const payload = buildScanHandoffPayload(items, { date });
+  writeFileSync(SCAN_HANDOFF_PATH, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
+}
+
 // ── Parallel fetch with concurrency limit ───────────────────────────
 
 async function parallelFetch(tasks, limit) {
@@ -1031,6 +1054,7 @@ async function main() {
       appendToScanHistory(group, date, status);
     }
   }
+  writeScanHandoff(agentHandoff, { date, dryRun });
 
   // 7. Print summary
   console.log(`\n${'━'.repeat(45)}`);
@@ -1082,6 +1106,9 @@ async function main() {
 
   if (agentHandoff.length > 0) {
     console.log(`Agent/WebSearch handoff: ${agentHandoff.length} compan${agentHandoff.length === 1 ? 'y' : 'ies'} not handled by zero-token providers`);
+    if (!dryRun) {
+      console.log(`Handoff file:          ${SCAN_HANDOFF_PATH}`);
+    }
     for (const item of agentHandoff.slice(0, 25)) {
       const hint = item.query ? ` — ${item.query}` : '';
       console.log(`  • ${item.company} (${item.method})${hint}`);
@@ -1113,6 +1140,9 @@ async function main() {
     }
   }
 
+  if (agentHandoff.length > 0 && !dryRun) {
+    console.log(`\n→ Run /career-ops scan-handoff ${userContext.userId} to process unsupported companies.`);
+  }
   console.log(`\n→ Run /career-ops pipeline ${userContext.userId} to evaluate new offers.`);
   console.log('→ Share results and get help: https://discord.gg/8pRpHETxa4');
 }

@@ -51,7 +51,7 @@ Run the per-user binary without `--path`; it infers the user folder from its own
 
 ## Long-Running Command Quiet Mode
 
-When the user asks you to run `scan`, `scan-auth`, `pipeline`, or `batch`, keep the conversation quiet while the command is running:
+When the user asks you to run `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, keep the conversation quiet while the command is running:
 - Start the command, then do not send routine "still running" or "currently at phase X" updates.
 - Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
 - Treat command stdout/stderr as the progress source. Do not paraphrase every phase back to the user.
@@ -130,6 +130,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `users/{USER}/data/applications.md` | Application tracker |
 | `users/{USER}/data/pipeline.md` | Inbox of pending URLs |
 | `users/{USER}/data/scan-history.tsv` | Scanner dedup history |
+| `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/portals.yml` | Query and company config |
 | `templates/cv-template.html` | HTML template for CVs |
 | `templates/cv-template.tex` | LaTeX/Overleaf template for CVs |
@@ -299,6 +300,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 | Asks about application status | `tracker` |
 | Fills out application form | `apply` |
 | Searches for new offers | `scan` |
+| Processes saved Agent/WebSearch scan handoff | `scan-handoff` |
 | Searches authenticated portals | `scan-auth` |
 | Processes pending URLs | `pipeline` |
 | Batch processes offers | `batch` |

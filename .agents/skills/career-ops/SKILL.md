@@ -4,7 +4,7 @@ description: AI job search command center -- evaluate offers, generate CVs, scan
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[scan | scan-auth | deep | pdf | latex | cover | eu-swe | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | interview | patterns | followup | update]"
+argument-hint: "[scan | scan-handoff | scan-auth | deep | pdf | latex | cover | eu-swe | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | interview | patterns | followup | update]"
 license: MIT
 ---
 
@@ -42,7 +42,7 @@ After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 
 ## Long-Running Command Quiet Mode
 
-For `scan`, `scan-auth`, `pipeline`, and `batch`, keep process monitoring quiet:
+For `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, keep process monitoring quiet:
 
 - Start the command, then do not send routine "still running" or "currently at phase X" updates.
 - Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
@@ -75,6 +75,7 @@ Determine the mode from `$mode`:
 | `pipeline` | `pipeline` |
 | `apply` | `apply` |
 | `scan` | `scan` |
+| `scan-handoff` | `scan-handoff` |
 | `scan-auth` | `scan-auth` |
 | `batch` | `batch` |
 | `patterns` | `patterns` |
@@ -113,6 +114,7 @@ Available commands:
   /career-ops tracker   → Application status overview
   /career-ops apply     → Live application assistant (reads form + generates answers)
   /career-ops scan      → Scan portals and discover new offers
+  /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
   /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
   /career-ops batch     → Batch processing with parallel workers
   /career-ops patterns  → Analyze rejection patterns and improve targeting
@@ -134,7 +136,9 @@ After determining the mode, load the necessary files before executing:
 ### Modes that require `_shared.md` + their mode file:
 Read `modes/_shared.md` + `modes/{mode}.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present).
 
-Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `batch`
+Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `scan-handoff`, `batch`
+
+For `scan-handoff`, also read `modes/scan.md` before `modes/scan-handoff.md` because the handoff mode reuses scan filtering, deduplication, liveness, and pipeline-writing rules.
 
 ### Standalone modes (only their mode file):
 Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_USER}/`.
@@ -142,12 +146,12 @@ Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_US
 Applies to: `tracker`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `latex`, `training`, `project`, `patterns`, `followup`, `cover`, `scan-auth`
 
 ### Modes delegated to subagent:
-For `scan`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as Agent with the content of `_shared.md` + `modes/{mode}.md` injected into the subagent prompt.
+For `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as Agent with the content of `_shared.md` + `modes/{mode}.md` injected into the subagent prompt.
 
 ```
 Agent(
   subagent_type="general-purpose",
-  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Do not narrate routine tool polls; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of users/{ACTIVE_USER}/modes/_custom.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
+  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-handoff/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Do not narrate routine tool polls; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of users/{ACTIVE_USER}/modes/_custom.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
   description="career-ops {mode}"
 )
 ```
