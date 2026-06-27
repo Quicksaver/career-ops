@@ -65,6 +65,7 @@
   <img src="https://img.shields.io/badge/Codex-412991?style=flat&logo=openai&logoColor=white" alt="Codex">
   <img src="https://img.shields.io/badge/Qwen-615CED?style=flat" alt="Qwen">
   <img src="https://img.shields.io/badge/GitHub_Copilot-000?style=flat&logo=githubcopilot&logoColor=white" alt="GitHub Copilot">
+  <img src="https://img.shields.io/badge/Grok_Build_CLI-000?style=flat&logo=x&logoColor=white" alt="Grok Build CLI">
   <br>
   <img src="https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/Go-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
@@ -124,7 +125,7 @@ This clones the latest release into `./career-ops` and installs dependencies. Th
 
 ```bash
 cd career-ops
-claude   # or gemini / codex / qwen / opencode / agy — open your AI CLI here
+claude   # or gemini / codex / qwen / opencode / agy / grok — open your AI CLI here
 ```
 
 **On first launch, career-ops walks you through setup — your CV, profile and target roles — just by chatting. Nothing to edit by hand.**
@@ -192,7 +193,28 @@ agy
 /career-ops tracker
 ```
 
-The skill is defined using the open standard in `.agents/skills/career-ops/SKILL.md` and symlinked/referenced for each supported CLI (e.g. `.claude/`, `.qwen/`, `.antigravitycli/`).
+The skill is defined using the open standard in `.agents/skills/career-ops/SKILL.md` and symlinked/referenced for each supported CLI (e.g. `.claude/`, `.qwen/`, `.antigravitycli/`, `.grok/`).
+
+## Grok Build CLI Integration
+
+Career-ops supports Grok Build CLI natively, the same way it supports Claude Code and OpenCode. `AGENTS.md` is auto-loaded as project rules, and all slash commands are available through the shared skill entrypoint.
+
+### Native Grok Build CLI
+
+```bash
+# 1. Run in the career-ops directory
+cd career-ops
+grok
+
+# 2. Use the unified /career-ops command with subcommands:
+/career-ops "Senior AI Engineer at Anthropic..."
+/career-ops pipeline
+/career-ops scan
+/career-ops pdf
+/career-ops tracker
+```
+
+For headless batch workers, use `grok -p "prompt"` (add `--yolo` to auto-approve tool executions).
 
 ### Standalone Gemini API Script (No CLI install needed)
 

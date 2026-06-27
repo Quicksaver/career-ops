@@ -60,6 +60,44 @@ When the user asks you to run `scan`, `scan-auth`, `pipeline`, or `batch`, keep 
 - Report immediately only when the command completes, fails, asks for login/CAPTCHA/user action, appears hung, or produces a concrete warning that changes what the user should do.
 - If a user explicitly asks for status while the command is running, answer once with the current observed state, then return to quiet monitoring.
 
+## Source-of-Truth Boundary (CRITICAL)
+
+User-facing content (CV, cover letters, form answers, recruiter outreach, application form responses) is generated **exclusively** from these files plus statements the user makes directly in the current conversation:
+
+- `cv.md`
+- `article-digest.md`
+- `config/profile.yml`
+- `modes/_profile.md`
+- `writing-samples/`
+- `voice-dna.md` (voice/style only — governs *how* text reads, never introduces factual claims)
+- `interview-prep/story-bank.md` and `interview-prep/{company}-{role}.md` (the user's own STAR stories and interview-prep notes — same trust level as `cv.md`; consumed by the `interview` and `apply`/`match-star` modes)
+
+Anything not in this list is **out of scope for content generation**, including:
+
+- Auto-memory at `~/.claude/projects/.../memory/` — see scope clarification below
+- Any directory outside the career-ops project — for example, parent-directory repos containing the user's product code, sibling project directories, or other unrelated codebases on the same machine
+- Cross-session inferences about the user's work that have not been written into one of the in-scope files
+- Knowledge from other Claude Code projects on the same machine
+
+**Rule from the original design (santifer's case study):** *"Keywords get reformulated, never fabricated."* Reorder, reframe, emphasise — but never invent. If a claim isn't backed by an in-scope file, ask the user. If they cannot or do not want to add it, the output goes without it. Silence on a topic is fine; manufactured detail is not.
+
+**Authorship claims are non-negotiable.** Never claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `cv.md` or `article-digest.md`. Tool-of-trade conflation (the user uses X → the user built X) is the most common fabrication pattern and is explicitly forbidden.
+
+### Auto-memory scope (clarification, not exception)
+
+The auto-memory layer at `~/.claude/projects/.../memory/` is reserved for **behavioural steering only**:
+
+- User preferences (style, tone, formatting, communication cadence)
+- Process rules and corrections (don't do X, always do Y)
+- Operational state (active relationships, applied roles, observed patterns, outcome learnings)
+- External references (where to find things in other systems)
+
+Auto-memory **never** holds content claims about the user's work, technical accomplishments, authorship, or anything that would appear verbatim or near-verbatim in CV/cover output. If a fact belongs in user-facing content, it lives in the user-layer files, not in memory.
+
+### Where rules live
+
+Rules belong in files the harness reads automatically — `CLAUDE.md`, `AGENTS.md`, `modes/*.md`, `MEMORY.md`. Do not create sidecar documentation that requires manual loading. Reinforcement-without-enforcement decays.
+
 ## Update Check
 
 On the first message of each session, run the update checker silently:
@@ -82,7 +120,7 @@ To rollback: `node update-system.mjs rollback`
 
 ## What is career-ops
 
-AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluation, CV generation, portal scanning, batch processing. Runs on any AI coding CLI that follows the [open agent skill standard](https://agentskills.io) (Claude Code, Codex, OpenCode, Qwen, Copilot, Kimi, Antigravity CLI). Legacy Gemini API evaluation remains available through `gemini-eval.mjs`.
+AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluation, CV generation, portal scanning, batch processing. Runs on any AI coding CLI that follows the [open agent skill standard](https://agentskills.io) (Claude Code, Codex, OpenCode, Qwen, Copilot, Kimi, Antigravity CLI, Grok Build CLI). Legacy Gemini API evaluation remains available through `gemini-eval.mjs`.
 
 ### Main Files
 
@@ -323,6 +361,7 @@ When spawning headless workers for batch processing, use the appropriate command
 | Codex | `codex exec "prompt"` |
 | Qwen | `qwen -p "prompt"` |
 | Antigravity CLI | `agy -p "prompt"` |
+| Grok Build CLI | `grok -p "prompt"` |
 
 ## Stack and Conventions
 

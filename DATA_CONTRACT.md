@@ -19,6 +19,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/cv.md` | CV in markdown |
 | `users/{USER}/config/profile.yml` | Identity, targets, comp range |
 | `users/{USER}/modes/_profile.md` | Archetypes, narrative, negotiation scripts |
+| `users/{USER}/modes/_custom.md` | House rules, custom workflows, and output preferences (procedural; survives updates) |
 | `users/{USER}/voice-dna.md` | Writing voice guardrail — banned words, anti-AI-slop rules, tone (optional) |
 | `users/{USER}/article-digest.md` | Proof points from portfolio |
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
@@ -45,6 +46,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | File | Purpose |
 |------|---------|
 | `modes/_shared.md` | Scoring system, global rules, tools |
+| `modes/_custom.template.md` | Template seed for the user's `modes/_custom.md` |
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
 | `modes/scan.md` | Portal scanner instructions |
@@ -54,6 +56,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/auto-pipeline.md` | Auto-pipeline instructions |
 | `modes/contacto.md` | LinkedIn outreach instructions |
 | `modes/deep.md` | Research prompt instructions |
+| `modes/regional/*` | Regional market calibration modes |
 | `modes/ofertas.md` | Comparison instructions |
 | `modes/pipeline.md` | Pipeline processing instructions |
 | `modes/project.md` | Project evaluation instructions |
@@ -67,6 +70,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/pl/*` | Polish language modes |
 | `modes/pt/*` | Portuguese language modes |
 | `modes/ru/*` | Russian language modes |
+| `modes/heuristics/*` | Shared candidate-facing application heuristics |
 | `CLAUDE.md` | Agent instructions (Claude Code) |
 | `OPENCODE.md` | Agent instructions (OpenCode) |
 | `GEMINI.md` | Legacy no-op context guard (prevents Antigravity duplicate imports) |
@@ -83,6 +87,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `.opencode/skills/*` | Skill definitions (OpenCode) |
 | `.qwen/skills/*` | Skill definitions (Qwen Code) |
 | `.antigravitycli/skills/*` | Skill definitions (Antigravity CLI) |
+| `.grok/skills/*` | Skill definitions (Grok Build CLI) |
 | `docs/*` | Documentation |
 | `VERSION` | Current version number |
 | `DATA_CONTRACT.md` | This file |
