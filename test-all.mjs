@@ -1872,7 +1872,7 @@ for (const [url, expected] of [
   ['https://jobs.ashbyhq.com/ElevenLabs/abc',      'elevenlabs'],
   ['https://jobs.lever.co/retool/xyz',              'retool'],
 ]) {
-  const out = run(NODE, ['archive-posting.mjs', '--dry-run', url]);
+  const out = run(NODE, ['archive-posting.mjs', '--dry-run', url], { env: TEST_USER_ENV });
   const { hostname } = new URL(url);
   out?.toLowerCase().includes(expected)
     ? pass(`dry-run: company detected from ${hostname}`)
@@ -1883,29 +1883,29 @@ for (const [url, expected] of [
 const overrideOut = run(NODE, [
   'archive-posting.mjs', '--dry-run',
   'https://jobs.lever.co/retool/xyz', '--company=Acme', '--role=Staff Engineer',
-]);
+], { env: TEST_USER_ENV });
 overrideOut?.includes('Acme') && overrideOut?.includes('staff-engineer')
   ? pass('dry-run: --company and --role overrides respected')
   : fail('dry-run: --company / --role overrides not reflected in output');
 
 // dry-run: output always contains a local:jds/ reference and today's date
-const refOut = run(NODE, ['archive-posting.mjs', '--dry-run', 'https://boards.greenhouse.io/openai/jobs/123']);
+const refOut = run(NODE, ['archive-posting.mjs', '--dry-run', 'https://boards.greenhouse.io/openai/jobs/123'], { env: TEST_USER_ENV });
 refOut?.includes('local:jds/') && refOut?.includes(todayStr)
   ? pass('dry-run: local:jds/ reference and date emitted')
   : fail('dry-run: reference or date missing from output');
 
 // argument validation: no args → shows help, exits 0
-run(NODE, ['archive-posting.mjs']) !== null
+run(NODE, ['archive-posting.mjs'], { env: TEST_USER_ENV }) !== null
   ? pass('no-args: exits 0 (shows help)')
   : fail('no-args: should exit 0 and print help');
 
 // argument validation: flag without URL → exits non-zero
-run(NODE, ['archive-posting.mjs', '--dry-run']) === null
+run(NODE, ['archive-posting.mjs', '--dry-run'], { env: TEST_USER_ENV }) === null
   ? pass('flag-without-url: exits non-zero (URL required)')
   : fail('flag-without-url: should exit non-zero when URL is missing');
 
 // argument validation: --company without URL → exits non-zero
-run(NODE, ['archive-posting.mjs', '--company=Acme']) === null
+run(NODE, ['archive-posting.mjs', '--company=Acme'], { env: TEST_USER_ENV }) === null
   ? pass('--company without URL: exits non-zero')
   : fail('--company without URL: should exit non-zero');
 
@@ -1934,9 +1934,9 @@ if (!hasBrowser) {
   if (!liveJobUrl) {
     warn('archive render skipped — Greenhouse API unreachable');
   } else {
-    const JDS_DIR = join(ROOT, 'jds');
+    const JDS_DIR = join(TEST_USERS_DIR, 'test', 'jds');
     const startedAt = Date.now();
-    const archiveOut = run('node', ['archive-posting.mjs', liveJobUrl], { timeout: 60000 });
+    const archiveOut = run('node', ['archive-posting.mjs', liveJobUrl], { timeout: 60000, env: TEST_USER_ENV });
 
     if (archiveOut === null) {
       fail('live archive: script exited non-zero on live URL');
@@ -5276,12 +5276,17 @@ try {
     fail('modes/_custom.template.md is NOT in SYSTEM_PATHS — the seed never updates (#1198)');
   }
 
-  // CLAUDE.md MUST route custom rules to the file AND seed it on onboarding.
+  // The active agent instruction surface MUST route custom rules to the file
+  // AND seed it on onboarding. In this fork CLAUDE.md is intentionally a short
+  // redirect to AGENTS.md, so follow that delegation before checking content.
   const claudeMd = readFileSync(join(ROOT, 'CLAUDE.md'), 'utf-8');
-  if (claudeMd.includes('modes/_custom.md') && claudeMd.includes('modes/_custom.template.md')) {
-    pass('CLAUDE.md routes custom rules to modes/_custom.md + seeds it from the template');
+  const activeInstructions = claudeMd.includes('AGENTS.md')
+    ? `${claudeMd}\n${readFileSync(join(ROOT, 'AGENTS.md'), 'utf-8')}`
+    : claudeMd;
+  if (activeInstructions.includes('modes/_custom.md') && activeInstructions.includes('modes/_custom.template.md')) {
+    pass('agent instructions route custom rules to modes/_custom.md + seed it from the template');
   } else {
-    fail('CLAUDE.md does not reference modes/_custom.md / its template — agents will not use it (#1198)');
+    fail('agent instructions do not reference modes/_custom.md / its template — agents will not use it (#1198)');
   }
 } catch (e) {
   fail(`custom instructions test crashed: ${e.message}`);

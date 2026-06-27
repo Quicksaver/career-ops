@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `0607ee57e176c93422732ee1ad1530cd606f70b6`
+- Upstream ref: `upstream/main` at `39ea2d4324b1279737f7640e9d0b447a2608e159`
 - Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `86`
-- Diff-size baseline after merge, before this inventory-only refresh: `109 files changed, 9769 insertions(+), 1760 deletions(-)`
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `89`
+- Diff-size baseline after merge, before this inventory-only refresh: `109 files changed, 9785 insertions(+), 1806 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13-era behavior and subsequent upstream fixes through `0607ee57e176c93422732ee1ad1530cd606f70b6` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13-era behavior and subsequent upstream fixes through `39ea2d4324b1279737f7640e9d0b447a2608e159` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -82,6 +82,18 @@ New upstream features or behavior now present:
 - Language and docs surface: upstream added Danish modes (`modes/da/`), `README.da.md`, and update-system materialization for Danish locale paths. These are system-layer language assets; user-specific Danish targeting still belongs in `users/{USER}/config/profile.yml` or `users/{USER}/modes/_profile.md`.
 - Batch budget guidance: upstream added `docs/RUNNING_ON_A_BUDGET.md`, linked it from batch docs/modes, and added a base `--limit` flag to `batch/batch-runner.sh`. The fork already had `--limit`; the merged runner keeps upstream's budget-facing documentation and limit semantics while preserving per-user batch state, Codex worker support, schema-checked final JSON, worker timeouts, prompt personalization, and user-scoped reconcile/verify commands.
 - Repository hygiene: upstream added `.github/CODEOWNERS` for hosted entrypoint surfaces and universal ignore rules for nested `.env*.local` and `*.tsbuildinfo` files. The fork kept those while preserving `.scan-auth/` credential-profile hygiene.
+- Source-of-truth boundary: upstream hardened `modes/_shared.md`, `AGENTS.md`, and related docs so candidate-facing text must come only from in-scope CV/profile/article/story/user files. The fork keeps that anti-fabrication rule and maps every user-owned source to `users/{USER}/...`, including interview prep.
+- User custom instructions: upstream added `modes/_custom.template.md` and the `modes/_custom.md` concept. In this fork `_custom.md` is user-layer data at `users/{USER}/modes/_custom.md`; the template is system-layer.
+- Application calibration and heuristics: upstream added `modes/regional/eu-swe.md` and `modes/heuristics/recruiter-side.md`. The fork exposes `eu-swe` in `.agents/skills/career-ops/SKILL.md` while preserving the active-user router, and PDF/interview-prep modes now use recruiter-side risk mapping without abandoning report-linked `users/{USER}/output` artifacts.
+- Story-bank matching: upstream added `match-star.mjs` and `modes/apply.md` guidance for matching behavioral application questions to prepared STAR stories. The fork keeps this as a user-scoped feature that reads `users/{USER}/interview-prep/story-bank.md` rather than root interview-prep data.
+- Job-archive workflow: upstream added `archive-posting.mjs` to capture live postings as local JD PDFs. The fork routes archived postings under `users/{USER}/jds/` and reads pipeline entries from `users/{USER}/data/pipeline.md`.
+- Local evaluator: upstream added `ollama-eval.mjs` for local interactive evaluation. The fork routes CV input and report output through `--user {USER}` so local Ollama evaluation still reads `users/{USER}/cv.md` and writes `users/{USER}/reports/`.
+- Scanner trust metadata: upstream added `providers/_trust-validator.mjs` and trust score/flag/level enrichment in `scan.mjs`. The fork keeps enrichment before filters, but preserves company block filtering, per-target `location_filter`, active-user pipeline/history paths, and the rule that trust flags annotate jobs rather than silently dropping them.
+- Provider upgrades: upstream added first-party Personio, Comeet, and WeWorkRemotely providers and broadened provider config examples. The fork adopted these modules as system-layer providers, separate from the custom provider dispatcher.
+- CLI/runtime surface: upstream added Grok Build CLI support via `.grok/skills/career-ops/SKILL.md` and extracted skill entrypoint materialization into `scaffolder/bin/skill-entrypoints.mjs`. The fork keeps Grok alongside Claude/OpenCode/Qwen/Antigravity and uses the shared helper from `update-system.mjs` instead of duplicating entrypoint constants.
+- Batch robustness: upstream added a single-worker lock fallback and a Claude exit-127 shim-swap retry. The fork keeps both while preserving Codex stdin prompt delivery, schema-checked final JSON, per-user batch state, and worker-timeout behavior.
+- Tracker row utilities: upstream extracted duplicated row rebuilding into `tracker-utils.mjs`. The fork uses that helper from `normalize-statuses.mjs` while preserving active-user path resolution and user-scoped backups.
+- CV/template behavior: upstream added opt-in profile-photo support and scoped `break-inside` pagination rules in `templates/cv-template.html`. The fork keeps those template changes while preserving `cv.theme` CSS variable overrides and report-linked output naming.
 
 Conflict notes from this merge:
 
@@ -105,6 +117,14 @@ Conflict notes from this merge:
 - `update-system.mjs`: kept upstream user-file rollback safety and target manifest behavior, added `voice-dna.md` to the user-path guard, and extended materialized skill entrypoints to Antigravity.
 - `dashboard/internal/data/career.go` and `dashboard/main.go`: combined upstream English/YAML archetype parsing and cross-platform open helpers with the fork's listing-date regexes and user-root PDF target normalization.
 - `voice-dna.md`: upstream added this as a tracked root user file; the fork deleted it from the merge result, added it to legacy root ignores, and documents `users/{USER}/voice-dna.md` as the supported location.
+- `.agents/skills/career-ops/SKILL.md`: combined upstream `eu-swe` routing with the fork's `scan-auth` mode and active-user router.
+- `DATA_CONTRACT.md`, `modes/_shared.md`, `modes/interview-prep.md`, and `modes/pdf.md`: combined upstream `_custom.md`, source-of-truth, recruiter-risk, and story-bank rules with user-scoped paths under `users/{USER}/...`.
+- `batch/batch-runner.sh`: combined upstream lock-fallback and Claude shim-swap retry with the fork's Codex stdin prompt path and per-user batch state.
+- `scan.mjs`: combined upstream trust enrichment and location-preserving pipeline data with fork company-block filtering, per-target location filters, and active-user pipeline/history paths.
+- `normalize-statuses.mjs`: adopted upstream `tracker-utils.mjs` row rebuilding while keeping user-context initialization and `users/{USER}/data/applications.md` routing.
+- `update-system.mjs`: adopted upstream's shared skill-entrypoint materializer, including Grok, while preserving the fork's user-path safety guard list.
+- `test-all.mjs`: kept upstream coverage for archive posting, trust validation, new providers, Grok/materialized skills, tracker row utilities, and template pagination while preserving fork checks for scan-auth and explicit-user fixtures.
+- `archive-posting.mjs`, `match-star.mjs`, and `ollama-eval.mjs`: adopted upstream tools but added active-user resolution so archived JDs, story-bank reads, CV reads, and report writes use `users/{USER}/...`.
 
 Future merge notes:
 
@@ -142,6 +162,9 @@ Files:
 - `validate-portals.mjs`
 - `verify-portals.mjs`
 - `reconcile-pipeline.mjs`
+- `archive-posting.mjs`
+- `match-star.mjs`
+- `ollama-eval.mjs`
 - `batch/batch-runner.sh`
 - `dashboard/main.go`
 - `modes/*.md`
@@ -155,7 +178,7 @@ Files:
 
 What this customizes:
 
-- User-specific files now live under `users/{USER}/`, including `cv.md`, `config/profile.yml`, `modes/_profile.md`, `voice-dna.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state.
+- User-specific files now live under `users/{USER}/`, including `cv.md`, `config/profile.yml`, `modes/_profile.md`, `modes/_custom.md`, `voice-dna.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state.
 - `users/` is gitignored. The older root-level user paths remain ignored only for migration safety; new work should use `users/{USER}/...`.
 - Career-ops commands must have an active user before any user-layer access. Explicit user selection is accepted via command text such as `/career-ops scan <username>`, via `--user <id>` / `--user=<id>`, or via `CAREER_OPS_USER`.
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.

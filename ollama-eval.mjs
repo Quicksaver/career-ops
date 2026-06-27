@@ -25,6 +25,12 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  systemPath,
+  userPath,
+} from './lib/user-context.mjs';
 
 try {
   const { config } = await import('dotenv');
@@ -34,19 +40,16 @@ try {
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
-// Paths
-// ---------------------------------------------------------------------------
-const PATHS = {
-  shared:  join(ROOT, 'modes', '_shared.md'),
-  oferta:  join(ROOT, 'modes', 'oferta.md'),
-  cv:      join(ROOT, 'cv.md'),
-  reports: join(ROOT, 'reports'),
-};
-
-// ---------------------------------------------------------------------------
 // CLI argument parsing
 // ---------------------------------------------------------------------------
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+let initialContext;
+try {
+  initialContext = getUserContext(rawArgs, { requireUser: false });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+const args = initialContext.args;
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
   console.log(`
@@ -57,15 +60,15 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
   Evaluate a job offer using a local Ollama model instead of Claude.
 
   USAGE
-    node ollama-eval.mjs "<JD text>"
-    node ollama-eval.mjs --file ./jds/my-job.txt
-    node ollama-eval.mjs --model qwen2.5:72b "<JD text>"
+    node ollama-eval.mjs --user <username> "<JD text>"
+    node ollama-eval.mjs --user <username> --file ./jds/my-job.txt
+    node ollama-eval.mjs --user <username> --model qwen2.5:72b "<JD text>"
 
   OPTIONS
     --file <path>    Read JD from a file instead of inline text
     --model <name>   Ollama model to use (default: llama3.3)
     --url <url>      Ollama base URL (default: http://localhost:11434)
-    --no-save        Do not save report to reports/ directory
+    --no-save        Do not save report to users/<username>/reports/ directory
     --help           Show this help
 
   SETUP
@@ -75,12 +78,29 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     4. Run this script
 
   EXAMPLES
-    node ollama-eval.mjs "We are looking for a Senior AI Engineer..."
-    node ollama-eval.mjs --file ./jds/openai-swe.txt
-    OLLAMA_MODEL=mistral-nemo node ollama-eval.mjs --file ./jds/job.txt
+    node ollama-eval.mjs --user luis "We are looking for a Senior AI Engineer..."
+    node ollama-eval.mjs --user luis --file ./jds/openai-swe.txt
+    OLLAMA_MODEL=mistral-nemo node ollama-eval.mjs --user luis --file ./jds/job.txt
 `);
   process.exit(0);
 }
+
+let userContext;
+try {
+  userContext = getUserContext(rawArgs);
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+// ---------------------------------------------------------------------------
+// Paths
+// ---------------------------------------------------------------------------
+const PATHS = {
+  shared:  systemPath('modes', '_shared.md'),
+  oferta:  systemPath('modes', 'oferta.md'),
+  cv:      userPath(userContext, 'cv.md'),
+  reports: userPath(userContext, 'reports'),
+};
 
 // Parse flags
 let jdText    = '';
@@ -204,7 +224,7 @@ console.log('\n📂  Loading context files...');
 
 const sharedContext = readFile(PATHS.shared, 'modes/_shared.md');
 const ofertaLogic   = readFile(PATHS.oferta, 'modes/oferta.md');
-const cvContent     = readFile(PATHS.cv,     'cv.md');
+const cvContent     = readFile(PATHS.cv,     `users/${userContext.userId}/cv.md`);
 
 // ---------------------------------------------------------------------------
 // Build system prompt
@@ -362,9 +382,9 @@ ${evaluationText.replace(/---SCORE_SUMMARY---[\s\S]*?---END_SUMMARY---/, '').tri
 `;
 
     writeFileSync(reportPath, reportContent, 'utf-8');
-    console.log(`\n✅  Report saved: reports/${filename}`);
+    console.log(`\n✅  Report saved: users/${userContext.userId}/reports/${filename}`);
 
-    console.log(`\n📊  Tracker entry (add to data/applications.md):`);
+    console.log(`\n📊  Tracker entry (add to users/${userContext.userId}/data/applications.md):`);
     console.log(`    | ${num} | ${today} | ${company} | ${role} | ${score}/5 | Evaluated | ❌ | [${num}](reports/${filename}) |`);
   } catch (err) {
     console.warn(`⚠️   Could not save report: ${err.message}`);

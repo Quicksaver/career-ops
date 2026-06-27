@@ -21,14 +21,26 @@ import { writeFile, readFile } from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const JDS_DIR = join(ROOT, 'jds');
-const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
+let JDS_DIR = join(ROOT, 'jds');
+let PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
 
 // ── CLI parsing ──────────────────────────────────────────────────────────────
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+let initialContext;
+try {
+  initialContext = getUserContext(rawArgs, { requireUser: false });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+const args = initialContext.args;
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
   console.log(`
@@ -39,28 +51,28 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
   Save a live job posting as PDF before it disappears.
 
   USAGE
-    node archive-posting.mjs <url>
-    node archive-posting.mjs <url> --company=Anthropic --role=senior-ai-engineer
-    node archive-posting.mjs --pipeline     Archive all pending URLs in data/pipeline.md
-    node archive-posting.mjs --dry-run <url>
+    node archive-posting.mjs --user <username> <url>
+    node archive-posting.mjs --user <username> <url> --company=Anthropic --role=senior-ai-engineer
+    node archive-posting.mjs --user <username> --pipeline     Archive all pending URLs in users/<username>/data/pipeline.md
+    node archive-posting.mjs --user <username> --dry-run <url>
 
   OPTIONS
     --company <name>   Override auto-detected company name
     --role <title>     Override auto-detected role title
-    --pipeline         Archive all pending (- [ ]) entries in data/pipeline.md
+    --pipeline         Archive all pending (- [ ]) entries in users/<username>/data/pipeline.md
     --dry-run          Preview filename without saving
     --help             Show this help
 
   OUTPUT
-    jds/YYYY-MM-DD_company-slug_role-slug.pdf
+    users/<username>/jds/YYYY-MM-DD_company-slug_role-slug.pdf
 
-  PIPELINE REFERENCE (paste into pipeline.md or reports/)
+  PIPELINE REFERENCE (paste into users/<username>/data/pipeline.md or reports/)
     local:jds/YYYY-MM-DD_company-slug_role-slug.pdf
 
   EXAMPLES
-    node archive-posting.mjs "https://jobs.ashbyhq.com/anthropic/abc123"
-    node archive-posting.mjs "https://boards.greenhouse.io/openai/jobs/456" --company=OpenAI
-    node archive-posting.mjs --pipeline
+    node archive-posting.mjs --user luis "https://jobs.ashbyhq.com/anthropic/abc123"
+    node archive-posting.mjs --user luis "https://boards.greenhouse.io/openai/jobs/456" --company=OpenAI
+    node archive-posting.mjs --user luis --pipeline
     npm run archive -- "https://jobs.lever.co/elevenlabs/abc"
 `);
   process.exit(0);
@@ -95,6 +107,15 @@ if (!pipelineMode && !targetUrl) {
   console.error('No URL provided. Run with --help for usage.');
   process.exit(1);
 }
+
+let userContext;
+try {
+  userContext = getUserContext(rawArgs);
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+JDS_DIR = userPath(userContext, 'jds');
+PIPELINE_PATH = userPath(userContext, 'data/pipeline.md');
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 

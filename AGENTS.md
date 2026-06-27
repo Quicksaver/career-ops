@@ -13,14 +13,14 @@ The portfolio that goes with this system is also open source: [cv-santiago](http
 There are two layers. Read `DATA_CONTRACT.md` for the full list.
 
 **User Layer (NEVER auto-updated, personalization goes HERE):**
-- `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, `users/{USER}/article-digest.md`, `users/{USER}/portals.yml`
+- `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, `users/{USER}/modes/_custom.md`, `users/{USER}/article-digest.md`, `users/{USER}/portals.yml`
 - `users/{USER}/data/*`, `users/{USER}/reports/*`, `users/{USER}/output/*`, `users/{USER}/interview-prep/*`, `users/{USER}/jds/*`, `users/{USER}/writing-samples/*`, `users/{USER}/batch/*`
 
 **System Layer (auto-updatable, DON'T put user data here):**
 - `modes/_shared.md`, `modes/oferta.md`, all other modes
 - `AGENTS.md`, `CLAUDE.md`, `OPENCODE.md`, `*.mjs` scripts, `dashboard/*`, `templates/*`, `batch/*`
 
-**THE RULE: When the user asks to customize anything (archetypes, narrative, negotiation scripts, proof points, location policy, comp targets), ALWAYS write to `users/{USER}/modes/_profile.md` or `users/{USER}/config/profile.yml`. NEVER edit `modes/_shared.md` for user-specific content.** This ensures system updates don't overwrite their customizations.
+**THE RULE: When the user asks to customize candidate facts or scoring inputs (archetypes, narrative, negotiation scripts, proof points, location policy, comp targets), write to `users/{USER}/modes/_profile.md` or `users/{USER}/config/profile.yml`. When the user asks for procedural house rules, output preferences, or workflow overrides, write to `users/{USER}/modes/_custom.md` seeded from `modes/_custom.template.md` if needed. NEVER edit `modes/_shared.md` for user-specific content.** This ensures system updates don't overwrite their customizations.
 
 ## Active User (CRITICAL)
 
@@ -64,13 +64,14 @@ When the user asks you to run `scan`, `scan-auth`, `pipeline`, or `batch`, keep 
 
 User-facing content (CV, cover letters, form answers, recruiter outreach, application form responses) is generated **exclusively** from these files plus statements the user makes directly in the current conversation:
 
-- `cv.md`
-- `article-digest.md`
-- `config/profile.yml`
-- `modes/_profile.md`
-- `writing-samples/`
-- `voice-dna.md` (voice/style only — governs *how* text reads, never introduces factual claims)
-- `interview-prep/story-bank.md` and `interview-prep/{company}-{role}.md` (the user's own STAR stories and interview-prep notes — same trust level as `cv.md`; consumed by the `interview` and `apply`/`match-star` modes)
+- `users/{USER}/cv.md`
+- `users/{USER}/article-digest.md`
+- `users/{USER}/config/profile.yml`
+- `users/{USER}/modes/_profile.md`
+- `users/{USER}/modes/_custom.md`
+- `users/{USER}/writing-samples/`
+- `users/{USER}/voice-dna.md` (voice/style only — governs *how* text reads, never introduces factual claims)
+- `users/{USER}/interview-prep/story-bank.md` and `users/{USER}/interview-prep/{company}-{role}.md` (the user's own STAR stories and interview-prep notes — same trust level as `cv.md`; consumed by the `interview` and `apply`/`match-star` modes)
 
 Anything not in this list is **out of scope for content generation**, including:
 
@@ -159,6 +160,7 @@ Output: `{"onboardingNeeded": <bool>, "missing": [...], "warnings": [...]}`, whe
 0. Has an active user been explicitly specified in this conversation? If not, stop and ask which user to use before running the cold-start check.
 
 - If `modes/_profile.md` is in `missing`, copy it silently from `modes/_profile.template.md` to `users/{USER}/modes/_profile.md` (the user's customization file — never overwritten by updates). It's then resolved.
+- If the user needs procedural house rules or output preferences and `users/{USER}/modes/_custom.md` is missing, copy it from `modes/_custom.template.md` first and edit the user-layer copy only.
 - **If, after that, `onboardingNeeded` is still true (any of `cv.md` / `config/profile.yml` / `portals.yml` is missing), enter onboarding mode.** Do NOT proceed with evaluations, scans, or any other mode until the basics are in place. Guide the user step by step:
 
 #### Step 1: CV (required)

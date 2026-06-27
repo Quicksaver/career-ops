@@ -15,12 +15,24 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
+import { isAbsolute, join } from 'path';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 // ── Config ──────────────────────────────────────────────────────────
 
-const STORY_BANK_PATH = 'interview-prep/story-bank.md';
+const rawArgs = process.argv.slice(2);
+let initialContext;
+try {
+  initialContext = getUserContext(rawArgs, { requireUser: false });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
 
-const args       = process.argv.slice(2);
+const args       = initialContext.args;
 const LIST_MODE  = args.includes('--list');
 const jdFlag     = args.indexOf('--jd');
 const jdPath     = jdFlag !== -1 ? args[jdFlag + 1] : null;
@@ -35,6 +47,28 @@ const excludeIdx = new Set([
 const question = args
   .filter((a, i) => !a.startsWith('--') && !excludeIdx.has(i))
   .join(' ').trim();
+
+if (!LIST_MODE && !question) {
+  console.error('Usage: node match-star.mjs --user <username> "<behavioural question>" [--jd <file>] [--top <n>]');
+  console.error('       node match-star.mjs --user <username> --list');
+  process.exit(1);
+}
+
+let userContext;
+try {
+  userContext = getUserContext(rawArgs);
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+const STORY_BANK_PATH = userPath(userContext, 'interview-prep/story-bank.md');
+
+function resolveUserInputPath(inputPath) {
+  if (!inputPath || isAbsolute(inputPath)) return inputPath;
+  const userRelative = userPath(userContext, inputPath);
+  if (existsSync(userRelative)) return userRelative;
+  return join(process.cwd(), inputPath);
+}
 
 // ── Parser ───────────────────────────────────────────────────────────
 
@@ -210,20 +244,15 @@ if (LIST_MODE) {
   process.exit(0);
 }
 
-if (!question) {
-  console.error('Usage: node match-star.mjs "<behavioural question>" [--jd <file>] [--top <n>]');
-  console.error('       node match-star.mjs --list');
-  process.exit(1);
-}
-
 const queryTokens = tokenize(question);
 let jdTokens = [];
 if (jdPath) {
-  if (!existsSync(jdPath)) {
+  const resolvedJdPath = resolveUserInputPath(jdPath);
+  if (!existsSync(resolvedJdPath)) {
     console.error(`Error: JD file not found at ${jdPath}`);
     process.exit(1);
   }
-  jdTokens = tokenize(readFileSync(jdPath, 'utf-8'));
+  jdTokens = tokenize(readFileSync(resolvedJdPath, 'utf-8'));
 }
 
 // Score and rank

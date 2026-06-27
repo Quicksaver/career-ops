@@ -31,7 +31,7 @@ Valid user IDs use letters, numbers, dots, underscores, or hyphens. Do not accep
 
 After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 
-- Read/write user-layer files only inside `USER_ROOT` (`cv.md`, `config/profile.yml`, `modes/_profile.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state).
+- Read/write user-layer files only inside `USER_ROOT` (`cv.md`, `config/profile.yml`, `modes/_profile.md`, `modes/_custom.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state).
 - Read system-layer files from the repo root (`modes/_shared.md`, mode files, scripts, templates, providers, dashboard, docs).
 - Remove the explicit user token or `--user` flag from the invocation before mode routing. Example: `/career-ops scan <username>` routes as mode `scan` with `ACTIVE_USER=<username>`.
 - When running scripts, pass `--user {ACTIVE_USER}` or set `CAREER_OPS_USER={ACTIVE_USER}`.
@@ -132,7 +132,7 @@ Active user: {ACTIVE_USER}
 After determining the mode, load the necessary files before executing:
 
 ### Modes that require `_shared.md` + their mode file:
-Read `modes/_shared.md` + `modes/{mode}.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present).
+Read `modes/_shared.md` + `modes/{mode}.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present).
 
 Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `batch`
 
@@ -147,7 +147,7 @@ For `scan`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as Agent
 ```
 Agent(
   subagent_type="general-purpose",
-  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Do not narrate routine tool polls; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
+  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Do not narrate routine tool polls; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of users/{ACTIVE_USER}/modes/_custom.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
   description="career-ops {mode}"
 )
 ```
