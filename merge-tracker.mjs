@@ -477,11 +477,27 @@ function detectColumns(lines) {
 
 // Build a tracker row string matching the detected layout (with or without the
 // optional Location column) so writes round-trip through the same schema.
+function tableCell(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+}
+
 function buildRow(o) {
+  const row = {
+    num: tableCell(o.num),
+    date: tableCell(o.date),
+    company: tableCell(o.company),
+    role: tableCell(o.role),
+    location: tableCell(o.location || '—'),
+    score: tableCell(o.score),
+    status: tableCell(o.status),
+    pdf: tableCell(o.pdf),
+    report: tableCell(o.report),
+    notes: tableCell(o.notes),
+  };
   if (COLMAP.location != null) {
-    return `| ${o.num} | ${o.date} | ${o.company} | ${o.role} | ${o.location || '—'} | ${o.score} | ${o.status} | ${o.pdf} | ${o.report} | ${o.notes} |`;
+    return `| ${row.num} | ${row.date} | ${row.company} | ${row.role} | ${row.location} | ${row.score} | ${row.status} | ${row.pdf} | ${row.report} | ${row.notes} |`;
   }
-  return `| ${o.num} | ${o.date} | ${o.company} | ${o.role} | ${o.score} | ${o.status} | ${o.pdf} | ${o.report} | ${o.notes} |`;
+  return `| ${row.num} | ${row.date} | ${row.company} | ${row.role} | ${row.score} | ${row.status} | ${row.pdf} | ${row.report} | ${row.notes} |`;
 }
 
 /**
@@ -653,12 +669,14 @@ COLMAP = detectColumns(appLines) || LEGACY_COLMAP;
 if (COLMAP.location != null) console.log('🧭 Detected Location column.');
 const existingApps = [];
 let maxNum = 0;
+const usedNums = new Set();
 
 for (const line of appLines) {
   if (line.startsWith('|') && !line.includes('---') && !line.includes('Empresa')) {
     const app = parseAppLine(line);
     if (app) {
       existingApps.push(app);
+      usedNums.add(app.num);
       if (app.num > maxNum) maxNum = app.num;
     }
   }
@@ -691,6 +709,7 @@ let added = 0;
 let updated = 0;
 let skipped = 0;
 const newLines = [];
+const blockedFiles = new Set();
 
 for (const file of tsvFiles) {
   const content = readFileSync(join(ADDITIONS_DIR, file), 'utf-8').trim();
@@ -769,9 +788,18 @@ for (const file of tsvFiles) {
       skipped++;
     }
   } else {
-    // New entry — use the number from the TSV
-    const entryNum = addition.num > maxNum ? addition.num : ++maxNum;
-    if (addition.num > maxNum) maxNum = addition.num;
+    // New entry — preserve the worker-reserved report/tracker number from the
+    // TSV. Parallel batches can reserve report numbers out of batch-input order,
+    // so rewriting lower numbers to max+1 creates user-facing/report ID drift.
+    if (usedNums.has(addition.num)) {
+      console.warn(`⚠️  Skip: tracker number #${addition.num} is already used by a different entry; leaving ${file} unmerged.`);
+      blockedFiles.add(file);
+      skipped++;
+      continue;
+    }
+    const entryNum = addition.num;
+    usedNums.add(entryNum);
+    if (entryNum > maxNum) maxNum = entryNum;
 
     const newLine = buildRow({
       num: entryNum, date: addition.date, company: addition.company, role: addition.role,
@@ -806,10 +834,13 @@ if (!DRY_RUN) {
 
   // Move processed files to merged/
   if (!existsSync(MERGED_DIR)) mkdirSync(MERGED_DIR, { recursive: true });
+  let movedFiles = 0;
   for (const file of tsvFiles) {
+    if (blockedFiles.has(file)) continue;
     renameSync(join(ADDITIONS_DIR, file), join(MERGED_DIR, file));
+    movedFiles++;
   }
-  console.log(`\n✅ Moved ${tsvFiles.length} TSVs to merged/`);
+  console.log(`\n✅ Moved ${movedFiles} TSVs to merged/`);
 }
 
 console.log(`\n📊 Summary: +${added} added, 🔄${updated} updated, ⏭️${skipped} skipped`);

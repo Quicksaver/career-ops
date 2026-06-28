@@ -24,20 +24,31 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync, realpathSync, statSync } from 'fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 import { normalizeReportLink } from './tracker-links.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const DRY_RUN = process.argv.includes('--dry-run');
+let userContext;
+try {
+  userContext = getUserContext(process.argv.slice(2), { requireUser: false });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+const DRY_RUN = userContext.args.includes('--dry-run');
 
-if (process.argv.includes('-h') || process.argv.includes('--help')) {
-  console.log('Usage: node reconcile-pipeline.mjs [--dry-run] [--state <path>] [--pipeline <path>] [--reports <dir>]');
+if (userContext.args.includes('-h') || userContext.args.includes('--help')) {
+  console.log('Usage: node reconcile-pipeline.mjs --user <id> [--dry-run] [--state <path>] [--pipeline <path>] [--reports <dir>]');
   console.log('  Moves batch-processed offers out of pipeline.md "Pendientes" into "Procesadas".');
   process.exit(0);
 }
 
 function argValue(flag) {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : null;
+  const i = userContext.args.indexOf(flag);
+  return i >= 0 && i + 1 < userContext.args.length ? userContext.args[i + 1] : null;
 }
 
 // Constrain user-supplied --state/--pipeline paths to the repository tree, so a
@@ -95,9 +106,15 @@ function resolveDirInsideRepo(inputPath, fallbackPath, flag) {
 const defaultPipeline = existsSync(join(CAREER_OPS, 'data/pipeline.md'))
   ? join(CAREER_OPS, 'data/pipeline.md')
   : join(CAREER_OPS, 'pipeline.md');
-const PIPELINE_FILE = resolveInsideRepo(argValue('--pipeline'), defaultPipeline, '--pipeline');
-const STATE_FILE = resolveInsideRepo(argValue('--state'), join(CAREER_OPS, 'batch/batch-state.tsv'), '--state');
-const REPORTS_DIR = resolveDirInsideRepo(argValue('--reports'), join(CAREER_OPS, 'reports'), '--reports');
+const defaultState = userContext.userRoot ? userPath(userContext, 'batch/batch-state.tsv') : join(CAREER_OPS, 'batch/batch-state.tsv');
+const defaultUserPipeline = userContext.userRoot ? userPath(userContext, 'data/pipeline.md') : defaultPipeline;
+const defaultReports = userContext.userRoot ? userPath(userContext, 'reports') : join(CAREER_OPS, 'reports');
+const pipelineArg = argValue('--pipeline');
+const stateArg = argValue('--state');
+const reportsArg = argValue('--reports');
+const PIPELINE_FILE = pipelineArg ? resolveInsideRepo(pipelineArg, defaultUserPipeline, '--pipeline') : defaultUserPipeline;
+const STATE_FILE = stateArg ? resolveInsideRepo(stateArg, defaultState, '--state') : defaultState;
+const REPORTS_DIR = reportsArg ? resolveDirInsideRepo(reportsArg, defaultReports, '--reports') : defaultReports;
 
 // ---- guards ----
 if (!existsSync(STATE_FILE)) {

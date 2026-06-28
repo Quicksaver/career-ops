@@ -3244,10 +3244,10 @@ try {
       const col912Rows = col912Merged.split('\n').filter(l => l.startsWith('| ') && !l.startsWith('| #') && !l.startsWith('|---'));
       const expectedOtherCoRow = '| 1 | 2026-01-01 | OtherCo | Staff Engineer | 4.0/5 | Evaluated | ❌ | [1](../reports/001-otherco-2026-01-01.md) | original |';
 
-      if (col912Rows.length === 2) {
-        pass('report-number collision (#912): merged tracker has exactly 2 rows');
+      if (col912Rows.length === 1) {
+        pass('report-number collision (#912): conflicting tracker ID is not renumbered into a second row');
       } else {
-        fail(`report-number collision (#912): expected 2 rows, got ${col912Rows.length}`);
+        fail(`report-number collision (#912): expected 1 preserved row, got ${col912Rows.length}`);
       }
 
       if (col912Rows.some(r => r.trim() === expectedOtherCoRow.trim())) {
@@ -3256,11 +3256,10 @@ try {
         fail('report-number collision (#912): OtherCo row was overwritten by NewCo addition');
       }
 
-      const expectedNewCoRow = '| 2 | 2026-01-05 | NewCo | New Role | 2.7/5 | Evaluated | ❌ | [1](../reports/001-newco-2026-01-05.md) | collision |';
-      if (col912Rows.some(r => r.trim() === expectedNewCoRow.trim())) {
-        pass('report-number collision (#912): NewCo appended as a new entry with correct data');
+      if (existsSync(join(col912Additions, '001-newco.tsv'))) {
+        pass('report-number collision (#912): NewCo TSV stays pending for manual ID repair');
       } else {
-        fail('report-number collision (#912): NewCo entry was swallowed or has incorrect data');
+        fail('report-number collision (#912): NewCo TSV was moved despite unresolved tracker ID collision');
       }
     }
   } finally {
