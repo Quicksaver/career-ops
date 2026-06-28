@@ -108,12 +108,12 @@ type ColumnID int
 
 const (
 	// Optional columns — user-toggleable via the column picker (C key).
-	ColDate        ColumnID = iota // APPLIED date
+	ColDate        ColumnID = iota // DATE: listing date or tracker date
 	ColLocation                    // LOCATION city+state
 	ColPay                         // PAY range
 	ColHasReport                   // RPT: ✓/—
 	ColHasPDF                      // PDF: ✓/—
-	ColLastContact                 // LAST contact date
+	ColLastContact                 // CONTACT date
 )
 
 // colDef describes one optional column for the picker UI.
@@ -126,12 +126,12 @@ type colDef struct {
 }
 
 var optionalCols = []colDef{
-	{ColDate, "APPLIED", "", 10, true},
+	{ColDate, "DATE", "", 10, true},
 	{ColLocation, "LOCATION", "", 20, true},
 	{ColPay, "PAY", "", 16, true},
 	{ColHasReport, "RPT", "✓/—", 4, false},
-	{ColHasPDF, "PDF", "✓/—", 4, false},
-	{ColLastContact, "LAST", "", 10, false},
+	{ColHasPDF, "PDF", "✓/—", 4, true},
+	{ColLastContact, "CONTACT", "", 10, true},
 }
 
 var statusOptions = []string{"Evaluated", "Applied", "Responded", "Interview", "Offer", "Rejected", "Discarded", "SKIP"}
@@ -177,7 +177,7 @@ func NewPipelineModel(t theme.Theme, apps []model.CareerApplication, metrics mod
 		metrics:       metrics,
 		sortMode:      sortScore,
 		activeTab:     0,
-		viewMode:      "grouped",
+		viewMode:      "flat",
 		width:         width,
 		height:        height,
 		theme:         t,
@@ -1246,7 +1246,7 @@ func (m PipelineModel) renderColumnHeader() string {
 		h.Render("FIT"), // score cell is unpadded, always 3 runes wide
 	}
 	if cw.date > 0 {
-		segments = append(segments, cell("APPLIED", cw.date))
+		segments = append(segments, cell("DATE", cw.date))
 	}
 	segments = append(segments, cell("COMPANY", cw.company))
 	segments = append(segments, cell("ROLE", cw.role))
@@ -1264,7 +1264,7 @@ func (m PipelineModel) renderColumnHeader() string {
 		segments = append(segments, cell("PDF", cw.pdf))
 	}
 	if cw.last > 0 {
-		segments = append(segments, cell("LAST", cw.last))
+		segments = append(segments, cell("CONTACT", cw.last))
 	}
 
 	padStyle := lipgloss.NewStyle().Padding(0, 2)

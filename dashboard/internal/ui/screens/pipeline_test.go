@@ -44,6 +44,40 @@ func TestPipelineTabsPrioritizeTopAndHideAll(t *testing.T) {
 	}
 }
 
+func TestPipelineDefaultViewAndColumns(t *testing.T) {
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), nil, model.PipelineMetrics{}, "..", 120, 40)
+
+	if pm.viewMode != "flat" {
+		t.Fatalf("expected default view to be flat, got %q", pm.viewMode)
+	}
+	if !pm.colVisible(ColDate) {
+		t.Fatal("expected Date column to be visible by default")
+	}
+	if !pm.colVisible(ColHasPDF) {
+		t.Fatal("expected PDF column to be visible by default")
+	}
+	if !pm.colVisible(ColLastContact) {
+		t.Fatal("expected Contact column to be visible by default")
+	}
+	if pm.colVisible(ColHasReport) {
+		t.Fatal("expected RPT column to stay hidden by default")
+	}
+
+	header := pm.renderColumnHeader()
+	if !strings.Contains(header, "DATE") {
+		t.Fatalf("expected header to contain DATE, got %q", header)
+	}
+	if strings.Contains(header, "APPLIED") {
+		t.Fatalf("expected header not to contain APPLIED, got %q", header)
+	}
+	if !strings.Contains(header, "CONTACT") {
+		t.Fatalf("expected header to contain CONTACT, got %q", header)
+	}
+	if strings.Contains(header, "LAST") {
+		t.Fatalf("expected header not to contain LAST, got %q", header)
+	}
+}
+
 func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 	initialApps := []model.CareerApplication{
 		{
