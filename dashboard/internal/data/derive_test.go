@@ -165,6 +165,15 @@ func TestDeriveNoteFields(t *testing.T) {
 			paySrc:   "est",
 			last:     "2026-06-06",
 		},
+		{
+			name: "legacy dated status beats tracker date",
+			app: model.CareerApplication{
+				Date:   "2026-06-06",
+				Status: "Applied 2026-06-18",
+				Notes:  "No follow-up yet",
+			},
+			last: "2026-06-18",
+		},
 	}
 
 	for _, tc := range cases {

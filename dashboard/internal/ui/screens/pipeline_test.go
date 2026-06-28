@@ -46,6 +46,10 @@ func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 	if tabIndexForFilter(t, filterClosed) >= tabIndexForFilter(t, filterDiscarded) {
 		t.Fatal("expected Closed tab to appear before Discarded")
 	}
+	if tabIndexForFilter(t, filterOffer) <= tabIndexForFilter(t, filterInterview) ||
+		tabIndexForFilter(t, filterOffer) >= tabIndexForFilter(t, filterRejected) {
+		t.Fatal("expected Offer tab to appear between Interview and Rejected")
+	}
 	for _, tab := range pipelineTabs {
 		if tab.filter == filterAll || tab.label == "ALL" {
 			t.Fatalf("All tab should not be rendered, found %+v", tab)
@@ -144,6 +148,7 @@ func TestPipelineHeaderRendersTabsInline(t *testing.T) {
 			ByStatus: map[string]int{
 				"evaluated": 3,
 				"applied":   2,
+				"offer":     1,
 				"closed":    1,
 				"skip":      1,
 			},
@@ -159,7 +164,7 @@ func TestPipelineHeaderRendersTabsInline(t *testing.T) {
 	if strings.Contains(header, "\n") {
 		t.Fatalf("expected header tabs to stay inline, got %q", header)
 	}
-	for _, want := range []string{"CAREER PIPELINE", "OPEN", "APPLIED", "CLOSED", "SKIP", "12 offers | Avg 4.1/5"} {
+	for _, want := range []string{"CAREER PIPELINE", "OPEN", "APPLIED", "INTERVIEW", "OFFER", "CLOSED", "SKIP", "12 offers | Avg 4.1/5"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected inline header to contain %q, got %q", want, plain)
 		}

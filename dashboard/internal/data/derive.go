@@ -58,8 +58,20 @@ func payCeiling(span string) float64 {
 	return top
 }
 
+// latestISODate returns the most recent YYYY-MM-DD found in text, using current
+// as the fallback when text contains no newer date.
+func latestISODate(current, text string) string {
+	for _, d := range reISODate.FindAllString(text, -1) {
+		if d > current {
+			current = d
+		}
+	}
+	return current
+}
+
 // deriveNoteFields populates Location, WorkMode, PayRange, PaySource and
-// LastContact from the application's Notes (plus Role for work-mode keywords).
+// LastContact from the application's Notes and Status (plus Role for work-mode
+// keywords).
 func deriveNoteFields(app *model.CareerApplication) {
 	lower := strings.ToLower(app.Role + " " + app.Notes)
 
@@ -119,12 +131,10 @@ func deriveNoteFields(app *model.CareerApplication) {
 	}
 
 	// Last contact: the most recent ISO date mentioned anywhere in the notes
-	// (rejections, recruiter views, phone screens), else the applied date.
+	// (rejections, recruiter views, phone screens, dashboard status changes),
+	// or in legacy dated status cells, else the tracker date.
 	last := app.Date
-	for _, d := range reISODate.FindAllString(app.Notes, -1) {
-		if d > last {
-			last = d
-		}
-	}
+	last = latestISODate(last, app.Notes)
+	last = latestISODate(last, app.Status)
 	app.LastContact = last
 }

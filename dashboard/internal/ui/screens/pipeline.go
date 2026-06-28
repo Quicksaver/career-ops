@@ -80,6 +80,7 @@ const (
 	filterEvaluated = "evaluated"
 	filterApplied   = "applied"
 	filterInterview = "interview"
+	filterOffer     = "offer"
 	filterSkip      = "skip"
 	filterRejected  = "rejected"
 	filterClosed    = "closed"
@@ -95,6 +96,7 @@ var pipelineTabs = []pipelineTab{
 	{filterEvaluated, "OPEN"},
 	{filterApplied, "APPLIED"},
 	{filterInterview, "INTERVIEW"},
+	{filterOffer, "OFFER"},
 	{filterRejected, "REJECTED"},
 	{filterClosed, "CLOSED"},
 	{filterDiscarded, "DISCARDED"},

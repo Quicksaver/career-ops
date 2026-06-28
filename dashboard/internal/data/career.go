@@ -655,7 +655,8 @@ func LoadReportSummary(careerOpsPath, reportPath string) (archetype, tldr, remot
 	return details.Archetype, details.TlDr, details.Remote, details.Comp
 }
 
-// UpdateApplicationStatus updates the status of an application in applications.md.
+// UpdateApplicationStatus updates the status of an application in
+// applications.md and records the dashboard status change as a dated note.
 func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, newStatus string) error {
 	filePath := filepath.Join(careerOpsPath, "applications.md")
 	content, err := os.ReadFile(filePath)
@@ -676,8 +677,7 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 		}
 		// Match by report number
 		if app.ReportNumber != "" && strings.Contains(line, fmt.Sprintf("[%s]", app.ReportNumber)) {
-			// Replace the status field
-			lines[i] = replaceStatusInLine(line, app.Status, newStatus)
+			lines[i] = replaceStatusAndAddInteraction(line, app.Status, newStatus, time.Now().Format("2006-01-02"))
 			found = true
 			break
 		}
@@ -699,7 +699,12 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 // stay unchanged (#1180). Matching is whole-cell (never a substring) and, as the
 // old comment claimed but the code did not, case-insensitive.
 func replaceStatusInLine(line, oldStatus, newStatus string) string {
+	return replaceStatusAndAddInteraction(line, oldStatus, newStatus, "")
+}
+
+func replaceStatusAndAddInteraction(line, oldStatus, newStatus, interactionDate string) string {
 	want := strings.TrimSpace(oldStatus)
+	addInteraction := interactionDate != "" && !strings.EqualFold(strings.TrimSpace(oldStatus), strings.TrimSpace(newStatus))
 
 	// Mixed "| " + tab-separated format (mirrors ParseApplications). The Status
 	// field is index 5 of the tab-split body.
@@ -711,6 +716,9 @@ func replaceStatusInLine(line, oldStatus, newStatus string) string {
 		cells := strings.Split(body, "\t")
 		if idx := statusCellIndex(cells, 5, want); idx >= 0 {
 			cells[idx] = spliceCellValue(cells[idx], newStatus)
+			if addInteraction && 8 < len(cells) {
+				cells[8] = spliceCellValueAllowEmpty(cells[8], appendStatusInteraction(strings.TrimSpace(cells[8]), newStatus, interactionDate))
+			}
 			return prefix + "|" + strings.Join(cells, "\t")
 		}
 		return line
@@ -723,9 +731,23 @@ func replaceStatusInLine(line, oldStatus, newStatus string) string {
 	segments := strings.Split(line, "|")
 	if idx := statusCellIndex(segments, 6, want); idx >= 0 {
 		segments[idx] = spliceCellValue(segments[idx], newStatus)
+		if addInteraction && 9 < len(segments) {
+			segments[9] = spliceCellValueAllowEmpty(segments[9], appendStatusInteraction(strings.TrimSpace(segments[9]), newStatus, interactionDate))
+		}
 		return strings.Join(segments, "|")
 	}
 	return line
+}
+
+func appendStatusInteraction(notes, status, date string) string {
+	entry := fmt.Sprintf("Status changed to %s %s", strings.TrimSpace(status), date)
+	if strings.Contains(notes, entry) {
+		return notes
+	}
+	if notes == "" {
+		return entry
+	}
+	return notes + "; " + entry
 }
 
 // statusCellIndex returns the index of the Status cell. It prefers the canonical
@@ -756,6 +778,17 @@ func spliceCellValue(cell, newVal string) string {
 	}
 	start := strings.Index(cell, trimmed)
 	return cell[:start] + newVal + cell[start+len(trimmed):]
+}
+
+func spliceCellValueAllowEmpty(cell, newVal string) string {
+	trimmed := strings.TrimSpace(cell)
+	if trimmed != "" {
+		return spliceCellValue(cell, newVal)
+	}
+	if len(cell) >= 2 {
+		return cell[:1] + newVal + cell[len(cell)-1:]
+	}
+	return newVal
 }
 
 // cleanTableCell removes trailing pipes and whitespace from a table cell value.

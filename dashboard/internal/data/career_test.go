@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/santifer/career-ops/dashboard/internal/model"
 )
@@ -54,6 +55,10 @@ func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
 	if strings.Contains(out, "Interview Materials") {
 		t.Errorf("status word was replaced inside the Company cell, file now:\n%s", out)
 	}
+	today := time.Now().Format("2006-01-02")
+	if !strings.Contains(out, "substring trap; Status changed to Interview "+today) {
+		t.Errorf("status interaction note was not appended, file now:\n%s", out)
+	}
 
 	reparsed := ParseApplications(tempDir)
 	if reparsed[0].Company != "Applied Materials" {
@@ -61,6 +66,9 @@ func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
 	}
 	if reparsed[0].Status != "Interview" {
 		t.Errorf("status = %q, want \"Interview\"", reparsed[0].Status)
+	}
+	if reparsed[0].LastContact != today {
+		t.Errorf("LastContact = %q, want %q", reparsed[0].LastContact, today)
 	}
 }
 
