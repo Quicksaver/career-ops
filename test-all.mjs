@@ -1860,10 +1860,12 @@ console.log('\n12b. Skill entrypoint bootstrap (npx / old releases)');
     const claudeDir = join(fixtureRoot, '.claude', 'skills', 'career-ops');
     const opencodeDir = join(fixtureRoot, '.opencode', 'skills', 'career-ops');
     const antigravityDir = join(fixtureRoot, '.antigravitycli', 'skills', 'career-ops');
+    const kimiDir = join(fixtureRoot, '.kimi', 'skills', 'career-ops');
     mkdirSync(canonicalDir, { recursive: true });
     mkdirSync(claudeDir, { recursive: true });
     mkdirSync(opencodeDir, { recursive: true });
     mkdirSync(antigravityDir, { recursive: true });
+    mkdirSync(kimiDir, { recursive: true });
 
     const fixtureSkill = '---\nname: career-ops\n---\n\n# canonical skill\n';
     const pointer = '../../../.agents/skills/career-ops/SKILL.md';
@@ -1871,16 +1873,19 @@ console.log('\n12b. Skill entrypoint bootstrap (npx / old releases)');
     mkdirSync(join(claudeDir, 'SKILL.md'));
     writeFileSync(join(opencodeDir, 'SKILL.md'), pointer);
     writeFileSync(join(antigravityDir, 'SKILL.md'), pointer);
+    writeFileSync(join(kimiDir, 'SKILL.md'), pointer);
 
     const updater = await import(pathToFileURL(join(ROOT, 'update-system.mjs')).href);
     const materialized = updater.materializeSkillEntrypoints(fixtureRoot).sort();
     const opencodeSkill = readFileSync(join(opencodeDir, 'SKILL.md'), 'utf-8');
     const antigravitySkill = readFileSync(join(antigravityDir, 'SKILL.md'), 'utf-8');
+    const kimiSkill = readFileSync(join(kimiDir, 'SKILL.md'), 'utf-8');
     const expected = [
       '.antigravitycli/skills/career-ops/SKILL.md',
+      '.kimi/skills/career-ops/SKILL.md',
       '.opencode/skills/career-ops/SKILL.md',
     ].sort();
-    if (JSON.stringify(materialized) === JSON.stringify(expected) && opencodeSkill === fixtureSkill && antigravitySkill === fixtureSkill) {
+    if (JSON.stringify(materialized) === JSON.stringify(expected) && opencodeSkill === fixtureSkill && antigravitySkill === fixtureSkill && kimiSkill === fixtureSkill) {
       pass('update-system skips non-file skill entrypoints while materializing valid pointers');
     } else {
       fail(`non-file skill entrypoint handling was unexpected: ${JSON.stringify(materialized)}`);
@@ -1913,10 +1918,12 @@ console.log('\n12c. Materialized skill index mode');
     const claudeDir = join(fixtureRoot, '.claude', 'skills', 'career-ops');
     const opencodeDir = join(fixtureRoot, '.opencode', 'skills', 'career-ops');
     const antigravityDir = join(fixtureRoot, '.antigravitycli', 'skills', 'career-ops');
+    const kimiDir = join(fixtureRoot, '.kimi', 'skills', 'career-ops');
     mkdirSync(canonicalDir, { recursive: true });
     mkdirSync(claudeDir, { recursive: true });
     mkdirSync(opencodeDir, { recursive: true });
     mkdirSync(antigravityDir, { recursive: true });
+    mkdirSync(kimiDir, { recursive: true });
 
     const fixtureSkill = '---\nname: career-ops\n---\n\n# canonical skill\n';
     const pointer = '../../../.agents/skills/career-ops/SKILL.md';
@@ -1930,31 +1937,35 @@ console.log('\n12c. Materialized skill index mode');
     writeFileSync(join(claudeDir, 'SKILL.md'), pointer);
     writeFileSync(join(opencodeDir, 'SKILL.md'), pointer);
     writeFileSync(join(antigravityDir, 'SKILL.md'), pointer);
+    writeFileSync(join(kimiDir, 'SKILL.md'), pointer);
     gitRun(['add', '--', '.agents/skills/career-ops/SKILL.md']);
 
     const pointerBlob = gitRun(['hash-object', '-w', '--stdin'], { input: pointer });
     gitRun(['update-index', '--add', '--cacheinfo', `120000,${pointerBlob},.claude/skills/career-ops/SKILL.md`]);
     gitRun(['update-index', '--add', '--cacheinfo', `120000,${pointerBlob},.opencode/skills/career-ops/SKILL.md`]);
     gitRun(['update-index', '--add', '--cacheinfo', `120000,${pointerBlob},.antigravitycli/skills/career-ops/SKILL.md`]);
+    gitRun(['update-index', '--add', '--cacheinfo', `120000,${pointerBlob},.kimi/skills/career-ops/SKILL.md`]);
 
     const updater = await import(pathToFileURL(join(ROOT, 'update-system.mjs')).href);
     const materialized = updater.materializeSkillEntrypoints(fixtureRoot);
     updater.prepareMaterializedSkillEntrypointsForStage(materialized, fixtureRoot);
-    gitRun(['add', '--', '.claude/skills/', '.opencode/skills/', '.antigravitycli/skills/']);
+    gitRun(['add', '--', '.claude/skills/', '.opencode/skills/', '.antigravitycli/skills/', '.kimi/skills/']);
 
     const claudeIndex = gitRun(['ls-files', '-s', '--', '.claude/skills/career-ops/SKILL.md']);
     const opencodeIndex = gitRun(['ls-files', '-s', '--', '.opencode/skills/career-ops/SKILL.md']);
     const antigravityIndex = gitRun(['ls-files', '-s', '--', '.antigravitycli/skills/career-ops/SKILL.md']);
-    if (claudeIndex.startsWith('100644 ') && opencodeIndex.startsWith('100644 ') && antigravityIndex.startsWith('100644 ')) {
+    const kimiIndex = gitRun(['ls-files', '-s', '--', '.kimi/skills/career-ops/SKILL.md']);
+    if (claudeIndex.startsWith('100644 ') && opencodeIndex.startsWith('100644 ') && antigravityIndex.startsWith('100644 ') && kimiIndex.startsWith('100644 ')) {
       pass('materialized skill entrypoints stage as regular files, not symlink blobs');
     } else {
-      fail(`materialized skill entrypoints staged with wrong modes: ${JSON.stringify([claudeIndex, opencodeIndex, antigravityIndex])}`);
+      fail(`materialized skill entrypoints staged with wrong modes: ${JSON.stringify([claudeIndex, opencodeIndex, antigravityIndex, kimiIndex])}`);
     }
 
     const claudeBlob = gitRaw(['show', ':.claude/skills/career-ops/SKILL.md']);
     const opencodeBlob = gitRaw(['show', ':.opencode/skills/career-ops/SKILL.md']);
     const antigravityBlob = gitRaw(['show', ':.antigravitycli/skills/career-ops/SKILL.md']);
-    if (claudeBlob === fixtureSkill && opencodeBlob === fixtureSkill && antigravityBlob === fixtureSkill) {
+    const kimiBlob = gitRaw(['show', ':.kimi/skills/career-ops/SKILL.md']);
+    if (claudeBlob === fixtureSkill && opencodeBlob === fixtureSkill && antigravityBlob === fixtureSkill && kimiBlob === fixtureSkill) {
       pass('materialized skill blobs contain canonical skill content');
     } else {
       fail('materialized skill blobs do not contain canonical skill content');
