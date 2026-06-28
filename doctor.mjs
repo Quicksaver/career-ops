@@ -92,12 +92,15 @@ async function checkPlaywright() {
 }
 
 // The browser tools (`browser_navigate` / `browser_snapshot`) that scan / pipeline /
-// apply rely on are provided by the Playwright MCP server, usually registered through a
+// apply rely on are provided by the Playwright MCP server, often registered through a
 // project-level MCP config (for example `.mcp.json`, `.claude/settings.json`, or
-// `.claude/settings.local.json`). When no common config is detected, SPA job boards can
-// silently return empty or stale content (#522), so doctor surfaces a non-fatal warning
-// instead of letting it fail invisibly.
-const PLAYWRIGHT_MCP_WARNING = 'Playwright MCP tools not detected';
+// `.claude/settings.local.json`). Some CLIs, including Codex, can also expose these
+// tools through runtime discovery/lazy loading (`tool_search`) without a project file.
+//
+// doctor.mjs can inspect local files, but it cannot call the model-side tool registry.
+// Therefore this warning is deliberately scoped to missing project config; agents must
+// still probe their runtime tools before concluding Playwright MCP is unavailable.
+const PLAYWRIGHT_MCP_WARNING = 'Project Playwright MCP config not detected; verify runtime tools before treating Playwright as unavailable';
 
 function playwrightMcpConfigured(root) {
   const configFiles = ['.mcp.json', '.claude/settings.json', '.claude/settings.local.json'];
@@ -128,7 +131,11 @@ function checkPlaywrightMcp(root) {
     fix: [
       'Browser-driven JD fetching and liveness checks (scan / pipeline / apply) need the',
       'Playwright MCP server. No project-level MCP config was detected in `.mcp.json`',
-      'or `.claude/settings*.json`, so SPA job boards may return empty or stale content.',
+      'or `.claude/settings*.json`.',
+      'If your CLI supports runtime tool discovery, use it now (for example Codex',
+      '`tool_search` for Playwright/browser tools) before reporting that Playwright MCP',
+      'is unavailable. Without a configured or discovered browser tool, SPA job boards',
+      'may return empty or stale content.',
       'Tracking: https://github.com/santifer/career-ops/issues/506',
     ],
   };

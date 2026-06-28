@@ -164,6 +164,8 @@ node doctor.mjs --user {USER} --json
 
 Output: `{"onboardingNeeded": <bool>, "missing": [...], "warnings": [...]}`, where `missing` lists whichever of `cv.md`, `config/profile.yml`, `modes/_profile.md`, `portals.yml` are absent. `warnings` is reserved for non-blocking setup signals.
 
+If `warnings` includes a Playwright MCP/project-config warning, do not report that Playwright tools are unavailable until you check the actual runtime tool registry. In Codex, use `tool_search` for Playwright/browser tools; in other CLIs, use the equivalent MCP/tool discovery mechanism. The doctor check can only inspect project config files, while some environments lazy-load MCP tools without a repo-local `.mcp.json` or `.claude/settings*.json`.
+
 0. Has an active user been explicitly specified in this conversation? If not, stop and ask which user to use before running the cold-start check.
 
 - If `modes/_profile.md` is in `missing`, copy it silently from `modes/_profile.template.md` to `users/{USER}/modes/_profile.md` (the user's customization file — never overwritten by updates). It's then resolved.

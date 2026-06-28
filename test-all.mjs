@@ -3762,13 +3762,15 @@ try {
   if (
     !/Claude Code config/i.test(doctorScript) &&
     /project-level MCP config/i.test(doctorScript) &&
+    /runtime (tool )?discovery/i.test(doctorScript) &&
+    /tool_search/.test(doctorScript) &&
     /\.mcp\.json/.test(doctorScript) &&
     /\.claude\/settings\.json/.test(doctorScript) &&
     /\.claude\/settings\.local\.json/.test(doctorScript)
   ) {
-    pass('doctor Playwright MCP guidance is agent-neutral and keeps conservative config detection');
+    pass('doctor Playwright MCP guidance is agent-neutral, config-scoped, and points agents to runtime discovery');
   } else {
-    fail('doctor Playwright MCP guidance is still Claude-specific or lost config detection');
+    fail('doctor Playwright MCP guidance is still Claude-specific, treats config as runtime truth, or lost config detection');
   }
 
   // No project MCP config → doctor surfaces a (non-fatal) warning instead of
@@ -3778,9 +3780,14 @@ try {
   mkdirSync(join(noMcpUsers, 'test'), { recursive: true });
   const a = JSON.parse(run(NODE, ['doctor.mjs', '--user', 'test', '--json', '--target', noMcp], { env: { ...process.env, CAREER_OPS_USERS_DIR: noMcpUsers } }) || '{}');
   if (Array.isArray(a.warnings) && a.warnings.some((w) => /playwright mcp/i.test(w))) {
-    pass('No Playwright MCP config → warning surfaced');
+    pass('No Playwright MCP config → config-scoped warning surfaced');
   } else {
     fail(`Expected a Playwright MCP warning, got: ${JSON.stringify(a.warnings)}`);
+  }
+  if (Array.isArray(a.warnings) && a.warnings.some((w) => /runtime tools|runtime tool|unavailable/i.test(w))) {
+    pass('No Playwright MCP config warning tells agents not to treat Playwright as unavailable without runtime discovery');
+  } else {
+    fail(`Expected warning to distinguish project config from runtime tools, got: ${JSON.stringify(a.warnings)}`);
   }
   rmSync(noMcp, { recursive: true, force: true });
   rmSync(noMcpUsers, { recursive: true, force: true });
@@ -3822,6 +3829,13 @@ try {
   rmSync(withMcpUsers, { recursive: true, force: true });
 } catch (e) {
   fail(`Playwright MCP detection test crashed: ${e.message}`);
+}
+
+const agentsPlaywrightGuidance = readFile('AGENTS.md');
+if (/Playwright MCP\/project-config warning/i.test(agentsPlaywrightGuidance) && /tool_search/i.test(agentsPlaywrightGuidance)) {
+  pass('AGENTS.md tells Codex to use runtime tool discovery before claiming Playwright is unavailable');
+} else {
+  fail('AGENTS.md does not guard against treating doctor Playwright config warnings as runtime tool absence');
 }
 
 const applyModeText = readFile('modes/apply.md');
