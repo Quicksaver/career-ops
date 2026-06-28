@@ -10,6 +10,26 @@ license: MIT
 
 # career-ops -- Router
 
+career-ops is a multi-CLI job-search command center. The routing below is shared across supported agent CLIs even when the invocation surface differs.
+
+## Invocation Notes
+
+- CLIs with slash-command registration can expose this router as `/career-ops`.
+- Interactive Codex sessions use `codex` in the repo root. Slash commands are not guaranteed in Codex, so ask Codex to run the same mode by name if `/career-ops` is unavailable.
+- Headless Codex workers use `codex exec "prompt"`.
+- The routing semantics below stay the same regardless of whether the entrypoint is a slash command or a natural-language prompt.
+- Every invocation still requires an active user before user-layer files are read or written.
+
+Codex prompt examples that map to the same router semantics:
+
+```text
+Evaluate this JD with career-ops auto-pipeline for <username>: https://company.com/jobs/123
+Run the career-ops scan mode for <username> and summarize new matches.
+Run the career-ops pipeline mode for <username>.
+Run the career-ops pdf mode for the latest evaluated role for <username>.
+Run the career-ops tracker mode for <username> and summarize the current statuses.
+```
+
 ## User Context (Mandatory)
 
 Every `/career-ops` invocation runs against exactly one active user ID. User data lives under:
@@ -51,7 +71,6 @@ For `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, keep process m
 - Do not emit filler such as "Continuing quietly", "still processing", "worker remains active", or "no failure output" during routine polls.
 - Report immediately only when the command completes, fails, asks for login/CAPTCHA/user action, appears hung, or produces a concrete warning that changes what the user should do.
 - If the user explicitly asks for status while the command is running, answer once with the current observed state, then return to quiet monitoring.
-
 ## Mode Routing
 
 Determine the mode from `$mode`:
@@ -90,6 +109,18 @@ If `$mode` is not a sub-command AND doesn't look like a JD, show discovery.
 ---
 
 ## Discovery Mode (no arguments)
+
+If your CLI supports `/career-ops`, show this menu. In Codex, surface the same options in plain text and map the requested mode the same way.
+
+Concrete equivalents for Codex prompt-driven sessions:
+
+```text
+/career-ops {JD}           ↔ "Evaluate this JD with career-ops auto-pipeline: {JD or URL}"
+/career-ops scan           ↔ "Run the career-ops scan mode and summarize new matches."
+/career-ops pipeline       ↔ "Run the career-ops pipeline mode for <username>."
+/career-ops pdf            ↔ "Run the career-ops pdf mode for the latest evaluated role."
+/career-ops tracker        ↔ "Run the career-ops tracker mode and summarize the current statuses."
+```
 
 Show this menu:
 
@@ -146,7 +177,7 @@ Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_US
 Applies to: `tracker`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `latex`, `training`, `project`, `patterns`, `followup`, `cover`, `scan-auth`
 
 ### Modes delegated to subagent:
-For `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as Agent with the content of `_shared.md` + `modes/{mode}.md` injected into the subagent prompt.
+For `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
 
 ```
 Agent(

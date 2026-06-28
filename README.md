@@ -64,6 +64,7 @@
   <img src="https://img.shields.io/badge/Antigravity_CLI-4285F4?style=flat&logo=google&logoColor=white" alt="Antigravity CLI">
   <img src="https://img.shields.io/badge/Codex-412991?style=flat&logo=openai&logoColor=white" alt="Codex">
   <img src="https://img.shields.io/badge/Qwen-615CED?style=flat" alt="Qwen">
+  <img src="https://img.shields.io/badge/Kimi-FF4B4B?style=flat" alt="Kimi">
   <img src="https://img.shields.io/badge/GitHub_Copilot-000?style=flat&logo=githubcopilot&logoColor=white" alt="GitHub Copilot">
   <img src="https://img.shields.io/badge/Grok_Build_CLI-000?style=flat&logo=x&logoColor=white" alt="Grok Build CLI">
   <br>
@@ -154,7 +155,7 @@ cp templates/portals.example.yml users/<username>/portals.yml       # Customize 
 # Create users/<username>/cv.md with your CV in markdown
 
 # 6. Personalize with your AI CLI
-claude   # or gemini / codex / qwen / opencode
+claude   # or codex / opencode / gemini / qwen / agy / grok
 
 # Then ask your CLI to adapt the system to you:
 # "Change the archetypes to backend engineering roles"
@@ -164,6 +165,12 @@ claude   # or gemini / codex / qwen / opencode
 
 # 7. Start using
 # Paste a job URL with --user <username>, or run /career-ops scan <username>
+# If your CLI supports slash commands, use /career-ops (or its CLI-specific alias).
+# In Codex, ask for the same mode in plain language, e.g.:
+# "Run the career-ops scan mode for <username>"
+# "Run the career-ops pipeline mode for <username>"
+# "Run the career-ops pdf mode for the latest evaluated role for <username>"
+# "Run the career-ops tracker mode for <username> and summarize the current statuses"
 ```
 
 </details>
@@ -194,6 +201,37 @@ agy
 ```
 
 The skill is defined using the open standard in `.agents/skills/career-ops/SKILL.md` and symlinked/referenced for each supported CLI (e.g. `.claude/`, `.qwen/`, `.antigravitycli/`, `.grok/`).
+
+## Codex Integration
+
+Career-ops supports Codex through the same shared router, but the invocation model is different from CLIs that auto-register slash commands.
+
+### Interactive Codex
+
+```bash
+cd career-ops
+codex
+```
+
+Slash commands are not guaranteed in Codex. If `/career-ops` is unavailable, ask Codex to run the mode directly in plain language:
+
+```text
+Evaluate this JD with career-ops auto-pipeline for <username>: https://company.com/jobs/123
+Run the career-ops scan mode for <username> and summarize new matches.
+Run the career-ops pipeline mode for <username>.
+Run the career-ops pdf mode for the latest evaluated role for <username>.
+Run the career-ops tracker mode for <username> and summarize the current statuses.
+```
+
+### One-shot Codex (`codex exec`)
+
+```bash
+codex exec "Evaluate this JD with career-ops auto-pipeline for <username>: https://company.com/jobs/123"
+codex exec "Run career-ops scan mode for <username> in this repo and summarize new matches."
+codex exec "Run career-ops pipeline mode for <username>."
+codex exec "Run career-ops pdf mode for the latest evaluated role for <username>."
+codex exec "Run career-ops tracker mode for <username> and summarize the current statuses."
+```
 
 ## Grok Build CLI Integration
 
@@ -236,7 +274,7 @@ npm run gemini:eval -- "JD text here"
 
 ## Usage
 
-Career-ops is a single slash command with multiple modes:
+Career-ops uses a shared command router. In CLIs that register slash commands, it looks like this:
 
 ```
 /career-ops                → Show all available commands
@@ -258,6 +296,8 @@ Career-ops is a single slash command with multiple modes:
 
 Or just paste a job URL or description directly -- career-ops auto-detects it and runs the full pipeline.
 
+In Codex, slash commands are not guaranteed. Use the same mode names in a prompt instead, or call them from `codex exec`.
+
 ## How It Works
 
 ```
@@ -271,7 +311,7 @@ You paste a job URL or description
          │
 ┌────────▼─────────┐
 │  A-F Evaluation  │  Match, gaps, comp research, STAR stories
-│  (reads cv.md)   │
+│  (reads user CV) │
 └────────┬─────────┘
          │
     ┌────┼────┐
@@ -293,7 +333,7 @@ The scanner comes with **45+ companies** ready to scan and **19 search queries**
 **Automation:** n8n, Zapier, Make.com
 **European:** Factorial, Attio, Tinybird, Clarity AI, Travelperk
 
-**Job boards searched:** Ashby, Greenhouse, Lever, Workable, Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice
+**Job boards searched:** 21 provider modules cover ATS APIs, board-wide feeds, XML/RSS feeds, markdown feeds, and local parsers. See [Supported job boards](docs/SUPPORTED_JOB_BOARDS.md) for the full table.
 
 By default `node scan.mjs --user {USER}` (a.k.a. `npm run scan -- --user {USER}`) trusts what each ATS feed returns. Some companies leave stale postings in their public API even after the role is closed, so those expired entries can leak into `users/{USER}/data/pipeline.md`. Pass `--verify` to launch Playwright after the API pass and drop expired postings before they hit the pipeline:
 
@@ -337,6 +377,7 @@ Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, 
 career-ops/
 ├── AGENTS.md                    # Canonical agent instructions (all CLIs)
 ├── CLAUDE.md                    # Claude Code wrapper (imports AGENTS.md)
+├── CODEX.md                     # Codex wrapper (imports AGENTS.md)
 ├── OPENCODE.md                  # OpenCode wrapper (imports AGENTS.md)
 ├── GEMINI.md                    # Legacy no-op guard to avoid Antigravity duplicate context
 ├── users/                       # Gitignored per-user data roots
@@ -383,7 +424,7 @@ career-ops/
 ![Go](https://img.shields.io/badge/Go-00ADD8?style=flat&logo=go&logoColor=white)
 ![Bubble Tea](https://img.shields.io/badge/Bubble_Tea-FF75B5?style=flat&logo=go&logoColor=white)
 
-- **Agent**: Claude Code with custom skills and modes
+- **Agent**: AI coding CLI with shared skills and modes (`AGENTS.md` + CLI wrapper)
 - **PDF**: Playwright/Puppeteer + HTML template
 - **Cover letters**: HTML template + Playwright (A4 PDF, same pipeline as CVs)
 - **Scanner**: Zero-token ATS/search providers + structured HTML/SSR parsing + agent WebSearch fallback

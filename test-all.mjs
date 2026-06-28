@@ -863,18 +863,19 @@ console.log('\n8. Data contract validation');
 
 // Check system files exist
 const systemFiles = [
-  'CLAUDE.md', 'OPENCODE.md', 'VERSION', 'DATA_CONTRACT.md',
+  'CLAUDE.md', 'CODEX.md', 'OPENCODE.md', 'VERSION', 'DATA_CONTRACT.md',
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
   'modes/scan-auth.md', 'scan-auth.mjs', 'scan-auth/linkedin.mjs',
   'modes/heuristics/recruiter-side.md',
   'templates/states.yml', 'templates/cv-template.html',
-  'lib/user-context.mjs',
+  'lib/user-context.mjs', 'openai-eval.mjs',
   '.claude/skills/career-ops/SKILL.md',
   '.opencode/skills/career-ops/SKILL.md',
   '.qwen/skills/career-ops/SKILL.md',
   '.antigravitycli/skills/career-ops/SKILL.md',
   '.grok/skills/career-ops/SKILL.md',
+  '.kimi/skills/career-ops/SKILL.md',
 ];
 
 for (const f of systemFiles) {
@@ -883,6 +884,18 @@ for (const f of systemFiles) {
   } else {
     fail(`Missing system file: ${f}`);
   }
+}
+
+const openaiEvalSource = readFile('openai-eval.mjs');
+if (
+  /getUserContext\(rawArgs\)/.test(openaiEvalSource) &&
+  /userPath\(userContext,\s*['"]cv\.md['"]\)/.test(openaiEvalSource) &&
+  /userPath\(userContext,\s*['"]reports['"]\)/.test(openaiEvalSource) &&
+  /users\/\$\{userContext\.userId\}\/reports/.test(openaiEvalSource)
+) {
+  pass('openai-eval.mjs is user-scoped');
+} else {
+  fail('openai-eval.mjs still assumes root cv.md/reports or does not require an active user');
 }
 
 // Check user files are NOT tracked (gitignored)
@@ -1049,6 +1062,12 @@ if (
 }
 
 // ── 11. MODE FILE INTEGRITY ─────────────────────────────────────
+
+if (updateSystemScript.includes("'CODEX.md'")) {
+  pass('update-system preserves CODEX.md as a system-layer wrapper');
+} else {
+  fail('update-system does not preserve CODEX.md');
+}
 
 console.log('\n11. Mode file integrity');
 
@@ -1537,7 +1556,7 @@ for (const section of requiredSections) {
 
 console.log('\n11. CLI wrapper file integrity');
 
-const cliWrappers = ['CLAUDE.md', 'OPENCODE.md'];
+const cliWrappers = ['CLAUDE.md', 'CODEX.md', 'OPENCODE.md'];
 for (const f of cliWrappers) {
   if (!fileExists(f)) {
     fail(`Missing CLI wrapper: ${f}`);
@@ -1561,6 +1580,13 @@ if (!fileExists('GEMINI.md')) {
   }
 }
 
+const codexWrapper = fileExists('CODEX.md') ? readFile('CODEX.md') : '';
+if (/^@(?:\.\/)?AGENTS\.md/m.test(codexWrapper)) {
+  pass('CODEX.md imports AGENTS.md as a thin wrapper');
+} else {
+  fail('CODEX.md is not a thin AGENTS.md wrapper');
+}
+
 // ── 12. SKILL SYMLINK INTEGRITY ─────────────────────────────
 
 console.log('\n12. Skill symlink integrity');
@@ -1572,6 +1598,7 @@ const symlinks = [
   '.qwen/skills/career-ops/SKILL.md',
   '.antigravitycli/skills/career-ops/SKILL.md',
   '.grok/skills/career-ops/SKILL.md',
+  '.kimi/skills/career-ops/SKILL.md',
 ];
 
 let canonicalReal = null;
@@ -1610,6 +1637,55 @@ for (const link of symlinks) {
   }
 }
 
+if (
+  /Codex/i.test(canonicalContent ?? '') &&
+  /`codex`/.test(canonicalContent ?? '') &&
+  /`codex exec/.test(canonicalContent ?? '') &&
+  /prompt/i.test(canonicalContent ?? '') &&
+  /\/career-ops/.test(canonicalContent ?? '')
+) {
+  pass('career-ops skill router documents the Codex invocation model');
+} else {
+  fail('career-ops skill router is missing Codex invocation guidance');
+}
+
+console.log('\n12c. Codex documentation guidance');
+
+const readmeDoc = readFile('README.md');
+if (
+  /CODEX\.md/.test(readmeDoc) &&
+  /codex exec/.test(readmeDoc) &&
+  /Codex/i.test(readmeDoc) &&
+  /(slash commands?.*not guaranteed|plain language|prompt)/i.test(readmeDoc)
+) {
+  pass('README documents CODEX.md and Codex interactive/headless usage');
+} else {
+  fail('README is missing required Codex usage guidance');
+}
+
+const setupDoc = readFile('docs/SETUP.md');
+if (
+  /codex exec/.test(setupDoc) &&
+  /Codex/i.test(setupDoc) &&
+  /(slash commands?.*not guaranteed|plain language|prompt)/i.test(setupDoc)
+) {
+  pass('docs/SETUP.md explains the Codex invocation model');
+} else {
+  fail('docs/SETUP.md is missing Codex invocation guidance');
+}
+
+const agentsDoc = readFile('AGENTS.md');
+if (
+  /CODEX\.md/.test(agentsDoc) &&
+  /codex exec/.test(agentsDoc) &&
+  /Codex/i.test(agentsDoc) &&
+  /(slash commands?.*not guaranteed|prompt|\/career-ops.*unavailable)/i.test(agentsDoc)
+) {
+  pass('AGENTS.md includes CODEX.md and Codex-specific command guidance');
+} else {
+  fail('AGENTS.md is missing CODEX.md or Codex command guidance');
+}
+
 console.log('\n12a. Skill entrypoint materialization');
 
 {
@@ -1619,10 +1695,12 @@ console.log('\n12a. Skill entrypoint materialization');
     const claudeDir = join(fixtureRoot, '.claude', 'skills', 'career-ops');
     const opencodeDir = join(fixtureRoot, '.opencode', 'skills', 'career-ops');
     const antigravityDir = join(fixtureRoot, '.antigravitycli', 'skills', 'career-ops');
+    const kimiDir = join(fixtureRoot, '.kimi', 'skills', 'career-ops');
     mkdirSync(canonicalDir, { recursive: true });
     mkdirSync(claudeDir, { recursive: true });
     mkdirSync(opencodeDir, { recursive: true });
     mkdirSync(antigravityDir, { recursive: true });
+    mkdirSync(kimiDir, { recursive: true });
 
     const fixtureSkill = '---\nname: career-ops\n---\n\n# canonical skill\n';
     const pointer = '../../../.agents/skills/career-ops/SKILL.md';
@@ -1630,12 +1708,14 @@ console.log('\n12a. Skill entrypoint materialization');
     writeFileSync(join(claudeDir, 'SKILL.md'), pointer);
     writeFileSync(join(opencodeDir, 'SKILL.md'), pointer);
     writeFileSync(join(antigravityDir, 'SKILL.md'), pointer);
+    writeFileSync(join(kimiDir, 'SKILL.md'), pointer);
 
     const updater = await import(pathToFileURL(join(ROOT, 'update-system.mjs')).href);
     const materialized = updater.materializeSkillEntrypoints(fixtureRoot).sort();
     const expected = [
       '.antigravitycli/skills/career-ops/SKILL.md',
       '.claude/skills/career-ops/SKILL.md',
+      '.kimi/skills/career-ops/SKILL.md',
       '.opencode/skills/career-ops/SKILL.md',
     ];
 
@@ -1648,7 +1728,8 @@ console.log('\n12a. Skill entrypoint materialization');
     const claudeSkill = readFileSync(join(claudeDir, 'SKILL.md'), 'utf-8');
     const opencodeSkill = readFileSync(join(opencodeDir, 'SKILL.md'), 'utf-8');
     const antigravitySkill = readFileSync(join(antigravityDir, 'SKILL.md'), 'utf-8');
-    if (claudeSkill === fixtureSkill && opencodeSkill === fixtureSkill && antigravitySkill === fixtureSkill) {
+    const kimiSkill = readFileSync(join(kimiDir, 'SKILL.md'), 'utf-8');
+    if (claudeSkill === fixtureSkill && opencodeSkill === fixtureSkill && antigravitySkill === fixtureSkill && kimiSkill === fixtureSkill) {
       pass('materialized skill entrypoints match canonical content');
     } else {
       fail('materialized skill entrypoints do not match canonical content');
@@ -1681,6 +1762,7 @@ console.log('\n12b. Skill entrypoint bootstrap (npx / old releases)');
       '.antigravitycli/skills/career-ops/SKILL.md',
       '.claude/skills/career-ops/SKILL.md',
       '.grok/skills/career-ops/SKILL.md',
+      '.kimi/skills/career-ops/SKILL.md',
       '.opencode/skills/career-ops/SKILL.md',
       '.qwen/skills/career-ops/SKILL.md',
     ];
@@ -1692,8 +1774,9 @@ console.log('\n12b. Skill entrypoint bootstrap (npx / old releases)');
     }
 
     const grokSkill = readFileSync(join(fixtureRoot, '.grok', 'skills', 'career-ops', 'SKILL.md'), 'utf-8');
+    const kimiSkill = readFileSync(join(fixtureRoot, '.kimi', 'skills', 'career-ops', 'SKILL.md'), 'utf-8');
     const claudeSkill = readFileSync(join(claudeDir, 'SKILL.md'), 'utf-8');
-    if (grokSkill === fixtureSkill && claudeSkill === fixtureSkill) {
+    if (grokSkill === fixtureSkill && kimiSkill === fixtureSkill && claudeSkill === fixtureSkill) {
       pass('ensureSkillEntrypoints materializes canonical skill content');
     } else {
       fail('bootstrapped skill entrypoints do not match canonical content');
@@ -1702,6 +1785,44 @@ console.log('\n12b. Skill entrypoint bootstrap (npx / old releases)');
     fail(`skill entrypoint bootstrap test crashed: ${e.message}`);
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+{
+  // Regression guard for #1245: the self-reexec checkout derives its file list
+  // from update-system.mjs's static relative imports, so the parser must catch
+  // every relative import/export form and ignore bare/package specifiers.
+  try {
+    const updater = await import(pathToFileURL(join(ROOT, 'update-system.mjs')).href);
+    const sample = [
+      "import { a } from './scaffolder/bin/skill-entrypoints.mjs';",
+      'import b from "../lib/helper.mjs";',
+      "export { c } from './sibling.mjs';",
+      "import './side-effect.mjs';",
+      "import { readFileSync } from 'node:fs';",
+      "import yaml from 'js-yaml';",
+    ].join('\n');
+    const specs = updater.relativeImportSpecifiers(sample).sort();
+    const expected = [
+      '../lib/helper.mjs',
+      './scaffolder/bin/skill-entrypoints.mjs',
+      './sibling.mjs',
+      './side-effect.mjs',
+    ];
+    if (JSON.stringify(specs) === JSON.stringify(expected)) {
+      pass('relativeImportSpecifiers extracts relative imports, ignores bare/package (#1245)');
+    } else {
+      fail(`relativeImportSpecifiers mismatch: got ${JSON.stringify(specs)}`);
+    }
+
+    const liveSource = readFileSync(join(ROOT, 'update-system.mjs'), 'utf-8');
+    if (updater.relativeImportSpecifiers(liveSource).includes('./scaffolder/bin/skill-entrypoints.mjs')) {
+      pass('relativeImportSpecifiers picks up the live skill-entrypoints import (#1245)');
+    } else {
+      fail('relativeImportSpecifiers missed the live skill-entrypoints import');
+    }
+  } catch (e) {
+    fail(`relativeImportSpecifiers test crashed: ${e.message}`);
   }
 }
 
@@ -2326,6 +2447,16 @@ try {
     pass('buildTitleFilter ignores non-string/empty keyword entries without crashing');
   } else {
     fail('buildTitleFilter should ignore non-string/empty keyword entries');
+  }
+
+  // Whitespace-only keywords must be trimmed away, not compiled into matchers.
+  // A bare-spaces negative keyword would otherwise reject any title containing
+  // a run of spaces (e.g. "   " matches "Senior   Engineer" via includes()).
+  const wsNegFilter = buildTitleFilter({ positive: [], negative: ['   '] });
+  if (wsNegFilter('Senior   Engineer') === true) {
+    pass('buildTitleFilter drops whitespace-only keywords instead of matching on spaces');
+  } else {
+    fail('buildTitleFilter should drop whitespace-only keywords');
   }
 } catch (e) {
   fail(`title filter acronym tests crashed: ${e.message}`);
@@ -3597,6 +3728,19 @@ if (!sqliteAvailable) {
 console.log('\n12d. Playwright MCP detection warning');
 
 try {
+  const doctorScript = readFile('doctor.mjs');
+  if (
+    !/Claude Code config/i.test(doctorScript) &&
+    /project-level MCP config/i.test(doctorScript) &&
+    /\.mcp\.json/.test(doctorScript) &&
+    /\.claude\/settings\.json/.test(doctorScript) &&
+    /\.claude\/settings\.local\.json/.test(doctorScript)
+  ) {
+    pass('doctor Playwright MCP guidance is agent-neutral and keeps conservative config detection');
+  } else {
+    fail('doctor Playwright MCP guidance is still Claude-specific or lost config detection');
+  }
+
   // No project MCP config → doctor surfaces a (non-fatal) warning instead of
   // letting SPA job boards fail silently.
   const noMcp = mkdtempSync(join(tmpdir(), 'co-nomcp-'));
@@ -3627,9 +3771,34 @@ try {
     fail(`Did not expect a Playwright MCP warning, got: ${JSON.stringify(b.warnings)}`);
   }
   rmSync(withMcp, { recursive: true, force: true });
+
+  // Local Claude settings should also count as a valid MCP registration.
+  const withLocalMcp = mkdtempSync(join(tmpdir(), 'co-local-mcp-'));
+  const withLocalMcpUsers = mkdtempSync(join(tmpdir(), 'co-local-mcp-users-'));
+  mkdirSync(join(withLocalMcpUsers, 'test'), { recursive: true });
+  mkdirSync(join(withLocalMcp, '.claude'), { recursive: true });
+  writeFileSync(
+    join(withLocalMcp, '.claude', 'settings.local.json'),
+    JSON.stringify({ mcpServers: { browser: { command: 'npx', args: ['@playwright/mcp'] } } }),
+  );
+  const c = JSON.parse(run(NODE, ['doctor.mjs', '--user', 'test', '--json', '--target', withLocalMcp], { env: { ...process.env, CAREER_OPS_USERS_DIR: withLocalMcpUsers } }) || '{}');
+  if (Array.isArray(c.warnings) && !c.warnings.some((w) => /playwright mcp/i.test(w))) {
+    pass('Playwright MCP configured via .claude/settings.local.json → no warning');
+  } else {
+    fail(`Did not expect a Playwright MCP warning for settings.local.json, got: ${JSON.stringify(c.warnings)}`);
+  }
+  rmSync(withLocalMcp, { recursive: true, force: true });
+  rmSync(withLocalMcpUsers, { recursive: true, force: true });
   rmSync(withMcpUsers, { recursive: true, force: true });
 } catch (e) {
   fail(`Playwright MCP detection test crashed: ${e.message}`);
+}
+
+const applyModeText = readFile('modes/apply.md');
+if (!/Claude can interact/i.test(applyModeText)) {
+  pass('apply mode wording is agent-neutral');
+} else {
+  fail('apply mode still uses Claude-specific wording');
 }
 
 // ── 15. PROVIDERS — SolidJobs ─────────────────────────────────────

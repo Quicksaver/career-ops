@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `39ea2d4324b1279737f7640e9d0b447a2608e159`
-- Fork ref: current `main` at `3cd6a540814448cca305de1bd2ba9b9f9ae65b64`, before this inventory-only refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `92`
-- Diff-size baseline after merge, before this inventory-only refresh: `113 files changed, 10199 insertions(+), 1890 deletions(-)`
+- Upstream ref: `upstream/main` at `a3e1d766fd98334a9ccc638903d7db72df4db34e`
+- Fork ref: current `main` at `b3b548235e236a45cdafd39bb5929a740797afe4`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `101`
+- Diff-size baseline after merge, before this inventory refresh: `118 files changed, 11704 insertions(+), 2315 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13-era behavior and subsequent upstream fixes through `39ea2d4324b1279737f7640e9d0b447a2608e159` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14-era behavior and subsequent upstream fixes through `a3e1d766fd98334a9ccc638903d7db72df4db34e` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -97,9 +97,20 @@ New upstream features or behavior now present:
 - Batch robustness: upstream added a single-worker lock fallback and a Claude exit-127 shim-swap retry. The fork keeps both while preserving Codex stdin prompt delivery, schema-checked final JSON, per-user batch state, and worker-timeout behavior.
 - Tracker row utilities: upstream extracted duplicated row rebuilding into `tracker-utils.mjs`. The fork uses that helper from `normalize-statuses.mjs` while preserving active-user path resolution and user-scoped backups.
 - CV/template behavior: upstream added opt-in profile-photo support and scoped `break-inside` pagination rules in `templates/cv-template.html`. The fork keeps those template changes while preserving `cv.theme` CSS variable overrides and report-linked output naming.
+- v1.14 release baseline: upstream `VERSION`, Release Please manifest, and `CHANGELOG.md` now include v1.14.0. The fork adopted the release metadata while preserving updater safeguards for user-layer files.
+- CLI/runtime surface: upstream added first-class Codex docs/wrapper support and Kimi CLI entrypoints through `CODEX.md`, `KIMI.md`, and `.kimi/skills/career-ops/SKILL.md`. The fork keeps these as thin `AGENTS.md` / canonical-skill pointers, but rewrites examples to include the required active user instead of root `data/pipeline.md` assumptions.
+- OpenAI-compatible evaluator: upstream added `openai-eval.mjs` for OpenAI, OpenRouter, Together, Groq, DeepSeek, local `/v1` servers, and other compatible endpoints. The fork adopted the endpoint/security behavior and adapted CV/report paths through `--user {USER}`, `users/{USER}/cv.md`, and `users/{USER}/reports/`; `test-all.mjs` now has a guard for that user-scoped routing.
+- Governance/docs surface: upstream added `ARCHITECTURE.md`, `MAINTAINERS.md`, broadened `CODEOWNERS`, and added `docs/SUPPORTED_JOB_BOARDS.md`. These are system-layer docs; keep any user-specific targeting or company preferences in `users/{USER}/portals.yml` and profile files.
+- Scanner/mode hardening: upstream trimmed `title_filter` keywords before length checks and bounded scan subagents as single-pass workers that must not fan out into more research agents. The fork keeps those constraints while preserving quiet long-running monitoring, `scan-auth`, `scan-handoff`, user-scoped portal paths, and the custom provider layer.
+- Updater/runtime fixes: upstream registered Kimi paths in updater system manifests and fixed updater self-reexec checkout discovery from import closure analysis. The fork keeps those fixes while preserving `users/`, root `voice-dna.md`, and other user-path safety guards.
 
 Conflict notes from this merge:
 
+- `.agents/skills/career-ops/SKILL.md`: combined upstream multi-CLI/Codex invocation notes with the fork's mandatory active-user routing, quiet long-running monitoring, `scan-auth`, and `scan-handoff` mode routing.
+- `README.md` and `docs/SETUP.md`: kept upstream Codex/headless examples, supported job-board documentation, and broader CLI list, but rewrote setup and command examples to use `users/{USER}` and explicit `<username>` prompts.
+- `modes/scan.md`: kept upstream's single-pass worker / no-subagent-fanout rule and preserved the fork's Spanish quiet-monitoring policy, `users/{USER}/portals.yml` configuration path, and scan-handoff completion guidance.
+- `test-all.mjs`: kept upstream Codex/Kimi/docs/updater/MCP coverage while adding `.kimi` skill integrity checks and user-scoped `openai-eval.mjs` guards. The upstream `.claude/settings.local.json` MCP test was adapted to run through `doctor.mjs --user test` with a disposable `CAREER_OPS_USERS_DIR`.
+- `openai-eval.mjs`: upstream added the evaluator as a root single-user script; the fork adapted it to `lib/user-context.mjs`, user-scoped CV/report paths, and help/output text that requires `--user {USER}`.
 - `.gitignore`: kept the fork's `.scan-auth/` credential-profile ignore and added upstream's universal nested local-env / TypeScript build-cache ignore rules.
 - `batch/batch-runner.sh`: removed duplicate `--limit` help/parser entries, adopted upstream's limit-aware startup summary, and kept the fork's user banner plus CLI/worker-timeout logging so per-user Codex and Claude batch runs remain auditable.
 - `CLAUDE.md`: kept the fork's short redirect to `AGENTS.md` because `AGENTS.md` is the merged canonical instruction surface with active-user and user-layer rules.
@@ -168,6 +179,7 @@ Files:
 - `archive-posting.mjs`
 - `match-star.mjs`
 - `ollama-eval.mjs`
+- `openai-eval.mjs`
 - `batch/batch-runner.sh`
 - `dashboard/main.go`
 - `modes/*.md`
