@@ -5,9 +5,9 @@ This file documents what this fork changes relative to `upstream/main` so future
 Generated from:
 
 - Upstream ref: `upstream/main` at `39ea2d4324b1279737f7640e9d0b447a2608e159`
-- Fork ref: current `main` after the upstream merge and this inventory refresh
-- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `89`
-- Diff-size baseline after merge, before this inventory-only refresh: `109 files changed, 9785 insertions(+), 1806 deletions(-)`
+- Fork ref: current `main` at `3cd6a540814448cca305de1bd2ba9b9f9ae65b64`, before this inventory-only refresh
+- Relationship baseline after merge, before this inventory-only refresh: upstream-only commits `0`, fork-only commits `92`
+- Diff-size baseline after merge, before this inventory-only refresh: `113 files changed, 10199 insertions(+), 1890 deletions(-)`
 
 ## Merge Policy
 
@@ -369,6 +369,7 @@ What this customizes:
 - Uses upstream's shared `auto_pdf_score_threshold` config from `users/{USER}/config/profile.yml`, defaulting to `3.0`, so interactive pipeline and batch processing share the same score threshold.
 - Skips HTML/PDF generation when `final_decision` is `Skip`, even if the numeric score is higher.
 - Skips HTML/PDF generation when `_profile.md` applies an explicit hard stop, such as a blocked company/domain or consultancy/staff-augmentation model.
+- When a batch worker does generate a tailored CV, it may reorder and rewrite bullets inside each Work Experience block for JD relevance, but it must preserve the reverse-chronological order of the experience blocks themselves.
 - Requires the report header to say `**PDF:** not generated - run /career-ops pdf {company-slug} to create on demand` when the gate blocks PDF generation.
 - Requires the tracker TSV PDF column to use `❌` and the worker JSON summary to use `"pdf": null` when no PDF is generated.
 
@@ -378,6 +379,7 @@ Future merge notes:
 - Preserve the Skip/hard-stop gate unless upstream adds an equivalent policy to avoid wasting time and artifacts on offers the candidate should not apply to.
 - Keep the gate aligned with `modes/pipeline.md`, which now says the full auto-pipeline generates PDFs only when the offer score meets the resolved `auto_pdf_score_threshold`.
 - If upstream changes the batch worker prompt format, reapply the rule at the first point after score/final decision are known and before any HTML/PDF artifact is written.
+- Preserve the Work Experience ordering constraint if upstream rewrites the CV tailoring instructions; relevance sorting should not make an older role appear more recent than it was.
 
 ## CV Theme Overrides
 
@@ -399,12 +401,13 @@ What this customizes:
 - Documents supported keys such as `primary`, `accent`, `background`, `text`, `muted`, `rule`, and related color tokens.
 - Preserves upstream ATS text normalization in `generate-pdf.mjs`; the theme override should layer on the normalized HTML rather than bypassing it.
 - Preserves upstream temp-file `file://` rendering in `generate-pdf.mjs`, so local images/resources load through `page.goto(...)` while `cv.theme` overrides and user-scoped `cv.md` section validation still run before rendering.
+- Fails PDF generation before Playwright launch if the rendered HTML still contains unresolved `{{PLACEHOLDER}}` tokens, so optional template fields must be resolved or omitted instead of leaking into candidate-facing PDFs.
 
 Future merge notes:
 
 - If upstream changes the CV template, keep the variable names stable or provide a migration for existing `cv.theme` configs.
 - If upstream introduces first-class theming, compare key names and remove this local implementation if upstream covers the same use case.
-- If upstream changes PDF rendering again, verify it still handles local images/resources, data-URL font inlining, `load` wait semantics, `cv.theme`, and `users/{USER}/cv.md` validation in one focused smoke test.
+- If upstream changes PDF rendering again, verify it still handles local images/resources, data-URL font inlining, `load` wait semantics, unresolved-placeholder rejection, `cv.theme`, and `users/{USER}/cv.md` validation in one focused smoke test.
 
 ## Dashboard Improvements
 
