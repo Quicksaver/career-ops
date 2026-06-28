@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -66,6 +67,7 @@ func NewViewerModelWithFileRoot(t theme.Theme, path, title, fileRoot string, wid
 		content = []byte("Error reading file: " + err.Error())
 	}
 	renderContent := rewriteLocalPDFURLs(string(content), fileRoot)
+	renderContent = rewriteBatchIDAsJobID(renderContent, app.Number)
 
 	var lines []string
 	if renderContent != "" {
@@ -479,6 +481,7 @@ var (
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
 	reListNumber = regexp.MustCompile(`^(\s*\d+\.\s+)(.*)$`)
 	rePDFHeader  = regexp.MustCompile(`(?m)^(\*\*PDF:\*\*\s*)` + "`?" + `((?:\./)?output/[^\s` + "`" + `]+\.pdf)` + "`?")
+	reBatchLine  = regexp.MustCompile(`(?m)^(\*\*)Batch ID(:\*\*\s*)\d+\s*$`)
 )
 
 func fileURLForPath(path string) string {
@@ -505,6 +508,13 @@ func rewriteLocalPDFURLs(content, userRoot string) string {
 		relPath := strings.TrimPrefix(parts[2], "./")
 		return parts[1] + fileURLForPath(filepath.Join(userRoot, relPath))
 	})
+}
+
+func rewriteBatchIDAsJobID(content string, appNumber int) string {
+	if appNumber <= 0 || !reBatchLine.MatchString(content) {
+		return content
+	}
+	return reBatchLine.ReplaceAllString(content, "${1}Job ID${2}"+strconv.Itoa(appNumber))
 }
 
 func isHeadingLine(line string) bool {

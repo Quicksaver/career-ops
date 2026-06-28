@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
+	"github.com/santifer/career-ops/dashboard/internal/model"
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
 
@@ -88,6 +89,48 @@ func TestViewerRewritesRelativePDFHeaderToUserFileURL(t *testing.T) {
 	}
 	if strings.Contains(plain, "**PDF:** output/001-example.pdf") {
 		t.Fatalf("expected relative PDF path to be rewritten, got %q", plain)
+	}
+}
+
+func TestViewerRewritesBatchIDHeaderToJobIDFromListNumber(t *testing.T) {
+	tempDir := t.TempDir()
+	reportPath := filepath.Join(tempDir, "001-example.md")
+	if err := os.WriteFile(reportPath, []byte("**URL:** https://boards.greenhouse.io/acme/jobs/123456?gh_jid=7890\n**Batch ID:** 42\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	m := NewViewerModelWithFileRoot(
+		theme.NewTheme("catppuccin-mocha"),
+		reportPath,
+		"Report",
+		tempDir,
+		120,
+		20,
+		model.CareerApplication{Number: 1234, JobURL: "https://www.linkedin.com/jobs/view/4255159901/"},
+		tempDir,
+	)
+	plain := strings.Join(m.lines, "\n")
+
+	if !strings.Contains(plain, "**Job ID:** 1234") {
+		t.Fatalf("expected list number as Job ID in report view, got %q", plain)
+	}
+	if strings.Contains(plain, "**Batch ID:**") {
+		t.Fatalf("expected Batch ID header to be hidden in report view, got %q", plain)
+	}
+}
+
+func TestViewerLeavesBatchIDWhenListNumberIsMissing(t *testing.T) {
+	tempDir := t.TempDir()
+	reportPath := filepath.Join(tempDir, "001-example.md")
+	if err := os.WriteFile(reportPath, []byte("**URL:** https://boards.greenhouse.io/acme/jobs/123456?gh_jid=7890\n**Batch ID:** 42\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	m := NewViewerModelWithFileRoot(theme.NewTheme("catppuccin-mocha"), reportPath, "Report", tempDir, 120, 20)
+	plain := strings.Join(m.lines, "\n")
+
+	if !strings.Contains(plain, "**Batch ID:** 42") {
+		t.Fatalf("expected Batch ID header to remain without list number, got %q", plain)
 	}
 }
 
