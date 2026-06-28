@@ -27,7 +27,7 @@ There are two layers. Read `DATA_CONTRACT.md` for the full list.
 All career-ops commands require an active user. User-specific data is centralized under `users/{USER}/`, which is gitignored.
 
 Resolve the user before any career-ops work:
-1. If the current command explicitly includes a user (`/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`, or `--user <username>`), use it.
+1. If the current command explicitly includes a user (`/career-ops go <username>`, `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`, or `--user <username>`), use it.
 2. Otherwise, if this conversation already established an active user from a previous career-ops command, reuse it.
 3. Otherwise, stop immediately and ask which career-ops user to use. Do not inspect or modify user-layer files before the user is known.
 
@@ -51,7 +51,7 @@ Run the per-user binary without `--path`; it infers the user folder from its own
 
 ## Long-Running Command Quiet Mode
 
-When the user asks you to run `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, keep the conversation quiet while the command is running:
+When the user asks you to run `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, keep the conversation quiet while the command is running:
 - Start the command, then do not send routine "still running" or "currently at phase X" updates.
 - Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
 - Treat command stdout/stderr as the progress source. Do not paraphrase every phase back to the user.
@@ -305,6 +305,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 | Evaluates portfolio project | `project` |
 | Asks about application status | `tracker` |
 | Fills out application form | `apply` |
+| Wants the full sourcing loop | `go` |
 | Searches for new offers | `scan` |
 | Processes saved Agent/WebSearch scan handoff | `scan-handoff` |
 | Searches authenticated portals | `scan-auth` |

@@ -109,6 +109,7 @@ npx playwright install chromium
 | Action | How |
 |--------|-----|
 | Evaluate an offer | Paste a URL or JD text |
+| Run the full sourcing loop | `/career-ops go <username>` or ask the agent to run `go` for `<username>` |
 | Search for offers | `/career-ops scan <username>` or ask the agent to run `scan` for `<username>` |
 | Search authenticated portals | `/career-ops scan-auth <username> linkedin` |
 | Process pending URLs | `/career-ops pipeline <username>` or ask the agent to run `pipeline` for `<username>` |

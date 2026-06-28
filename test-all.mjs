@@ -866,7 +866,8 @@ const systemFiles = [
   'CLAUDE.md', 'CODEX.md', 'OPENCODE.md', 'VERSION', 'DATA_CONTRACT.md',
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
-  'modes/scan-auth.md', 'scan-auth.mjs', 'scan-auth/linkedin.mjs',
+  'modes/scan-handoff.md', 'modes/scan-auth.md', 'modes/go.md',
+  'scan-auth.mjs', 'scan-auth/linkedin.mjs',
   'modes/heuristics/recruiter-side.md',
   'templates/states.yml', 'templates/cv-template.html',
   'lib/user-context.mjs', 'openai-eval.mjs',
@@ -1073,7 +1074,7 @@ console.log('\n11. Mode file integrity');
 
 const expectedModes = [
   '_shared.md', '_profile.template.md', 'oferta.md', 'pdf.md', 'scan.md',
-  'scan-auth.md', 'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
+  'scan-handoff.md', 'scan-auth.md', 'go.md', 'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
   'ofertas.md', 'pipeline.md', 'project.md', 'tracker.md', 'training.md',
   'interview.md', 'latex.md',
   'regional/eu-swe.md',
@@ -1106,6 +1107,24 @@ for (const skillPath of ['.claude/skills/career-ops/SKILL.md', '.agents/skills/c
   } else {
     fail(`${skillPath} does not expose /career-ops latex in discovery menu`);
   }
+  if (skill.includes('/career-ops go') && skill.includes('| `go` | `go` |')) {
+    pass(`${skillPath} exposes /career-ops go in routing and discovery`);
+  } else {
+    fail(`${skillPath} does not expose /career-ops go in routing and discovery`);
+  }
+}
+
+const goMode = readFile('modes/go.md');
+if (
+  goMode.includes('node scan.mjs --user {USER}') &&
+  goMode.includes('users/{USER}/data/scan-handoff.json') &&
+  goMode.includes('node scan-auth.mjs --user {USER} linkedin') &&
+  goMode.includes('final pending count is greater than the starting pending count') &&
+  goMode.includes('Provider-specific or company-specific failures do not stop `go`')
+) {
+  pass('go mode coordinates scan, conditional handoff, LinkedIn scan, and conditional pipeline');
+} else {
+  fail('go mode is missing required sourcing-loop coordination rules');
 }
 
 const applyMode = readFile('modes/apply.md');

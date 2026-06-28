@@ -53,6 +53,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/scan.md` | Portal scanner instructions |
 | `modes/scan-handoff.md` | Agent/WebSearch scan handoff instructions |
 | `modes/scan-auth.md` | Authenticated portal scanner instructions |
+| `modes/go.md` | Sourcing-loop shorthand instructions |
 | `modes/batch.md` | Batch processing instructions |
 | `modes/apply.md` | Application assistant instructions |
 | `modes/auto-pipeline.md` | Auto-pipeline instructions |

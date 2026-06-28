@@ -101,7 +101,8 @@ New upstream features or behavior now present:
 - CLI/runtime surface: upstream added first-class Codex docs/wrapper support and Kimi CLI entrypoints through `CODEX.md`, `KIMI.md`, and `.kimi/skills/career-ops/SKILL.md`. The fork keeps these as thin `AGENTS.md` / canonical-skill pointers, but rewrites examples to include the required active user instead of root `data/pipeline.md` assumptions.
 - OpenAI-compatible evaluator: upstream added `openai-eval.mjs` for OpenAI, OpenRouter, Together, Groq, DeepSeek, local `/v1` servers, and other compatible endpoints. The fork adopted the endpoint/security behavior and adapted CV/report paths through `--user {USER}`, `users/{USER}/cv.md`, and `users/{USER}/reports/`; `test-all.mjs` now has a guard for that user-scoped routing.
 - Governance/docs surface: upstream added `ARCHITECTURE.md`, `MAINTAINERS.md`, broadened `CODEOWNERS`, and added `docs/SUPPORTED_JOB_BOARDS.md`. These are system-layer docs; keep any user-specific targeting or company preferences in `users/{USER}/portals.yml` and profile files.
-- Scanner/mode hardening: upstream trimmed `title_filter` keywords before length checks and bounded scan subagents as single-pass workers that must not fan out into more research agents. The fork keeps those constraints while preserving quiet long-running monitoring, `scan-auth`, `scan-handoff`, user-scoped portal paths, and the custom provider layer.
+- Scanner/mode hardening: upstream trimmed `title_filter` keywords before length checks and bounded scan subagents as single-pass workers that must not fan out into more research agents. The fork keeps those constraints while preserving quiet long-running monitoring, `scan-auth`, `scan-handoff`, `go`, user-scoped portal paths, and the custom provider layer.
+- Sourcing shorthand: the fork adds `/career-ops go` as a coordinated sourcing mode that runs zero-token scan, conditionally runs scan-handoff when the latest scan wrote handoff items, runs authenticated LinkedIn scan, and conditionally runs pipeline only when the scan phases added pending jobs.
 - Updater/runtime fixes: upstream registered Kimi paths in updater system manifests and fixed updater self-reexec checkout discovery from import closure analysis. The fork keeps those fixes while preserving `users/`, root `voice-dna.md`, and other user-path safety guards; `scaffolder/bin/skill-entrypoints.mjs` also materializes `.kimi/skills/career-ops/SKILL.md` so Kimi behaves like the other CLI entrypoints on filesystems without symlink support.
 
 Conflict notes from this merge:
@@ -577,6 +578,38 @@ Future merge notes:
 - If upstream adds a handoff artifact, migrate to the upstream schema only if it remains user-scoped and stores the complete list, not just the terminal preview.
 - Keep WebSearch-derived additions gated by Playwright liveness verification; search snippets must not decide posting activity.
 
+## Go Sourcing Shorthand Mode
+
+The fork adds `/career-ops go` as an explicit command-mode shorthand for the normal sourcing loop without making `/career-ops scan` itself auto-chain into heavier follow-up work.
+
+Files:
+
+- `modes/go.md`
+- `.agents/skills/career-ops/SKILL.md`
+- `AGENTS.md`
+- `DATA_CONTRACT.md`
+- `README.md`
+- `docs/SETUP.md`
+- `test-all.mjs`
+
+What this customizes:
+
+- Routes `go` through the shared career-ops mode router and command menus as a first-class mode.
+- Requires the same active-user and cold-start/onboarding checks as the other career-ops commands before any user-layer reads or writes.
+- Runs the sequence: `node scan.mjs --user {USER}`, then `scan-handoff` only when `users/{USER}/data/scan-handoff.json` has a positive count or non-empty `items`, then `node scan-auth.mjs --user {USER} linkedin`, then `pipeline` only when the final pending pipeline count is greater than the starting pending count.
+- Uses pending-item counts in `users/{USER}/data/pipeline.md` as the conditional gate for whether pipeline processing is needed after the scan phases.
+- Preserves the explicit separation between `scan` and `scan-handoff`: `scan` stays a deterministic zero-token producer, while `go` is the opt-in coordinator that chains the saved handoff when present.
+- Treats provider-specific, company-specific, per-listing extraction, title-filter, dedupe, or skipped-result failures during scan phases as non-fatal when the overall phase completed and usable output can still be inspected.
+- Stops immediately for catastrophic issues such as missing active user, onboarding gaps, unreadable required config, failure to read/write user state, script crashes that prevent output determination, or login/CAPTCHA/account-verification prompts requiring explicit user action.
+- Inherits the quiet long-running command policy: do not narrate routine scan/auth/pipeline polling, but report completion, blockers, required user action, suspected hangs, or warnings that change what the user should do.
+
+Future merge notes:
+
+- Preserve `go` as an explicit shorthand mode rather than changing `/career-ops scan` to auto-continue into handoff/auth/pipeline work.
+- If upstream adds an equivalent sourcing coordinator, prefer the upstream implementation only if it keeps active-user routing, conditional handoff from the saved JSON artifact, authenticated LinkedIn scan, conditional pipeline gating by pending-count delta, and non-fatal provider/company failure semantics.
+- Keep `modes/go.md` loading or referencing `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.md`, and `modes/pipeline.md` so the shorthand inherits fixes to each child mode instead of duplicating their full logic.
+- Keep tests that assert `/career-ops go` remains exposed in routing/discovery and that `modes/go.md` documents the full sequence and conditional gates.
+
 ## Full ATS Discovery And Portal Validation
 
 Upstream added reverse ATS discovery and portal schema validation. The fork keeps both features but routes their default files through the active user layer.
@@ -665,13 +698,14 @@ Future merge notes:
 
 ## Quiet Long-Running Command Monitoring
 
-The fork instructs agents to avoid routine 30-second "still running" messages during multi-minute `scan`, `scan-auth`, `pipeline`, and `batch` runs.
+The fork instructs agents to avoid routine 30-second "still running" messages during multi-minute `go`, `scan`, `scan-auth`, `pipeline`, and `batch` runs.
 
 Files:
 
 - `AGENTS.md`
 - `.agents/skills/career-ops/SKILL.md`
 - `modes/scan.md`
+- `modes/go.md`
 - `modes/scan-auth.md`
 - `modes/pipeline.md`
 - `modes/batch.md`
@@ -785,6 +819,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
 - Per-user adaptation for upstream `verify-portals.mjs`, `reconcile-pipeline.mjs`, pipeline liveness sweeps, `doctor.mjs --strict`, and any new scan/batch helpers that read `portals.yml`, `data/`, or `batch/`.
 - User-scoped scan handoff artifacts at `users/{USER}/data/scan-handoff.json` plus the explicit `/career-ops scan-handoff` follow-up mode.
+- Explicit `/career-ops go` sourcing shorthand with conditional scan-handoff, authenticated LinkedIn scan, conditional pipeline execution, and non-fatal provider/company scan failure semantics.
 - Report-number reservation past 999 and reconciler report lookup through explicit `--reports` paths.
 - Per-target scan `location_filter` overrides and Arbeitsagentur remote-title/no-remote normalization.
 - User-scoped `voice-dna.md` behavior, if upstream keeps treating root `voice-dna.md` as a user file.

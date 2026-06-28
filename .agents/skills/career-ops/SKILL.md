@@ -4,7 +4,7 @@ description: AI job search command center -- evaluate offers, generate CVs, scan
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[scan | scan-handoff | scan-auth | deep | pdf | latex | cover | eu-swe | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | interview | patterns | followup | update]"
+argument-hint: "[go | scan | scan-handoff | scan-auth | deep | pdf | latex | cover | eu-swe | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | interview | patterns | followup | update]"
 license: MIT
 ---
 
@@ -41,7 +41,7 @@ users/{USER}/
 Resolve the active user before doing mode routing, reading files, launching subagents, or running scripts:
 
 1. If the current invocation explicitly names a user, set that as `ACTIVE_USER`.
-   - Preferred: `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`
+   - Preferred: `/career-ops go <username>`, `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`
    - For commands with free-form arguments, prefer: `/career-ops pdf --user <username> some-job`
    - `--user <username>` and `--user=<username>` are always explicit.
 2. Otherwise, if this conversation already established an active user from a prior `/career-ops` invocation, reuse that user.
@@ -62,7 +62,7 @@ After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 
 ## Long-Running Command Quiet Mode
 
-For `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, keep process monitoring quiet:
+For `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, keep process monitoring quiet:
 
 - Start the command, then do not send routine "still running" or "currently at phase X" updates.
 - Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
@@ -93,6 +93,7 @@ Determine the mode from `$mode`:
 | `tracker` | `tracker` |
 | `pipeline` | `pipeline` |
 | `apply` | `apply` |
+| `go` | `go` |
 | `scan` | `scan` |
 | `scan-handoff` | `scan-handoff` |
 | `scan-auth` | `scan-auth` |
@@ -116,6 +117,7 @@ Concrete equivalents for Codex prompt-driven sessions:
 
 ```text
 /career-ops {JD}           ↔ "Evaluate this JD with career-ops auto-pipeline: {JD or URL}"
+/career-ops go             ↔ "Run the career-ops go mode for <username>."
 /career-ops scan           ↔ "Run the career-ops scan mode and summarize new matches."
 /career-ops pipeline       ↔ "Run the career-ops pipeline mode for <username>."
 /career-ops pdf            ↔ "Run the career-ops pdf mode for the latest evaluated role."
@@ -144,6 +146,7 @@ Available commands:
   /career-ops project   → Evaluate portfolio project idea
   /career-ops tracker   → Application status overview
   /career-ops apply     → Live application assistant (reads form + generates answers)
+  /career-ops go        → Run scan, conditional handoff, LinkedIn scan, and conditional pipeline
   /career-ops scan      → Scan portals and discover new offers
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
   /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
@@ -167,9 +170,11 @@ After determining the mode, load the necessary files before executing:
 ### Modes that require `_shared.md` + their mode file:
 Read `modes/_shared.md` + `modes/{mode}.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present).
 
-Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `scan-handoff`, `batch`
+Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `scan-handoff`, `go`, `batch`
 
 For `scan-handoff`, also read `modes/scan.md` before `modes/scan-handoff.md` because the handoff mode reuses scan filtering, deduplication, liveness, and pipeline-writing rules.
+
+For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.md`, and `modes/pipeline.md` because the shorthand coordinates those modes conditionally.
 
 ### Standalone modes (only their mode file):
 Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_USER}/`.
@@ -177,7 +182,7 @@ Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_US
 Applies to: `tracker`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `latex`, `training`, `project`, `patterns`, `followup`, `cover`, `scan-auth`
 
 ### Modes delegated to subagent:
-For `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
+For `go`, `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
 
 ```
 Agent(
