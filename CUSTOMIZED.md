@@ -5,9 +5,9 @@ This file documents what this fork changes relative to `upstream/main` so future
 Generated from:
 
 - Upstream ref: `upstream/main` at `a3e1d766fd98334a9ccc638903d7db72df4db34e`
-- Fork ref: current `main` at `b3b548235e236a45cdafd39bb5929a740797afe4`, before this inventory refresh
+- Fork ref: current `main` at `d54e7f2cac5fe1246f518e14d543eb640c052c4c`, before this inventory refresh
 - Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `101`
-- Diff-size baseline after merge, before this inventory refresh: `118 files changed, 11704 insertions(+), 2315 deletions(-)`
+- Diff-size baseline after merge, before this inventory refresh: `118 files changed, 11716 insertions(+), 2315 deletions(-)`
 
 ## Merge Policy
 
