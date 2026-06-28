@@ -31,6 +31,7 @@ func TestSortByPayLocationAndLastContact(t *testing.T) {
 
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
 	pm.viewMode = "flat"
+	pm.activeTab = tabIndexForFilter(t, filterApplied)
 
 	pm.sortMode = sortPay
 	pm.applyFilterAndSort()

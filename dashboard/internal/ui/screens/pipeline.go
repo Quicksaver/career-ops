@@ -32,10 +32,13 @@ type PipelineOpenURLMsg struct {
 	URL string
 }
 
-// PipelineLoadReportMsg requests lazy loading of a report summary.
-type PipelineLoadReportMsg struct {
-	CareerOpsPath string
-	ReportPath    string
+// PipelineReportLoadedMsg carries report metadata loaded by a command. The file
+// read happens inside the command, not the Update loop, so navigation stays
+// responsive while details hydrate in place.
+type PipelineReportLoadedMsg struct {
+	ReportPath string
+	Details    data.ReportDetails
+	OpenURL    bool
 }
 
 // PipelineUpdateStatusMsg requests a status update for an application.
@@ -52,10 +55,12 @@ type PipelineRefreshMsg struct{}
 type PipelineOpenProgressMsg struct{}
 
 type reportSummary struct {
-	archetype string
-	tldr      string
-	remote    string
-	comp      string
+	archetype   string
+	tldr        string
+	remote      string
+	comp        string
+	jobURL      string
+	listingDate string
 }
 
 // Sort modes
@@ -87,14 +92,13 @@ type pipelineTab struct {
 }
 
 var pipelineTabs = []pipelineTab{
-	{filterAll, "ALL"},
+	{filterTop, "TOP ≥4"},
 	{filterEvaluated, "EVALUATED"},
 	{filterApplied, "APPLIED"},
 	{filterInterview, "INTERVIEW"},
-	{filterTop, "TOP ≥4"},
-	{filterSkip, "SKIP"},
 	{filterRejected, "REJECTED"},
 	{filterDiscarded, "DISCARDED"},
+	{filterSkip, "SKIP"},
 }
 
 var sortCycle = []string{sortScore, sortDate, sortCompany, sortStatus, sortLocation, sortPay, sortLast}
@@ -114,10 +118,10 @@ const (
 
 // colDef describes one optional column for the picker UI.
 type colDef struct {
-	id     ColumnID
-	header string
-	hint   string
-	width  int
+	id          ColumnID
+	header      string
+	hint        string
+	width       int
 	onByDefault bool
 }
 
@@ -149,6 +153,7 @@ type PipelineModel struct {
 	theme         theme.Theme
 	careerOpsPath string
 	reportCache   map[string]reportSummary
+	reportLoading map[string]bool
 	// Status picker sub-state
 	statusPicker bool
 	statusCursor int
@@ -178,6 +183,7 @@ func NewPipelineModel(t theme.Theme, apps []model.CareerApplication, metrics mod
 		theme:         t,
 		careerOpsPath: careerOpsPath,
 		reportCache:   make(map[string]reportSummary),
+		reportLoading: make(map[string]bool),
 		visibleCols:   visible,
 	}
 	m.applyFilterAndSort()
@@ -206,15 +212,52 @@ func (m *PipelineModel) CopyReportCache(other *PipelineModel) {
 	for k, v := range other.reportCache {
 		m.reportCache[k] = v
 	}
+	for k, v := range other.reportLoading {
+		m.reportLoading[k] = v
+	}
+}
+
+// EnrichReportDetails caches lazily loaded report data for preview and row metadata.
+func (m *PipelineModel) EnrichReportDetails(reportPath string, details data.ReportDetails) {
+	m.EnrichReport(reportPath, details.Archetype, details.TlDr, details.Remote, details.Comp, details.JobURL, details.ListingDate)
 }
 
 // EnrichReport caches report summary data for preview.
-func (m *PipelineModel) EnrichReport(reportPath, archetype, tldr, remote, comp string) {
+func (m *PipelineModel) EnrichReport(reportPath, archetype, tldr, remote, comp, jobURL, listingDate string) {
+	if m.reportLoading != nil {
+		delete(m.reportLoading, reportPath)
+	}
 	m.reportCache[reportPath] = reportSummary{
-		archetype: archetype,
-		tldr:      tldr,
-		remote:    remote,
-		comp:      comp,
+		archetype:   archetype,
+		tldr:        tldr,
+		remote:      remote,
+		comp:        comp,
+		jobURL:      jobURL,
+		listingDate: listingDate,
+	}
+	m.applyReportDetails(reportPath, jobURL, listingDate)
+}
+
+func (m *PipelineModel) applyReportDetails(reportPath, jobURL, listingDate string) {
+	if reportPath == "" || (jobURL == "" && listingDate == "") {
+		return
+	}
+	apply := func(app *model.CareerApplication) {
+		if app.ReportPath != reportPath {
+			return
+		}
+		if jobURL != "" {
+			app.JobURL = jobURL
+		}
+		if listingDate != "" {
+			app.ListingDate = listingDate
+		}
+	}
+	for i := range m.apps {
+		apply(&m.apps[i])
+	}
+	for i := range m.filtered {
+		apply(&m.filtered[i])
 	}
 }
 
@@ -312,7 +355,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 			m.applyFilterAndSort()
 			m.cursor = 0
 			m.scrollOffset = 0
-			return m, m.loadCurrentReport()
+			return m, m.LoadVisibleReports()
 		}
 		return m, nil
 
@@ -331,7 +374,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 				m.cursor = len(m.filtered) - 1
 			}
 			m.adjustScroll()
-			return m, m.loadCurrentReport()
+			return m, m.LoadVisibleReports()
 		}
 
 	case "up", "k":
@@ -341,7 +384,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 				m.cursor = 0
 			}
 			m.adjustScroll()
-			return m, m.loadCurrentReport()
+			return m, m.LoadVisibleReports()
 		}
 
 	case "s":
@@ -355,6 +398,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		m.applyFilterAndSort()
 		m.cursor = 0
 		m.scrollOffset = 0
+		return m, m.LoadVisibleReports()
 
 	case "f", "right", "l":
 		m.activeTab++
@@ -364,6 +408,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		m.applyFilterAndSort()
 		m.cursor = 0
 		m.scrollOffset = 0
+		return m, m.LoadVisibleReports()
 
 	case "left", "h":
 		m.activeTab--
@@ -373,6 +418,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		m.applyFilterAndSort()
 		m.cursor = 0
 		m.scrollOffset = 0
+		return m, m.LoadVisibleReports()
 
 	case "v":
 		if m.viewMode == "grouped" {
@@ -380,6 +426,8 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		} else {
 			m.viewMode = "grouped"
 		}
+		m.adjustScroll()
+		return m, m.LoadVisibleReports()
 
 	case "enter":
 		if app, ok := m.CurrentApp(); ok && app.ReportPath != "" {
@@ -395,6 +443,13 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		if app, ok := m.CurrentApp(); ok && app.JobURL != "" {
 			return m, func() tea.Msg {
 				return PipelineOpenURLMsg{URL: app.JobURL}
+			}
+		} else if ok && app.ReportPath != "" {
+			path := m.careerOpsPath
+			reportPath := app.ReportPath
+			return m, func() tea.Msg {
+				details := data.LoadReportDetails(path, reportPath, true)
+				return PipelineReportLoadedMsg{ReportPath: reportPath, Details: details, OpenURL: true}
 			}
 		}
 
@@ -419,14 +474,14 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		if len(m.filtered) > 0 {
 			m.cursor = 0
 			m.scrollOffset = 0
-			return m, m.loadCurrentReport()
+			return m, m.LoadVisibleReports()
 		}
 
 	case "G":
 		if len(m.filtered) > 0 {
 			m.cursor = len(m.filtered) - 1
 			m.adjustScroll()
-			return m, m.loadCurrentReport()
+			return m, m.LoadVisibleReports()
 		}
 
 	case "pgdown", "ctrl+d":
@@ -440,7 +495,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 				m.cursor = len(m.filtered) - 1
 			}
 			m.adjustScroll()
-			return m, m.loadCurrentReport()
+			return m, m.LoadVisibleReports()
 		}
 
 	case "pgup", "ctrl+u":
@@ -454,7 +509,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 				m.cursor = 0
 			}
 			m.adjustScroll()
-			return m, m.loadCurrentReport()
+			return m, m.LoadVisibleReports()
 		}
 	}
 
@@ -478,13 +533,13 @@ func (m PipelineModel) handleSearchInput(msg tea.KeyMsg) (PipelineModel, tea.Cmd
 		m.applyFilterAndSort()
 		m.cursor = 0
 		m.scrollOffset = 0
-		return m, m.loadCurrentReport()
+		return m, m.LoadVisibleReports()
 
 	case "enter":
 		m.searchInput = false
 		// Query already applied during typing; load the preview for the
 		// committed first match (skipped during typing for perf).
-		return m, m.loadCurrentReport()
+		return m, m.LoadVisibleReports()
 
 	case "backspace":
 		if len(m.searchQuery) > 0 {
@@ -577,19 +632,96 @@ func (m PipelineModel) handleColPicker(msg tea.KeyMsg) (PipelineModel, tea.Cmd) 
 	return m, nil
 }
 
-func (m PipelineModel) loadCurrentReport() tea.Cmd {
-	app, ok := m.CurrentApp()
-	if !ok || app.ReportPath == "" {
+// LoadVisibleReports returns commands to hydrate report summaries for the rows
+// in and just around the current viewport. This keeps startup/refresh cheap
+// while avoiding blank previews as the user scrolls.
+func (m *PipelineModel) LoadVisibleReports() tea.Cmd {
+	paths := m.visibleReportPathsForLoad()
+	if len(paths) == 0 {
 		return nil
 	}
-	if _, cached := m.reportCache[app.ReportPath]; cached {
+	cmds := make([]tea.Cmd, 0, len(paths))
+	for _, report := range paths {
+		if m.reportLoading == nil {
+			m.reportLoading = make(map[string]bool)
+		}
+		m.reportLoading[report] = true
+		path := m.careerOpsPath
+		reportPath := report
+		cmds = append(cmds, func() tea.Msg {
+			details := data.LoadReportDetails(path, reportPath, false)
+			return PipelineReportLoadedMsg{ReportPath: reportPath, Details: details}
+		})
+	}
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m PipelineModel) visibleReportPathsForLoad() []string {
+	if len(m.filtered) == 0 {
 		return nil
 	}
-	path := m.careerOpsPath
-	report := app.ReportPath
-	return func() tea.Msg {
-		return PipelineLoadReportMsg{CareerOpsPath: path, ReportPath: report}
+
+	availHeight := m.height - m.chromeRowsFixed() - previewBudgetApprox
+	if availHeight < 5 {
+		availHeight = 5
 	}
+	const preloadMargin = 4
+	startLine := m.scrollOffset - preloadMargin
+	if startLine < 0 {
+		startLine = 0
+	}
+	endLine := m.scrollOffset + availHeight + preloadMargin
+
+	seen := make(map[string]bool)
+	var paths []string
+	add := func(app model.CareerApplication) {
+		if app.ReportPath == "" || seen[app.ReportPath] {
+			return
+		}
+		if _, cached := m.reportCache[app.ReportPath]; cached {
+			return
+		}
+		if m.reportLoading != nil && m.reportLoading[app.ReportPath] {
+			return
+		}
+		seen[app.ReportPath] = true
+		paths = append(paths, app.ReportPath)
+	}
+
+	if app, ok := m.CurrentApp(); ok {
+		add(app)
+	}
+
+	if m.viewMode != "grouped" {
+		for i, app := range m.filtered {
+			if i >= startLine && i <= endLine {
+				add(app)
+			}
+		}
+		return paths
+	}
+
+	line := 0
+	prevStatus := ""
+	for _, app := range m.filtered {
+		norm := data.NormalizeStatus(app.Status)
+		if norm != prevStatus {
+			line++
+			prevStatus = norm
+		}
+		if line >= startLine && line <= endLine {
+			add(app)
+		}
+		line++
+		if line > endLine {
+			break
+		}
+	}
+
+	return paths
 }
 
 // matchesSearch reports whether app contains the query as a case-insensitive

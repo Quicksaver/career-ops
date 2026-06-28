@@ -429,6 +429,7 @@ Files:
 - `dashboard/internal/data/career_test.go`
 - `dashboard/internal/model/career.go`
 - `dashboard/internal/ui/screens/pipeline.go`
+- `dashboard/internal/ui/screens/pipeline_test.go`
 
 What this customizes:
 
@@ -440,6 +441,13 @@ What this customizes:
 - Extracts listing/posting dates from reports when present.
 - Reads `data/scan-history.tsv` before the old root-level fallback.
 - Shows listing date in the dashboard, falling back to the tracker processed date when no listing date is known.
+- Uses a dashboard-specific fast parse path for startup and refresh: `ParseApplicationsForDashboard(...)` reads the tracker plus cheap scan/batch indexes without opening every linked report file.
+- Keeps the full `ParseApplications(...)` report-enrichment behavior for non-dashboard callers that still need eager report URL/listing-date fallback.
+- Lazily hydrates dashboard report summary fields (`Archetype`, `TL;DR`, `Remote`, `Comp`, and report-derived listing date) only for rows in or near the visible viewport, then renders those details in place as async loads complete.
+- Runs viewport report reads inside Bubble Tea commands and returns loaded data through `PipelineReportLoadedMsg`; file IO does not happen inside the main `Update` handler, so keyboard navigation is not blocked by report parsing.
+- Tracks report paths already being loaded so fast scrolling does not enqueue duplicate reads for the same visible report.
+- Treats the original job URL as action-lazy data: viewport summary prefetches do not parse `**URL:**`; if the selected row has no known URL and the user presses `o`, the dashboard loads that selected report with URL extraction enabled and opens it only after the load returns a URL.
+- Customizes the dashboard tab order for triage: removes the visible `ALL` tab, makes `TOP ≥4` the first/default tab, and moves `SKIP` to the far right so low-fit decisions are still available but not emphasized.
 - Preserves upstream derived fields, shared sort comparator, and new dashboard sort modes, but keeps the listing-date sort on the fork's `dashboardDate()` fallback so reports/scan-history listing dates win when available.
 - Preserves upstream customizable columns / column picker behavior and cross-platform default-app open helpers while keeping user-root normalization for report/PDF targets.
 - Preserves upstream in-viewer status editing and status-cell-only row refresh while keeping the fork's `NewViewerModelWithFileRoot(...)` report/PDF link rewriting against the resolved user folder.
@@ -452,6 +460,8 @@ Future merge notes:
 - Keep upstream sort helper tests and add/adjust fork tests around listing-date fallback when dashboard parsing changes.
 - Keep upstream column picker and OS-open tests intact when dashboard navigation changes; fork-specific tests should focus on user-root path inference and listing-date fallback.
 - Keep status-picker tests and user-root PDF rewrite tests together if the viewer constructor changes again; both behaviors must coexist.
+- Preserve the dashboard fast path on future parser changes: startup/refresh should not read every report, viewport summary prefetch should stay async and duplicate-suppressed, and URL extraction should remain tied to the explicit `o` open-original action unless the URL is displayed directly in the list.
+- Preserve the fork's triage-oriented tab order unless upstream adds equivalent configurability: `TOP ≥4` first/default, no visible `ALL`, and `SKIP` last.
 
 ## Scanner Documentation And Defaults
 

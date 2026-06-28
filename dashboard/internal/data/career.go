@@ -51,6 +51,17 @@ func resolveReportPath(careerOpsPath, trackerPath, link string) string {
 // ParseApplications reads applications.md and returns parsed applications.
 // It tries both {path}/applications.md and {path}/data/applications.md for compatibility.
 func ParseApplications(careerOpsPath string) []model.CareerApplication {
+	return parseApplications(careerOpsPath, true)
+}
+
+// ParseApplicationsForDashboard reads the tracker and cheap index files without
+// opening every linked report. The TUI hydrates report summaries lazily as rows
+// enter the visible window.
+func ParseApplicationsForDashboard(careerOpsPath string) []model.CareerApplication {
+	return parseApplications(careerOpsPath, false)
+}
+
+func parseApplications(careerOpsPath string, enrichReports bool) []model.CareerApplication {
 	filePath := filepath.Join(careerOpsPath, "applications.md")
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -146,47 +157,49 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 	// 3. report_num -> batch-state completed mapping (legacy)
 	// 4. scan-history.tsv (pipeline scan entries matched by company+role)
 	// 5. company name fallback from batch-input.tsv
-	batchURLs := loadBatchInputURLs(careerOpsPath)
-	reportNumURLs := loadJobURLs(careerOpsPath)
+	if enrichReports {
+		batchURLs := loadBatchInputURLs(careerOpsPath)
+		reportNumURLs := loadJobURLs(careerOpsPath)
 
-	for i := range apps {
-		if apps[i].ReportPath == "" {
-			continue
-		}
-		fullReport := filepath.Join(careerOpsPath, apps[i].ReportPath)
-		reportContent, err := os.ReadFile(fullReport)
-		if err != nil {
-			continue
-		}
-		header := string(reportContent)
-		// Only scan the header (first 1000 bytes) for speed
-		if len(header) > 1000 {
-			header = header[:1000]
-		}
-
-		// Prefer a posting/listing date from the report text when available.
-		// Keep the tracker Date as the processed-date fallback.
-		apps[i].ListingDate = extractListingDate(string(reportContent))
-
-		// Strategy 1: **URL:** in report
-		if m := reReportURL.FindStringSubmatch(header); m != nil {
-			apps[i].JobURL = m[1]
-			continue
-		}
-
-		// Strategy 2: **Batch ID:** -> batch-input.tsv
-		if m := reBatchID.FindStringSubmatch(header); m != nil {
-			if url, ok := batchURLs[m[1]]; ok {
-				apps[i].JobURL = url
+		for i := range apps {
+			if apps[i].ReportPath == "" {
 				continue
 			}
-		}
-
-		// Strategy 3: report_num -> batch-state completed mapping
-		if reportNumURLs != nil {
-			if url, ok := reportNumURLs[apps[i].ReportNumber]; ok {
-				apps[i].JobURL = url
+			fullReport := filepath.Join(careerOpsPath, apps[i].ReportPath)
+			reportContent, err := os.ReadFile(fullReport)
+			if err != nil {
 				continue
+			}
+			header := string(reportContent)
+			// Only scan the header (first 1000 bytes) for speed
+			if len(header) > 1000 {
+				header = header[:1000]
+			}
+
+			// Prefer a posting/listing date from the report text when available.
+			// Keep the tracker Date as the processed-date fallback.
+			apps[i].ListingDate = extractListingDate(string(reportContent))
+
+			// Strategy 1: **URL:** in report
+			if m := reReportURL.FindStringSubmatch(header); m != nil {
+				apps[i].JobURL = m[1]
+				continue
+			}
+
+			// Strategy 2: **Batch ID:** -> batch-input.tsv
+			if m := reBatchID.FindStringSubmatch(header); m != nil {
+				if url, ok := batchURLs[m[1]]; ok {
+					apps[i].JobURL = url
+					continue
+				}
+			}
+
+			// Strategy 3: report_num -> batch-state completed mapping
+			if reportNumURLs != nil {
+				if url, ok := reportNumURLs[apps[i].ReportNumber]; ok {
+					apps[i].JobURL = url
+					continue
+				}
 			}
 		}
 	}
@@ -571,44 +584,73 @@ func NormalizeStatus(raw string) string {
 	}
 }
 
-// LoadReportSummary extracts key fields from a report file.
-func LoadReportSummary(careerOpsPath, reportPath string) (archetype, tldr, remote, comp string) {
+// ReportDetails contains lazily loaded metadata from a report file.
+type ReportDetails struct {
+	Archetype   string
+	TlDr        string
+	Remote      string
+	Comp        string
+	JobURL      string
+	ListingDate string
+}
+
+// LoadReportDetails extracts dashboard fields from a report file. includeURL is
+// false for viewport summary prefetches because the URL is only needed for the
+// explicit open-original action.
+func LoadReportDetails(careerOpsPath, reportPath string, includeURL bool) ReportDetails {
 	fullPath := filepath.Join(careerOpsPath, reportPath)
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		return
+		return ReportDetails{}
 	}
 	text := string(content)
 
+	details := ReportDetails{ListingDate: extractListingDate(text)}
+	header := text
+	if len(header) > 1000 {
+		header = header[:1000]
+	}
+	if includeURL {
+		if m := reReportURL.FindStringSubmatch(header); m != nil {
+			details.JobURL = m[1]
+		}
+	}
+
 	if m := reArchetype.FindStringSubmatch(text); m != nil {
-		archetype = cleanTableCell(m[1])
+		details.Archetype = cleanTableCell(m[1])
 	} else if m := reArchetypeColon.FindStringSubmatch(text); m != nil {
-		archetype = cleanTableCell(m[1])
+		details.Archetype = cleanTableCell(m[1])
 	} else if m := reArchetypeYAML.FindStringSubmatch(text); m != nil {
-		archetype = strings.TrimSpace(m[1])
+		details.Archetype = strings.TrimSpace(m[1])
 	}
 
 	// Try table-format TL;DR first (most reports), then colon format
 	if m := reTlDr.FindStringSubmatch(text); m != nil {
-		tldr = cleanTableCell(m[1])
+		details.TlDr = cleanTableCell(m[1])
 	} else if m := reTlDrColon.FindStringSubmatch(text); m != nil {
-		tldr = cleanTableCell(m[1])
+		details.TlDr = cleanTableCell(m[1])
 	}
 
 	if m := reRemote.FindStringSubmatch(text); m != nil {
-		remote = cleanTableCell(m[1])
+		details.Remote = cleanTableCell(m[1])
 	}
 
 	if m := reComp.FindStringSubmatch(text); m != nil {
-		comp = cleanTableCell(m[1])
+		details.Comp = cleanTableCell(m[1])
 	}
 
 	// Truncate long fields
-	if len(tldr) > 120 {
-		tldr = tldr[:117] + "..."
+	if len(details.TlDr) > 120 {
+		details.TlDr = details.TlDr[:117] + "..."
 	}
 
-	return
+	return details
+}
+
+// LoadReportSummary extracts key fields from a report file.
+func LoadReportSummary(careerOpsPath, reportPath string) (archetype, tldr, remote, comp string) {
+	details := LoadReportDetails(careerOpsPath, reportPath, false)
+	return details.Archetype, details.TlDr, details.Remote, details.Comp
 }
 
 // UpdateApplicationStatus updates the status of an application in applications.md.

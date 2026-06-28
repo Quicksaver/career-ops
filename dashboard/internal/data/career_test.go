@@ -192,6 +192,57 @@ func TestParseApplicationsUsesReportListingDateBeforeScanHistory(t *testing.T) {
 	}
 }
 
+func TestParseApplicationsForDashboardSkipsReportEnrichment(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	reportsDir := filepath.Join(tempDir, "reports")
+	for _, dir := range []string{dataDir, reportsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	applications := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 3 | 2026-05-18 | LazyCo | Staff Engineer | 4.3/5 | Evaluated | ❌ | [003](reports/003-lazyco.md) | Good fit |
+`
+	if err := os.WriteFile(filepath.Join(dataDir, "applications.md"), []byte(applications), 0o644); err != nil {
+		t.Fatalf("failed to write applications: %v", err)
+	}
+	report := `# Evaluation: LazyCo — Staff Engineer
+
+**URL:** https://example.com/jobs/staff-engineer
+
+| Signal | Finding |
+|---|---|
+| Posting date | Published 18 March 2026 |
+`
+	if err := os.WriteFile(filepath.Join(reportsDir, "003-lazyco.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("failed to write report: %v", err)
+	}
+
+	apps := ParseApplicationsForDashboard(tempDir)
+	if len(apps) != 1 {
+		t.Fatalf("expected 1 parsed application, got %d", len(apps))
+	}
+	if apps[0].JobURL != "" {
+		t.Fatalf("dashboard parser should not read report URL eagerly, got %q", apps[0].JobURL)
+	}
+	if apps[0].ListingDate != "" {
+		t.Fatalf("dashboard parser should not read report listing date eagerly, got %q", apps[0].ListingDate)
+	}
+
+	fullApps := ParseApplications(tempDir)
+	if fullApps[0].JobURL != "https://example.com/jobs/staff-engineer" {
+		t.Fatalf("full parser should still read report URL, got %q", fullApps[0].JobURL)
+	}
+	if fullApps[0].ListingDate != "2026-03-18" {
+		t.Fatalf("full parser should still read report listing date, got %q", fullApps[0].ListingDate)
+	}
+}
+
 func TestParseApplicationsResolvesTrackerRelativeReportLinks(t *testing.T) {
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")

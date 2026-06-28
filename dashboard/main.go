@@ -38,14 +38,14 @@ type appModel struct {
 }
 
 func (m *appModel) reloadPipelineData() {
-	apps := data.ParseApplications(m.careerOpsPath)
+	apps := data.ParseApplicationsForDashboard(m.careerOpsPath)
 	metrics := data.ComputeMetrics(apps)
 	m.progressMetrics = data.ComputeProgressMetrics(apps)
 	m.pipeline = m.pipeline.WithReloadedData(apps, metrics)
 }
 
 func (m appModel) Init() tea.Cmd {
-	return nil
+	return m.pipeline.LoadVisibleReports()
 }
 
 func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -60,14 +60,25 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		pm, cmd := m.pipeline.Update(msg)
 		m.pipeline = pm
+		if m.state == viewPipeline {
+			return m, tea.Batch(cmd, m.pipeline.LoadVisibleReports())
+		}
 		return m, cmd
 
 	case screens.PipelineClosedMsg:
 		return m, tea.Quit
 
-	case screens.PipelineLoadReportMsg:
-		archetype, tldr, remote, comp := data.LoadReportSummary(msg.CareerOpsPath, msg.ReportPath)
-		m.pipeline.EnrichReport(msg.ReportPath, archetype, tldr, remote, comp)
+	case screens.PipelineReportLoadedMsg:
+		m.pipeline.EnrichReportDetails(msg.ReportPath, msg.Details)
+		if msg.OpenURL && msg.Details.JobURL != "" {
+			target := dashboardOpenTarget(m.careerOpsPath, msg.Details.JobURL)
+			return m, func() tea.Msg {
+				if err := openWithDefaultApp(target); err != nil {
+					fmt.Fprintf(os.Stderr, "WARN: failed to open URL %q: %v\n", target, err)
+				}
+				return nil
+			}
+		}
 		return m, nil
 
 	case screens.PipelineUpdateStatusMsg:
@@ -77,11 +88,11 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fmt.Fprintf(os.Stderr, "WARN: status update failed: %v\n", err)
 		}
 		m.reloadPipelineData()
-		return m, nil
+		return m, m.pipeline.LoadVisibleReports()
 
 	case screens.PipelineRefreshMsg:
 		m.reloadPipelineData()
-		return m, nil
+		return m, m.pipeline.LoadVisibleReports()
 
 	case screens.PipelineOpenReportMsg:
 		m.viewer = screens.NewViewerModelWithFileRoot(
@@ -104,7 +115,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.viewer.UpdateAppStatus(msg.NewStatus)
 		m.reloadPipelineData()
-		return m, nil
+		return m, m.pipeline.LoadVisibleReports()
 
 	case screens.PipelineOpenProgressMsg:
 		m.progress = screens.NewProgressModel(
@@ -317,7 +328,7 @@ func main() {
 	}
 
 	// Load applications
-	apps := data.ParseApplications(careerOpsPath)
+	apps := data.ParseApplicationsForDashboard(careerOpsPath)
 	if apps == nil {
 		fmt.Fprintf(os.Stderr, "Error: could not find applications.md for user %q in %s or %s/data/\n", resolvedUserID, careerOpsPath, careerOpsPath)
 		os.Exit(1)
@@ -327,19 +338,8 @@ func main() {
 	metrics := data.ComputeMetrics(apps)
 	progressMetrics := data.ComputeProgressMetrics(apps)
 
-	// Batch-load all report summaries
 	t := theme.NewTheme("auto")
 	pm := screens.NewPipelineModel(t, apps, metrics, careerOpsPath, 120, 40)
-
-	for _, app := range apps {
-		if app.ReportPath == "" {
-			continue
-		}
-		archetype, tldr, remote, comp := data.LoadReportSummary(careerOpsPath, app.ReportPath)
-		if archetype != "" || tldr != "" || remote != "" || comp != "" {
-			pm.EnrichReport(app.ReportPath, archetype, tldr, remote, comp)
-		}
-	}
 
 	m := appModel{
 		pipeline:        pm,

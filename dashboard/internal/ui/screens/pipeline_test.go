@@ -1,11 +1,15 @@
 package screens
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/santifer/career-ops/dashboard/internal/data"
 	"github.com/santifer/career-ops/dashboard/internal/model"
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
@@ -21,6 +25,23 @@ func tabIndexForFilter(t *testing.T, filter string) int {
 
 	t.Fatalf("expected pipeline tabs to include filter %q", filter)
 	return -1
+}
+
+func TestPipelineTabsPrioritizeTopAndHideAll(t *testing.T) {
+	if len(pipelineTabs) == 0 {
+		t.Fatal("expected pipeline tabs")
+	}
+	if pipelineTabs[0].filter != filterTop {
+		t.Fatalf("expected first tab to be Top, got %+v", pipelineTabs[0])
+	}
+	if pipelineTabs[len(pipelineTabs)-1].filter != filterSkip {
+		t.Fatalf("expected last tab to be Skip, got %+v", pipelineTabs[len(pipelineTabs)-1])
+	}
+	for _, tab := range pipelineTabs {
+		if tab.filter == filterAll || tab.label == "ALL" {
+			t.Fatalf("All tab should not be rendered, found %+v", tab)
+		}
+	}
 }
 
 func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
@@ -119,11 +140,11 @@ func TestSearchFiltersByCompanyRoleAndNotes(t *testing.T) {
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6, Notes: "payments infra"},
 		{Company: "Anthropic", Role: "AI Safety Engineer", Status: "Applied", Score: 4.8, Notes: "policy work"},
 		{Company: "Acme Corp", Role: "Senior PM, Voice AI", Status: "Evaluated", Score: 4.2, Notes: "Series B in Madrid"},
-		{Company: "Globex", Role: "Platform Engineer", Status: "Applied", Score: 3.9, Notes: "remote-first"},
+		{Company: "Globex", Role: "Platform Engineer", Status: "Applied", Score: 4.0, Notes: "remote-first"},
 	}
 
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
-	pm.activeTab = tabIndexForFilter(t, filterAll)
+	pm.activeTab = tabIndexForFilter(t, filterTop)
 
 	// Match by company substring (case-insensitive).
 	pm.searchQuery = "stripe"
@@ -393,37 +414,168 @@ func TestSearchTypingDoesNotLoadReports(t *testing.T) {
 		t.Fatal("expected `/` to open search input")
 	}
 
-	// Typing must not trigger PipelineLoadReportMsg.
+	// Typing must not trigger report loading.
 	for _, r := range "stri" {
 		var cmd tea.Cmd
 		pm, cmd = pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		if cmd != nil {
 			if msg := cmd(); msg != nil {
-				if _, ok := msg.(PipelineLoadReportMsg); ok {
-					t.Fatalf("typing rune %q should not emit PipelineLoadReportMsg", string(r))
+				if _, ok := msg.(PipelineReportLoadedMsg); ok {
+					t.Fatalf("typing rune %q should not emit PipelineReportLoadedMsg", string(r))
 				}
 			}
 		}
 	}
 
-	// Backspace must not trigger PipelineLoadReportMsg either.
+	// Backspace must not trigger report loading either.
 	pm, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyBackspace})
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
-			if _, ok := msg.(PipelineLoadReportMsg); ok {
-				t.Fatal("Backspace during search input should not emit PipelineLoadReportMsg")
+			if _, ok := msg.(PipelineReportLoadedMsg); ok {
+				t.Fatal("Backspace during search input should not emit PipelineReportLoadedMsg")
 			}
 		}
 	}
 
-	// Ctrl+U must not trigger PipelineLoadReportMsg either.
+	// Ctrl+U must not trigger report loading either.
 	pm, cmd = pm.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
-			if _, ok := msg.(PipelineLoadReportMsg); ok {
-				t.Fatal("Ctrl+U during search input should not emit PipelineLoadReportMsg")
+			if _, ok := msg.(PipelineReportLoadedMsg); ok {
+				t.Fatal("Ctrl+U during search input should not emit PipelineReportLoadedMsg")
 			}
 		}
+	}
+}
+
+func TestVisibleReportLoadingOnlyQueuesViewportRows(t *testing.T) {
+	apps := make([]model.CareerApplication, 0, 40)
+	for i := 0; i < 40; i++ {
+		apps = append(apps, model.CareerApplication{
+			Company:    "Company",
+			Role:       "Engineer",
+			Status:     "Evaluated",
+			Score:      4.0,
+			ReportPath: fmt.Sprintf("reports/%03d.md", i),
+		})
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 20)
+	pm.viewMode = "flat"
+	pm.cursor = 20
+	pm.scrollOffset = 18
+	pm.reportCache["reports/018.md"] = reportSummary{tldr: "already loaded"}
+
+	paths := pm.visibleReportPathsForLoad()
+
+	if len(paths) == 0 {
+		t.Fatal("expected visible report paths to be queued")
+	}
+	if len(paths) >= len(apps) {
+		t.Fatalf("expected a bounded viewport load, got %d paths for %d apps", len(paths), len(apps))
+	}
+	for _, path := range paths {
+		if path == "reports/018.md" {
+			t.Fatal("cached report should not be queued again")
+		}
+	}
+	wantCurrent := apps[20].ReportPath
+	foundCurrent := false
+	for _, path := range paths {
+		if path == wantCurrent {
+			foundCurrent = true
+			break
+		}
+	}
+	if !foundCurrent {
+		t.Fatalf("expected current report %q to be queued, got %+v", wantCurrent, paths)
+	}
+}
+
+func TestVisibleReportLoadingMarksPendingReports(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "Acme", Role: "Backend", Status: "Evaluated", Score: 4.2, ReportPath: "reports/001.md"},
+		{Company: "Beta", Role: "Platform", Status: "Evaluated", Score: 4.4, ReportPath: "reports/002.md"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 20)
+	cmd := pm.LoadVisibleReports()
+	if cmd == nil {
+		t.Fatal("expected initial visible report load command")
+	}
+	if len(pm.reportLoading) == 0 {
+		t.Fatal("expected visible report loads to be marked pending")
+	}
+	if paths := pm.visibleReportPathsForLoad(); len(paths) != 0 {
+		t.Fatalf("expected pending reports not to be queued again, got %+v", paths)
+	}
+
+	pm.EnrichReportDetails("reports/001.md", data.ReportDetails{TlDr: "loaded"})
+	if pm.reportLoading["reports/001.md"] {
+		t.Fatal("expected loaded report to be removed from pending set")
+	}
+}
+
+func TestOpenURLLazyLoadsReportOnDemand(t *testing.T) {
+	tempDir := t.TempDir()
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("mkdir reports dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(reportsDir, "001.md"), []byte("**URL:** https://example.com/jobs/1\n**TL;DR:** Strong fit\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	app := model.CareerApplication{
+		Company:    "Acme",
+		Role:       "Backend",
+		Status:     "Evaluated",
+		Score:      4.2,
+		ReportPath: filepath.Join("reports", "001.md"),
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), []model.CareerApplication{app}, model.PipelineMetrics{Total: 1}, tempDir, 120, 20)
+
+	pm, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("expected o to lazy-load the report URL when JobURL is missing")
+	}
+	msg := cmd()
+	loaded, ok := msg.(PipelineReportLoadedMsg)
+	if !ok {
+		t.Fatalf("expected PipelineReportLoadedMsg, got %T", msg)
+	}
+	if !loaded.OpenURL {
+		t.Fatal("expected URL lazy load to request opening after load")
+	}
+	if loaded.Details.JobURL != "https://example.com/jobs/1" {
+		t.Fatalf("expected report URL to load on demand, got %q", loaded.Details.JobURL)
+	}
+}
+
+func TestEnrichReportUpdatesVisibleApplicationMetadata(t *testing.T) {
+	app := model.CareerApplication{
+		Company:    "LazyCo",
+		Role:       "Staff Engineer",
+		Status:     "Evaluated",
+		Score:      4.3,
+		ReportPath: "reports/003-lazyco.md",
+	}
+	pm := previewModelWith(t, app)
+
+	pm.EnrichReport(app.ReportPath, "Platform", "Strong fit", "Remote", "$180K", "https://example.com/jobs/3", "2026-03-18")
+
+	current, ok := pm.CurrentApp()
+	if !ok {
+		t.Fatal("expected current app")
+	}
+	if current.JobURL != "https://example.com/jobs/3" {
+		t.Fatalf("expected lazy report URL to update current app, got %q", current.JobURL)
+	}
+	if current.ListingDate != "2026-03-18" {
+		t.Fatalf("expected lazy listing date to update current app, got %q", current.ListingDate)
+	}
+	if pm.reportCache[app.ReportPath].tldr != "Strong fit" {
+		t.Fatal("expected report summary to be cached")
 	}
 }
 
@@ -438,6 +590,20 @@ func previewModelWith(t *testing.T, app model.CareerApplication) PipelineModel {
 		120,
 		40,
 	)
+	switch data.NormalizeStatus(app.Status) {
+	case filterSkip:
+		pm.activeTab = tabIndexForFilter(t, filterSkip)
+	case filterRejected:
+		pm.activeTab = tabIndexForFilter(t, filterRejected)
+	case filterDiscarded:
+		pm.activeTab = tabIndexForFilter(t, filterDiscarded)
+	case filterApplied:
+		pm.activeTab = tabIndexForFilter(t, filterApplied)
+	case filterInterview:
+		pm.activeTab = tabIndexForFilter(t, filterInterview)
+	default:
+		pm.activeTab = tabIndexForFilter(t, filterTop)
+	}
 	pm.applyFilterAndSort()
 	pm.cursor = 0
 	return pm
