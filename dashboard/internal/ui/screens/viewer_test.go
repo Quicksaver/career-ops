@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
@@ -28,6 +30,41 @@ func TestViewerRebuildRenderClampsScrollOffset(t *testing.T) {
 	}
 	if m.scrollOffset > maxScroll {
 		t.Fatalf("expected scrollOffset <= %d after rebuild, got %d", maxScroll, m.scrollOffset)
+	}
+}
+
+func TestViewerChromeAndMachineSummaryDoNotUseBackgroundHighlight(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(previousProfile)
+	})
+
+	m := ViewerModel{
+		lines: []string{
+			"# Example Job",
+			"",
+			"```",
+			"Machine summary",
+			"```",
+			"",
+			"`inline machine summary`",
+		},
+		title:  "Example Job",
+		width:  120,
+		height: 30,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+	m.rebuildRender()
+
+	rendered := strings.Join([]string{
+		m.renderHeader(),
+		m.renderBody(),
+		m.renderFooter(),
+	}, "\n")
+
+	if strings.Contains(rendered, "48;2;") {
+		t.Fatalf("expected viewer chrome and machine summary without background highlights, got %q", rendered)
 	}
 }
 

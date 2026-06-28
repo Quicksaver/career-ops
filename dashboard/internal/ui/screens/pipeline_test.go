@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"github.com/santifer/career-ops/dashboard/internal/data"
 	"github.com/santifer/career-ops/dashboard/internal/model"
@@ -27,15 +30,18 @@ func tabIndexForFilter(t *testing.T, filter string) int {
 	return -1
 }
 
-func TestPipelineTabsPrioritizeTopAndHideAll(t *testing.T) {
+func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 	if len(pipelineTabs) == 0 {
 		t.Fatal("expected pipeline tabs")
 	}
-	if pipelineTabs[0].filter != filterTop {
-		t.Fatalf("expected first tab to be Top, got %+v", pipelineTabs[0])
+	if pipelineTabs[0].filter != filterEvaluated {
+		t.Fatalf("expected first tab to be Evaluated, got %+v", pipelineTabs[0])
 	}
-	if pipelineTabs[len(pipelineTabs)-1].filter != filterSkip {
-		t.Fatalf("expected last tab to be Skip, got %+v", pipelineTabs[len(pipelineTabs)-1])
+	if pipelineTabs[len(pipelineTabs)-2].filter != filterSkip {
+		t.Fatalf("expected penultimate tab to be Skip, got %+v", pipelineTabs[len(pipelineTabs)-2])
+	}
+	if pipelineTabs[len(pipelineTabs)-1].filter != filterTop {
+		t.Fatalf("expected last tab to be Top, got %+v", pipelineTabs[len(pipelineTabs)-1])
 	}
 	for _, tab := range pipelineTabs {
 		if tab.filter == filterAll || tab.label == "ALL" {
@@ -78,6 +84,40 @@ func TestPipelineDefaultViewAndColumns(t *testing.T) {
 	}
 }
 
+func TestPipelineChromeRowsDoNotUseBackgroundHighlight(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(previousProfile)
+	})
+
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{
+			Total:    3,
+			AvgScore: 4.2,
+			ByStatus: map[string]int{
+				"applied":  2,
+				"rejected": 1,
+			},
+		},
+		"..",
+		120,
+		40,
+	)
+
+	rendered := strings.Join([]string{
+		pm.renderHeader(),
+		pm.renderMetrics(),
+		pm.renderHelp(),
+	}, "\n")
+
+	if strings.Contains(rendered, "48;2;") {
+		t.Fatalf("expected passive dashboard chrome rows without background highlights, got %q", rendered)
+	}
+}
+
 func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 	initialApps := []model.CareerApplication{
 		{
@@ -105,7 +145,7 @@ func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 		40,
 	)
 	pm.sortMode = sortCompany
-	pm.activeTab = 0
+	pm.activeTab = tabIndexForFilter(t, filterTop)
 	pm.viewMode = "flat"
 	pm.applyFilterAndSort()
 	pm.cursor = 1
@@ -148,7 +188,7 @@ func TestRenderAppLineIncludesDateColumn(t *testing.T) {
 		nil,
 		model.PipelineMetrics{},
 		"..",
-		120,
+		160,
 		40,
 	)
 
@@ -166,6 +206,41 @@ func TestRenderAppLineIncludesDateColumn(t *testing.T) {
 	}
 	if !strings.Contains(line, "#42") {
 		t.Fatalf("expected rendered line to include tracker number marker, got %q", line)
+	}
+}
+
+func TestSelectedAppLineHighlightsFullRow(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(previousProfile)
+	})
+
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{},
+		"..",
+		160,
+		40,
+	)
+
+	line := pm.renderAppLine(model.CareerApplication{
+		Number:      42,
+		Date:        "2026-04-13",
+		Company:     "Anthropic",
+		Role:        "Forward Deployed Engineer",
+		Status:      "Applied",
+		Score:       4.5,
+		HasPDF:      true,
+		LastContact: "2026-04-20",
+	}, true)
+
+	if got := lipgloss.Width(line); got != pm.width {
+		t.Fatalf("expected selected row to fill width %d, got %d for %q", pm.width, got, ansi.Strip(line))
+	}
+	if bgCount := strings.Count(line, "48;2;"); bgCount < 6 {
+		t.Fatalf("expected selected row background across multiple cells, got %d background markers in %q", bgCount, line)
 	}
 }
 

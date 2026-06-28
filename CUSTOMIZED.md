@@ -447,8 +447,10 @@ What this customizes:
 - Runs viewport report reads inside Bubble Tea commands and returns loaded data through `PipelineReportLoadedMsg`; file IO does not happen inside the main `Update` handler, so keyboard navigation is not blocked by report parsing.
 - Tracks report paths already being loaded so fast scrolling does not enqueue duplicate reads for the same visible report.
 - Treats the original job URL as action-lazy data: viewport summary prefetches do not parse `**URL:**`; if the selected row has no known URL and the user presses `o`, the dashboard loads that selected report with URL extraction enabled and opens it only after the load returns a URL.
-- Customizes the dashboard tab order for triage: removes the visible `ALL` tab, makes `TOP ≥4` the first/default tab, and moves `SKIP` to the far right so low-fit decisions are still available but not emphasized.
+- Customizes the dashboard tab order for triage: removes the visible `ALL` tab, makes `EVALUATED` the first/default tab, and moves `TOP ≥4` after `SKIP` at the far right so the saved high-fit view remains available without displacing the normal evaluation inbox.
 - Customizes dashboard table defaults for scanning: the initial view is `flat` instead of grouped, the date column is labelled `DATE` instead of `APPLIED`, the last-contact column is labelled `CONTACT` instead of `LAST`, and the `PDF` plus `CONTACT` columns are visible by default while `RPT` remains optional.
+- Renders the selected dashboard row as one continuous highlight by applying the selection background to every cell, separator, and trailing fill area instead of wrapping the already-styled row after composition.
+- Removes passive dashboard/viewer background fills from the dashboard title, status summary, help row, job viewer title/footer, fenced code blocks, and inline code so background highlighting is reserved for actual interactive selections.
 - Preserves upstream derived fields, shared sort comparator, and new dashboard sort modes, but keeps the listing-date sort on the fork's `dashboardDate()` fallback so reports/scan-history listing dates win when available.
 - Preserves upstream customizable columns / column picker behavior and cross-platform default-app open helpers while keeping user-root normalization for report/PDF targets.
 - Preserves upstream in-viewer status editing and status-cell-only row refresh while keeping the fork's `NewViewerModelWithFileRoot(...)` report/PDF link rewriting against the resolved user folder.
@@ -462,8 +464,10 @@ Future merge notes:
 - Keep upstream column picker and OS-open tests intact when dashboard navigation changes; fork-specific tests should focus on user-root path inference and listing-date fallback.
 - Keep status-picker tests and user-root PDF rewrite tests together if the viewer constructor changes again; both behaviors must coexist.
 - Preserve the dashboard fast path on future parser changes: startup/refresh should not read every report, viewport summary prefetch should stay async and duplicate-suppressed, and URL extraction should remain tied to the explicit `o` open-original action unless the URL is displayed directly in the list.
-- Preserve the fork's triage-oriented tab order unless upstream adds equivalent configurability: `TOP ≥4` first/default, no visible `ALL`, and `SKIP` last.
+- Preserve the fork's triage-oriented tab order unless upstream adds equivalent configurability: `EVALUATED` first/default, no visible `ALL`, and `TOP ≥4` after `SKIP` at the far right.
 - Preserve the fork's dashboard table defaults unless upstream adds user-configurable column presets: default to flat rows, `DATE`/`CONTACT` labels, and visible `PDF` plus `CONTACT` columns.
+- Preserve the selected-row highlight behavior when table rendering changes: the highlight should cover the full row across all visible columns, separators, and trailing whitespace.
+- Keep passive dashboard/viewer chrome unhighlighted when theme or renderer code changes; only selected rows and active picker rows should use background fills.
 
 ## Scanner Documentation And Defaults
 

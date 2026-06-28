@@ -215,7 +215,6 @@ func (m ViewerModel) renderHeader() string {
 	style := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.Text).
-		Background(m.theme.Surface).
 		Width(m.width).
 		Padding(0, 2)
 
@@ -306,7 +305,7 @@ func (m ViewerModel) renderAll() []string {
 				codeLines = append(codeLines, m.lines[i])
 				i++
 			}
-			codeStyle := lipgloss.NewStyle().Background(m.theme.Surface).Foreground(m.theme.Text)
+			codeStyle := lipgloss.NewStyle().Foreground(m.theme.Text)
 			w := m.width - 6
 			if w < 10 {
 				w = 10
@@ -547,7 +546,7 @@ func (m ViewerModel) renderInlineElements(line string) string {
 // bare URL) don't leak through to subsequent text.
 func (m ViewerModel) renderInlineElementsAs(line string, baseColor lipgloss.Color) string {
 	baseStyle := lipgloss.NewStyle().Foreground(baseColor)
-	codeStyle := lipgloss.NewStyle().Background(m.theme.Surface).Foreground(m.theme.Text)
+	codeStyle := lipgloss.NewStyle().Foreground(m.theme.Text)
 	boldStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
 	linkStyle := lipgloss.NewStyle().Foreground(m.theme.Blue)
 
@@ -695,7 +694,6 @@ func (m ViewerModel) renderListItem(marker, content string, width int) string {
 func (m ViewerModel) renderFooter() string {
 	style := lipgloss.NewStyle().
 		Foreground(m.theme.Subtext).
-		Background(m.theme.Surface).
 		Width(m.width).
 		Padding(0, 1)
 
