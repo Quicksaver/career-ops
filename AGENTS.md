@@ -426,7 +426,8 @@ Write one TSV file per evaluation to `users/{USER}/batch/tracker-additions/{ID}.
 | `Interview` | In interview process |
 | `Offer` | Offer received |
 | `Rejected` | Rejected by company |
-| `Discarded` | Discarded by candidate or offer closed |
+| `Closed` | Posting closed before application |
+| `Discarded` | Discarded by candidate |
 | `SKIP` | Doesn't fit, don't apply |
 
 **RULES:**

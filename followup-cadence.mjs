@@ -117,7 +117,7 @@ const ALIASES = {
   'oferta': 'offer',
   'rechazado': 'rejected', 'rechazada': 'rejected',
   'descartado': 'discarded', 'descartada': 'discarded',
-  'cerrada': 'discarded', 'cancelada': 'discarded',
+  'closed': 'closed', 'expired': 'closed', 'cerrada': 'closed', 'cancelada': 'closed',
   'no aplicar': 'skip', 'no_aplicar': 'skip', 'monitor': 'skip', 'geo blocker': 'skip',
 };
 

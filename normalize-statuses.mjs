@@ -3,7 +3,7 @@
  * normalize-statuses.mjs — Clean non-canonical states in applications.md
  *
  * Maps all non-canonical statuses to canonical ones per states.yml:
- *   Evaluada, Aplicado, Respondido, Entrevista, Oferta, Rechazado, Descartado, NO APLICAR
+ *   Evaluada, Aplicado, Respondido, Entrevista, Oferta, Rechazado, Closed, Descartado, NO APLICAR
  *
  * Also strips markdown bold (**) and dates from the status field,
  * moving DUPLICADO info to the notes column.
@@ -44,9 +44,13 @@ function normalizeStatus(raw) {
     return { status: 'Discarded', moveToNotes: raw.trim() };
   }
 
-  // CERRADA / Cancelada / Descartada → Discarded
-  if (/^cerrada$/i.test(s)) return { status: 'Discarded' };
-  if (/^cancelada/i.test(s)) return { status: 'Discarded' };
+  // CERRADA / Cancelada / Closed / Expired → Closed
+  if (/^cerrada$/i.test(s)) return { status: 'Closed' };
+  if (/^cancelada/i.test(s)) return { status: 'Closed' };
+  if (/^closed$/i.test(s)) return { status: 'Closed' };
+  if (/^expired$/i.test(s)) return { status: 'Closed' };
+
+  // Descartada / Descartado → Discarded
   if (/^descartada$/i.test(s)) return { status: 'Discarded' };
   if (/^descartado$/i.test(s)) return { status: 'Discarded' };
 
@@ -75,7 +79,7 @@ function normalizeStatus(raw) {
   // Already canonical (English, per states.yml) — just fix casing/bold
   const canonical = [
     'Evaluated', 'Applied', 'Responded', 'Interview',
-    'Offer', 'Rejected', 'Discarded', 'SKIP',
+    'Offer', 'Rejected', 'Closed', 'Discarded', 'SKIP',
   ];
   for (const c of canonical) {
     if (lower === c.toLowerCase()) return { status: c };
@@ -87,7 +91,8 @@ function normalizeStatus(raw) {
   if (['respondido'].includes(lower)) return { status: 'Responded' };
   if (['entrevista'].includes(lower)) return { status: 'Interview' };
   if (['oferta'].includes(lower)) return { status: 'Offer' };
-  if (['cerrada', 'descartada'].includes(lower)) return { status: 'Discarded' };
+  if (['cerrada', 'cancelada', 'closed', 'expired'].includes(lower)) return { status: 'Closed' };
+  if (['descartada'].includes(lower)) return { status: 'Discarded' };
   if (['no aplicar', 'no_aplicar', 'skip'].includes(lower)) return { status: 'SKIP' };
 
   // Unknown — flag it

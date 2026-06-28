@@ -38,6 +38,7 @@ else mkdirSync(dirname(APPS_FILE), { recursive: true });
 const STATUS_RANK = {
   // English canonicals (states.yml labels)
   'skip': 0,
+  'closed': 0,
   'discarded': 0,
   'rejected': 1,
   'evaluated': 2,
@@ -48,6 +49,8 @@ const STATUS_RANK = {
   // Spanish aliases — kept for backwards compat with existing tracker data
   'no_aplicar': 0,
   'no aplicar': 0,
+  'cerrada': 0,
+  'cancelada': 0,
   'descartado': 0,
   'descartada': 0,
   'rechazado': 1,  // Terminal — below active states

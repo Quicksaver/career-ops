@@ -37,25 +37,28 @@ func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 	if pipelineTabs[0].filter != filterEvaluated {
 		t.Fatalf("expected first tab to be Evaluated, got %+v", pipelineTabs[0])
 	}
-	if pipelineTabs[len(pipelineTabs)-2].filter != filterSkip {
-		t.Fatalf("expected penultimate tab to be Skip, got %+v", pipelineTabs[len(pipelineTabs)-2])
+	if pipelineTabs[0].label != "OPEN" {
+		t.Fatalf("expected first tab label to be Open, got %+v", pipelineTabs[0])
 	}
-	if pipelineTabs[len(pipelineTabs)-1].filter != filterTop {
-		t.Fatalf("expected last tab to be Top, got %+v", pipelineTabs[len(pipelineTabs)-1])
+	if pipelineTabs[len(pipelineTabs)-1].filter != filterSkip {
+		t.Fatalf("expected last tab to be Skip, got %+v", pipelineTabs[len(pipelineTabs)-1])
+	}
+	if tabIndexForFilter(t, filterClosed) >= tabIndexForFilter(t, filterDiscarded) {
+		t.Fatal("expected Closed tab to appear before Discarded")
 	}
 	for _, tab := range pipelineTabs {
 		if tab.filter == filterAll || tab.label == "ALL" {
 			t.Fatalf("All tab should not be rendered, found %+v", tab)
 		}
+		if tab.label == "TOP ≥4" {
+			t.Fatalf("Top tab should not be rendered, found %+v", tab)
+		}
 	}
 }
 
-func TestPipelineDefaultViewAndColumns(t *testing.T) {
+func TestPipelineDefaultColumns(t *testing.T) {
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), nil, model.PipelineMetrics{}, "..", 120, 40)
 
-	if pm.viewMode != "flat" {
-		t.Fatalf("expected default view to be flat, got %q", pm.viewMode)
-	}
 	if !pm.colVisible(ColDate) {
 		t.Fatal("expected Date column to be visible by default")
 	}
@@ -109,12 +112,63 @@ func TestPipelineChromeRowsDoNotUseBackgroundHighlight(t *testing.T) {
 
 	rendered := strings.Join([]string{
 		pm.renderHeader(),
-		pm.renderMetrics(),
 		pm.renderHelp(),
 	}, "\n")
 
 	if strings.Contains(rendered, "48;2;") {
 		t.Fatalf("expected passive dashboard chrome rows without background highlights, got %q", rendered)
+	}
+}
+
+func TestPipelineHelpShowsSortWithoutViewMode(t *testing.T) {
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), nil, model.PipelineMetrics{}, "..", 160, 40)
+	pm.sortMode = sortCompany
+
+	help := ansi.Strip(pm.renderHelp())
+
+	if !strings.Contains(help, "Sort: company") {
+		t.Fatalf("expected help row to include current sort, got %q", help)
+	}
+	if strings.Contains(strings.ToLower(help), "view") {
+		t.Fatalf("expected help row not to mention view mode, got %q", help)
+	}
+}
+
+func TestPipelineHeaderRendersTabsInline(t *testing.T) {
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{
+			Total:    12,
+			AvgScore: 4.1,
+			ByStatus: map[string]int{
+				"evaluated": 3,
+				"applied":   2,
+				"closed":    1,
+				"skip":      1,
+			},
+		},
+		"..",
+		160,
+		40,
+	)
+
+	header := pm.renderHeader()
+	plain := ansi.Strip(header)
+
+	if strings.Contains(header, "\n") {
+		t.Fatalf("expected header tabs to stay inline, got %q", header)
+	}
+	for _, want := range []string{"CAREER PIPELINE", "OPEN", "APPLIED", "CLOSED", "SKIP", "12 offers | Avg 4.1/5"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected inline header to contain %q, got %q", want, plain)
+		}
+	}
+	if strings.Contains(plain, "TOP") {
+		t.Fatalf("expected top tab to be removed from header, got %q", plain)
+	}
+	if got := lipgloss.Width(header); got != pm.width {
+		t.Fatalf("expected header width %d, got %d for %q", pm.width, got, plain)
 	}
 }
 
@@ -145,10 +199,9 @@ func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 		40,
 	)
 	pm.sortMode = sortCompany
-	pm.activeTab = tabIndexForFilter(t, filterTop)
-	pm.viewMode = "flat"
+	pm.activeTab = tabIndexForFilter(t, filterApplied)
 	pm.applyFilterAndSort()
-	pm.cursor = 1
+	pm.cursor = 0
 	pm.reportCache["reports/002-beta.md"] = reportSummary{tldr: "cached"}
 
 	refreshedApps := []model.CareerApplication{
@@ -168,11 +221,8 @@ func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 	if reloaded.sortMode != sortCompany {
 		t.Fatalf("expected sort mode %q, got %q", sortCompany, reloaded.sortMode)
 	}
-	if reloaded.viewMode != "flat" {
-		t.Fatalf("expected view mode to stay flat, got %q", reloaded.viewMode)
-	}
-	if got := len(reloaded.filtered); got != 3 {
-		t.Fatalf("expected 3 filtered apps after refresh, got %d", got)
+	if got := len(reloaded.filtered); got != 1 {
+		t.Fatalf("expected 1 filtered app after refresh, got %d", got)
 	}
 	if app, ok := reloaded.CurrentApp(); !ok || app.ReportPath != "reports/002-beta.md" {
 		t.Fatalf("expected selection to stay on beta app, got %+v (ok=%v)", app, ok)
@@ -247,13 +297,13 @@ func TestSelectedAppLineHighlightsFullRow(t *testing.T) {
 func TestSearchFiltersByCompanyRoleAndNotes(t *testing.T) {
 	apps := []model.CareerApplication{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6, Notes: "payments infra"},
-		{Company: "Anthropic", Role: "AI Safety Engineer", Status: "Applied", Score: 4.8, Notes: "policy work"},
+		{Company: "Anthropic", Role: "AI Safety Engineer", Status: "Evaluated", Score: 4.8, Notes: "policy work"},
 		{Company: "Acme Corp", Role: "Senior PM, Voice AI", Status: "Evaluated", Score: 4.2, Notes: "Series B in Madrid"},
-		{Company: "Globex", Role: "Platform Engineer", Status: "Applied", Score: 4.0, Notes: "remote-first"},
+		{Company: "Globex", Role: "Platform Engineer", Status: "Evaluated", Score: 4.0, Notes: "remote-first"},
 	}
 
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
-	pm.activeTab = tabIndexForFilter(t, filterTop)
+	pm.activeTab = tabIndexForFilter(t, filterEvaluated)
 
 	// Match by company substring (case-insensitive).
 	pm.searchQuery = "stripe"
@@ -432,7 +482,7 @@ func TestSearchStatePreservedAcrossReload(t *testing.T) {
 	}
 }
 
-func TestRejectedAndDiscardedTabsFilterCorrectly(t *testing.T) {
+func TestRejectedClosedAndDiscardedTabsFilterCorrectly(t *testing.T) {
 	apps := []model.CareerApplication{
 		{
 			Company:    "Acme",
@@ -444,9 +494,16 @@ func TestRejectedAndDiscardedTabsFilterCorrectly(t *testing.T) {
 		{
 			Company:    "Beta",
 			Role:       "Platform Engineer",
+			Status:     "Closed",
+			Score:      4.8,
+			ReportPath: "reports/002-beta.md",
+		},
+		{
+			Company:    "Delta",
+			Role:       "Platform Engineer",
 			Status:     "Discarded",
 			Score:      2.1,
-			ReportPath: "reports/002-beta.md",
+			ReportPath: "reports/004-delta.md",
 		},
 		{
 			Company:    "Gamma",
@@ -472,11 +529,18 @@ func TestRejectedAndDiscardedTabsFilterCorrectly(t *testing.T) {
 		t.Fatalf("expected rejected tab to isolate rejected rows, got %+v", pm.filtered)
 	}
 
+	pm.activeTab = tabIndexForFilter(t, filterClosed)
+	pm.applyFilterAndSort()
+	if len(pm.filtered) != 1 || pm.filtered[0].Status != "Closed" {
+		t.Fatalf("expected closed tab to isolate closed rows, got %+v", pm.filtered)
+	}
+
 	pm.activeTab = tabIndexForFilter(t, filterDiscarded)
 	pm.applyFilterAndSort()
 	if len(pm.filtered) != 1 || pm.filtered[0].Status != "Discarded" {
 		t.Fatalf("expected discarded tab to isolate discarded rows, got %+v", pm.filtered)
 	}
+
 }
 
 // Regression: with no committed search query, Esc must NOT close the screen.
@@ -570,7 +634,6 @@ func TestVisibleReportLoadingOnlyQueuesViewportRows(t *testing.T) {
 	}
 
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 20)
-	pm.viewMode = "flat"
 	pm.cursor = 20
 	pm.scrollOffset = 18
 	pm.reportCache["reports/018.md"] = reportSummary{tldr: "already loaded"}
@@ -704,6 +767,8 @@ func previewModelWith(t *testing.T, app model.CareerApplication) PipelineModel {
 		pm.activeTab = tabIndexForFilter(t, filterSkip)
 	case filterRejected:
 		pm.activeTab = tabIndexForFilter(t, filterRejected)
+	case filterClosed:
+		pm.activeTab = tabIndexForFilter(t, filterClosed)
 	case filterDiscarded:
 		pm.activeTab = tabIndexForFilter(t, filterDiscarded)
 	case filterApplied:
@@ -711,7 +776,7 @@ func previewModelWith(t *testing.T, app model.CareerApplication) PipelineModel {
 	case filterInterview:
 		pm.activeTab = tabIndexForFilter(t, filterInterview)
 	default:
-		pm.activeTab = tabIndexForFilter(t, filterTop)
+		pm.activeTab = tabIndexForFilter(t, filterEvaluated)
 	}
 	pm.applyFilterAndSort()
 	pm.cursor = 0
@@ -759,6 +824,21 @@ func TestPreviewOutcomeShownWithoutReportSummary(t *testing.T) {
 	}
 	if strings.Count(preview, "geo blocker") != 1 {
 		t.Fatalf("expected notes to appear exactly once, got %q", preview)
+	}
+}
+
+func TestPreviewOutcomeShownForClosedApps(t *testing.T) {
+	pm := previewModelWith(t, model.CareerApplication{
+		Company: "Beta",
+		Role:    "Platform Engineer",
+		Status:  "Closed",
+		Notes:   "posting expired before applying",
+	})
+
+	preview := pm.renderPreview()
+
+	if !strings.Contains(preview, "Outcome:") || !strings.Contains(preview, "posting expired before applying") {
+		t.Fatalf("expected outcome line with notes for closed app, got %q", preview)
 	}
 }
 

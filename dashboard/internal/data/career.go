@@ -537,7 +537,7 @@ func ComputeMetrics(apps []model.CareerApplication) model.PipelineMetrics {
 		if app.HasPDF {
 			m.WithPDF++
 		}
-		if status != "skip" && status != "rejected" && status != "discarded" {
+		if status != "skip" && status != "rejected" && status != "closed" && status != "discarded" {
 			m.Actionable++
 		}
 	}
@@ -574,7 +574,9 @@ func NormalizeStatus(raw string) string {
 		return "applied"
 	case strings.Contains(s, "rejected") || strings.Contains(s, "rechazado") || s == "rechazada":
 		return "rejected"
-	case strings.Contains(s, "discarded") || strings.Contains(s, "descartado") || s == "descartada" || s == "cerrada" || s == "cancelada" ||
+	case strings.Contains(s, "closed") || strings.Contains(s, "expired") || s == "cerrada" || s == "cancelada":
+		return "closed"
+	case strings.Contains(s, "discarded") || strings.Contains(s, "descartado") || s == "descartada" ||
 		strings.HasPrefix(s, "duplicado") || strings.HasPrefix(s, "dup"):
 		return "discarded"
 	case strings.Contains(s, "evaluated") || strings.Contains(s, "evaluada") || s == "condicional" || s == "hold" || s == "monitor" || s == "evaluar" || s == "verificar":
@@ -820,10 +822,12 @@ func StatusPriority(status string) int {
 		return 5
 	case "rejected":
 		return 6
-	case "discarded":
+	case "closed":
 		return 7
-	default:
+	case "discarded":
 		return 8
+	default:
+		return 9
 	}
 }
 
@@ -851,7 +855,7 @@ func ComputeProgressMetrics(apps []model.CareerApplication) model.ProgressMetric
 		if norm == "offer" {
 			pm.TotalOffers++
 		}
-		if norm != "skip" && norm != "rejected" && norm != "discarded" {
+		if norm != "skip" && norm != "rejected" && norm != "closed" && norm != "discarded" {
 			pm.ActiveApps++
 		}
 	}

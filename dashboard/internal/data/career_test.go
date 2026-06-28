@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/santifer/career-ops/dashboard/internal/model"
 )
 
 // Regression for #1180: a status word appearing as a substring of an earlier
@@ -59,6 +61,34 @@ func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
 	}
 	if reparsed[0].Status != "Interview" {
 		t.Errorf("status = %q, want \"Interview\"", reparsed[0].Status)
+	}
+}
+
+func TestClosedStatusNormalizationAndMetrics(t *testing.T) {
+	cases := map[string]string{
+		"Closed":     "closed",
+		"expired":    "closed",
+		"cerrada":    "closed",
+		"cancelada":  "closed",
+		"Discarded":  "discarded",
+		"descartada": "discarded",
+	}
+	for raw, want := range cases {
+		if got := NormalizeStatus(raw); got != want {
+			t.Fatalf("NormalizeStatus(%q) = %q, want %q", raw, got, want)
+		}
+	}
+
+	metrics := ComputeMetrics([]model.CareerApplication{
+		{Status: "Evaluated", Score: 4.0},
+		{Status: "Closed", Score: 4.5},
+		{Status: "Discarded", Score: 3.0},
+	})
+	if metrics.ByStatus["closed"] != 1 {
+		t.Fatalf("expected one closed row in metrics, got %+v", metrics.ByStatus)
+	}
+	if metrics.Actionable != 1 {
+		t.Fatalf("expected only evaluated row to be actionable, got %d", metrics.Actionable)
 	}
 }
 

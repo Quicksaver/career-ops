@@ -82,8 +82,8 @@ const (
 	filterInterview = "interview"
 	filterSkip      = "skip"
 	filterRejected  = "rejected"
+	filterClosed    = "closed"
 	filterDiscarded = "discarded"
-	filterTop       = "top"
 )
 
 type pipelineTab struct {
@@ -92,13 +92,13 @@ type pipelineTab struct {
 }
 
 var pipelineTabs = []pipelineTab{
-	{filterEvaluated, "EVALUATED"},
+	{filterEvaluated, "OPEN"},
 	{filterApplied, "APPLIED"},
 	{filterInterview, "INTERVIEW"},
 	{filterRejected, "REJECTED"},
+	{filterClosed, "CLOSED"},
 	{filterDiscarded, "DISCARDED"},
 	{filterSkip, "SKIP"},
-	{filterTop, "TOP ≥4"},
 }
 
 var sortCycle = []string{sortScore, sortDate, sortCompany, sortStatus, sortLocation, sortPay, sortLast}
@@ -134,10 +134,7 @@ var optionalCols = []colDef{
 	{ColLastContact, "CONTACT", "", 10, true},
 }
 
-var statusOptions = []string{"Evaluated", "Applied", "Responded", "Interview", "Offer", "Rejected", "Discarded", "SKIP"}
-
-// statusGroupOrder defines display order for grouped view.
-var statusGroupOrder = []string{"interview", "offer", "responded", "applied", "evaluated", "skip", "rejected", "discarded"}
+var statusOptions = []string{"Evaluated", "Applied", "Responded", "Interview", "Offer", "Rejected", "Closed", "Discarded", "SKIP"}
 
 // PipelineModel implements the career pipeline dashboard screen.
 type PipelineModel struct {
@@ -148,7 +145,6 @@ type PipelineModel struct {
 	scrollOffset  int
 	sortMode      string
 	activeTab     int
-	viewMode      string // "grouped" or "flat"
 	width, height int
 	theme         theme.Theme
 	careerOpsPath string
@@ -177,7 +173,6 @@ func NewPipelineModel(t theme.Theme, apps []model.CareerApplication, metrics mod
 		metrics:       metrics,
 		sortMode:      sortScore,
 		activeTab:     0,
-		viewMode:      "flat",
 		width:         width,
 		height:        height,
 		theme:         t,
@@ -276,7 +271,6 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 	reloaded := NewPipelineModel(m.theme, apps, metrics, m.careerOpsPath, m.width, m.height)
 	reloaded.sortMode = m.sortMode
 	reloaded.activeTab = m.activeTab
-	reloaded.viewMode = m.viewMode
 	// Preserve search state across refresh — otherwise pressing `r` silently drops a
 	// committed query and the user loses their place mid-investigation.
 	reloaded.searchQuery = m.searchQuery
@@ -418,15 +412,6 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		m.applyFilterAndSort()
 		m.cursor = 0
 		m.scrollOffset = 0
-		return m, m.LoadVisibleReports()
-
-	case "v":
-		if m.viewMode == "grouped" {
-			m.viewMode = "flat"
-		} else {
-			m.viewMode = "grouped"
-		}
-		m.adjustScroll()
 		return m, m.LoadVisibleReports()
 
 	case "enter":
@@ -695,32 +680,11 @@ func (m PipelineModel) visibleReportPathsForLoad() []string {
 		add(app)
 	}
 
-	if m.viewMode != "grouped" {
-		for i, app := range m.filtered {
-			if i >= startLine && i <= endLine {
-				add(app)
-			}
-		}
-		return paths
-	}
-
-	line := 0
-	prevStatus := ""
-	for _, app := range m.filtered {
-		norm := data.NormalizeStatus(app.Status)
-		if norm != prevStatus {
-			line++
-			prevStatus = norm
-		}
-		if line >= startLine && line <= endLine {
+	for i, app := range m.filtered {
+		if i >= startLine && i <= endLine {
 			add(app)
 		}
-		line++
-		if line > endLine {
-			break
-		}
 	}
-
 	return paths
 }
 
@@ -757,10 +721,6 @@ func (m *PipelineModel) applyFilterAndSort() {
 		switch currentFilter {
 		case filterAll:
 			filtered = append(filtered, app)
-		case filterTop:
-			if app.Score >= 4.0 && norm != "skip" {
-				filtered = append(filtered, app)
-			}
 		default:
 			if norm == currentFilter {
 				filtered = append(filtered, app)
@@ -774,24 +734,10 @@ func (m *PipelineModel) applyFilterAndSort() {
 		return less(filtered[i], filtered[j])
 	})
 
-	// In grouped mode, always sort by status priority first, then by selected sort within groups
-	if m.viewMode == "grouped" {
-		sort.SliceStable(filtered, func(i, j int) bool {
-			pi := data.StatusPriority(filtered[i].Status)
-			pj := data.StatusPriority(filtered[j].Status)
-			if pi != pj {
-				return pi < pj
-			}
-			// Within same group, use selected sort
-			return less(filtered[i], filtered[j])
-		})
-	}
-
 	m.filtered = filtered
 }
 
-// sortLess returns the comparator for the active sort mode. Shared by the flat
-// sort and the within-group tiebreaker in grouped view.
+// sortLess returns the comparator for the active sort mode.
 func (m PipelineModel) sortLess() func(a, b model.CareerApplication) bool {
 	switch m.sortMode {
 	case sortDate:
@@ -841,10 +787,10 @@ func workModeRank(mode string) int {
 }
 
 // chromeRowsFixed returns the number of fixed chrome rows above/below the body
-// (header + tabs(2) + metrics + sortbar + column header + help + 1 search bar
-// when active). Shared by View() and adjustScroll() so additions stay in sync.
+// (header + column header + help + 1 search bar when active). Shared by View()
+// and adjustScroll() so additions stay in sync.
 func (m PipelineModel) chromeRowsFixed() int {
-	rows := 8 // header + tabs(2) + metrics + sortbar + column header + help + preview baseline
+	rows := 4 // header + column header + help + preview baseline
 	if m.searchInput || m.searchQuery != "" {
 		rows++
 	}
@@ -877,24 +823,7 @@ func (m *PipelineModel) adjustScroll() {
 }
 
 func (m PipelineModel) cursorLineEstimate() int {
-	if m.viewMode != "grouped" {
-		return m.cursor
-	}
-	// Account for group headers
-	line := 0
-	prevStatus := ""
-	for i, app := range m.filtered {
-		norm := data.NormalizeStatus(app.Status)
-		if norm != prevStatus {
-			line++ // group header
-			prevStatus = norm
-		}
-		if i == m.cursor {
-			return line
-		}
-		line++
-	}
-	return line
+	return m.cursor
 }
 
 // -- View --
@@ -902,9 +831,6 @@ func (m PipelineModel) cursorLineEstimate() int {
 // View renders the pipeline screen.
 func (m PipelineModel) View() string {
 	header := m.renderHeader()
-	tabs := m.renderTabs()
-	metricsBar := m.renderMetrics()
-	sortBar := m.renderSortBar()
 	searchBar := m.renderSearchBar()
 	body := m.renderBody()
 	preview := m.renderPreview()
@@ -937,7 +863,7 @@ func (m PipelineModel) View() string {
 		body = m.overlayStatusPicker(body)
 	}
 
-	sections := []string{header, tabs, metricsBar, sortBar}
+	sections := []string{header}
 	if searchBar != "" {
 		sections = append(sections, searchBar)
 	}
@@ -992,22 +918,54 @@ func (m PipelineModel) renderHeader() string {
 	info := right.Render(fmt.Sprintf("%d offers | Avg %s/5", m.metrics.Total, avg))
 
 	title := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Blue).Render("CAREER PIPELINE")
-	gap := m.width - lipgloss.Width(title) - lipgloss.Width(info) - 4
-	if gap < 1 {
-		gap = 1
+	innerWidth := m.width - 4
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	gapWidth := innerWidth - lipgloss.Width(title) - lipgloss.Width(info)
+	if gapWidth < 1 {
+		gapWidth = 1
+	}
+	tabs := m.renderHeaderTabs(gapWidth)
+	tabsWidth := lipgloss.Width(tabs)
+	if tabsWidth > gapWidth {
+		tabs = m.renderPlainHeaderTabs(gapWidth)
+		tabsWidth = lipgloss.Width(tabs)
+	}
+	leftGap := 0
+	rightGap := 0
+	if remaining := gapWidth - tabsWidth; remaining > 0 {
+		leftGap = remaining / 2
+		rightGap = remaining - leftGap
 	}
 
-	return style.Render(title + strings.Repeat(" ", gap) + info)
+	return style.Render(title + strings.Repeat(" ", leftGap) + tabs + strings.Repeat(" ", rightGap) + info)
 }
 
-func (m PipelineModel) renderTabs() string {
+func (m PipelineModel) renderHeaderTabs(maxWidth int) string {
+	withCounts := m.renderHeaderTabsWithCounts(true)
+	if lipgloss.Width(withCounts) <= maxWidth {
+		return withCounts
+	}
+	return m.renderHeaderTabsWithCounts(false)
+}
+
+func (m PipelineModel) renderPlainHeaderTabs(maxWidth int) string {
+	labels := make([]string, 0, len(pipelineTabs))
+	for _, tab := range pipelineTabs {
+		labels = append(labels, tab.label)
+	}
+	return truncateRunes(strings.Join(labels, " "), maxWidth)
+}
+
+func (m PipelineModel) renderHeaderTabsWithCounts(showCounts bool) string {
 	var tabs []string
-	var underParts []string
 
 	for i, tab := range pipelineTabs {
-		// Count items for this tab
-		count := m.countForFilter(tab.filter)
-		label := fmt.Sprintf(" %s (%d) ", tab.label, count)
+		label := tab.label
+		if showCounts {
+			label = fmt.Sprintf("%s:%d", tab.label, m.countForFilter(tab.filter))
+		}
 
 		if i == m.activeTab {
 			style := lipgloss.NewStyle().
@@ -1015,21 +973,15 @@ func (m PipelineModel) renderTabs() string {
 				Foreground(m.theme.Blue).
 				Padding(0, 0)
 			tabs = append(tabs, style.Render(label))
-			underParts = append(underParts, strings.Repeat("━", lipgloss.Width(label)))
 		} else {
 			style := lipgloss.NewStyle().
 				Foreground(m.theme.Subtext).
 				Padding(0, 0)
 			tabs = append(tabs, style.Render(label))
-			underParts = append(underParts, strings.Repeat("─", lipgloss.Width(label)))
 		}
 	}
 
-	row := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
-	underline := lipgloss.NewStyle().Foreground(m.theme.Overlay).Render(strings.Join(underParts, ""))
-
-	padStyle := lipgloss.NewStyle().Padding(0, 1)
-	return padStyle.Render(row) + "\n" + padStyle.Render(underline)
+	return strings.Join(tabs, "  ")
 }
 
 func (m PipelineModel) countForFilter(filter string) int {
@@ -1039,10 +991,6 @@ func (m PipelineModel) countForFilter(filter string) int {
 		switch filter {
 		case filterAll:
 			count++
-		case filterTop:
-			if app.Score >= 4.0 && norm != "skip" {
-				count++
-			}
 		default:
 			if norm == filter {
 				count++
@@ -1050,40 +998,6 @@ func (m PipelineModel) countForFilter(filter string) int {
 		}
 	}
 	return count
-}
-
-func (m PipelineModel) renderMetrics() string {
-	style := lipgloss.NewStyle().
-		Width(m.width).
-		Padding(0, 2)
-
-	var parts []string
-	statusColors := m.statusColorMap()
-
-	for _, status := range statusGroupOrder {
-		count, ok := m.metrics.ByStatus[status]
-		if !ok || count == 0 {
-			continue
-		}
-		color := statusColors[status]
-		s := lipgloss.NewStyle().Foreground(color)
-		parts = append(parts, s.Render(fmt.Sprintf("%s:%d", statusLabel(status), count)))
-	}
-
-	return style.Render(strings.Join(parts, "  "))
-}
-
-func (m PipelineModel) renderSortBar() string {
-	style := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext).
-		Width(m.width).
-		Padding(0, 2)
-
-	sortLabel := fmt.Sprintf("[Sort: %s]", m.sortMode)
-	viewLabel := fmt.Sprintf("[View: %s]", m.viewMode)
-	count := fmt.Sprintf("%d shown", len(m.filtered))
-
-	return style.Render(fmt.Sprintf("%s  %s  %s", sortLabel, viewLabel, count))
 }
 
 func (m PipelineModel) renderBody() string {
@@ -1095,26 +1009,8 @@ func (m PipelineModel) renderBody() string {
 	}
 
 	var lines []string
-	prevStatus := ""
-	padStyle := lipgloss.NewStyle().Padding(0, 2)
 
 	for i, app := range m.filtered {
-		norm := data.NormalizeStatus(app.Status)
-
-		// Group header in grouped mode
-		if m.viewMode == "grouped" && norm != prevStatus {
-			count := m.countByNormStatus(norm)
-			headerStyle := lipgloss.NewStyle().
-				Bold(true).
-				Foreground(m.theme.Subtext)
-			lines = append(lines, padStyle.Render(
-				headerStyle.Render(fmt.Sprintf("── %s (%d) %s",
-					strings.ToUpper(statusLabel(norm)), count,
-					strings.Repeat("─", max(0, m.width-30-len(statusLabel(norm)))))),
-			))
-			prevStatus = norm
-		}
-
 		selected := i == m.cursor
 		line := m.renderAppLine(app, selected)
 		lines = append(lines, line)
@@ -1471,7 +1367,7 @@ func (m PipelineModel) renderPreview() string {
 // plus the tracker notes holding the reason. Returns "" for apps still in play.
 func previewOutcome(app model.CareerApplication) string {
 	switch data.NormalizeStatus(app.Status) {
-	case "discarded", "skip", "rejected":
+	case "discarded", "skip", "rejected", "closed":
 	default:
 		return ""
 	}
@@ -1524,16 +1420,21 @@ func (m PipelineModel) renderHelp() string {
 		keyStyle.Render("o") + descStyle.Render(" open URL  ") +
 		keyStyle.Render("c") + descStyle.Render(" change  ") +
 		keyStyle.Render("C") + descStyle.Render(" columns  ") +
-		keyStyle.Render("v") + descStyle.Render(" view  ") +
 		keyStyle.Render("p") + descStyle.Render(" progress  ") +
 		keyStyle.Render("q") + descStyle.Render(" quit")
 
-	gap := m.width - lipgloss.Width(keys) - lipgloss.Width(brand) - 2
+	sortInfo := descStyle.Render("Sort: ") + keyStyle.Render(m.sortMode)
+	right := sortInfo + descStyle.Render("  ") + brand
+	if lipgloss.Width(keys)+lipgloss.Width(right)+2 > m.width {
+		right = sortInfo
+	}
+
+	gap := m.width - lipgloss.Width(keys) - lipgloss.Width(right) - 2
 	if gap < 1 {
 		gap = 1
 	}
 
-	return style.Render(keys + strings.Repeat(" ", gap) + brand)
+	return style.Render(keys + strings.Repeat(" ", gap) + right)
 }
 
 func (m PipelineModel) overlayStatusPicker(body string) string {
@@ -1627,18 +1528,9 @@ func (m PipelineModel) statusColorMap() map[string]lipgloss.Color {
 		"evaluated": m.theme.Text,
 		"skip":      m.theme.Red,
 		"rejected":  m.theme.Subtext,
+		"closed":    m.theme.Subtext,
 		"discarded": m.theme.Subtext,
 	}
-}
-
-func (m PipelineModel) countByNormStatus(status string) int {
-	count := 0
-	for _, app := range m.filtered {
-		if data.NormalizeStatus(app.Status) == status {
-			count++
-		}
-	}
-	return count
 }
 
 // formatTimeAgo renders an ISO date as a relative duration in calendar days:
@@ -1694,6 +1586,8 @@ func statusLabel(norm string) string {
 		return "Skip"
 	case "rejected":
 		return "Rejected"
+	case "closed":
+		return "Closed"
 	case "discarded":
 		return "Discarded"
 	default:

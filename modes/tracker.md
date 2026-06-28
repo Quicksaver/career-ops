@@ -8,7 +8,7 @@ Lee y muestra `users/{USER}/data/applications.md`.
 | # | Date | Company | Role | Score | Status | PDF | Report | Notes |
 ```
 
-Possible states: `Evaluated` → `Applied` → `Responded` → `Interview` → `Offer` / `Rejected` / `Discarded` / `SKIP`
+Possible states: `Evaluated` → `Applied` → `Responded` → `Interview` → `Offer` / `Rejected` / `Closed` / `Discarded` / `SKIP`
 
 - `Evaluated` = offer evaluated with report, pending decision
 - `Applied` = the candidate submitted their application
@@ -16,7 +16,8 @@ Possible states: `Evaluated` → `Applied` → `Responded` → `Interview` → `
 - `Interview` = active interview process
 - `Offer` = job offer received
 - `Rejected` = rejected by company
-- `Discarded` = discarded by candidate or offer closed
+- `Closed` = posting closed before application
+- `Discarded` = discarded by candidate
 - `SKIP` = doesn't fit, don't apply
 
 If the user asks to update a state, edit the corresponding row.

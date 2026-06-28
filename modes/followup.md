@@ -105,7 +105,7 @@ Shorter than first (2-3 sentences). Take a **new angle**:
 
 Do NOT generate another follow-up. Instead suggest:
 > "This application has had {N} follow-ups with no response. Consider:
-> - Updating status to `Discarded` if the role seems filled
+> - Updating status to `Closed` if the role seems filled before applying
 > - Trying a different contact via `/career-ops contacto`
 > - Keeping in `Applied` status but deprioritizing"
 

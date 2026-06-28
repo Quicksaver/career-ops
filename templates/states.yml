@@ -43,10 +43,16 @@ states:
     description: Rejected by company
     dashboard_group: rejected
 
+  - id: closed
+    label: Closed
+    aliases: [closed, expired, cerrada, cancelada]
+    description: Posting closed before application
+    dashboard_group: closed
+
   - id: discarded
     label: Discarded
-    aliases: [descartado, descartada, cerrada, cancelada]
-    description: Discarded by candidate or offer closed
+    aliases: [descartado, descartada]
+    description: Discarded by candidate
     dashboard_group: discarded
 
   - id: skip

@@ -68,7 +68,7 @@ const ALIASES = {
   'oferta': 'offer',
   'rechazado': 'rejected', 'rechazada': 'rejected',
   'descartado': 'discarded', 'descartada': 'discarded',
-  'cerrada': 'discarded', 'cancelada': 'discarded',
+  'closed': 'closed', 'expired': 'closed', 'cerrada': 'closed', 'cancelada': 'closed',
   'no aplicar': 'skip', 'no_aplicar': 'skip', 'monitor': 'skip', 'geo blocker': 'skip',
 };
 
@@ -81,7 +81,7 @@ function normalizeStatus(raw) {
 function classifyOutcome(status) {
   const s = normalizeStatus(status);
   if (['interview', 'offer', 'responded', 'applied'].includes(s)) return 'positive';
-  if (['rejected', 'discarded'].includes(s)) return 'negative';
+  if (['rejected', 'closed', 'discarded'].includes(s)) return 'negative';
   if (['skip'].includes(s)) return 'self_filtered';
   return 'pending'; // evaluated
 }
