@@ -183,6 +183,45 @@ func TestParseApplicationsUsesScanHistoryListingDate(t *testing.T) {
 	}
 }
 
+func TestParseApplicationsPrefersReopenedDuplicateURLFromNotes(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("failed to create reports dir: %v", err)
+	}
+
+	applications := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 8 | 2026-06-28 | ReopenCo | Platform Engineer | 4.2/5 | Evaluated | ❌ | [008](reports/008-reopenco.md) | Reopened 2026-06-20: duplicate live posting found at https://jobs.example.com/older-platform; Reopened 2026-06-28: duplicate live posting found at https://jobs.example.com/new-platform |
+`
+	if err := os.WriteFile(filepath.Join(dataDir, "applications.md"), []byte(applications), 0o644); err != nil {
+		t.Fatalf("failed to write applications: %v", err)
+	}
+	report := `# Evaluation: ReopenCo — Platform Engineer
+
+**Date:** 2026-06-01
+**URL:** https://jobs.example.com/old-closed-platform
+**Score:** 4.2/5
+`
+	if err := os.WriteFile(filepath.Join(reportsDir, "008-reopenco.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("failed to write report: %v", err)
+	}
+
+	apps := ParseApplications(tempDir)
+	if len(apps) != 1 {
+		t.Fatalf("expected 1 parsed application, got %d", len(apps))
+	}
+	if apps[0].JobURL != "https://jobs.example.com/new-platform" {
+		t.Fatalf("expected reopened duplicate URL to beat stale report URL, got %q", apps[0].JobURL)
+	}
+}
+
 func TestParseApplicationsUsesReportListingDateBeforeScanHistory(t *testing.T) {
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")

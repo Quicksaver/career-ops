@@ -1976,6 +1976,8 @@ try {
     formatPipelineOffer,
     formatScanHistoryRow,
     buildScanHandoffPayload,
+    configureScanUserPaths,
+    reopenClosedDuplicateApplications,
   } = await import(pathToFileURL(join(ROOT, 'scan.mjs')).href);
 
   const filter = buildLocationFilter({
@@ -2120,6 +2122,55 @@ try {
     pass('scan-history TTL rechecks old added URLs while permanent statuses stay deduped');
   } else {
     fail('scan-history TTL policy did not match expected recheck/permanent behavior');
+  }
+
+  const reopenTmp = mkdtempSync(join(tmpdir(), 'career-ops-reopen-'));
+  try {
+    mkdirSync(join(reopenTmp, 'data'), { recursive: true });
+    writeFileSync(join(reopenTmp, 'data', 'applications.md'),
+      '# Applications Tracker\n\n' +
+      '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
+      '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
+      '| 7 | 2026-06-01 | Acme | Platform Engineer | 4.1/5 | Closed | ❌ | [7](../reports/007-acme.md) | posting expired |\n' +
+      '| 8 | 2026-06-10 | Beta | Data Engineer | 4.0/5 | Evaluated | ❌ | [8](../reports/008-beta.md) | Reopened 2026-06-10: duplicate live posting found at https://jobs.example.com/beta-old |\n');
+    configureScanUserPaths({ userRoot: reopenTmp });
+    const reopened = reopenClosedDuplicateApplications([
+      {
+        url: 'https://jobs.example.com/platform-engineer-new',
+        company: 'Acme',
+        title: 'Platform Engineer',
+        source: 'fixture',
+      },
+      {
+        url: 'https://jobs.example.com/platform-engineer-newer',
+        company: 'Acme',
+        title: 'Platform Engineer',
+        source: 'fixture',
+      },
+      {
+        url: 'https://jobs.example.com/beta-new',
+        company: 'Beta',
+        title: 'Data Engineer',
+        source: 'fixture',
+      },
+    ], '2026-06-28');
+    const tracker = readFileSync(join(reopenTmp, 'data', 'applications.md'), 'utf-8');
+    if (
+      reopened === 3 &&
+      tracker.includes('| 7 | 2026-06-28 | Acme | Platform Engineer | 4.1/5 | Evaluated |') &&
+      tracker.includes('Reopened 2026-06-28: duplicate live posting found at https://jobs.example.com/platform-engineer-new') &&
+      tracker.includes('Reopened 2026-06-28: duplicate live posting found at https://jobs.example.com/platform-engineer-newer') &&
+      tracker.includes('| 8 | 2026-06-28 | Beta | Data Engineer | 4.0/5 | Evaluated |') &&
+      tracker.includes('Reopened 2026-06-28: duplicate live posting found at https://jobs.example.com/beta-new') &&
+      !tracker.includes('| Closed |')
+    ) {
+      pass('scan reopens Closed and previously reopened duplicates in place with the fresh live URL');
+    } else {
+      fail(`Closed duplicate reopen failed: reopened=${reopened}, tracker=${JSON.stringify(tracker)}`);
+    }
+  } finally {
+    rmSync(reopenTmp, { recursive: true, force: true });
+    configureScanUserPaths({ userRoot: join(TEST_USERS_DIR, 'test') });
   }
 
   const hostileOffer = {

@@ -24,6 +24,7 @@ var (
 	reArchetypeColon  = regexp.MustCompile(`(?i)\*\*(?:Arquetipo|Archetype):\*\*\s*(.+)`)
 	reArchetypeYAML   = regexp.MustCompile(`(?m)^archetype:\s*"?([^"\n]+)"?\s*$`)
 	reReportURL       = regexp.MustCompile(`(?m)^\*\*URL:\*\*\s*(https?://\S+)`)
+	reReopenedURL     = regexp.MustCompile(`(?i)Reopened\s+\d{4}-\d{2}-\d{2}:.*?\b(https?://\S+)`)
 	reBatchID         = regexp.MustCompile(`(?m)^\*\*Batch ID:\*\*\s*(\d+)`)
 	reListingISODate  = regexp.MustCompile(`(?i)(?:posted|published|first published|date posted|posting date|listing date)[^\n\d]{0,40}(\d{4}-\d{2}-\d{2})`)
 	reListingTextDate = regexp.MustCompile(`(?i)(?:posted|published|first published|date posted|posting date|listing date)[^\n\d]{0,40}((?:\d{1,2}\s+)?(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})`)
@@ -143,6 +144,10 @@ func parseApplications(careerOpsPath string, enrichReports bool) []model.CareerA
 		// Notes (field 8 if exists)
 		if len(fields) > 8 {
 			app.Notes = fields[8]
+			if matches := reReopenedURL.FindAllStringSubmatch(app.Notes, -1); len(matches) > 0 {
+				last := matches[len(matches)-1]
+				app.JobURL = strings.TrimRight(last[1], ".,;:!)")
+			}
 		}
 
 		// Lift location / work mode / pay / last-contact out of the notes free-text
@@ -179,6 +184,9 @@ func parseApplications(careerOpsPath string, enrichReports bool) []model.CareerA
 			// Prefer a posting/listing date from the report text when available.
 			// Keep the tracker Date as the processed-date fallback.
 			apps[i].ListingDate = extractListingDate(string(reportContent))
+			if apps[i].JobURL != "" {
+				continue
+			}
 
 			// Strategy 1: **URL:** in report
 			if m := reReportURL.FindStringSubmatch(header); m != nil {

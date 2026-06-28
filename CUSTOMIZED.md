@@ -91,6 +91,7 @@ New upstream features or behavior now present:
 - Job-archive workflow: upstream added `archive-posting.mjs` to capture live postings as local JD PDFs. The fork routes archived postings under `users/{USER}/jds/` and reads pipeline entries from `users/{USER}/data/pipeline.md`.
 - Local evaluator: upstream added `ollama-eval.mjs` for local interactive evaluation. The fork routes CV input and report output through `--user {USER}` so local Ollama evaluation still reads `users/{USER}/cv.md` and writes `users/{USER}/reports/`.
 - Scanner trust metadata: upstream added `providers/_trust-validator.mjs` and trust score/flag/level enrichment in `scan.mjs`. The fork keeps enrichment before filters, but preserves company block filtering, per-target `location_filter`, active-user pipeline/history paths, and the rule that trust flags annotate jobs rather than silently dropping them.
+- Scanner duplicate reopen behavior: when a scan finds a live company/title duplicate whose only known tracker row is `Closed`, or whose tracker row was previously reopened from a closed duplicate, the fork keeps it as a duplicate rather than creating a new pipeline/tracker row. It reopens the original row as `Evaluated`, updates the row date, appends the fresh live URL to notes, records `reopened_closed_duplicate` in scan history, and makes dashboard URL opening prefer the latest reopened URL.
 - Provider upgrades: upstream added first-party Personio, Comeet, and WeWorkRemotely providers and broadened provider config examples. The fork adopted these modules as system-layer providers, separate from the custom provider dispatcher.
 - CLI/runtime surface: upstream added Grok Build CLI support via `.grok/skills/career-ops/SKILL.md` and extracted skill entrypoint materialization into `scaffolder/bin/skill-entrypoints.mjs`. The fork keeps Grok alongside Claude/OpenCode/Qwen/Antigravity and uses the shared helper from `update-system.mjs` instead of duplicating entrypoint constants.
 - Batch robustness: upstream added a single-worker lock fallback and a Claude exit-127 shim-swap retry. The fork keeps both while preserving Codex stdin prompt delivery, schema-checked final JSON, per-user batch state, and worker-timeout behavior.
@@ -332,6 +333,36 @@ Future merge notes:
 - Preserve per-target `location_filter` precedence over the global filter. If upstream adds provider-specific scan filters, keep the current config shape as a compatibility alias or provide a migration for user portal configs.
 - Keep LinkedIn authenticated scanning's `linkedin_searches.employer_blocklist` separate unless upstream unifies authenticated and zero-token scan filtering under one shared company-block schema.
 - Preserve upstream metadata sanitization (`formatPipelineOffer` / `formatScanHistoryRow`) when changing filter order so hostile provider strings cannot write extra pipeline or TSV fields.
+
+## Scanner Duplicate Reopen Semantics
+
+The fork treats a reopened posting as the same opportunity when the scanner rediscovers a company/title match that previously closed.
+
+Files:
+
+- `scan.mjs`
+- `test-all.mjs`
+- `dashboard/internal/data/career.go`
+- `dashboard/internal/data/career_test.go`
+- `users/{USER}/data/applications.md`
+- `users/{USER}/data/scan-history.tsv`
+
+What this customizes:
+
+- `scan.mjs` parses tracker rows by header names, splits company/title dedupe state into active, closed, and reopenable rows, and keeps the exact company/title key as the duplicate identity for this behavior.
+- If a provider returns a live posting whose company/title matches a `Closed` row and no normal active row exists, the scanner counts it as a duplicate, does not append it to `users/{USER}/data/pipeline.md`, and reopens the original row in `users/{USER}/data/applications.md` by setting status to canonical `Evaluated`.
+- Reopening updates the original tracker row's date to the scan date and appends `Reopened {YYYY-MM-DD}: duplicate live posting found at {URL}` to the notes column. The row number, score, PDF marker, report link, company, and role are preserved.
+- If the scanner later finds a duplicate of an already reopened duplicate, it still updates the same original tracker row and appends the newer URL instead of creating a second row or ignoring the fresher posting.
+- Reopened duplicate URLs are written to `users/{USER}/data/scan-history.tsv` with status `reopened_closed_duplicate`, so URL enrichment and audit trails can see the fresh listing without turning it into a new application.
+- Dashboard parsing extracts reopened URLs from tracker notes and uses the last reopened URL as the current job URL. This intentionally beats stale `**URL:**` values in old reports whose original posting has closed.
+- Regression coverage lives in `test-all.mjs` for repeated scanner duplicate reopen writes and in `dashboard/internal/data/career_test.go` for latest-reopened-URL selection.
+
+Future merge notes:
+
+- Preserve the single-row invariant: closed reposts and duplicate-of-duplicate reposts should refresh the original tracker row, not create new tracker rows or pending pipeline items.
+- Preserve `Evaluated` as the canonical reopened state. Dashboard may label this bucket as `OPEN`, but `OPEN` is not a tracker status.
+- Keep reopened URL extraction ahead of report-header URL extraction in dashboard data parsing, otherwise old report headers can make the `o` open action point back to a stale closed URL.
+- Keep `reopened_closed_duplicate` as a scan-history audit status unless upstream adds an equivalent explicit reopened/reposted status.
 
 ## CV Output Naming
 

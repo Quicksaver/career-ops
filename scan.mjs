@@ -42,6 +42,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
+import { rebuildRow } from './tracker-utils.mjs';
 import { buildTrustValidator } from './providers/_trust-validator.mjs';
 
 const parseYaml = yaml.load;
@@ -476,19 +477,163 @@ export function loadSeenUrls(policy = {}) {
 }
 
 function loadSeenCompanyRoles() {
-  const seen = new Set();
+  const seen = new Map();
   if (existsSync(APPLICATIONS_PATH)) {
-    const text = readFileSync(APPLICATIONS_PATH, 'utf-8');
-    // Parse markdown table rows: | # | Date | Company | Role | ...
-    for (const match of text.matchAll(/\|[^|]+\|[^|]+\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g)) {
-      const company = match[1].trim().toLowerCase();
-      const role = match[2].trim().toLowerCase();
-      if (company && role && company !== 'company') {
-        seen.add(`${company}::${role}`);
+    const lines = readFileSync(APPLICATIONS_PATH, 'utf-8').split('\n');
+    const colMap = detectTrackerColumns(lines);
+    for (let i = 0; i < lines.length; i++) {
+      const app = parseTrackerApplicationLine(lines[i], i, colMap);
+      if (!app) continue;
+      const key = companyRoleKey(app.company, app.role);
+      if (!key) continue;
+      if (!seen.has(key)) seen.set(key, { activeRows: [], closedRows: [], reopenableRows: [] });
+      const bucket = seen.get(key);
+      if (isClosedTrackerStatus(app.status)) {
+        bucket.closedRows.push(app);
+      } else {
+        bucket.activeRows.push(app);
+        if (isReopenedTrackerNote(app.notes)) bucket.reopenableRows.push(app);
       }
     }
   }
   return seen;
+}
+
+const LEGACY_TRACKER_COLS = { num: 1, date: 2, company: 3, role: 4, score: 5, status: 6, pdf: 7, report: 8, notes: 9 };
+const TRACKER_HEADER_ALIASES = {
+  '#': 'num',
+  'num': 'num',
+  'n': 'num',
+  'date': 'date',
+  'company': 'company',
+  'empresa': 'company',
+  'role': 'role',
+  'rol': 'role',
+  'position': 'role',
+  'score': 'score',
+  'status': 'status',
+  'estado': 'status',
+  'pdf': 'pdf',
+  'report': 'report',
+  'notes': 'notes',
+  'notas': 'notes',
+};
+
+function detectTrackerColumns(lines) {
+  for (const line of lines) {
+    if (!line.startsWith('|')) continue;
+    const cells = line.split('|').map(s => s.trim().toLowerCase());
+    const map = {};
+    for (let i = 0; i < cells.length; i++) {
+      const normalized = cells[i].replace(/\s+/g, ' ');
+      const key = TRACKER_HEADER_ALIASES[normalized];
+      if (key) map[key] = i;
+    }
+    if (['num', 'date', 'company', 'role', 'status'].every(k => map[k] != null)) {
+      return { ...LEGACY_TRACKER_COLS, ...map };
+    }
+  }
+  return LEGACY_TRACKER_COLS;
+}
+
+function parseTrackerApplicationLine(line, lineIndex, colMap = LEGACY_TRACKER_COLS) {
+  if (!line.startsWith('|') || line.includes('---')) return null;
+  const parts = line.split('|').map(s => s.trim());
+  const maxIdx = Math.max(colMap.num, colMap.date, colMap.company, colMap.role, colMap.status, colMap.notes ?? 0);
+  if (parts.length <= maxIdx) return null;
+  const num = Number.parseInt(parts[colMap.num], 10);
+  const company = parts[colMap.company] || '';
+  const role = parts[colMap.role] || '';
+  if (!Number.isFinite(num) || num === 0 || !company || !role || company.toLowerCase() === 'company') return null;
+  return {
+    num,
+    date: parts[colMap.date] || '',
+    company,
+    role,
+    status: parts[colMap.status] || '',
+    notes: colMap.notes != null ? (parts[colMap.notes] || '') : '',
+    lineIndex,
+    raw: line,
+    parts,
+    colMap,
+  };
+}
+
+function companyRoleKey(company, role) {
+  const normalizedCompany = String(company ?? '').trim().toLowerCase();
+  const normalizedRole = String(role ?? '').trim().toLowerCase();
+  return normalizedCompany && normalizedRole ? `${normalizedCompany}::${normalizedRole}` : '';
+}
+
+function isClosedTrackerStatus(status) {
+  const clean = String(status ?? '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '')
+    .trim()
+    .toLowerCase();
+  return ['closed', 'expired', 'cerrada', 'cancelada'].includes(clean);
+}
+
+function isReopenedTrackerNote(notes) {
+  return /\bReopened\s+\d{4}-\d{2}-\d{2}:/i.test(String(notes ?? ''));
+}
+
+function appendReopenNote(notes, date, url) {
+  const cleanNotes = sanitizeMarkdownField(notes);
+  const cleanUrl = sanitizePipelineUrl(url);
+  const entry = `Reopened ${date}: duplicate live posting found at ${cleanUrl}`;
+  if (cleanNotes.includes(cleanUrl)) return cleanNotes;
+  return cleanNotes ? `${cleanNotes}; ${entry}` : entry;
+}
+
+export function reopenClosedDuplicateApplications(offers, date) {
+  if (offers.length === 0 || !existsSync(APPLICATIONS_PATH)) return 0;
+
+  const lines = readFileSync(APPLICATIONS_PATH, 'utf-8').split('\n');
+  const colMap = detectTrackerColumns(lines);
+  const rowsByKey = new Map();
+
+  for (let i = 0; i < lines.length; i++) {
+    const app = parseTrackerApplicationLine(lines[i], i, colMap);
+    if (!app) continue;
+    const key = companyRoleKey(app.company, app.role);
+    if (!key) continue;
+    if (!rowsByKey.has(key)) rowsByKey.set(key, { normalActiveRows: [], reopenedRows: [], closedRows: [] });
+    const bucket = rowsByKey.get(key);
+    if (isClosedTrackerStatus(app.status)) {
+      bucket.closedRows.push(app);
+    } else if (isReopenedTrackerNote(app.notes)) {
+      bucket.reopenedRows.push(app);
+    } else {
+      bucket.normalActiveRows.push(app);
+    }
+  }
+
+  let reopened = 0;
+  for (const offer of offers) {
+    const key = companyRoleKey(offer.company, offer.title);
+    if (!key) continue;
+    const bucket = rowsByKey.get(key);
+    if (!bucket || bucket.normalActiveRows.length > 0) continue;
+    const app = bucket.reopenedRows[0] || bucket.closedRows[0];
+    if (!app) continue;
+
+    const parts = [...app.parts];
+    parts[colMap.date] = date;
+    parts[colMap.status] = 'Evaluated';
+    if (colMap.notes != null) {
+      parts[colMap.notes] = appendReopenNote(app.notes, date, offer.url);
+      app.notes = parts[colMap.notes];
+    }
+    lines[app.lineIndex] = rebuildRow(parts);
+    app.parts = parts;
+    if (bucket.reopenedRows.length === 0) bucket.reopenedRows.push(app);
+    bucket.closedRows = bucket.closedRows.filter(row => row !== app);
+    reopened++;
+  }
+
+  if (reopened > 0) writeFileSync(APPLICATIONS_PATH, lines.join('\n'), 'utf-8');
+  return reopened;
 }
 
 // ── Pipeline writer ─────────────────────────────────────────────────
@@ -912,7 +1057,9 @@ async function main() {
   let totalFilteredSalary = 0;
   let totalFilteredContent = 0;
   let totalDupes = 0;
+  let totalReopenedClosedDupes = 0;
   const newOffers = [];
+  const reopenedClosedDuplicates = [];
   const errors = [...resolveErrors];
 
   const tasks = targets.map(company => async () => {
@@ -970,18 +1117,40 @@ async function main() {
           totalFilteredContent++;
           continue;
         }
-        if (seenUrls.has(job.url)) {
+        const key = companyRoleKey(job.company, job.title);
+        const seenCompanyRole = seenCompanyRoles.get(key);
+        if (seenCompanyRole) {
           totalDupes++;
+          seenUrls.add(job.url);
+          let reopenTarget = null;
+          if (seenCompanyRole.activeRows.length === 0 && seenCompanyRole.closedRows.length > 0) {
+            reopenTarget = seenCompanyRole.closedRows[0];
+          } else if (seenCompanyRole.reopenableRows.length > 0) {
+            reopenTarget = seenCompanyRole.reopenableRows[0];
+          }
+          if (reopenTarget) {
+            const reopenedOffer = {
+              ...job,
+              source: sourceName,
+              reopenedTrackerNum: reopenTarget.num,
+            };
+            reopenedClosedDuplicates.push(reopenedOffer);
+            if (!seenCompanyRole.activeRows.includes(reopenTarget)) {
+              seenCompanyRole.activeRows.push(reopenTarget);
+            }
+            if (!seenCompanyRole.reopenableRows.includes(reopenTarget)) {
+              seenCompanyRole.reopenableRows.push(reopenTarget);
+            }
+          }
           continue;
         }
-        const key = `${job.company.toLowerCase()}::${job.title.toLowerCase()}`;
-        if (seenCompanyRoles.has(key)) {
+        if (seenUrls.has(job.url)) {
           totalDupes++;
           continue;
         }
         // Mark as seen to avoid intra-scan dupes
         seenUrls.add(job.url);
-        seenCompanyRoles.add(key);
+        seenCompanyRoles.set(key, { activeRows: [{ company: job.company, role: job.title, status: 'Evaluated' }], closedRows: [], reopenableRows: [] });
         // Tag with the company's careers domain so verify can offer a 404/410
         // rediscovery fallback. A null domain (no careers_url) marks the offer
         // as broad-discovery — ineligible for the fallback, per the issue scope.
@@ -1024,6 +1193,14 @@ async function main() {
   if (!dryRun && verifiedOffers.length > 0) {
     appendToPipeline(verifiedOffers);
     appendToScanHistory(verifiedOffers, date);
+  }
+  if (!dryRun && reopenedClosedDuplicates.length > 0) {
+    totalReopenedClosedDupes = reopenClosedDuplicateApplications(reopenedClosedDuplicates, date);
+    if (totalReopenedClosedDupes > 0) {
+      appendToScanHistory(reopenedClosedDuplicates, date, 'reopened_closed_duplicate');
+    }
+  } else {
+    totalReopenedClosedDupes = reopenedClosedDuplicates.length;
   }
   // Expired postings — plus the old URLs of migrated offers — are recorded as
   // skipped_expired so subsequent scans dedup-skip the dead URLs.
@@ -1073,6 +1250,9 @@ async function main() {
   console.log(`Filtered by salary:   ${totalFilteredSalary} removed`);
   console.log(`Filtered by content:  ${totalFilteredContent} removed`);
   console.log(`Duplicates:            ${totalDupes} skipped`);
+  if (totalReopenedClosedDupes > 0) {
+    console.log(`Closed dupes reopened: ${totalReopenedClosedDupes}`);
+  }
   if (historyPolicy.recheckAfterDays != null) {
     console.log(`Recheck eligible:      ${seenUrlState.recheckEligible} old scan-history URL(s)`);
   }
