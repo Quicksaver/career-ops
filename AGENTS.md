@@ -52,11 +52,13 @@ Run the per-user binary without `--path`; it infers the user folder from its own
 ## Long-Running Command Quiet Mode
 
 When the user asks you to run `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, keep the conversation quiet while the command is running:
-- Start the command, then do not send routine "still running" or "currently at phase X" updates.
+- Start the command, then reserve user-visible updates for meaningful events rather than routine "still running" or "currently at phase X" messages.
+- Keep long-running commands alive through long duration, high match counts, deeper-than-expected pagination, and larger/noisier-than-anticipated output. Long authenticated scans, especially LinkedIn, can legitimately take a long time. Let the process finish so it can persist its output.
+- Stop a running long-running command only when the user explicitly says to stop, the command exits/fails, it requests login/CAPTCHA/account verification/other user action, or there is a confirmed destructive/data-corruption risk. For abnormal behaviour outside those blockers, report the concern at the allowed quiet-mode cadence and keep monitoring.
 - Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
-- Treat command stdout/stderr as the progress source. Do not paraphrase every phase back to the user.
-- For Codex tool sessions, do not send commentary before or after routine `write_stdin` polls. Poll with the longest supported wait, and if the tool returns before 10 minutes, continue polling silently until the command completes or a real action is needed.
-- Do not emit filler such as "Continuing quietly", "still processing", "worker remains active", or "no failure output" during routine polls.
+- Treat command stdout/stderr as the progress source. Keep phase-by-phase progress in the command output rather than paraphrasing it back to the user.
+- For Codex tool sessions, keep routine `write_stdin` polls silent. Poll with the longest supported wait, and if the tool returns before 10 minutes, continue polling silently until the command completes or a real action is needed.
+- Reserve user-visible messages for completion, failure, required action, suspected hangs, concrete warnings, and explicit status requests.
 - Report immediately only when the command completes, fails, asks for login/CAPTCHA/user action, appears hung, or produces a concrete warning that changes what the user should do.
 - If a user explicitly asks for status while the command is running, answer once with the current observed state, then return to quiet monitoring.
 

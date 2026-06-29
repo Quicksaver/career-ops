@@ -78,6 +78,8 @@ Run:
 node scan-auth.mjs --user {USER} linkedin
 ```
 
+LinkedIn can be slow and may page through many result pages. Keep `scan-auth` running through long duration, high page count, noisy output, or many accepted listings; wait for it to finish and persist its output. Stop only when the user explicitly says to stop, the process exits/fails, login/CAPTCHA/account verification/other user action is required, or there is a confirmed destructive/data-corruption risk.
+
 Continue after ordinary per-listing extraction, title-filter, deduplication, or skipped-result errors.
 
 Stop if LinkedIn requires login, CAPTCHA, account verification, or another explicit user action. Tell the user to run:
