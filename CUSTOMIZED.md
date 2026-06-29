@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `a3e1d766fd98334a9ccc638903d7db72df4db34e`
-- Fork ref: current `main` at `d54e7f2cac5fe1246f518e14d543eb640c052c4c`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `101`
-- Diff-size baseline after merge, before this inventory refresh: `118 files changed, 11716 insertions(+), 2315 deletions(-)`
+- Upstream ref: `upstream/main` at `1574900e059fe61fc4ce3461fc3b72a213ee4dbd`
+- Fork ref: current `main` at `2af77de1022dddd5da70f099055c2ee0729228ce`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `107`
+- Diff-size baseline after merge, before this inventory refresh: `121 files changed, 11952 insertions(+), 2328 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14-era behavior and subsequent upstream fixes through `a3e1d766fd98334a9ccc638903d7db72df4db34e` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14-era behavior and subsequent upstream fixes through `1574900e059fe61fc4ce3461fc3b72a213ee4dbd` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -104,6 +104,10 @@ New upstream features or behavior now present:
 - Scanner/mode hardening: upstream trimmed `title_filter` keywords before length checks and bounded scan subagents as single-pass workers that must not fan out into more research agents. The fork keeps those constraints while preserving quiet long-running monitoring, `scan-auth`, `scan-handoff`, `go`, user-scoped portal paths, and the custom provider layer.
 - Sourcing shorthand: the fork adds `/career-ops go` as a coordinated sourcing mode that runs zero-token scan, conditionally runs scan-handoff when the latest scan wrote handoff items, runs authenticated LinkedIn scan, and conditionally runs pipeline only when the scan phases added pending jobs.
 - Updater/runtime fixes: upstream registered Kimi paths in updater system manifests and fixed updater self-reexec checkout discovery from import closure analysis. The fork keeps those fixes while preserving `users/`, root `voice-dna.md`, and other user-path safety guards; `scaffolder/bin/skill-entrypoints.mjs` also materializes `.kimi/skills/career-ops/SKILL.md` so Kimi behaves like the other CLI entrypoints on filesystems without symlink support.
+- Tracker parser consolidation: upstream extracted header-name tracker column parsing into `tracker-parse.mjs` and expanded tests so `merge-tracker.mjs`, `dedup-tracker.mjs`, `followup-cadence.mjs`, and `analyze-patterns.mjs` share the same `Location`-column-safe mapping. The fork adopted the shared parser while keeping production readers on `users/{USER}/data/applications.md`; `CAREER_OPS_TRACKER` remains a fixture/non-standard override.
+- Evaluation research bounds: upstream added an explicit single-pass research budget to `modes/oferta.md` and `modes/auto-pipeline.md`, capping company/comp/hiring-signal lookup at 5 WebSearch queries and forbidding recursive `deep`/subagent research inside normal evaluations. This aligns with the fork's quality-over-quantity behavior and should be preserved unless upstream provides an equivalent global budget mechanism.
+- Setup support docs: upstream added `docs/FAQ.md` and linked it from `README.md`/`SUPPORT.md`. The fork keeps the FAQ but rewrites scanner and batch examples to use `--user {USER}` plus `users/{USER}/portals.yml` instead of root single-user paths.
+- Test/CI coverage: upstream now runs Go dashboard tests in GitHub Actions and adds quick-suite coverage for Remotive normalization, shared tracker parsing, `dedup-tracker.mjs` with an inserted Location column, fresh-install `scan.mjs` pipeline creation, and bounded evaluation research. The fork keeps those tests while preserving explicit-user fixtures for production paths.
 
 Conflict notes from this merge:
 
@@ -141,6 +145,9 @@ Conflict notes from this merge:
 - `update-system.mjs`: adopted upstream's shared skill-entrypoint materializer, including Grok, while preserving the fork's user-path safety guard list.
 - `test-all.mjs`: kept upstream coverage for archive posting, trust validation, new providers, Grok/materialized skills, tracker row utilities, and template pagination while preserving fork checks for scan-auth and explicit-user fixtures.
 - `archive-posting.mjs`, `match-star.mjs`, and `ollama-eval.mjs`: adopted upstream tools but added active-user resolution so archived JDs, story-bank reads, CV reads, and report writes use `users/{USER}/...`.
+- `analyze-patterns.mjs` and `followup-cadence.mjs`: adopted upstream `tracker-parse.mjs` shared column parsing, but resolved conflicts by keeping active-user resolution and `users/{USER}/data/applications.md`; `followup-cadence.mjs` still tolerates older user-root-relative `reports/...` links during migration.
+- `docs/FAQ.md`: adopted upstream setup FAQ but rewrote scanner, ATS discovery, and batch examples to use `--user {USER}` and `users/{USER}/portals.yml`, preserving the fork's no-root-user-data contract.
+- `test-all.mjs`: adopted upstream tests for shared tracker parsing, Remotive provider normalization, fresh-install pipeline creation, bounded evaluation research, and dashboard CI coverage; helper-only fixtures may still use temporary root `data/` or `CAREER_OPS_TRACKER`, but production CLI behavior remains explicit-user.
 
 Future merge notes:
 
@@ -166,6 +173,7 @@ Files:
 - `normalize-statuses.mjs`
 - `dedup-tracker.mjs`
 - `tracker.mjs`
+- `tracker-parse.mjs`
 - `cv-sync-check.mjs`
 - `doctor.mjs`
 - `analyze-patterns.mjs`
