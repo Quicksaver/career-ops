@@ -19,6 +19,7 @@ import {
 } from './lib/user-context.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
 import { rebuildRow } from './tracker-utils.mjs';
+import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 
 let userContext;
 try {
@@ -238,22 +239,7 @@ function parseScore(s) {
  * @returns {object|null} Parsed tracker row, or null for non-application lines.
  */
 function parseAppLine(line) {
-  const parts = line.split('|').map(s => s.trim());
-  if (parts.length < 9) return null;
-  const num = parseInt(parts[1]);
-  if (isNaN(num)) return null;
-  return {
-    num,
-    date: parts[2],
-    company: parts[3],
-    role: parts[4],
-    score: parts[5],
-    status: parts[6],
-    pdf: parts[7],
-    report: parts[8],
-    notes: parts[9] || '',
-    raw: line,
-  };
+  return parseTrackerRow(line, COLMAP);
 }
 
 // Read
@@ -263,6 +249,8 @@ if (!existsSync(APPS_FILE)) {
 }
 const content = readFileSync(APPS_FILE, 'utf-8');
 const lines = content.split('\n');
+// Header-aware column map (tolerates an inserted Location column, etc.).
+const COLMAP = resolveColumns(lines);
 
 // Parse all entries
 const entries = [];
@@ -330,7 +318,7 @@ for (const [company, companyEntries] of groups) {
       const lineIdx = keeper.lineIdx;
       if (lineIdx !== undefined) {
         const parts = lines[lineIdx].split('|').map(s => s.trim());
-        parts[6] = bestStatus;
+        parts[COLMAP.status] = bestStatus;
         lines[lineIdx] = rebuildRow(parts);
         console.log(`  📝 #${keeper.num}: status promoted to "${bestStatus}" (from #${cluster.find(e => e.status === bestStatus)?.num})`);
       }
