@@ -26,7 +26,6 @@ func newPDFTestModel(t *testing.T, careerOpsPath string, apps []model.CareerAppl
 		120,
 		40,
 	)
-	pm.viewMode = "flat"
 	pm.applyFilterAndSort()
 	return pm
 }

@@ -800,6 +800,7 @@ func replaceStatusInLine(line, oldStatus, newStatus string, statusField int) str
 func replaceStatusAndAddInteraction(line, oldStatus, newStatus, interactionDate string, statusField int) string {
 	want := strings.TrimSpace(oldStatus)
 	addInteraction := interactionDate != "" && !strings.EqualFold(strings.TrimSpace(oldStatus), strings.TrimSpace(newStatus))
+	notesField := statusField + 3 // Status, PDF, Report, Notes
 
 	// Mixed "| " + tab-separated format (mirrors ParseApplications). The body is
 	// tab-split, so cell index equals the field index.
@@ -811,8 +812,8 @@ func replaceStatusAndAddInteraction(line, oldStatus, newStatus, interactionDate 
 		cells := strings.Split(body, "\t")
 		if idx := statusCellIndex(cells, statusField, want); idx >= 0 {
 			cells[idx] = spliceCellValue(cells[idx], newStatus)
-			if addInteraction && 8 < len(cells) {
-				cells[8] = spliceCellValueAllowEmpty(cells[8], appendStatusInteraction(strings.TrimSpace(cells[8]), newStatus, interactionDate))
+			if addInteraction && notesField < len(cells) {
+				cells[notesField] = spliceCellValueAllowEmpty(cells[notesField], appendStatusInteraction(strings.TrimSpace(cells[notesField]), newStatus, interactionDate))
 			}
 			return prefix + "|" + strings.Join(cells, "\t")
 		}
@@ -825,8 +826,9 @@ func replaceStatusAndAddInteraction(line, oldStatus, newStatus, interactionDate 
 	segments := strings.Split(line, "|")
 	if idx := statusCellIndex(segments, statusField+1, want); idx >= 0 {
 		segments[idx] = spliceCellValue(segments[idx], newStatus)
-		if addInteraction && 9 < len(segments) {
-			segments[9] = spliceCellValueAllowEmpty(segments[9], appendStatusInteraction(strings.TrimSpace(segments[9]), newStatus, interactionDate))
+		notesSegment := notesField + 1
+		if addInteraction && notesSegment < len(segments) {
+			segments[notesSegment] = spliceCellValueAllowEmpty(segments[notesSegment], appendStatusInteraction(strings.TrimSpace(segments[notesSegment]), newStatus, interactionDate))
 		}
 		return strings.Join(segments, "|")
 	}

@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `1574900e059fe61fc4ce3461fc3b72a213ee4dbd`
-- Fork ref: current `main` at `2af77de1022dddd5da70f099055c2ee0729228ce`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `107`
-- Diff-size baseline after merge, before this inventory refresh: `121 files changed, 11952 insertions(+), 2328 deletions(-)`
+- Upstream ref: `upstream/main` at `920a0319c7fe1836eed823ca7dddd49099cfec9b`
+- Fork ref: current `main` at `aa9d0c8f94861ddab6711e0d51ac5d86739a7f98`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `109`
+- Diff-size baseline after merge, before this inventory refresh: `121 files changed, 12148 insertions(+), 2390 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14-era behavior and subsequent upstream fixes through `1574900e059fe61fc4ce3461fc3b72a213ee4dbd` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `920a0319c7fe1836eed823ca7dddd49099cfec9b` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -108,6 +108,15 @@ New upstream features or behavior now present:
 - Evaluation research bounds: upstream added an explicit single-pass research budget to `modes/oferta.md` and `modes/auto-pipeline.md`, capping company/comp/hiring-signal lookup at 5 WebSearch queries and forbidding recursive `deep`/subagent research inside normal evaluations. This aligns with the fork's quality-over-quantity behavior and should be preserved unless upstream provides an equivalent global budget mechanism.
 - Setup support docs: upstream added `docs/FAQ.md` and linked it from `README.md`/`SUPPORT.md`. The fork keeps the FAQ but rewrites scanner and batch examples to use `--user {USER}` plus `users/{USER}/portals.yml` instead of root single-user paths.
 - Test/CI coverage: upstream now runs Go dashboard tests in GitHub Actions and adds quick-suite coverage for Remotive normalization, shared tracker parsing, `dedup-tracker.mjs` with an inserted Location column, fresh-install `scan.mjs` pipeline creation, and bounded evaluation research. The fork keeps those tests while preserving explicit-user fixtures for production paths.
+- v1.15 release baseline: upstream `VERSION`, Release Please manifest, and `CHANGELOG.md` now include v1.15.0. The fork adopted the release metadata while preserving updater safeguards for user-layer files.
+- Plugin system: upstream added an opt-in plugin engine, bundled Apify/Gmail/Notion plugins, registry governance, plugin audit/install commands, config templates, registry validation CI, and plugin docs. The fork keeps bundled plugin code in the system layer but treats `config/plugins.yml`, `plugins.local/`, and `plugins.lock` as user-layer data under `users/{USER}/`; `plugins/_engine.mjs`, `doctor.mjs`, and `scan.mjs` were adapted so bundled plugins come from the repo while enabled-plugin config, local plugin roots, and integrity locks can live under the active user.
+- OpenRouter/free-tier runtime: upstream added `openrouter-runner.mjs`, free-tier onboarding docs, concrete token-budget walkthroughs, and `.env.example` entries for OpenRouter-compatible execution. The fork adopted the runner and docs while preserving the rule that user-specific model/provider preferences belong in `users/{USER}/config/profile.yml` or user custom instructions rather than system modes.
+- Provider expansion: upstream added direct first-party providers for Arbeitnow, Pinpoint, The Muse, Rippling, The Hub, Landing.jobs, Himalayas, Jobicy, Hacker News, JustJoin, NoFluffJobs, Jobspresso, 4 Day Week, and NoDesk. The fork adopted these direct providers; `providers/landingjobs.mjs` and `providers/nodesk.mjs` now retire the older `_custom` wrapper path for those IDs, while the `_custom` dispatcher remains for fork-only providers still not covered upstream.
+- Scanner behavior: upstream added repost detection through `detect-reposts.mjs`, compensation persistence into `pipeline.md`, tighter company matching/dedup ordering for cooldown filtering, and fresh provider tests. The fork keeps those behaviors while preserving company block filtering, per-target `location_filter`, active-user pipeline/history/handoff paths, and closed-duplicate reopen handling.
+- Dashboard PDF workflow: upstream added report-viewer cover-letter hotkey `L`, pipeline hotkeys `d` to open CV PDFs and `D` to regenerate them, `data/pdf-index.tsv`, and dashboard PDF lookup tests. The fork routes the PDF manifest to `users/{USER}/data/pdf-index.tsv`, keeps generated HTML/PDF under `users/{USER}/output/`, and makes dashboard regeneration from a per-user binary call the repo `generate-pdf.mjs` with `--user {USER}` plus `CAREER_OPS_USERS_DIR`.
+- Dashboard/tracker column safety: upstream mapped dashboard tracker reads and status writes by header name, matching the Node tracker parser. The fork keeps that mapping while preserving reopened-URL preference from tracker notes and dated status-change notes when the dashboard edits an application status.
+- Security/path hardening: upstream hardened batch temporary JD files, PDF output containment, tracker cell handling, common PII filename ignores, and structural updater path coverage through `validate-system-paths-coverage.mjs`. The fork keeps the hardening but scopes PDF output containment to the active user root, preserves `local:jds/...` batch copying from `users/{USER}/jds/`, and keeps `lib/` plus `liveness-browser.mjs` in updater system path coverage.
+- Language/docs surface: upstream added Spanish locale modes (`modes/es/`), German README, Japanese mode parity updates, `docs/CODEX.md`, `docs/SUPPORTED_CLIS.md`, and broader setup/support docs. The fork adopted these as system-layer assets and rewrote conflicted examples to use explicit users and `users/{USER}` paths where they touch candidate data.
 
 Conflict notes from this merge:
 
@@ -148,6 +157,14 @@ Conflict notes from this merge:
 - `analyze-patterns.mjs` and `followup-cadence.mjs`: adopted upstream `tracker-parse.mjs` shared column parsing, but resolved conflicts by keeping active-user resolution and `users/{USER}/data/applications.md`; `followup-cadence.mjs` still tolerates older user-root-relative `reports/...` links during migration.
 - `docs/FAQ.md`: adopted upstream setup FAQ but rewrote scanner, ATS discovery, and batch examples to use `--user {USER}` and `users/{USER}/portals.yml`, preserving the fork's no-root-user-data contract.
 - `test-all.mjs`: adopted upstream tests for shared tracker parsing, Remotive provider normalization, fresh-install pipeline creation, bounded evaluation research, and dashboard CI coverage; helper-only fixtures may still use temporary root `data/` or `CAREER_OPS_TRACKER`, but production CLI behavior remains explicit-user.
+- `DATA_CONTRACT.md`, `.gitignore`, `doctor.mjs`, `scan.mjs`, and `plugins/_engine.mjs`: adopted upstream's opt-in plugin system while moving user-owned plugin toggles, local plugins, and plugin locks to `users/{USER}`. The plugin engine now supports a repo plugin root plus a separate active-user config/lock root so bundled plugins remain auto-updatable while user consent/config remains protected.
+- `generate-pdf.mjs`, `modes/pdf.md`, `batch/batch-prompt.md`, `dashboard/internal/data/pdf.go`, `dashboard/internal/ui/screens/pipeline.go`, and `dashboard/main.go`: adopted upstream PDF manifest and dashboard PDF hotkeys, then routed the manifest and regenerated files through `users/{USER}/data/pdf-index.tsv` and `users/{USER}/output/`. The dashboard's `D` hotkey now resolves the repo root from a per-user binary and invokes `generate-pdf.mjs --user {USER}` with absolute user artifact paths.
+- `dashboard/internal/data/career.go`, `dashboard/internal/ui/screens/viewer.go`, and `dashboard/main.go`: combined upstream header-name tracker writes, cover-letter hotkey, and cross-platform open helpers with fork behavior for reopened live URLs in notes, dated dashboard status-change notes, user-root PDF URL rewriting, and per-user binary/root inference.
+- `scan.mjs`: combined upstream plugin-provider merging, compensation persistence, cooldown history statuses, and tighter dedup ordering with the fork's active-user portal/profile/pipeline/history/handoff paths and closed-duplicate reopen writeback.
+- `providers/landingjobs.mjs` and `providers/nodesk.mjs`: upstream now owns direct first-party implementations, so the fork retired the old `_custom.mjs` wrapper for those providers while keeping the custom provider layer for fork-only sources.
+- `batch/batch-runner.sh`: combined upstream secure `mktemp` JD files and score/status hardening with the fork's `local:jds/...` copy behavior, resolved URL prompt injection, Codex final-JSON schema contract, and per-user batch state.
+- `modes/ja/_shared.md`: adopted upstream Japanese parity updates while rewriting source-of-truth, voice DNA, story-bank, tracker, and CV-sync commands to `users/{USER}` paths.
+- `update-system.mjs`: kept upstream structural path coverage and new browser-liveness path while preserving the fork's `lib/` user-context layer and user-path rollback safeguards.
 
 Future merge notes:
 

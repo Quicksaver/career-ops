@@ -1,4 +1,4 @@
-﻿package screens
+package screens
 
 import (
 	"fmt"
@@ -1000,7 +1000,7 @@ func (m PipelineModel) View() string {
 		body = m.overlayPDFPicker(body)
 	}
 
-	sections := []string{header, tabs, metricsBar, sortBar}
+	sections := []string{header}
 	if searchBar != "" {
 		sections = append(sections, searchBar)
 	}

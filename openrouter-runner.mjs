@@ -23,8 +23,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 import yaml from 'js-yaml';
+import {
+  getUserContext,
+  printUserContextErrorAndExit,
+  userPath,
+} from './lib/user-context.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const invokedDirectly = process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+let userContext = null;
+if (invokedDirectly) {
+  try {
+    userContext = getUserContext(process.argv.slice(2));
+  } catch (err) {
+    printUserContextErrorAndExit(err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // .env loader
@@ -68,7 +83,9 @@ let freeModels = null;   // string[]
 let modelIndex = 0;      // current position in rotation
 
 // Persistent blacklist file — survives process restarts
-const BLACKLIST_FILE = path.join(__dirname, 'data', 'model-blacklist.json');
+const BLACKLIST_FILE = userContext
+  ? userPath(userContext, 'data/model-blacklist.json')
+  : path.join(__dirname, 'data', 'model-blacklist.json');
 function loadPersistedBlacklist() {
   try {
     const data = JSON.parse(fs.readFileSync(BLACKLIST_FILE, 'utf-8'));
@@ -151,18 +168,48 @@ async function cmdModels() {
 // File helpers
 // ---------------------------------------------------------------------------
 function readFile(relPath) {
-  try { return fs.readFileSync(path.join(__dirname, relPath), 'utf-8'); }
+  try { return fs.readFileSync(resolveDataPath(relPath), 'utf-8'); }
   catch { return null; }
 }
 
 function writeFile(relPath, content) {
-  const full = path.join(__dirname, relPath);
+  const full = resolveDataPath(relPath);
   fs.mkdirSync(path.dirname(full), { recursive: true });
   fs.writeFileSync(full, content, 'utf-8');
 }
 
 function fileExists(relPath) {
-  return fs.existsSync(path.join(__dirname, relPath));
+  return fs.existsSync(resolveDataPath(relPath));
+}
+
+function resolveDataPath(relPath) {
+  if (userContext && isUserLayerPath(relPath)) {
+    return userPath(userContext, relPath);
+  }
+  return path.join(__dirname, relPath);
+}
+
+function isUserLayerPath(relPath) {
+  return relPath === 'cv.md' ||
+    relPath === 'article-digest.md' ||
+    relPath === 'portals.yml' ||
+    relPath === 'voice-dna.md' ||
+    relPath === 'config/profile.yml' ||
+    relPath === 'modes/_profile.md' ||
+    relPath === 'data' ||
+    relPath.startsWith('data/') ||
+    relPath === 'reports' ||
+    relPath.startsWith('reports/') ||
+    relPath === 'output' ||
+    relPath.startsWith('output/') ||
+    relPath === 'batch' ||
+    relPath.startsWith('batch/') ||
+    relPath === 'jds' ||
+    relPath.startsWith('jds/') ||
+    relPath === 'interview-prep' ||
+    relPath.startsWith('interview-prep/') ||
+    relPath === 'writing-samples' ||
+    relPath.startsWith('writing-samples/');
 }
 
 // ---------------------------------------------------------------------------
@@ -507,7 +554,7 @@ function addToPipeline(entries) {
 // ---------------------------------------------------------------------------
 function nextReportNum() {
   try {
-    const nums = fs.readdirSync(path.join(__dirname, 'reports'))
+    const nums = fs.readdirSync(resolveDataPath('reports'))
       .map(f => parseInt(f.match(/^(\d+)/)?.[1] ?? '0', 10))
       .filter(n => n > 0);
     return nums.length ? Math.max(...nums) + 1 : 1;
@@ -678,7 +725,7 @@ async function cmdApply(ref, ctx) {
     reportContent = readFile(ref);
   } else {
     const numStr = String(ref).padStart(3, '0');
-    const reportsDir = path.join(__dirname, 'reports');
+    const reportsDir = resolveDataPath('reports');
     const dirEntries = fs.existsSync(reportsDir) ? fs.readdirSync(reportsDir) : [];
     const matches = dirEntries.filter(f => f.startsWith(numStr));
     if (matches.length === 0) {
@@ -714,9 +761,7 @@ async function cmdApply(ref, ctx) {
 // ---------------------------------------------------------------------------
 // Only run the CLI when invoked directly (`node openrouter-runner.mjs ...`), so the
 // module can be imported (e.g. by test-all.mjs) without executing a command.
-const invokedDirectly = process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-const [,, command, ...args] = invokedDirectly ? process.argv : [];
+const [command, ...args] = invokedDirectly ? userContext.args : [];
 const ctx = invokedDirectly ? loadContext() : null;
 
 // Load free models list before running any AI command (skip when a model is pinned)

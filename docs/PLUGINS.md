@@ -11,16 +11,16 @@ core runs exactly as it always has.
 ## Using plugins
 
 ```bash
-node plugins.mjs list          # what's installed + its trust badge
-node plugins.mjs available     # bundled + community plugins we've approved
-node plugins.mjs add <name>    # install an approved community plugin
-node plugins.mjs enable <id>   # show the capability card (then add --confirm)
-node plugins.mjs skill <id>    # print a plugin's how-to (if it ships one)
+node plugins.mjs --user <username> list          # what's installed + its trust badge
+node plugins.mjs --user <username> available     # bundled + community plugins we've approved
+node plugins.mjs --user <username> add <name>    # install an approved community plugin
+node plugins.mjs --user <username> enable <id>   # show the capability card (then add --confirm)
+node plugins.mjs --user <username> skill <id>    # print a plugin's how-to (if it ships one)
 ```
 
 Two gates must both be satisfied for a plugin to run: it must be **enabled**
-(`node plugins.mjs enable <id> --confirm`, which records your consent) **and** its
-keys must be in your `.env`. `node doctor.mjs` shows what's missing.
+(`node plugins.mjs --user <username> enable <id> --confirm`, which records your consent) **and** its
+keys must be in your `.env`. `node doctor.mjs --user <username>` shows what's missing. The active user's plugin activation file is `users/{USER}/config/plugins.yml`; copy `config/plugins.example.yml` there as the seed.
 
 ### Trust badges
 
@@ -32,12 +32,12 @@ keys must be in your `.env`. `node doctor.mjs` shows what's missing.
 | `⚠️ off-registry` | Installed commit differs from the approved one. |
 
 If a plugin's files change without a version bump, career-ops **blocks it** and
-asks you to review + `node plugins.mjs trust <id>` to re-pin (tamper detection).
+asks you to review + `node plugins.mjs --user <username> trust <id>` to re-pin (tamper detection).
 
 ## Writing a plugin
 
 ```bash
-node plugins.mjs new my-plugin     # scaffolds plugins.local/my-plugin/
+node plugins.mjs --user <username> new my-plugin     # scaffolds users/{USER}/plugins.local/my-plugin/
 ```
 
 A plugin is a directory with a `manifest.json` (validated before any code is
@@ -65,7 +65,7 @@ trust).
    adds your entry to `plugins-registry.json`, pinned to an exact commit. CI
    (`plugin-registry-validate`) checks the naming, manifest, min-files, license,
    egress, and a static audit before a maintainer reviews. Once merged, users can
-   `node plugins.mjs add <name>` and your plugin ships to them via the normal
+   `node plugins.mjs --user <username> add <name>` and your plugin ships to them via the normal
    update.
 4. **Updates** = one more registry PR bumping your entry's `sha` + `version`
    (your release workflow opens it from your own fork). Users only ever get the

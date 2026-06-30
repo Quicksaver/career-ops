@@ -79,7 +79,7 @@ export function validateInstall(dir, expectId) {
 export function installFromRepo(root, { url, sha }) {
   const { url: safeUrl, id } = parseRepoArg(url);
   const dest = path.join(root, 'plugins.local', id);
-  if (existsSync(dest)) throw new Error(`plugins.local/${id} already exists — \`node plugins.mjs remove ${id}\` first`);
+  if (existsSync(dest)) throw new Error(`plugins.local/${id} already exists — \`node plugins.mjs --user <username> remove ${id}\` first`);
   let cloned = safeClone(safeUrl, sha);
   let result;
   try { result = validateInstall(cloned, id); }
@@ -114,14 +114,14 @@ export function auditRegistryEntry(url, sha, expectId) {
   return result.ok ? [] : result.problems;
 }
 
-/** Scaffold a new local plugin from plugins/_template/. */
-export function scaffoldNew(root, name) {
+/** Scaffold a new local plugin from plugins/_template/ into the user-owned plugin root. */
+export function scaffoldNew(root, name, userRoot = root) {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new Error(`plugin name must match [a-z0-9-] (got "${name}")`);
   const tpl = path.join(root, 'plugins', '_template');
   if (!existsSync(tpl)) throw new Error('plugins/_template/ not found');
-  const dest = path.join(root, 'plugins.local', name);
+  const dest = path.join(userRoot, 'plugins.local', name);
   if (existsSync(dest)) throw new Error(`plugins.local/${name} already exists`);
-  mkdirSync(path.join(root, 'plugins.local'), { recursive: true });
+  mkdirSync(path.join(userRoot, 'plugins.local'), { recursive: true });
   cpSync(tpl, dest, { recursive: true });
   // Substitute {{NAME}} placeholders in shipped text files.
   const sub = (p) => { if (existsSync(p)) writeFileSync(p, readFileSync(p, 'utf8').replaceAll('{{NAME}}', name), 'utf8'); };

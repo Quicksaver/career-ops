@@ -89,7 +89,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `plugins.mjs` | Plugin CLI (list/run/available/add/new/enable/skill/trust/remove) |
 | `plugins-registry.json` | Curated list of approved community plugins (the trust root) |
 | `plugin-install.mjs` / `plugin-audit.mjs` / `validate-plugin-registry.mjs` | Plugin install/audit/registry-validation utilities |
-| `config/plugins.example.yml` | Plugin activation template (seed for `config/plugins.yml`) |
+| `config/plugins.example.yml` | Plugin activation template (seed for `users/{USER}/config/plugins.yml`) |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `dashboard/*` | Go TUI dashboard |

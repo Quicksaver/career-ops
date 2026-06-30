@@ -61,5 +61,5 @@ approve.
 Anything that scrapes a platform behind a login or whose terms forbid automated
 access (authenticated LinkedIn, session-gated boards) is **not** bundled and
 **not** registry-listed. It can still be a `career-ops-plugin-<name>` repo users
-install explicitly into `plugins.local/` with the full "you're trusting this
-author" prompt — the project doesn't host that liability in-tree.
+install explicitly into `users/{USER}/plugins.local/` with the full "you're
+trusting this author" prompt — the project doesn't host that liability in-tree.

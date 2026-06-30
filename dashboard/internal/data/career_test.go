@@ -450,13 +450,13 @@ func TestUpdateApplicationStatusInsertedColumn(t *testing.T) {
 	if !strings.Contains(got, "| Interview |") {
 		t.Errorf("Status cell not updated to Interview, file now:\n%s", got)
 	}
-	if strings.Count(got, "Interview") != 1 {
-		t.Errorf("write touched an unintended cell; %d occurrences of Interview:\n%s", strings.Count(got, "Interview"), got)
-	}
 	for _, cell := range []string{"| Acme |", "| VP Marketing |", "| Remote |", "| 4.5/5 |", "| ✅ |"} {
 		if !strings.Contains(got, cell) {
 			t.Errorf("expected intact cell %q missing after write:\n%s", cell, got)
 		}
+	}
+	if !strings.Contains(got, "[1](reports/001.md) | hot lead; Status changed to Interview ") {
+		t.Errorf("status interaction note was not appended to the Notes cell, file now:\n%s", got)
 	}
 
 	reparsed := ParseApplications(tempDir)

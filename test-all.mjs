@@ -7970,10 +7970,10 @@ try {
   if (companies.length > 0 && companies.every(c => c.name && c.api)) pass('each extracted company has a name and a JSON api endpoint');
   else fail(`runner companies missing name/api: ${JSON.stringify(companies.slice(0, 3))}`);
 
-  if (titleMatches('AI Engineer') && !titleMatches('Forklift Operator')) {
+  if (titleMatches('Software Engineer') && !titleMatches('Forklift Operator')) {
     pass('runner titleMatches honors title_filter.positive/negative from the canonical schema');
   } else {
-    fail(`runner titleMatches drift: "AI Engineer"=${titleMatches('AI Engineer')} "Forklift Operator"=${titleMatches('Forklift Operator')}`);
+    fail(`runner titleMatches drift: "Software Engineer"=${titleMatches('Software Engineer')} "Forklift Operator"=${titleMatches('Forklift Operator')}`);
   }
 } catch (e) {
   fail(`openrouter-runner portals drift guard crashed: ${e.message}`);

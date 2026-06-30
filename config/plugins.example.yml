@@ -1,6 +1,7 @@
 # career-ops — Plugin activation (opt-in)
 #
-#   cp config/plugins.example.yml config/plugins.yml
+#   mkdir -p users/{USER}/config
+#   cp config/plugins.example.yml users/{USER}/config/plugins.yml
 #
 # Plugins are OFF by default. The core runs zero-keys and local-first; plugins
 # are the opt-in home for integrations that need a key or talk to an external
@@ -8,10 +9,11 @@
 #   1. Enable it here (enabled: true) + any non-secret settings.
 #   2. Put the SECRET values (API keys/tokens) in your .env — NEVER here.
 #      Each plugin declares which env vars it needs; see .env.example and
-#      `node doctor.mjs` (lists every plugin + whether its keys are present).
+#      `node doctor.mjs --user {USER}` (lists every plugin + whether its keys are present).
 #
-# config/plugins.yml is yours: gitignored, never auto-updated. Bundled plugins
-# live in plugins/; your own private plugins go in plugins.local/.
+# users/{USER}/config/plugins.yml is yours: gitignored, never auto-updated.
+# Bundled plugins live in plugins/; your own private plugins go in
+# users/{USER}/plugins.local/.
 
 plugins:
   # ── apify (provider) ── keyed job source via an Apify actor. (feature #791, ported from PR #693)
@@ -21,14 +23,14 @@ plugins:
     enabled: false
 
   # ── notion (export + search) ── mirror your tracker to a Notion DB / read records. (features #667/#668, ported from PR #959)
-  # Needs NOTION_ACCESS_TOKEN + NOTION_PARENT_PAGE_ID in .env. Run via `node plugins.mjs run notion export`.
+  # Needs NOTION_ACCESS_TOKEN + NOTION_PARENT_PAGE_ID in .env. Run via `node plugins.mjs --user {USER} run notion export`.
   # The DB is resolved by NAME ("Applications") under your parent page — no id needed here.
   notion:
     enabled: false
 
   # ── gmail (ingest) ── pull job leads from a Gmail label into your pipeline. (feature #810, ported from PR #1203)
   # Needs GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN in .env.
-  # Run via `node plugins.mjs run gmail`.
+  # Run via `node plugins.mjs --user {USER} run gmail`.
   gmail:
     enabled: false
     # label: "Job Leads"     # the Gmail label to scan

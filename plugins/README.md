@@ -10,18 +10,18 @@ in here, declare a manifest, and it's discovered automatically.
 
 ## Default: off
 
-Plugins load **only** when you opt in. With no `config/plugins.yml`, the core
-runs exactly as it always has — no plugin code runs, no `.env` is read, nothing
-changes. Two gates must both be satisfied:
+Plugins load **only** when you opt in. With no `users/{USER}/config/plugins.yml`,
+the core runs exactly as it always has — no plugin code runs, no `.env` is read,
+nothing changes. Two gates must both be satisfied:
 
-1. **Enable** the plugin in `config/plugins.yml` (copy `config/plugins.example.yml`).
+1. **Enable** the plugin in `users/{USER}/config/plugins.yml` (copy `config/plugins.example.yml`).
 2. **Provide its keys** in your own `.env` (each plugin declares which it needs).
-   Run `node doctor.mjs` or `node plugins.mjs list` to see what's missing.
+   Run `node doctor.mjs --user <username>` or `node plugins.mjs --user <username> list` to see what's missing.
 
 ## Anatomy of a plugin
 
 A plugin is a directory under `plugins/` (bundled, shipped with career-ops) or
-`plugins.local/` (your own, gitignored, never auto-updated):
+`users/{USER}/plugins.local/` (your own, gitignored, never auto-updated):
 
 ```
 plugins/<id>/
@@ -56,14 +56,14 @@ plugins/<id>/
 
 Producers (`provider`/`ingest`/`search`) **return** `Job[]`
 (`{title, url, company, location}`); the engine — never the plugin — writes them
-to `data/pipeline.md` through the canonical writer, so a plugin can't break the
-data formats the web reads. Non-provider hooks run explicitly:
+to `users/{USER}/data/pipeline.md` through the canonical writer, so a plugin
+can't break the data formats the web reads. Non-provider hooks run explicitly:
 
 ```bash
-node plugins.mjs list
-node plugins.mjs run gmail                       # ingest
-node plugins.mjs run notion search "platform"    # search
-node plugins.mjs run notion export [--dry-run]   # export
+node plugins.mjs --user <username> list
+node plugins.mjs --user <username> run gmail                       # ingest
+node plugins.mjs --user <username> run notion search "platform"    # search
+node plugins.mjs --user <username> run notion export [--dry-run]   # export
 ```
 
 ### The `ctx` object
@@ -76,14 +76,15 @@ node plugins.mjs run notion export [--dry-run]   # export
   plugin is one deliberate exception: its client self-constrains to a single
   hardcoded host, documented in its code).
 - `env` (frozen, scoped to your declared keys), `settings` (your non-secret
-  `config/plugins.yml` block), `log` (redacts your declared secrets), `dryRun`.
+  `users/{USER}/config/plugins.yml` block), `log` (redacts your declared
+  secrets), `dryRun`.
 
-## Your own plugins → `plugins.local/`
+## Your own plugins → `users/{USER}/plugins.local/`
 
-Put private or experimental plugins in **`plugins.local/`** (a sibling of
-`plugins/`), never in `plugins/`. `plugins.local/` is gitignored and never
-auto-updated, so updates can't clobber it and a same-id bundled plugin can't be
-shadowed by it. Bundled plugins always win an id collision.
+Put private or experimental plugins in **`users/{USER}/plugins.local/`**, never
+in `plugins/`. `plugins.local/` is gitignored and never auto-updated, so updates
+can't clobber it and a same-id bundled plugin can't be shadowed by it. Bundled
+plugins always win an id collision.
 
 ## Trust model (read this)
 
@@ -97,8 +98,8 @@ directly. Containment is the same as everywhere else in open source:
 - **Bundled plugins** (`plugins/`) are code-reviewed exactly like `providers/`.
   CI checks that they declare no core-owned secret, import no browser-automation
   or process-spawning module, and never auto-submit.
-- **`plugins.local/`** runs with **your** trust — you installed it. Treat a
-  third-party plugin like any code you run on your machine.
+- **`users/{USER}/plugins.local/`** runs with **your** trust — you installed it.
+  Treat a third-party plugin like any code you run on your machine.
 
 ## Not a plugin
 
