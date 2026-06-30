@@ -314,7 +314,8 @@ next_action: "{one concrete next step}"
 node generate-pdf.mjs --user {{USER}} \
   "{{USER_ROOT}}/output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.html" \
   "{{USER_ROOT}}/output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.pdf" \
-  --format={letter|a4}
+  --format={letter|a4} \
+  --report={{REPORT_NUM}}
 ```
 14. Reporta: ruta PDF, nº páginas, % cobertura keywords
 

@@ -68,6 +68,7 @@ const SYSTEM_PATHS = [
   'modes/da/',
   'modes/de/',
   'modes/fr/',
+  'modes/es/',
   'modes/ja/',
   'modes/pl/',
   'modes/pt/',
@@ -76,12 +77,14 @@ const SYSTEM_PATHS = [
   'modes/ua/',
   'modes/heuristics/',
   'modes/regional/',
+  'modes/zh/',
   'CLAUDE.md',
   'CODEX.md',
   'OPENCODE.md',
   'AGENTS.md',
   'GEMINI.md',
   'KIMI.md',
+  'build-dashboard.mjs',
   'generate-pdf.mjs',
   'generate-latex.mjs',
   'archive-posting.mjs',
@@ -106,20 +109,25 @@ const SYSTEM_PATHS = [
   'doctor.mjs',
   'check-liveness.mjs',
   'liveness-core.mjs',
-  'liveness-browser.mjs',
   'liveness-api.mjs',
   'lib/',
+  'liveness-browser.mjs',
   'analyze-patterns.mjs',
+  'detect-reposts.mjs',
   'followup-cadence.mjs',
   'gemini-eval.mjs',
   'ollama-eval.mjs',
   'openai-eval.mjs',
+  'openrouter-runner.mjs',
   'test-all.mjs',
+  'detect-reposts.test.mjs',
   'test-salary-filter.mjs',
+  'test-trust-validator.mjs',
   'tracker-columns-tests.mjs',
   'validate-portals.mjs',
   'verify-portals.mjs',
   'updater-migration-tests.mjs',
+  'validate-system-paths-coverage.mjs',
   'batch/batch-prompt.md',
   'batch/batch-runner.sh',
   'batch/README.md',
@@ -132,6 +140,7 @@ const SYSTEM_PATHS = [
   '.agents/',
   '.claude/skills/',
   '.opencode/skills/',
+  '.opencode/commands/',
   '.claude-plugin/',
   '.qwen/',
   '.antigravitycli/skills/',
@@ -148,6 +157,7 @@ const SYSTEM_PATHS = [
   'README.ar.md',
   'README.cn.md',
   'README.da.md',
+  'README.de.md',
   'README.es.md',
   'README.fr.md',
   'README.ja.md',
@@ -176,6 +186,13 @@ const SYSTEM_PATHS = [
   '.dockerignore',
   'cops',
   'DOCKER.md',
+  'plugins/',
+  'plugins.mjs',
+  'plugins-registry.json',
+  'plugin-install.mjs',
+  'plugin-audit.mjs',
+  'validate-plugin-registry.mjs',
+  'config/plugins.example.yml',
 ];
 
 // User layer paths — NEVER touch these (safety check)
@@ -195,6 +212,9 @@ const USER_PATHS = [
   'output/',
   'jds/',
   'writing-samples/',
+  'config/plugins.yml',
+  'plugins.local/',
+  'plugins.lock',
 ];
 
 function parseVersionFile(raw) {
@@ -268,7 +288,7 @@ function gitStatusEntries() {
     }));
 }
 
-function extractArrayFromSource(source, name) {
+export function extractArrayFromSource(source, name) {
   const match = source.match(new RegExp(`const\\s+${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`));
   if (!match) return [];
   return Array.from(match[1].matchAll(/['"]([^'"]+)['"]/g), (entry) => entry[1]);
@@ -607,7 +627,7 @@ async function apply() {
 
     // 3a. Keep bootstrap paths as a fallback for very old targets, but the
     // target updater's SYSTEM_PATHS is now the source of truth for new files.
-    const BOOTSTRAP_PATHS = ['.agents/', '.opencode/skills/', '.antigravitycli/skills/', '.grok/skills/', '.kimi/skills/', 'providers/', 'liveness-browser.mjs', 'tracker-links.mjs', 'role-matcher.mjs', 'tracker-utils.mjs', 'tracker-parse.mjs', 'scaffolder/', 'reserve-report-num.mjs', 'updater-migration-tests.mjs', 'validate-portals.mjs', 'tracker-columns-tests.mjs'];
+    const BOOTSTRAP_PATHS = ['.agents/', '.opencode/skills/', '.antigravitycli/skills/', '.grok/skills/', '.kimi/skills/', 'providers/', 'liveness-browser.mjs', 'tracker-links.mjs', 'role-matcher.mjs', 'tracker-utils.mjs', 'tracker-parse.mjs', 'scaffolder/', 'reserve-report-num.mjs', 'updater-migration-tests.mjs', 'validate-portals.mjs', 'tracker-columns-tests.mjs', 'plugins/', 'plugins.mjs', 'plugins-registry.json', 'plugin-install.mjs', 'plugin-audit.mjs', 'validate-plugin-registry.mjs', 'config/plugins.example.yml'];
     const updatePaths = mergePathLists(SYSTEM_PATHS, remoteSystemPaths, BOOTSTRAP_PATHS);
 
     for (const path of updatePaths) {

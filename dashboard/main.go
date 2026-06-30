@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -108,6 +109,15 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = viewPipeline
 		return m, nil
 
+	case screens.ViewerOpenCoverLetterMsg:
+		path := msg.Path
+		return m, func() tea.Msg {
+			if err := openWithDefaultApp(path); err != nil {
+				fmt.Fprintf(os.Stderr, "WARN: could not open cover letter: %v\n", err)
+			}
+			return nil
+		}
+
 	case screens.ViewerUpdateStatusMsg:
 		err := data.UpdateApplicationStatus(m.careerOpsPath, msg.App, msg.NewStatus)
 		if err != nil {
@@ -131,13 +141,13 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case screens.PipelineOpenURLMsg:
-		url := dashboardOpenTarget(m.careerOpsPath, msg.URL)
-		return m, func() tea.Msg {
-			if err := openWithDefaultApp(url); err != nil {
-				fmt.Fprintf(os.Stderr, "WARN: failed to open URL %q: %v\n", url, err)
-			}
-			return nil
-		}
+		return m, openCmd(dashboardOpenTarget(m.careerOpsPath, msg.URL))
+
+	case screens.PipelineOpenPDFMsg:
+		return m, openCmd(msg.Path)
+
+	case screens.PipelineGeneratePDFMsg:
+		return m, runGeneratePDF(msg)
 
 	default:
 		if m.state == viewReport {
@@ -154,6 +164,98 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pipeline = pm
 		return m, cmd
 	}
+}
+
+// openCmd wraps openWithDefaultApp (OS-specific) as a tea.Cmd. Shared by the
+// job-URL (`o`) and CV-PDF (`d`) actions.
+func openCmd(target string) tea.Cmd {
+	return func() tea.Msg {
+		if err := openWithDefaultApp(target); err != nil {
+			fmt.Fprintf(os.Stderr, "WARN: failed to open %q: %v\n", target, err)
+		}
+		return nil
+	}
+}
+
+// runGeneratePDF shells out to node generate-pdf.mjs in the career-ops root,
+// opens the resulting PDF on success, and reports the outcome back to the
+// pipeline screen as a PipelinePDFGeneratedMsg. Runs in a tea.Cmd goroutine,
+// so the UI stays responsive while Chromium renders.
+func runGeneratePDF(msg screens.PipelineGeneratePDFMsg) tea.Cmd {
+	return func() tea.Msg {
+		projectRoot, err := inferProjectRootForUserRoot(msg.CareerOpsPath)
+		if err != nil {
+			return screens.PipelinePDFGeneratedMsg{Err: err.Error()}
+		}
+		userID := filepath.Base(msg.CareerOpsPath)
+		htmlPath := filepath.Join(msg.CareerOpsPath, filepath.FromSlash(msg.HTMLPath))
+		pdfPath := filepath.Join(msg.CareerOpsPath, filepath.FromSlash(msg.PDFPath))
+		args := []string{
+			filepath.Join(projectRoot, "generate-pdf.mjs"),
+			"--user", userID,
+			htmlPath,
+			pdfPath,
+		}
+		if msg.Format != "" {
+			args = append(args, "--format="+msg.Format)
+		}
+		if msg.ReportNumber != "" {
+			args = append(args, "--report="+msg.ReportNumber)
+		}
+		cmd := exec.Command("node", args...)
+		cmd.Dir = projectRoot
+		cmd.Env = append(os.Environ(), "CAREER_OPS_USERS_DIR="+filepath.Dir(msg.CareerOpsPath))
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return screens.PipelinePDFGeneratedMsg{Err: summarizeCmdError(err, out)}
+		}
+		if err := openWithDefaultApp(pdfPath); err != nil {
+			return screens.PipelinePDFGeneratedMsg{Err: fmt.Sprintf("PDF generated but could not open: %v", err)}
+		}
+		return screens.PipelinePDFGeneratedMsg{Path: pdfPath}
+	}
+}
+
+// summarizeCmdError condenses a failed command into one help-bar-sized line:
+// the last non-empty output line when there is one (generate-pdf.mjs prints
+// its error there), otherwise the exec error itself.
+func summarizeCmdError(err error, out []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return err.Error()
+}
+
+func inferProjectRootForUserRoot(userRoot string) (string, error) {
+	candidates := []string{}
+	if userRoot != "" {
+		candidates = append(candidates, filepath.Dir(filepath.Dir(userRoot)))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, cwd)
+		if filepath.Base(cwd) == "dashboard" {
+			candidates = append(candidates, filepath.Dir(cwd))
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates, exeDir)
+		if filepath.Base(exeDir) == "dashboard" {
+			candidates = append(candidates, filepath.Dir(exeDir))
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(candidate, "generate-pdf.mjs")); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("could not find career-ops repo root for PDF regeneration")
 }
 
 func (m appModel) View() string {

@@ -19,8 +19,8 @@
 13. Apply the six-second clarity gate from `modes/heuristics/recruiter-side.md`: top third must make target role, strongest fit, and proof obvious
 14. Generate full HTML from template + personalized content
 15. Read the associated report number (`REPORT_NUM`, 3 digits), company slug, and report date (`YYYY-MM-DD`)
-16. Write HTML to `users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html`
-17. Execute: `node generate-pdf.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf --format={letter|a4}`
+16. Write HTML to `users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html` (NOT a temp dir — the recorded HTML is what the dashboard's `D` hotkey regenerates from, so it must survive temp cleanup)
+17. Execute: `node generate-pdf.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf --format={letter|a4} --report={REPORT_NUM}` — `{REPORT_NUM}` is the NNN from the report filename/link (e.g. `008` for `users/{USER}/reports/008-acme-….md`), not a recalculated tracker number. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `users/{USER}/data/pdf-index.tsv` so the dashboard can open and regenerate the exact PDF. Omit it only for one-off CVs with no tracker entry.
 18. Report: PDF path, number of pages, keyword coverage %
 
 **Naming rule:** All generated CV artifacts in `users/{USER}/output/` MUST use the same report-linked basename:

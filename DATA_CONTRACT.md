@@ -18,6 +18,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 |------|---------|
 | `users/{USER}/cv.md` | CV in markdown |
 | `users/{USER}/config/profile.yml` | Identity, targets, comp range |
+| `users/{USER}/config/plugins.yml` | Plugin activation toggles (opt-in; seeded from `config/plugins.example.yml`) |
 | `users/{USER}/modes/_profile.md` | Archetypes, narrative, negotiation scripts |
 | `users/{USER}/modes/_custom.md` | House rules, custom workflows, and output preferences (procedural; survives updates) |
 | `users/{USER}/voice-dna.md` | Writing voice guardrail — banned words, anti-AI-slop rules, tone (optional) |
@@ -32,8 +33,11 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/scan-history.tsv` | Scan history |
 | `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
+| `users/{USER}/data/pdf-index.tsv` | Generated PDF manifest used by dashboard PDF hotkeys |
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |
+| `users/{USER}/plugins.local/` | User/private plugins (never auto-updated) |
+| `users/{USER}/plugins.lock` | Integrity pins and recorded consent for enabled plugins (generated; never auto-updated) |
 | `users/{USER}/writing-samples/*` | Personal writing samples for style calibration (except `writing-samples/README.md`, which is system-owned documentation delivered by updates) |
 | `users/{USER}/reports/*` | Evaluation reports |
 | `users/{USER}/output/*` | Generated PDFs |
@@ -81,6 +85,11 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `*.mjs` | Utility scripts |
 | `lib/*` | Shared system helpers |
 | `scan-auth/*.mjs` | Authenticated portal scanner classes |
+| `plugins/` | Bundled plugins + the plugin engine (opt-in external integrations) |
+| `plugins.mjs` | Plugin CLI (list/run/available/add/new/enable/skill/trust/remove) |
+| `plugins-registry.json` | Curated list of approved community plugins (the trust root) |
+| `plugin-install.mjs` / `plugin-audit.mjs` / `validate-plugin-registry.mjs` | Plugin install/audit/registry-validation utilities |
+| `config/plugins.example.yml` | Plugin activation template (seed for `config/plugins.yml`) |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `dashboard/*` | Go TUI dashboard |

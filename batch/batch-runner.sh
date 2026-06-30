@@ -664,9 +664,14 @@ process_offer() {
   report_num=$(reserve_report_num "$id" "$url" "$started_at" "$retries")
   local date
   date=$(date +%Y-%m-%d)
-  local jd_file="/tmp/batch-jd-${id}.txt"
   local report_url
   report_url=$(resolve_report_url "$url")
+
+  # Use mktemp instead of a predictable /tmp path: a fixed name like
+  # /tmp/batch-jd-${id}.txt is guessable, so an attacker on a shared machine
+  # could pre-create it as a symlink and redirect or clobber the write.
+  local jd_file
+  jd_file="$(mktemp "${TMPDIR:-/tmp}/batch-jd-${id}.XXXXXX")"
 
   if [[ "$url" == local:* ]]; then
     local local_path="${url#local:}"
@@ -846,7 +851,7 @@ process_offer() {
   done
 
   # Cleanup resolved prompt
-  rm -f "$resolved_prompt" "$combined_prompt_file"
+  rm -f "$resolved_prompt" "$combined_prompt_file" "$jd_file"
 
   local completed_at
   completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)

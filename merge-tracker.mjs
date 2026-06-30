@@ -457,6 +457,16 @@ function parseScore(s) {
 // the detected layout once the table is read (below).
 let COLMAP = LEGACY_COLMAP;
 
+// Neutralize characters that would corrupt the applications.md table. Both this
+// file and tracker-parse.mjs read rows with a raw `line.split('|')`, so a literal
+// pipe or a newline in a free-text value (company/role/location/notes) would shift
+// every later column. Replace rather than backslash-escape: `\|` would still split
+// on the inner pipe. This is additive — normal cells are unchanged; only values
+// that would already break the table get sanitized (also keeps the web reader safe).
+function cell(v) {
+  return String(v ?? '').replace(/[\r\n]+/g, ' ').replace(/\s*\|\s*/g, ' / ').trim();
+}
+
 // Build a tracker row string matching the detected layout (with or without the
 // optional Location column) so writes round-trip through the same schema.
 function tableCell(value) {
