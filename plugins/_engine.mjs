@@ -29,6 +29,7 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import { resolveAndValidate } from './_net.mjs';
 import { readLock, writeLockEntry, diffPlugin, hashPluginTree, consentSurface } from './_lock.mjs';
+import { loadRegistry } from './_registry.mjs';
 
 /** The complete, closed set of hook kinds. Anything else (apply/submit/…) is rejected. */
 export const HOOK_KINDS = ['provider', 'ingest', 'search', 'notify', 'export'];
@@ -194,10 +195,20 @@ export function validateManifest(m, dir, dirName) {
  * plugins.local/). existsSync-guarded (never mkdir — a fresh, plugin-free
  * install stays filesystem-inert). Alphabetical within a root for determinism.
  *
- * @param {string[]} roots   Absolute directories to scan (e.g. [plugins/, plugins.local/]).
+ * `overrideIds` is the ONE controlled exception to first-root-wins: an id in
+ * this set lets a LATER root (plugins.local/) override an earlier one
+ * (bundled plugins/). It is computed ONLY by resolveSuccessorIds() — i.e. a
+ * community plugin the maintainer registered as the bundled plugin's
+ * `supersedesBundled` successor AND that the user installed at its exact
+ * pinned sha. A plain, unverified plugins.local/<id> is never in the set, so
+ * it can NEVER shadow a reviewed bundled plugin (the no-downgrade invariant).
+ * Default empty → identical to the original bundled-always-wins behavior.
+ *
+ * @param {string[]} roots          Absolute directories to scan (e.g. [plugins/, plugins.local/]).
+ * @param {Set<string>} [overrideIds]  ids whose later-root copy may override an earlier-root one.
  * @returns {PluginManifestNormalized[]}
  */
-export function discoverPlugins(roots) {
+export function discoverPlugins(roots, overrideIds = new Set()) {
   const found = new Map();
   for (const root of roots) {
     if (!existsSync(root)) continue;
@@ -225,11 +236,47 @@ export function discoverPlugins(roots) {
       }
       const manifest = validateManifest(parsed, dir, name);
       if (!manifest) continue;
-      if (found.has(manifest.id)) continue; // earlier root wins (bundled > local)
+      if (found.has(manifest.id)) {
+        // earlier root wins (bundled > local) — EXCEPT an approved successor.
+        if (overrideIds.has(manifest.id)) found.set(manifest.id, manifest);
+        continue;
+      }
       found.set(manifest.id, manifest);
     }
   }
   return [...found.values()];
+}
+
+/**
+ * Compute the set of bundled ids that an APPROVED community successor should
+ * override. A successor qualifies only when ALL hold:
+ *   (a) a registry entry declares `supersedesBundled: true` for that id
+ *       (registry = SYSTEM file → a maintainer reviewed + merged it), AND
+ *   (b) plugins.local/<id> is actually installed under the selected user root, AND
+ *   (c) the installed sha === the registry's pinned sha (the user has the
+ *       exact reviewed commit — the same bar classifySource() calls 'approved').
+ * Anything short of (c) — off-registry drift, unverified, not installed —
+ * leaves the bundled reference in charge. This is the trust hinge of the whole
+ * seed/successor model: only a reviewed, pinned, installed successor wins.
+ * @param {string} root
+ * @param {string} [userRoot]
+ * @returns {Set<string>}
+ */
+export function resolveSuccessorIds(root, userRoot = root) {
+  const ids = new Set();
+  try {
+    const reg = loadRegistry(root);
+    const lock = readLock(userRoot);
+    for (const e of reg.plugins) {
+      if (e.supersedesBundled !== true || typeof e.id !== 'string') continue;
+      const localManifest = path.join(userRoot, 'plugins.local', e.id, 'manifest.json');
+      const installedSha = lock?.plugins?.[e.id]?.sha;
+      if (existsSync(localManifest) && installedSha && installedSha === e.sha) ids.add(e.id);
+    }
+  } catch {
+    // Any registry/lock read problem → no overrides (bundled references stay in charge).
+  }
+  return ids;
 }
 
 /**
@@ -416,7 +463,7 @@ async function importHook(manifest, kind) {
  * fail to import. Caller is responsible for dotenv (loadDotenvOnce) before this
  * if the keys live in .env.
  * @param {string} kind
- * @param {{ root: string, dryRun?: boolean }} opts
+ * @param {{ root: string, configRoot?: string, dryRun?: boolean }} opts
  * @returns {Promise<Array<{ id: string, manifest: PluginManifestNormalized, hook: any, ctx: PluginContext }>>}
  */
 // Phrases that suggest a skill is trying to hijack the agent rather than
@@ -500,7 +547,7 @@ export function lockGate(manifest, root, sourceRoot = root) {
 
 export async function loadPlugins(kind, { root, configRoot = root, dryRun = false }) {
   const cfg = await loadPluginConfig(configRoot);
-  const manifests = discoverPlugins(pluginRoots(root, configRoot)).filter(m => m.hooks.includes(kind));
+  const manifests = discoverPlugins(pluginRoots(root, configRoot), resolveSuccessorIds(root, configRoot)).filter(m => m.hooks.includes(kind));
   const out = [];
   for (const manifest of manifests) {
     if (!pluginStatus(manifest, cfg).enabled) continue;
@@ -535,12 +582,12 @@ export async function loadDotenvOnce() {
  *
  * @param {string} kind
  * @param {*} payload   For provider this is unused; for ingest none; search a query; export a snapshot; notify a payload.
- * @param {{ root: string, dryRun?: boolean, timeoutMs?: number }} opts
+ * @param {{ root: string, configRoot?: string, dryRun?: boolean, timeoutMs?: number }} opts
  * @returns {Promise<Array<{ id: string, ok: boolean, result?: any, error?: string }>>}
  */
-export async function runHook(kind, payload, { root, dryRun = false, timeoutMs = DEFAULT_HOOK_TIMEOUT_MS }) {
+export async function runHook(kind, payload, { root, configRoot = root, dryRun = false, timeoutMs = DEFAULT_HOOK_TIMEOUT_MS }) {
   await loadDotenvOnce();
-  const loaded = await loadPlugins(kind, { root, dryRun });
+  const loaded = await loadPlugins(kind, { root, configRoot, dryRun });
   const results = [];
   for (const { id, hook, ctx } of loaded) {
     const invoke = kind === 'search'
@@ -603,7 +650,7 @@ export async function mergeProviderPlugins(providersMap, { root, configRoot = ro
   // untouched — fail-open is enforced structurally here, not just emergently.
   try {
     const cfg = await loadPluginConfig(configRoot);
-    const providerManifests = discoverPlugins(pluginRoots(root, configRoot)).filter(m => m.hooks.includes('provider'));
+    const providerManifests = discoverPlugins(pluginRoots(root, configRoot), resolveSuccessorIds(root, configRoot)).filter(m => m.hooks.includes('provider'));
     if (providerManifests.length === 0) return;
 
     // Only the plugins the user actually switched on in plugins.yml matter.

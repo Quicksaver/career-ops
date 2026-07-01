@@ -23,9 +23,9 @@ import yaml from 'js-yaml';
 
 import {
   discoverPlugins, pluginRoots, loadPluginConfig, pluginStatus,
-  runHook, loadDotenvOnce, HOOK_KINDS, loadSkill,
+  runHook, loadDotenvOnce, HOOK_KINDS, loadSkill, resolveSuccessorIds,
 } from './plugins/_engine.mjs';
-import { loadRegistry, findInRegistry, classifySource, sourceBadge } from './plugins/_registry.mjs';
+import { loadRegistry, findInRegistry, classifySource, sourceBadge, successorFor } from './plugins/_registry.mjs';
 import { readLock, writeLockEntry, removeLockEntry, hashPluginTree, consentSurface } from './plugins/_lock.mjs';
 import { installFromRepo, scaffoldNew, parseRepoArg } from './plugin-install.mjs';
 import { appendToPipeline, configureScanUserPaths } from './scan.mjs';
@@ -53,6 +53,10 @@ function activeUserRoot() {
 
 function activePluginRoots() {
   return pluginRoots(ROOT, activeUserRoot());
+}
+
+function activeSuccessorIds() {
+  return resolveSuccessorIds(ROOT, activeUserRoot());
 }
 
 const APPLICATIONS_PATH = userContext ? userPath(userContext, 'data/applications.md') : path.join(ROOT, 'data', 'applications.md');
@@ -118,7 +122,8 @@ function buildSnapshot() {
 
 async function cmdList() {
   const cfg = await loadPluginConfig(activeUserRoot());
-  const manifests = discoverPlugins(activePluginRoots());
+  const overridden = activeSuccessorIds(); // ids where an installed user successor is active
+  const manifests = discoverPlugins(activePluginRoots(), overridden);
   if (manifests.length === 0) {
     console.log('No plugins discovered. Bundled plugins live in plugins/; your own in users/{USER}/plugins.local/.');
     return;
@@ -129,7 +134,13 @@ async function cmdList() {
     const state = enabled ? '✅ enabled'
       : !configured ? '○ disabled (users/{USER}/config/plugins.yml)'
         : `⚠️  missing env: ${missingEnv.join(', ')}`;
-    console.log(`  ${m.id}  [${m.hooks.join(', ')}]  — ${state}`);
+    // Annotate the seed/successor relationship.
+    const isLocal = !m.dir.startsWith(path.join(ROOT, 'plugins') + path.sep);
+    const succ = successorFor(ROOT, m.id);
+    const tag = overridden.has(m.id) && isLocal ? '  🔁 maintained successor (overriding the bundled reference)'
+      : succ ? `  🔁 reference seed — maintained version available: ${succ.name}`
+        : '';
+    console.log(`  ${m.id}  [${m.hooks.join(', ')}]  — ${state}${tag}`);
     console.log(`      ${m.description}`);
   }
   console.log('\nEnable in users/{USER}/config/plugins.yml, add keys to .env, then `node plugins.mjs --user <username> run <id>`.');
@@ -142,7 +153,7 @@ async function cmdRun(args) {
   if (!id) { console.error('Usage: node plugins.mjs --user <username> run <id> [hook] [args…] [--dry-run]'); process.exit(1); }
 
   const cfg = await loadPluginConfig(activeUserRoot());
-  const manifest = discoverPlugins(activePluginRoots()).find(m => m.id === id);
+  const manifest = discoverPlugins(activePluginRoots(), activeSuccessorIds()).find(m => m.id === id);
   if (!manifest) { console.error(`Unknown plugin "${id}". Run \`node plugins.mjs --user ${userContext.userId} list\`.`); process.exit(1); }
 
   // Provider hooks ride scan, never this CLI.
@@ -202,7 +213,7 @@ async function cmdRun(args) {
 }
 
 function findManifest(id) {
-  return discoverPlugins(activePluginRoots()).find(m => m.id === id) || null;
+  return discoverPlugins(activePluginRoots(), activeSuccessorIds()).find(m => m.id === id) || null;
 }
 
 // Write enabled:true/false into users/{USER}/config/plugins.yml, merging (never clobbering
@@ -233,13 +244,20 @@ function capabilityCard(manifest, source) {
 async function cmdAvailable() {
   const reg = loadRegistry(ROOT);
   const bundled = discoverPlugins([path.join(ROOT, 'plugins')]);
-  console.log('📦 Bundled (always present, reviewed in-tree):\n');
-  for (const m of bundled) console.log(`  ${m.id}  [${m.hooks.join(', ')}]  — ${m.description}`);
+  console.log('📦 Bundled reference plugins (always present, reviewed in-tree):\n');
+  for (const m of bundled) {
+    const succ = successorFor(ROOT, m.id);
+    const tag = succ ? `  🔁 maintained version: ${succ.name} (install to use it instead)` : '';
+    console.log(`  ${m.id}  [${m.hooks.join(', ')}]  — ${m.description}${tag}`);
+  }
   console.log('\n✓ Community plugins approved by career-ops:\n');
   if (reg.plugins.length === 0) {
     console.log('  (none yet — publish yours as `career-ops-plugin-<name>` and open a registry PR; see docs/PLUGINS.md)');
   } else {
-    for (const p of reg.plugins) console.log(`  ${p.name}  [${p.hooks.join(', ')}]  ✓ approved (pinned ${String(p.sha).slice(0, 7)})  — ${p.description}  (by ${p.author}, v${p.version})`);
+    for (const p of reg.plugins) {
+      const seed = p.supersedesBundled === true ? `  🔁 maintained successor of the bundled "${p.id}" reference` : '';
+      console.log(`  ${p.name}  [${p.hooks.join(', ')}]  ✓ approved (pinned ${String(p.sha).slice(0, 7)})  — ${p.description}  (by ${p.author}, v${p.version})${seed}`);
+    }
     console.log('\nInstall:  node plugins.mjs --user <username> add <name>');
   }
 }
@@ -247,7 +265,7 @@ async function cmdAvailable() {
 function cmdSkill(args) {
   const id = args[0];
   if (!id) {
-    const withSkill = discoverPlugins(activePluginRoots()).filter(m => m.skill);
+    const withSkill = discoverPlugins(activePluginRoots(), activeSuccessorIds()).filter(m => m.skill);
     console.log(withSkill.length ? 'Plugins that ship a skill:\n' + withSkill.map(m => `  ${m.id}`).join('\n') + `\n\nRead one: node plugins.mjs --user ${userContext.userId} skill <id>` : 'No installed plugin ships a skill.');
     return;
   }

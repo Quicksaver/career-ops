@@ -82,9 +82,9 @@ node plugins.mjs --user <username> run notion export [--dry-run]   # export
 ## Your own plugins → `users/{USER}/plugins.local/`
 
 Put private or experimental plugins in **`users/{USER}/plugins.local/`**, never
-in `plugins/`. `plugins.local/` is gitignored and never auto-updated, so updates
-can't clobber it and a same-id bundled plugin can't be shadowed by it. Bundled
-plugins always win an id collision.
+in `plugins/`. That user-local folder is gitignored and never auto-updated, so
+updates can't clobber it. Same-id bundled plugins keep priority unless the user
+installs a registry-approved maintained successor at the exact pinned commit.
 
 ## Trust model (read this)
 
