@@ -277,6 +277,32 @@ function assertNoUnresolvedPlaceholders(html, inputPath = 'HTML input') {
 }
 
 /**
+ * Convert a path to a manifest entry relative to rootDir, or blank if it is unknown
+ * or outside that root.
+ *
+ * @param {string} pathValue - Absolute or cwd-relative filesystem path.
+ * @param {string} rootDir - Absolute filesystem root for the manifest entry.
+ * @returns {string} Root-relative path using forward slashes, or an empty string.
+ */
+export function manifestRelativePath(pathValue, rootDir = __dirname) {
+  if (!pathValue) return '';
+  const rel = relative(rootDir, resolve(pathValue));
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return '';
+  return rel.split(sep).join('/');
+}
+
+/**
+ * Convert a path to a repo-relative manifest entry, or blank if it is unknown
+ * or outside the career-ops repository.
+ *
+ * @param {string} pathValue - Absolute or cwd-relative filesystem path.
+ * @returns {string} Repo-relative path using forward slashes, or an empty string.
+ */
+export function repoRelativeManifestPath(pathValue) {
+  return manifestRelativePath(pathValue, __dirname);
+}
+
+/**
  * Record a generated PDF in users/{USER}/data/pdf-index.tsv so tools can map a tracker
  * report number to the exact PDF (and its source HTML for regeneration).
  *
@@ -291,9 +317,8 @@ function updatePDFManifest(reportNum, pdfPath, htmlPath, format) {
   const manifestPath = userContext.userRoot
     ? userPath(userContext, 'data/pdf-index.tsv')
     : resolve(__dirname, 'data', 'pdf-index.tsv');
-  const toRel = (p) => relative(manifestRoot, p).split(sep).join('/');
-  const relPDF = toRel(pdfPath);
-  const relHTML = toRel(htmlPath);
+  const relPDF = manifestRelativePath(pdfPath, manifestRoot);
+  const relHTML = manifestRelativePath(htmlPath, manifestRoot);
   const date = new Date().toISOString().slice(0, 10);
   // "008" and "8" are the same report — zero-padded report-link form vs
   // unpadded tracker-# form. Normalize so replacement rows match.
@@ -321,6 +346,12 @@ function updatePDFManifest(reportNum, pdfPath, htmlPath, format) {
   return relPDF;
 }
 
+/**
+ * CLI entrypoint that reads an HTML file, applies ATS-safe normalization, and
+ * renders the PDF while preserving report/source metadata for the manifest.
+ *
+ * @returns {Promise<{outputPath: string, pageCount: number, size: number}>}
+ */
 async function generatePDF() {
   const args = userContext.args;
 
@@ -402,7 +433,7 @@ async function generatePDF() {
   }
   assertNoUnresolvedPlaceholders(html, inputPath);
 
-  return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, htmlPath: inputPath });
+  return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
 }
 
 /**
@@ -458,12 +489,14 @@ export async function inlineLocalFonts(html) {
  *
  * @param {string} html - Full HTML document to render.
  * @param {string} outputPath - Absolute path to write the PDF to.
- * @param {{format?: 'a4'|'letter', baseDir?: string, reportNum?: string, htmlPath?: string}} [opts]
+ * @param {{format?: 'a4'|'letter', baseDir?: string, reportNum?: string, inputPath?: string}} [opts]
  * @returns {Promise<{outputPath: string, pageCount: number, size: number}>}
  */
 export async function renderHtmlToPdf(html, outputPath, opts = {}) {
   const format = opts.format || 'a4';
   const baseDir = opts.baseDir || process.cwd();
+  const reportNum = opts.reportNum || '';
+  const inputPath = opts.inputPath || '';
 
   mkdirSync(dirname(outputPath), { recursive: true });
 
@@ -512,7 +545,7 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
     console.log(`📦 Size: ${(pdfBuffer.length / 1024).toFixed(1)} KB`);
 
     try {
-      const relPDF = updatePDFManifest(opts.reportNum || '', outputPath, opts.htmlPath || tmpHtmlPath, format);
+      const relPDF = updatePDFManifest(reportNum, outputPath, inputPath || tmpHtmlPath, format);
       const manifestLabel = userContext.userRoot ? `users/${userContext.userId}/data/pdf-index.tsv` : 'data/pdf-index.tsv';
       console.log(`🔗 Manifest: ${manifestLabel} updated${opts.reportNum ? ` (report ${opts.reportNum}, ${relPDF})` : ` (no --report given, ${relPDF})`}`);
     } catch (err) {

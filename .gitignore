@@ -5,6 +5,7 @@ users/
 cv.md
 data/applications.md
 data/applications.db
+data/follow-ups.md
 data/pipeline.md
 data/scan-history.tsv
 data/scan-summary-*.md
@@ -49,6 +50,7 @@ portals.yml
 modes/_profile.md
 voice-dna.md
 article-digest.md
+modes/_custom.md
 .update-dismissed
 .update-lock
 
