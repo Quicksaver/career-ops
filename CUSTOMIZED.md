@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `1f78141ae523a8b7034b915788a441a10fc30585`
-- Fork ref: current `main` at `97485ccd3dafe9d652607a5673ee6102b556a5f5`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `113`
-- Diff-size baseline after merge, before this inventory refresh: `130 files changed, 12416 insertions(+), 2516 deletions(-)`
+- Upstream ref: `upstream/main` at `d280a7dee24e9225c03f30cd0f47b78c56a14e76`
+- Fork ref: current `main` at `fbabd8d79bc863c2c257b9dca3895a22c2523d8d`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `115`
+- Diff-size baseline after merge, before this inventory refresh: `130 files changed, 12423 insertions(+), 2516 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `1f78141ae523a8b7034b915788a441a10fc30585` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `d280a7dee24e9225c03f30cd0f47b78c56a14e76` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -121,6 +121,7 @@ New upstream features or behavior now present:
 - CV pagination fix: upstream adjusted `templates/cv-template.html` so role titles do not orphan at page breaks. The fork adopted the template fix while preserving `cv.theme` CSS variable overrides and user-scoped PDF output behavior.
 - Application answer persistence: upstream added `application-answers.mjs` plus `modes/apply.md` guidance for writing a `## Application Answers` section with filled/submitted state, free-text answers, selections, field values, and uploaded files. The fork keeps the formatter/upsert behavior but requires an active `--user {USER}` for CLI writes and resolves report paths under `users/{USER}/`, so application snapshots are stored in the user's report files rather than root `reports/`.
 - Teamtailor provider: upstream added a zero-auth RSS provider for `*.teamtailor.com` plus explicit `provider: teamtailor` support for branded Teamtailor domains. The fork adopted the provider and tests as system-layer provider code; per-user opt-in for branded domains still belongs in `users/{USER}/portals.yml`.
+- HigherEdJobs provider: upstream added `providers/higheredjobs.mjs`, supported-board docs, `templates/portals.example.yml` examples, and tests for the public HigherEdJobs RSS category feed. The fork adopted it unchanged as system-layer provider code; users opt in from `users/{USER}/portals.yml` with `provider: higheredjobs` and optional `cat_id`.
 - VC portfolio seed discovery: upstream added `seeds/vc-portfolios.mjs`, `seeds/README.md`, and `scan-ats-full.mjs --seeds yc,a16z` to discover companies from public VC portfolio lists and probe them through ATS providers. The fork preserves that discovery surface while keeping `scan-ats-full.mjs` under the active-user resolver, with cache, pipeline, scan history, and portal filters rooted at `users/{USER}`.
 - Dashboard/tracker column safety: upstream mapped dashboard tracker reads and status writes by header name, matching the Node tracker parser. The fork keeps that mapping while preserving reopened-URL preference from tracker notes and dated status-change notes when the dashboard edits an application status.
 - Security/path hardening: upstream hardened batch temporary JD files, PDF output containment, tracker cell handling, common PII filename ignores, and structural updater path coverage through `validate-system-paths-coverage.mjs`. The fork keeps the hardening but scopes PDF output containment to the active user root, preserves `local:jds/...` batch copying from `users/{USER}/jds/`, and keeps `lib/` plus `liveness-browser.mjs` in updater system path coverage.
@@ -173,6 +174,7 @@ Conflict notes from this merge:
 - `application-answers.mjs`: adopted upstream's additive report-section formatter/upsert helper, then wrapped CLI writes in the fork's active-user resolver so relative report paths resolve under `users/{USER}` and absolute report paths outside the active user root are rejected.
 - `scan-ats-full.mjs`: adopted upstream `--seeds` VC portfolio discovery and `runSeedScan(...)`, then kept the fork's `configureScanUserPaths(...)`, `CAREER_OPS_USERS_DIR`, and user-scoped portal/cache/pipeline/history routing. The startup summary now includes both the user id and selected ATS/seed sources.
 - `update-system.mjs`: added upstream `application-answers.mjs` and `seeds/` to system path coverage while preserving fork-only system entries such as `extract-jd.mjs`, `extract-pdf.mjs`, `scan-auth.mjs`, and `scan-auth/linkedin.mjs`.
+- `providers/higheredjobs.mjs`, `templates/portals.example.yml`, `docs/SUPPORTED_JOB_BOARDS.md`, and `test-all.mjs`: the follow-up upstream HigherEdJobs commit merged cleanly with no conflict. No active-user adaptation was required because the provider is stateless and only reads the configured portal entry passed by `scan.mjs`; the example remains a system-layer template for copying into `users/{USER}/portals.yml`.
 - `dashboard/internal/data/career.go`, `dashboard/internal/ui/screens/viewer.go`, and `dashboard/main.go`: combined upstream header-name tracker writes, cover-letter hotkey, and cross-platform open helpers with fork behavior for reopened live URLs in notes, dated dashboard status-change notes, user-root PDF URL rewriting, and per-user binary/root inference.
 - `scan.mjs`: combined upstream plugin-provider merging, compensation persistence, cooldown history statuses, and tighter dedup ordering with the fork's active-user portal/profile/pipeline/history/handoff paths and closed-duplicate reopen writeback.
 - `providers/landingjobs.mjs` and `providers/nodesk.mjs`: upstream now owns direct first-party implementations, so the fork retired the old `_custom.mjs` wrapper for those providers while keeping the custom provider layer for fork-only sources.
