@@ -26,6 +26,8 @@
     "scan": "node scan.mjs",
     "scan-auth": "node scan-auth.mjs",
     "scan:full": "node scan-ats-full.mjs",
+    "scan:seeds": "node scan-ats-full.mjs --seeds yc,a16z",
+    "scan:yc": "node scan-ats-full.mjs --seeds yc",
     "validate:portals": "node validate-portals.mjs",
     "verify:portals": "node verify-portals.mjs",
     "tracker": "node tracker.mjs",
