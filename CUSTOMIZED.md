@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `920a0319c7fe1836eed823ca7dddd49099cfec9b`
-- Fork ref: current `main` at `aa9d0c8f94861ddab6711e0d51ac5d86739a7f98`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `109`
-- Diff-size baseline after merge, before this inventory refresh: `121 files changed, 12148 insertions(+), 2390 deletions(-)`
+- Upstream ref: `upstream/main` at `cbde5c4d5c5e6a0c420ad550bfadcdaf78a1e6ca`
+- Fork ref: current `main` at `3c1939c5ab1efc5d81312074c9d9dd01fa4f11b3`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `111`
+- Diff-size baseline after merge, before this inventory refresh: `129 files changed, 12378 insertions(+), 2510 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `920a0319c7fe1836eed823ca7dddd49099cfec9b` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `cbde5c4d5c5e6a0c420ad550bfadcdaf78a1e6ca` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -114,6 +114,11 @@ New upstream features or behavior now present:
 - Provider expansion: upstream added direct first-party providers for Arbeitnow, Pinpoint, The Muse, Rippling, The Hub, Landing.jobs, Himalayas, Jobicy, Hacker News, JustJoin, NoFluffJobs, Jobspresso, 4 Day Week, and NoDesk. The fork adopted these direct providers; `providers/landingjobs.mjs` and `providers/nodesk.mjs` now retire the older `_custom` wrapper path for those IDs, while the `_custom` dispatcher remains for fork-only providers still not covered upstream.
 - Scanner behavior: upstream added repost detection through `detect-reposts.mjs`, compensation persistence into `pipeline.md`, tighter company matching/dedup ordering for cooldown filtering, and fresh provider tests. The fork keeps those behaviors while preserving company block filtering, per-target `location_filter`, active-user pipeline/history/handoff paths, and closed-duplicate reopen handling.
 - Dashboard PDF workflow: upstream added report-viewer cover-letter hotkey `L`, pipeline hotkeys `d` to open CV PDFs and `D` to regenerate them, `data/pdf-index.tsv`, and dashboard PDF lookup tests. The fork routes the PDF manifest to `users/{USER}/data/pdf-index.tsv`, keeps generated HTML/PDF under `users/{USER}/output/`, and makes dashboard regeneration from a per-user binary call the repo `generate-pdf.mjs` with `--user {USER}` plus `CAREER_OPS_USERS_DIR`.
+- PDF manifest source metadata: upstream now threads the original input HTML path through `renderHtmlToPdf(...)` so `data/pdf-index.tsv` records the source document instead of the temporary render file. The fork preserves that behavior while keeping manifest rows rooted at `users/{USER}/data/pdf-index.tsv`; PDF and HTML entries are user-root-relative when a user is active, and blank rather than escaping the allowed manifest root.
+- Italian language modes: upstream added `modes/it/` (`annuncio`, `candidarsi`, `pipeline`, `_shared`, and README) and registered the locale in updater materialization. These are system-layer language assets; user-specific Italian targeting still belongs in `users/{USER}/config/profile.yml` or `users/{USER}/modes/_profile.md`.
+- Zero-cost model docs: upstream expanded `docs/RUNNING_ON_A_BUDGET.md` with `npm run or:*`, Ollama, and OpenAI-compatible runtime paths. The fork keeps those docs as general system guidance; user-specific provider/model preferences remain user-layer configuration.
+- User-layer ignore coverage: upstream added root ignores for `data/follow-ups.md` and `modes/_custom.md`. The fork adopted those ignores alongside its existing legacy-root ignores for `voice-dna.md`, `article-digest.md`, `.scan-auth/`, and `users/`, so accidental root personal data remains protected while real user data lives under `users/{USER}/`.
+- CV pagination fix: upstream adjusted `templates/cv-template.html` so role titles do not orphan at page breaks. The fork adopted the template fix while preserving `cv.theme` CSS variable overrides and user-scoped PDF output behavior.
 - Dashboard/tracker column safety: upstream mapped dashboard tracker reads and status writes by header name, matching the Node tracker parser. The fork keeps that mapping while preserving reopened-URL preference from tracker notes and dated status-change notes when the dashboard edits an application status.
 - Security/path hardening: upstream hardened batch temporary JD files, PDF output containment, tracker cell handling, common PII filename ignores, and structural updater path coverage through `validate-system-paths-coverage.mjs`. The fork keeps the hardening but scopes PDF output containment to the active user root, preserves `local:jds/...` batch copying from `users/{USER}/jds/`, and keeps `lib/` plus `liveness-browser.mjs` in updater system path coverage.
 - Language/docs surface: upstream added Spanish locale modes (`modes/es/`), German README, Japanese mode parity updates, `docs/CODEX.md`, `docs/SUPPORTED_CLIS.md`, and broader setup/support docs. The fork adopted these as system-layer assets and rewrote conflicted examples to use explicit users and `users/{USER}` paths where they touch candidate data.
@@ -159,6 +164,8 @@ Conflict notes from this merge:
 - `test-all.mjs`: adopted upstream tests for shared tracker parsing, Remotive provider normalization, fresh-install pipeline creation, bounded evaluation research, and dashboard CI coverage; helper-only fixtures may still use temporary root `data/` or `CAREER_OPS_TRACKER`, but production CLI behavior remains explicit-user.
 - `DATA_CONTRACT.md`, `.gitignore`, `doctor.mjs`, `scan.mjs`, and `plugins/_engine.mjs`: adopted upstream's opt-in plugin system while moving user-owned plugin toggles, local plugins, and plugin locks to `users/{USER}`. The plugin engine now supports a repo plugin root plus a separate active-user config/lock root so bundled plugins remain auto-updatable while user consent/config remains protected.
 - `generate-pdf.mjs`, `modes/pdf.md`, `batch/batch-prompt.md`, `dashboard/internal/data/pdf.go`, `dashboard/internal/ui/screens/pipeline.go`, and `dashboard/main.go`: adopted upstream PDF manifest and dashboard PDF hotkeys, then routed the manifest and regenerated files through `users/{USER}/data/pdf-index.tsv` and `users/{USER}/output/`. The dashboard's `D` hotkey now resolves the repo root from a per-user binary and invokes `generate-pdf.mjs --user {USER}` with absolute user artifact paths.
+- `.gitignore`: adopted upstream's `data/follow-ups.md` and `modes/_custom.md` root ignores while preserving the fork's broader user-layer and legacy-root ignore set, including `users/`, `.scan-auth/`, `voice-dna.md`, and `article-digest.md`.
+- `generate-pdf.mjs`: combined upstream's manifest metadata threading (`inputPath` through `renderHtmlToPdf`) with the fork's user-scoped manifest path. The conflict resolution keeps `repoRelativeManifestPath(...)` for upstream compatibility and adds a root-aware manifest path helper so active-user manifests do not record paths outside `users/{USER}`.
 - `dashboard/internal/data/career.go`, `dashboard/internal/ui/screens/viewer.go`, and `dashboard/main.go`: combined upstream header-name tracker writes, cover-letter hotkey, and cross-platform open helpers with fork behavior for reopened live URLs in notes, dated dashboard status-change notes, user-root PDF URL rewriting, and per-user binary/root inference.
 - `scan.mjs`: combined upstream plugin-provider merging, compensation persistence, cooldown history statuses, and tighter dedup ordering with the fork's active-user portal/profile/pipeline/history/handoff paths and closed-duplicate reopen writeback.
 - `providers/landingjobs.mjs` and `providers/nodesk.mjs`: upstream now owns direct first-party implementations, so the fork retired the old `_custom.mjs` wrapper for those providers while keeping the custom provider layer for fork-only sources.
