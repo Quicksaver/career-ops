@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `d280a7dee24e9225c03f30cd0f47b78c56a14e76`
-- Fork ref: current `main` at `fbabd8d79bc863c2c257b9dca3895a22c2523d8d`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `115`
-- Diff-size baseline after merge, before this inventory refresh: `130 files changed, 12423 insertions(+), 2516 deletions(-)`
+- Upstream ref: `upstream/main` at `7d672ebc585095c95aa01b6837b4fc75c3ce08d5`
+- Fork ref: current `main` at `f2f7297f57b01710df4cac86838012f1f2cf49ec`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `117`
+- Diff-size baseline after merge, before this inventory refresh: `130 files changed, 12425 insertions(+), 2516 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `d280a7dee24e9225c03f30cd0f47b78c56a14e76` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `7d672ebc585095c95aa01b6837b4fc75c3ce08d5` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -73,6 +73,7 @@ New upstream features or behavior now present:
 - Current pipeline/user-routing follow-ups: `reconcile-pipeline.mjs` now honors the shared active-user resolver, so `node reconcile-pipeline.mjs --user {USER}` defaults to `users/{USER}/batch/batch-state.tsv`, `users/{USER}/data/pipeline.md`, and `users/{USER}/reports/`; explicit `--state`, `--pipeline`, and `--reports` overrides remain validated when used.
 - Current tracker/report-ID follow-ups: `merge-tracker.mjs` now preserves the worker-reserved tracker/report number from each TSV instead of renumbering lower IDs to `max+1`, which keeps user-facing tracker IDs aligned with report/artifact IDs during parallel batches. If that TSV number is already used by a different entry, the TSV is left pending for manual repair instead of silently fabricating a different tracker ID. Tracker row writes also sanitize raw `|` characters in Markdown table cells to keep company/role/notes text from shifting score/status/report columns.
 - Liveness upgrades: upstream added `liveness-api.mjs` so `check-liveness.mjs` can perform zero-token ATS API checks before Playwright, while preserving Playwright fallback semantics for inconclusive or non-ATS pages. This fits the fork's verification rule as long as WebSearch/WebFetch snippets still do not decide posting liveness.
+- Ashby liveness upgrade: upstream added an Ashby-specific `liveness-api.mjs` API rung that maps `jobs.ashbyhq.com/{org}/{jobId}` and `/application` links to the public org job-board API, then confirms whether the specific job ID is still listed. This reduces false-expired results from JS-rendered Ashby pages while preserving the fork's conservative fallback: malformed payloads, network errors, redirects, rate limits, and unknown shapes still return `null` for the Playwright browser check.
 - Provider upgrades: upstream added first-party BambooHR and Breezy providers, hardened Lever/Ashby/Workday redirect handling, fixed Recruitee custom-domain URLs, and added config-driven Arbeitsagentur `remoteMatch` / server-side homeoffice filtering. The fork adopted these upstream modules and kept its custom provider layer separate for sources upstream still does not cover.
 - Scanner and reverse-discovery upgrades: upstream `scan-ats-full.mjs` now has `--json`, `--include-undated`, and `--shuffle`; the fork keeps those while preserving `--user {USER}` routing for `users/{USER}/portals.yml`, cache, pipeline, and scan history. Upstream also hardened malformed `title_filter` keyword normalization, which should reduce config-induced scanner crashes without changing the fork's company/location policy hooks.
 - Batch runner upgrades: upstream added `--skip-pdf`, hardened status score handling by removing `bc`, and improved `--status` behavior. The fork keeps these while preserving active-user batch state under `users/{USER}/batch/`, Codex worker JSON contracts, `--limit`, worker timeouts, user prompt injection, and user-scoped post-batch reconcile/verify commands.
@@ -123,6 +124,7 @@ New upstream features or behavior now present:
 - Teamtailor provider: upstream added a zero-auth RSS provider for `*.teamtailor.com` plus explicit `provider: teamtailor` support for branded Teamtailor domains. The fork adopted the provider and tests as system-layer provider code; per-user opt-in for branded domains still belongs in `users/{USER}/portals.yml`.
 - HigherEdJobs provider: upstream added `providers/higheredjobs.mjs`, supported-board docs, `templates/portals.example.yml` examples, and tests for the public HigherEdJobs RSS category feed. The fork adopted it unchanged as system-layer provider code; users opt in from `users/{USER}/portals.yml` with `provider: higheredjobs` and optional `cat_id`.
 - VC portfolio seed discovery: upstream added `seeds/vc-portfolios.mjs`, `seeds/README.md`, and `scan-ats-full.mjs --seeds yc,a16z` to discover companies from public VC portfolio lists and probe them through ATS providers. The fork preserves that discovery surface while keeping `scan-ats-full.mjs` under the active-user resolver, with cache, pipeline, scan history, and portal filters rooted at `users/{USER}`.
+- CI workflow: upstream changed `.github/workflows/test.yml` to use `npm install --ignore-scripts`, skipping the Playwright browser download because the quick Node and Go test jobs do not launch a browser. Local PDF/liveness workflows that do need browsers still rely on the normal Playwright install path.
 - Dashboard/tracker column safety: upstream mapped dashboard tracker reads and status writes by header name, matching the Node tracker parser. The fork keeps that mapping while preserving reopened-URL preference from tracker notes and dated status-change notes when the dashboard edits an application status.
 - Security/path hardening: upstream hardened batch temporary JD files, PDF output containment, tracker cell handling, common PII filename ignores, and structural updater path coverage through `validate-system-paths-coverage.mjs`. The fork keeps the hardening but scopes PDF output containment to the active user root, preserves `local:jds/...` batch copying from `users/{USER}/jds/`, and keeps `lib/` plus `liveness-browser.mjs` in updater system path coverage.
 - Language/docs surface: upstream added Spanish locale modes (`modes/es/`), German README, Japanese mode parity updates, `docs/CODEX.md`, `docs/SUPPORTED_CLIS.md`, and broader setup/support docs. The fork adopted these as system-layer assets and rewrote conflicted examples to use explicit users and `users/{USER}` paths where they touch candidate data.
@@ -175,6 +177,7 @@ Conflict notes from this merge:
 - `scan-ats-full.mjs`: adopted upstream `--seeds` VC portfolio discovery and `runSeedScan(...)`, then kept the fork's `configureScanUserPaths(...)`, `CAREER_OPS_USERS_DIR`, and user-scoped portal/cache/pipeline/history routing. The startup summary now includes both the user id and selected ATS/seed sources.
 - `update-system.mjs`: added upstream `application-answers.mjs` and `seeds/` to system path coverage while preserving fork-only system entries such as `extract-jd.mjs`, `extract-pdf.mjs`, `scan-auth.mjs`, and `scan-auth/linkedin.mjs`.
 - `providers/higheredjobs.mjs`, `templates/portals.example.yml`, `docs/SUPPORTED_JOB_BOARDS.md`, and `test-all.mjs`: the follow-up upstream HigherEdJobs commit merged cleanly with no conflict. No active-user adaptation was required because the provider is stateless and only reads the configured portal entry passed by `scan.mjs`; the example remains a system-layer template for copying into `users/{USER}/portals.yml`.
+- `.github/workflows/test.yml`, `liveness-api.mjs`, and `test-all.mjs`: the Ashby liveness and CI follow-up merged cleanly with no conflict. No user-path adaptation was required because `liveness-api.mjs` is stateless URL classification/fetch code, and the new tests mock `globalThis.fetch` rather than reading user-layer files.
 - `dashboard/internal/data/career.go`, `dashboard/internal/ui/screens/viewer.go`, and `dashboard/main.go`: combined upstream header-name tracker writes, cover-letter hotkey, and cross-platform open helpers with fork behavior for reopened live URLs in notes, dated dashboard status-change notes, user-root PDF URL rewriting, and per-user binary/root inference.
 - `scan.mjs`: combined upstream plugin-provider merging, compensation persistence, cooldown history statuses, and tighter dedup ordering with the fork's active-user portal/profile/pipeline/history/handoff paths and closed-duplicate reopen writeback.
 - `providers/landingjobs.mjs` and `providers/nodesk.mjs`: upstream now owns direct first-party implementations, so the fork retired the old `_custom.mjs` wrapper for those providers while keeping the custom provider layer for fork-only sources.
