@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `cbde5c4d5c5e6a0c420ad550bfadcdaf78a1e6ca`
-- Fork ref: current `main` at `3c1939c5ab1efc5d81312074c9d9dd01fa4f11b3`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `111`
-- Diff-size baseline after merge, before this inventory refresh: `129 files changed, 12378 insertions(+), 2510 deletions(-)`
+- Upstream ref: `upstream/main` at `1f78141ae523a8b7034b915788a441a10fc30585`
+- Fork ref: current `main` at `97485ccd3dafe9d652607a5673ee6102b556a5f5`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `113`
+- Diff-size baseline after merge, before this inventory refresh: `130 files changed, 12416 insertions(+), 2516 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `cbde5c4d5c5e6a0c420ad550bfadcdaf78a1e6ca` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `1f78141ae523a8b7034b915788a441a10fc30585` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -119,6 +119,9 @@ New upstream features or behavior now present:
 - Zero-cost model docs: upstream expanded `docs/RUNNING_ON_A_BUDGET.md` with `npm run or:*`, Ollama, and OpenAI-compatible runtime paths. The fork keeps those docs as general system guidance; user-specific provider/model preferences remain user-layer configuration.
 - User-layer ignore coverage: upstream added root ignores for `data/follow-ups.md` and `modes/_custom.md`. The fork adopted those ignores alongside its existing legacy-root ignores for `voice-dna.md`, `article-digest.md`, `.scan-auth/`, and `users/`, so accidental root personal data remains protected while real user data lives under `users/{USER}/`.
 - CV pagination fix: upstream adjusted `templates/cv-template.html` so role titles do not orphan at page breaks. The fork adopted the template fix while preserving `cv.theme` CSS variable overrides and user-scoped PDF output behavior.
+- Application answer persistence: upstream added `application-answers.mjs` plus `modes/apply.md` guidance for writing a `## Application Answers` section with filled/submitted state, free-text answers, selections, field values, and uploaded files. The fork keeps the formatter/upsert behavior but requires an active `--user {USER}` for CLI writes and resolves report paths under `users/{USER}/`, so application snapshots are stored in the user's report files rather than root `reports/`.
+- Teamtailor provider: upstream added a zero-auth RSS provider for `*.teamtailor.com` plus explicit `provider: teamtailor` support for branded Teamtailor domains. The fork adopted the provider and tests as system-layer provider code; per-user opt-in for branded domains still belongs in `users/{USER}/portals.yml`.
+- VC portfolio seed discovery: upstream added `seeds/vc-portfolios.mjs`, `seeds/README.md`, and `scan-ats-full.mjs --seeds yc,a16z` to discover companies from public VC portfolio lists and probe them through ATS providers. The fork preserves that discovery surface while keeping `scan-ats-full.mjs` under the active-user resolver, with cache, pipeline, scan history, and portal filters rooted at `users/{USER}`.
 - Dashboard/tracker column safety: upstream mapped dashboard tracker reads and status writes by header name, matching the Node tracker parser. The fork keeps that mapping while preserving reopened-URL preference from tracker notes and dated status-change notes when the dashboard edits an application status.
 - Security/path hardening: upstream hardened batch temporary JD files, PDF output containment, tracker cell handling, common PII filename ignores, and structural updater path coverage through `validate-system-paths-coverage.mjs`. The fork keeps the hardening but scopes PDF output containment to the active user root, preserves `local:jds/...` batch copying from `users/{USER}/jds/`, and keeps `lib/` plus `liveness-browser.mjs` in updater system path coverage.
 - Language/docs surface: upstream added Spanish locale modes (`modes/es/`), German README, Japanese mode parity updates, `docs/CODEX.md`, `docs/SUPPORTED_CLIS.md`, and broader setup/support docs. The fork adopted these as system-layer assets and rewrote conflicted examples to use explicit users and `users/{USER}` paths where they touch candidate data.
@@ -166,6 +169,10 @@ Conflict notes from this merge:
 - `generate-pdf.mjs`, `modes/pdf.md`, `batch/batch-prompt.md`, `dashboard/internal/data/pdf.go`, `dashboard/internal/ui/screens/pipeline.go`, and `dashboard/main.go`: adopted upstream PDF manifest and dashboard PDF hotkeys, then routed the manifest and regenerated files through `users/{USER}/data/pdf-index.tsv` and `users/{USER}/output/`. The dashboard's `D` hotkey now resolves the repo root from a per-user binary and invokes `generate-pdf.mjs --user {USER}` with absolute user artifact paths.
 - `.gitignore`: adopted upstream's `data/follow-ups.md` and `modes/_custom.md` root ignores while preserving the fork's broader user-layer and legacy-root ignore set, including `users/`, `.scan-auth/`, `voice-dna.md`, and `article-digest.md`.
 - `generate-pdf.mjs`: combined upstream's manifest metadata threading (`inputPath` through `renderHtmlToPdf`) with the fork's user-scoped manifest path. The conflict resolution keeps `repoRelativeManifestPath(...)` for upstream compatibility and adds a root-aware manifest path helper so active-user manifests do not record paths outside `users/{USER}`.
+- `modes/apply.md`: adopted upstream's persistent Application Answers workflow and Section H wording while keeping searches, CV reads, tracker updates, and example commands user-scoped under `users/{USER}/...`.
+- `application-answers.mjs`: adopted upstream's additive report-section formatter/upsert helper, then wrapped CLI writes in the fork's active-user resolver so relative report paths resolve under `users/{USER}` and absolute report paths outside the active user root are rejected.
+- `scan-ats-full.mjs`: adopted upstream `--seeds` VC portfolio discovery and `runSeedScan(...)`, then kept the fork's `configureScanUserPaths(...)`, `CAREER_OPS_USERS_DIR`, and user-scoped portal/cache/pipeline/history routing. The startup summary now includes both the user id and selected ATS/seed sources.
+- `update-system.mjs`: added upstream `application-answers.mjs` and `seeds/` to system path coverage while preserving fork-only system entries such as `extract-jd.mjs`, `extract-pdf.mjs`, `scan-auth.mjs`, and `scan-auth/linkedin.mjs`.
 - `dashboard/internal/data/career.go`, `dashboard/internal/ui/screens/viewer.go`, and `dashboard/main.go`: combined upstream header-name tracker writes, cover-letter hotkey, and cross-platform open helpers with fork behavior for reopened live URLs in notes, dated dashboard status-change notes, user-root PDF URL rewriting, and per-user binary/root inference.
 - `scan.mjs`: combined upstream plugin-provider merging, compensation persistence, cooldown history statuses, and tighter dedup ordering with the fork's active-user portal/profile/pipeline/history/handoff paths and closed-duplicate reopen writeback.
 - `providers/landingjobs.mjs` and `providers/nodesk.mjs`: upstream now owns direct first-party implementations, so the fork retired the old `_custom.mjs` wrapper for those providers while keeping the custom provider layer for fork-only sources.
