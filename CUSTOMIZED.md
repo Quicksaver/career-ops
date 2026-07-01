@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `1ebc81fe17087efd4d318345b7b90d627e0b3c27`
-- Fork ref: current `main` at `49bf31fd5c4515501fdac47423b78066d6ef024d`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `119`
-- Diff-size baseline after merge, before this inventory refresh: `130 files changed, 12456 insertions(+), 2528 deletions(-)`
+- Upstream ref: `upstream/main` at `b5aa464857ee141b03f376eb70c8614b2a24ca98`
+- Fork ref: current `main` at `bddce24899c54ba257e869213ebefc9c65fe616a`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `121`
+- Diff-size baseline after merge, before this inventory refresh: `130 files changed, 12459 insertions(+), 2528 deletions(-)`
 
 ## Merge Policy
 
@@ -30,7 +30,7 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `1ebc81fe17087efd4d318345b7b90d627e0b3c27` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15-era behavior and subsequent upstream fixes through `b5aa464857ee141b03f376eb70c8614b2a24ca98` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
@@ -113,6 +113,7 @@ New upstream features or behavior now present:
 - Plugin system: upstream added an opt-in plugin engine, bundled Apify/Gmail/Notion plugins, registry governance, plugin audit/install commands, config templates, registry validation CI, and plugin docs. The fork keeps bundled plugin code in the system layer but treats `config/plugins.yml`, `plugins.local/`, and `plugins.lock` as user-layer data under `users/{USER}/`; `plugins/_engine.mjs`, `doctor.mjs`, and `scan.mjs` were adapted so bundled plugins come from the repo while enabled-plugin config, local plugin roots, and integrity locks can live under the active user.
 - Plugin successor model: upstream now treats bundled plugins as reference seeds and allows a registry-approved community plugin with `supersedesBundled: true` to override the bundled seed only when the user installs the exact pinned commit. The fork keeps the registry as system-layer trust metadata but resolves installed successors, plugin locks, and local plugin files from the active user root (`users/{USER}/plugins.local/` and `users/{USER}/plugins.lock`), so one user's approved successor does not shadow bundled plugins for another user.
 - Google Calendar plugin registry: upstream added a pinned `career-ops-plugin-google-calendar` registry entry. This only expands the curated install catalog; users still must explicitly install, enable, and consent through `node plugins.mjs --user {USER} add/enable ...`, with config and locks under the active user's folder.
+- Tavily plugin registry: upstream added a pinned `career-ops-plugin-tavily` search plugin entry requiring `TAVILY_API_KEY` and `api.tavily.com`. This only expands the curated install catalog; users still must explicitly install, enable, and consent through `node plugins.mjs --user {USER} add/enable ...`, with config and locks under the active user's folder.
 - OpenRouter/free-tier runtime: upstream added `openrouter-runner.mjs`, free-tier onboarding docs, concrete token-budget walkthroughs, and `.env.example` entries for OpenRouter-compatible execution. The fork adopted the runner and docs while preserving the rule that user-specific model/provider preferences belong in `users/{USER}/config/profile.yml` or user custom instructions rather than system modes.
 - Provider expansion: upstream added direct first-party providers for Arbeitnow, Pinpoint, The Muse, Rippling, The Hub, Landing.jobs, Himalayas, Jobicy, Hacker News, JustJoin, NoFluffJobs, Jobspresso, 4 Day Week, and NoDesk. The fork adopted these direct providers; `providers/landingjobs.mjs` and `providers/nodesk.mjs` now retire the older `_custom` wrapper path for those IDs, while the `_custom` dispatcher remains for fork-only providers still not covered upstream.
 - Scanner behavior: upstream added repost detection through `detect-reposts.mjs`, compensation persistence into `pipeline.md`, tighter company matching/dedup ordering for cooldown filtering, and fresh provider tests. The fork keeps those behaviors while preserving company block filtering, per-target `location_filter`, active-user pipeline/history/handoff paths, and closed-duplicate reopen handling.
@@ -181,6 +182,7 @@ Conflict notes from this merge:
 - `providers/higheredjobs.mjs`, `templates/portals.example.yml`, `docs/SUPPORTED_JOB_BOARDS.md`, and `test-all.mjs`: the follow-up upstream HigherEdJobs commit merged cleanly with no conflict. No active-user adaptation was required because the provider is stateless and only reads the configured portal entry passed by `scan.mjs`; the example remains a system-layer template for copying into `users/{USER}/portals.yml`.
 - `.github/workflows/test.yml`, `liveness-api.mjs`, and `test-all.mjs`: the Ashby liveness and CI follow-up merged cleanly with no conflict. No user-path adaptation was required because `liveness-api.mjs` is stateless URL classification/fetch code, and the new tests mock `globalThis.fetch` rather than reading user-layer files.
 - `plugins.mjs`, `plugins/_engine.mjs`, `docs/PLUGIN_REVIEW.md`, `docs/PLUGINS.md`, `plugins/README.md`, and `test-all.mjs`: combined upstream's seed/successor model and plugin registry docs with the fork's user-scoped plugin root. `resolveSuccessorIds(root, userRoot)` now reads the system registry from the repo but checks `plugins.local` and `plugins.lock` under the active user root; `plugins.mjs list/run/skill` passes that override set into discovery, and tests cover user-root successor resolution.
+- `plugins-registry.json`: upstream's Tavily registry addition merged cleanly with no conflict. No active-user adaptation was required because the registry is system-layer metadata and user install/config remains user-scoped.
 - `dashboard/internal/data/career.go`, `dashboard/internal/ui/screens/viewer.go`, and `dashboard/main.go`: combined upstream header-name tracker writes, cover-letter hotkey, and cross-platform open helpers with fork behavior for reopened live URLs in notes, dated dashboard status-change notes, user-root PDF URL rewriting, and per-user binary/root inference.
 - `scan.mjs`: combined upstream plugin-provider merging, compensation persistence, cooldown history statuses, and tighter dedup ordering with the fork's active-user portal/profile/pipeline/history/handoff paths and closed-duplicate reopen writeback.
 - `providers/landingjobs.mjs` and `providers/nodesk.mjs`: upstream now owns direct first-party implementations, so the fork retired the old `_custom.mjs` wrapper for those providers while keeping the custom provider layer for fork-only sources.
