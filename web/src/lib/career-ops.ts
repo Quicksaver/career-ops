@@ -21,7 +21,7 @@ export function careerOpsUserId(): string | null {
 export function careerOpsUsersRoot(): string {
   const env = process.env.CAREER_OPS_USERS_DIR?.trim();
   if (env) return env;
-  return path.join(careerOpsSystemRoot(), "users");
+  return path.join(/* turbopackIgnore: true */ careerOpsSystemRoot(), "users");
 }
 
 export function careerOpsRoot(): string {

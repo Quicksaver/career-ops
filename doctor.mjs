@@ -389,10 +389,11 @@ function onboardingState(root) {
     { target: 'modes/_custom.md', template: 'modes/_custom.template.md' },
   ];
   for (const { target, template } of templates) {
-    const targetPath = join(root, ...target.split('/'));
+    const targetPath = userPath(userContext, target);
     const templatePath = join(root, ...template.split('/'));
     if (!existsSync(targetPath) && existsSync(templatePath)) {
       try {
+        mkdirSync(dirname(targetPath), { recursive: true });
         copyFileSync(templatePath, targetPath);
         autoCopied.push(target);
       } catch {

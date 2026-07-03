@@ -4548,17 +4548,24 @@ try {
 console.log('\n12. Cold-start trigger (deterministic onboarding state)');
 
 try {
-  // Virgin env: none of the 4 user-layer prerequisites present → must onboard.
+  // Virgin env: doctor auto-copies template-backed mode files, then reports the remaining
+  // required user-layer prerequisites as missing.
   const virginUsers = mkdtempSync(join(tmpdir(), 'co-cold-users-'));
   mkdirSync(join(virginUsers, 'test'), { recursive: true });
   const v = JSON.parse(run(NODE, ['doctor.mjs', '--user', 'test', '--json'], { env: { ...process.env, CAREER_OPS_USERS_DIR: virginUsers } }) || '{}');
+  const virginMissing = new Set(Array.isArray(v.missing) ? v.missing : []);
+  const virginAutoCopied = new Set(Array.isArray(v.autoCopied) ? v.autoCopied : []);
   if (
     v.onboardingNeeded === true &&
-    Array.isArray(v.missing) &&
-    v.missing.length === 4 &&
+    virginMissing.size === 3 &&
+    virginMissing.has('cv.md') &&
+    virginMissing.has('config/profile.yml') &&
+    virginMissing.has('portals.yml') &&
+    !virginMissing.has('modes/_profile.md') &&
+    virginAutoCopied.has('modes/_profile.md') &&
     Array.isArray(v.warnings)
   ) {
-    pass('Virgin env → onboarding triggered (4 prerequisites missing)');
+    pass('Virgin env → onboarding triggered after auto-copy (3 required prerequisites missing)');
   } else {
     fail(`Virgin env not flagged for onboarding: ${JSON.stringify(v)}`);
   }
@@ -4582,15 +4589,16 @@ try {
 
   // Auto-copy template: when modes/_profile.md or modes/_custom.md is missing but template exists,
   // doctor --json auto-copies them, records them in autoCopied, and does not report them as missing (#1369).
-  const autoCopy = mkdtempSync(join(tmpdir(), 'co-autocopy-'));
+  const autoCopyUsers = mkdtempSync(join(tmpdir(), 'co-autocopy-users-'));
+  const autoCopy = join(autoCopyUsers, 'test');
   mkdirSync(join(autoCopy, 'config'), { recursive: true });
   mkdirSync(join(autoCopy, 'modes'), { recursive: true });
   for (const f of ['cv.md', 'config/profile.yml', 'portals.yml']) {
     writeFileSync(join(autoCopy, f), 'x');
   }
-  writeFileSync(join(autoCopy, 'modes/_profile.template.md'), '# profile template\n');
-  writeFileSync(join(autoCopy, 'modes/_custom.template.md'), '# custom template\n');
-  const ac = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', autoCopy]) || '{}');
+  const ac = JSON.parse(run(NODE, ['doctor.mjs', '--user', 'test', '--json'], { env: { ...process.env, CAREER_OPS_USERS_DIR: autoCopyUsers } }) || '{}');
+  const profileTemplate = readFileSync(join(ROOT, 'modes/_profile.template.md'), 'utf-8');
+  const customTemplate = readFileSync(join(ROOT, 'modes/_custom.template.md'), 'utf-8');
   if (
     ac.onboardingNeeded === false &&
     Array.isArray(ac.missing) &&
@@ -4599,15 +4607,15 @@ try {
     ac.autoCopied.includes('modes/_profile.md') &&
     ac.autoCopied.includes('modes/_custom.md') &&
     existsSync(join(autoCopy, 'modes/_profile.md')) &&
-    readFileSync(join(autoCopy, 'modes/_profile.md'), 'utf-8') === '# profile template\n' &&
+    readFileSync(join(autoCopy, 'modes/_profile.md'), 'utf-8') === profileTemplate &&
     existsSync(join(autoCopy, 'modes/_custom.md')) &&
-    readFileSync(join(autoCopy, 'modes/_custom.md'), 'utf-8') === '# custom template\n'
+    readFileSync(join(autoCopy, 'modes/_custom.md'), 'utf-8') === customTemplate
   ) {
     pass('Auto-copy template → modes/_profile.md and modes/_custom.md copied silently in --json mode (#1369)');
   } else {
     fail(`Auto-copy template failed in --json mode: ${JSON.stringify(ac)}`);
   }
-  rmSync(autoCopy, { recursive: true, force: true });
+  rmSync(autoCopyUsers, { recursive: true, force: true });
 
   const claudeDoc = readFile('CLAUDE.md');
   const agentsDoc = readFile('AGENTS.md');

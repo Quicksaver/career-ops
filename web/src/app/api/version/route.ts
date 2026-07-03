@@ -11,7 +11,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function readVersion(): string {
-  const candidates = [path.join(process.cwd(), "..", "VERSION"), path.join(process.cwd(), "VERSION")];
+  const candidates = [
+    path.join(/* turbopackIgnore: true */ process.cwd(), "..", "VERSION"),
+    path.join(/* turbopackIgnore: true */ process.cwd(), "VERSION"),
+  ];
   for (const p of candidates) {
     try {
       const v = fs.readFileSync(p, "utf8").split(/\s+/)[0].trim();
@@ -25,7 +28,7 @@ function readVersion(): string {
 
 function shortSha(): string {
   try {
-    return execSync("git rev-parse --short HEAD", { cwd: process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    return execSync("git rev-parse --short HEAD", { cwd: /* turbopackIgnore: true */ process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
   } catch {
     return "";
   }
@@ -33,7 +36,7 @@ function shortSha(): string {
 
 function webVersion(): string {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+    const pkg = JSON.parse(fs.readFileSync(path.join(/* turbopackIgnore: true */ process.cwd(), "package.json"), "utf8"));
     return typeof pkg.version === "string" ? pkg.version : "";
   } catch {
     return "";

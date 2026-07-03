@@ -16,56 +16,16 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { isAbsolute, join } from 'path';
+import { fileURLToPath } from 'url';
 import {
   getUserContext,
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
 
-// ── Config ──────────────────────────────────────────────────────────
-
-const rawArgs = process.argv.slice(2);
-let initialContext;
-try {
-  initialContext = getUserContext(rawArgs, { requireUser: false });
-} catch (err) {
-  printUserContextErrorAndExit(err);
-}
-
-const args       = initialContext.args;
-const LIST_MODE  = args.includes('--list');
-const jdFlag     = args.indexOf('--jd');
-const jdPath     = jdFlag !== -1 ? args[jdFlag + 1] : null;
-const topFlag    = args.indexOf('--top');
-const topRaw     = topFlag !== -1 ? parseInt(args[topFlag + 1], 10) : NaN;
-const TOP_N      = Number.isInteger(topRaw) && topRaw > 0 ? topRaw : 1;
-// Exclude flag operands by index position, not by value, to preserve repeated text in the question
-const excludeIdx = new Set([
-  ...(jdFlag  !== -1 ? [jdFlag + 1]  : []),
-  ...(topFlag !== -1 ? [topFlag + 1] : []),
-]);
-const question = args
-  .filter((a, i) => !a.startsWith('--') && !excludeIdx.has(i))
-  .join(' ').trim();
-
-if (!LIST_MODE && !question) {
-  console.error('Usage: node match-star.mjs --user <username> "<behavioural question>" [--jd <file>] [--top <n>]');
-  console.error('       node match-star.mjs --user <username> --list');
-  process.exit(1);
-}
-
-let userContext;
-try {
-  userContext = getUserContext(rawArgs);
-} catch (err) {
-  printUserContextErrorAndExit(err);
-}
-
-const STORY_BANK_PATH = userPath(userContext, 'interview-prep/story-bank.md');
-
-function resolveUserInputPath(inputPath) {
+function resolveUserInputPath(inputPath, activeUserContext) {
   if (!inputPath || isAbsolute(inputPath)) return inputPath;
-  const userRelative = userPath(userContext, inputPath);
+  const userRelative = userPath(activeUserContext, inputPath);
   if (existsSync(userRelative)) return userRelative;
   return join(process.cwd(), inputPath);
 }
@@ -222,13 +182,52 @@ export { parseStories, tokenize, score, STOPWORDS };
 // ── Main ─────────────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-if (!existsSync(STORY_BANK_PATH)) {
-  console.error(`Error: ${STORY_BANK_PATH} not found.`);
+const rawArgs = process.argv.slice(2);
+let initialContext;
+try {
+  initialContext = getUserContext(rawArgs, { requireUser: false });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+const args       = initialContext.args;
+const LIST_MODE  = args.includes('--list');
+const jdFlag     = args.indexOf('--jd');
+const jdPath     = jdFlag !== -1 ? args[jdFlag + 1] : null;
+const topFlag    = args.indexOf('--top');
+const topRaw     = topFlag !== -1 ? parseInt(args[topFlag + 1], 10) : NaN;
+const TOP_N      = Number.isInteger(topRaw) && topRaw > 0 ? topRaw : 1;
+// Exclude flag operands by index position, not by value, to preserve repeated text in the question
+const excludeIdx = new Set([
+  ...(jdFlag  !== -1 ? [jdFlag + 1]  : []),
+  ...(topFlag !== -1 ? [topFlag + 1] : []),
+]);
+const question = args
+  .filter((a, i) => !a.startsWith('--') && !excludeIdx.has(i))
+  .join(' ').trim();
+
+if (!LIST_MODE && !question) {
+  console.error('Usage: node match-star.mjs --user <username> "<behavioural question>" [--jd <file>] [--top <n>]');
+  console.error('       node match-star.mjs --user <username> --list');
+  process.exit(1);
+}
+
+let userContext;
+try {
+  userContext = getUserContext(rawArgs);
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+
+const storyBankPath = userPath(userContext, 'interview-prep/story-bank.md');
+
+if (!existsSync(storyBankPath)) {
+  console.error(`Error: ${storyBankPath} not found.`);
   console.error('Run /career-ops interview-prep on a role first to populate your story bank.');
   process.exit(1);
 }
 
-const content = readFileSync(STORY_BANK_PATH, 'utf-8');
+const content = readFileSync(storyBankPath, 'utf-8');
 const stories = parseStories(content);
 
 if (stories.length === 0) {
@@ -251,7 +250,7 @@ if (LIST_MODE) {
 const queryTokens = tokenize(question);
 let jdTokens = [];
 if (jdPath) {
-  const resolvedJdPath = resolveUserInputPath(jdPath);
+  const resolvedJdPath = resolveUserInputPath(jdPath, userContext);
   if (!existsSync(resolvedJdPath)) {
     console.error(`Error: JD file not found at ${jdPath}`);
     process.exit(1);
