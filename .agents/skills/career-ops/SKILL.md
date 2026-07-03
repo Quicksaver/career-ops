@@ -4,7 +4,7 @@ description: AI job search command center -- evaluate offers, generate CVs, scan
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | scan | scan-handoff | scan-auth | deep | pdf | latex | cover | eu-swe | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | interview | patterns | followup | update]"
+argument-hint: "[go | scan | scan-handoff | scan-auth | deep | pdf | latex | cover | eu-swe | oferta | ofertas | apply | batch | tracker | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | followup | update]"
 license: MIT
 ---
 
@@ -88,6 +88,9 @@ Determine the mode from `$mode`:
 | `interview-prep` | `interview-prep` |
 | `interview` | `interview` |
 | `eu-swe` | `regional/eu-swe` |
+| `interview/plan` | `interview/plan` |
+| `interview/practice` | `interview/practice` |
+| `interview/debrief` | `interview/debrief` |
 | `pdf` | `pdf` |
 | `latex` | `latex` |
 | `training` | `training` |
@@ -141,6 +144,9 @@ Available commands:
   /career-ops interview-prep → Generate company-specific interview prep doc
   /career-ops interview    → Interactive profile/CV onboarding interview
   /career-ops eu-swe    → Calibrate a European SWE application before CV/apply/interview
+  /career-ops interview/plan → Time-blocked prep plan for an upcoming interview
+  /career-ops interview/practice → Practice interview, one question at a time with feedback
+  /career-ops interview/debrief → Post-interview debrief: close gaps, predict next round
   /career-ops pdf       → PDF only, ATS-optimized CV
   /career-ops latex     → Export CV as LaTeX/Overleaf .tex
   /career-ops cover     → Cover letter: standalone JD paste or /career-ops cover {slug}
@@ -181,7 +187,7 @@ For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.m
 ### Standalone modes (only their mode file):
 Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_USER}/`.
 
-Applies to: `tracker`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `latex`, `training`, `project`, `patterns`, `followup`, `cover`, `scan-auth`
+Applies to: `tracker`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `training`, `project`, `patterns`, `followup`, `cover`, `scan-auth`
 
 ### Modes delegated to subagent:
 For `go`, `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:

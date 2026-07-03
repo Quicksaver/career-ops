@@ -25,6 +25,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run scan:full` | `scan-ats-full.mjs` | Reverse ATS discovery scanner |
 | `npm run validate:portals` | `validate-portals.mjs` | Validate portals.yml shape before scanning |
 | `npm run tracker` | `tracker.mjs` | SQLite derived index over applications.md — sync/query/history/export |
+| `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 
 ---
 
@@ -42,7 +43,7 @@ npm run doctor -- --user <username>
 
 ## verify
 
-Health check for pipeline data integrity. Validates `users/{USER}/data/applications.md` against seven rules: canonical statuses (per `templates/states.yml`), no duplicate company+role pairs, all report links point to existing files, scores match `X.XX/5` / `N/A` / `DUP`, rows have proper pipe-delimited format, no pending TSVs in `users/{USER}/batch/tracker-additions/`, and no markdown bold in scores.
+Health check for pipeline data integrity. Validates `users/{USER}/data/applications.md` against nine rules: canonical statuses (per `templates/states.yml`), no duplicate company+role pairs, all report links point to existing files, scores match `X.XX/5` / `N/A` / `DUP`, rows have proper pipe-delimited format, no pending TSVs in `users/{USER}/batch/tracker-additions/`, no markdown bold in scores, no two `users/{USER}/reports/*.md` files covering the same company+role, and no orphan reports without a tracker row (#1425). The report checks are warning-level: duplicate reports can be legitimate (re-evaluation after a JD change), so they never fail the run.
 
 ```bash
 npm run verify -- --user <username>
@@ -324,3 +325,22 @@ node tracker.mjs export --user <username> --out repaired.md # write to a file (e
 `export` is the inverse of `sync` (round-trip `md → db → md` is lossless for clean input — enforced by `test-all.mjs`). It writes to stdout by default and never touches `applications.md` unless you explicitly pass it as `--out`. Phase 2 of #918 (DB becomes source of truth, markdown becomes a rendered view) is a separate, explicit per-user opt-in — not part of this script yet.
 
 **Exit codes:** `0` success, `1` validation error, missing prerequisites (Node < 22.5, no `users/{USER}/data/applications.md` to index), or corruption found by `sync --check`.
+
+---
+
+## find
+
+Resolves a report number, tracker number, or company/role fragment to its full pipeline identity: company, role, tracker#, report#, canonical status, PDF path (from `users/{USER}/data/pdf-index.tsv`), and report path. "Apply to #13" is ambiguous — report numbers and tracker row numbers diverge — and answering it used to require opening three files; this does it in one read-only lookup.
+
+Zero dependencies, strictly read-only. Numeric queries match **both** the tracker # column and the report number from the Report link (`012` and `12` are the same number), so collisions between the two numbering schemes surface as multiple rows instead of a silent wrong pick. Text queries match company/role by case-insensitive substring, with the shared fuzzy matcher (`role-matcher.mjs`) as fallback for multi-word phrases.
+
+```bash
+node find.mjs --user <username> 13                # report# OR tracker# 13 — shows both if they differ
+node find.mjs --user <username> acme              # company fragment
+node find.mjs --user <username> "data engineer"   # role phrase (fuzzy via role-matcher)
+node find.mjs --user <username> acme --json       # machine-readable output
+```
+
+Multiple matches print as a table; zero matches print a clean message.
+
+**Exit codes:** `0` at least one match, `1` no match, missing query, or no `users/{USER}/data/applications.md`.

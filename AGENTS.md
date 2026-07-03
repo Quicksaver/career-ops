@@ -147,7 +147,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `users/{USER}/article-digest.md` | Compact proof points from portfolio (optional) |
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories across evaluations |
 | `users/{USER}/interview-prep/{company}-{role}.md` | Company-specific interview intel reports |
-| `analyze-patterns.mjs` | Pattern analysis script (JSON output) |
+| `analyze-patterns.mjs` | Pattern analysis script (JSON output). Includes ATS channel analysis (per-vendor advance rate; motivated by Bommasani et al., Algorithmic Monocultures in Hiring, FAccT 2026). |
 | `followup-cadence.mjs` | Follow-up cadence calculator (JSON output) |
 | `detect-reposts.mjs` | Repost detector — flags roles re-listed 2+ times in 90 days from scan-history.tsv (JSON or `--summary` table output) |
 | `data/follow-ups.md` | Follow-up history tracker |
@@ -169,7 +169,7 @@ Some users enable plugins (external integrations). If an enabled plugin ships a 
 node doctor.mjs --user {USER} --json
 ```
 
-Output: `{"onboardingNeeded": <bool>, "missing": [...], "warnings": [...]}`, where `missing` lists whichever of `cv.md`, `config/profile.yml`, `modes/_profile.md`, `portals.yml` are absent. `warnings` is reserved for non-blocking setup signals.
+Output: `{"onboardingNeeded": <bool>, "missing": [...], "warnings": [...], "autoCopied": [...]}`, where `missing` lists whichever of `cv.md`, `config/profile.yml`, `modes/_profile.md`, `portals.yml` are absent. `warnings` is reserved for non-blocking setup signals, and `autoCopied` lists user customization files (`modes/_profile.md` or `modes/_custom.md`) that `doctor.mjs` automatically copied from their `.template.md` equivalents during the check.
 
 If `warnings` includes a Playwright MCP/project-config warning, do not report that Playwright tools are unavailable until you check the actual runtime tool registry. In Codex, use `tool_search` for Playwright/browser tools; in other CLIs, use the equivalent MCP/tool discovery mechanism. The doctor check can only inspect project config files, while some environments lazy-load MCP tools without a repo-local `.mcp.json` or `.claude/settings*.json`.
 
@@ -317,6 +317,9 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 | Wants LinkedIn outreach | `contacto` |
 | Asks for company research | `deep` |
 | Preps for interview at specific company | `interview-prep` |
+| Wants a time-blocked prep plan for an upcoming interview | `interview/plan` |
+| Wants to run practice interview questions with feedback | `interview/practice` |
+| Wants to debrief after a real interview and close gaps | `interview/debrief` |
 | Wants to generate CV/PDF | `pdf` |
 | Evaluates a course/cert | `training` |
 | Evaluates portfolio project | `project` |

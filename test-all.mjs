@@ -97,16 +97,38 @@ function run(cmd, args = [], opts = {}) {
  */
 function fileExists(path) { return existsSync(join(ROOT, path)); }
 
+const BASH = (() => {
+  if (process.platform !== 'win32') return 'bash';
+  try {
+    execSync('wsl -e bash -c "true"', { stdio: 'ignore' });
+    return 'bash';
+  } catch {}
+  const candidates = [
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
+    'bash'
+  ];
+  for (const cmd of candidates) {
+    try {
+      execSync(`"${cmd}" -c "true"`, { stdio: 'ignore' });
+      return cmd;
+    } catch {}
+  }
+  return 'bash';
+})();
+
 function toBashPath(wpath) {
   if (process.platform !== 'win32') return wpath;
   try {
+    execSync('wsl -e bash -c "true"', { stdio: 'ignore' });
     const forwardSlashed = wpath.replace(/\\/g, '/');
     const out = execSync(`wsl wslpath -u "${forwardSlashed}"`, { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
     if (out) return out;
   } catch {}
   try {
     const forwardSlashed = wpath.replace(/\\/g, '/');
-    const out = execSync(`cygpath -u "${forwardSlashed}"`, { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
+    const cygpathCmd = existsSync('C:\\Program Files\\Git\\usr\\bin\\cygpath.exe') ? '"C:\\Program Files\\Git\\usr\\bin\\cygpath.exe"' : 'cygpath';
+    const out = execSync(`${cygpathCmd} -u "${forwardSlashed}"`, { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
     if (out) return out;
   } catch {}
   return wpath.replace(/^[A-Za-z]:/, m => '/' + m[0].toLowerCase()).replace(/\\/g, '/');
@@ -918,29 +940,38 @@ try {
 
 if (!QUICK) {
   console.log('\n7. Dashboard build');
-  const isWindows = process.platform === 'win32';
-  const dashboardBuildTmp = mkdtempSync(join(tmpdir(), 'career-dashboard-build-'));
-  const outPath = join(dashboardBuildTmp, isWindows ? 'career-dashboard-test.exe' : 'career-dashboard-test');
-  const goEnv = { ...process.env };
-  if (isWindows && !goEnv.GOCACHE) {
-    goEnv.GOCACHE = join(tmpdir(), 'career-ops-go-build-cache');
-  }
-  if (goEnv.GOCACHE) {
-    try { mkdirSync(goEnv.GOCACHE, { recursive: true }); } catch (e) {}
-  }
-  const goBuild = run('go', ['build', '-o', outPath, '.'], {
-    cwd: join(ROOT, 'dashboard'),
-    env: goEnv,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 60000,
-  });
-  if (goBuild !== null) {
-    pass('Dashboard compiles');
-    try { rmSync(outPath, { force: true }); } catch (e) {}
+  let hasGo = false;
+  try {
+    execSync('go version', { stdio: 'ignore' });
+    hasGo = true;
+  } catch {}
+  if (!hasGo) {
+    warn('Dashboard build skipped — go compiler not in env');
   } else {
-    fail('Dashboard build failed');
+    const isWindows = process.platform === 'win32';
+    const dashboardBuildTmp = mkdtempSync(join(tmpdir(), 'career-dashboard-build-'));
+    const outPath = join(dashboardBuildTmp, isWindows ? 'career-dashboard-test.exe' : 'career-dashboard-test');
+    const goEnv = { ...process.env };
+    if (isWindows && !goEnv.GOCACHE) {
+      goEnv.GOCACHE = join(tmpdir(), 'career-ops-go-build-cache');
+    }
+    if (goEnv.GOCACHE) {
+      try { mkdirSync(goEnv.GOCACHE, { recursive: true }); } catch (e) {}
+    }
+    const goBuild = run('go', ['build', '-o', outPath, '.'], {
+      cwd: join(ROOT, 'dashboard'),
+      env: goEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 60000,
+    });
+    if (goBuild !== null) {
+      pass('Dashboard compiles');
+      try { rmSync(outPath, { force: true }); } catch (e) {}
+    } else {
+      fail('Dashboard build failed');
+    }
+    try { rmSync(dashboardBuildTmp, { recursive: true, force: true }); } catch (e) {}
   }
-  try { rmSync(dashboardBuildTmp, { recursive: true, force: true }); } catch (e) {}
 } else {
   console.log('\n7. Dashboard build (skipped --quick)');
 }
@@ -1060,8 +1091,8 @@ const leakPatterns = [
 const scanExtensions = ['md', 'yml', 'html', 'mjs', 'sh', 'go', 'json'];
 const allowedFiles = [
   // English README + localized translations (all legitimately credit Santiago)
-  'README.md', 'README.da.md', 'README.de.md', 'README.es.md', 'README.fr.md', 'README.ja.md', 'README.ko-KR.md',
-  'README.pt-BR.md', 'README.ru.md', 'README.cn.md', 'README.zh-TW.md',
+  'README.md', 'README.ar.md', 'README.da.md', 'README.de.md', 'README.es.md', 'README.fr.md', 'README.ja.md',
+  'README.ko-KR.md', 'README.pl.md', 'README.pt-BR.md', 'README.ru.md', 'README.cn.md', 'README.ua.md', 'README.zh-TW.md',
   // Standard project files
   'LICENSE', 'CITATION.cff', 'CONTRIBUTING.md', 'CHANGELOG.md', 'TRADEMARK.md',
   'package.json', '.github/FUNDING.yml', 'CLAUDE.md', 'AGENTS.md', 'go.mod', 'test-all.mjs',
@@ -3856,6 +3887,82 @@ try {
   fail(`tracker-link normalization tests crashed: ${e.message}`);
 }
 
+// ── VERIFY-PIPELINE REPORT CHECKS (#1425) ───────────────────────
+// Parallel evaluators can write two reports for the same company+role, and
+// tracker dedup can leave a report file with no tracker row. verify-pipeline
+// must surface both as warnings (not errors — re-evaluations are legitimate).
+console.log('\n🧪 Testing verify-pipeline duplicate/orphan report checks...');
+try {
+  const vpTmp = mkdtempSync(join(tmpdir(), 'career-ops-verify-reports-'));
+  try {
+    const vpReports = join(vpTmp, 'reports');
+    mkdirSync(vpReports, { recursive: true });
+    const vpTracker = join(vpTmp, 'applications.md');
+    const vpEnv = { ...process.env, CAREER_OPS_TRACKER: vpTracker, CAREER_OPS_REPORTS: vpReports };
+
+    const report = (company, role) =>
+      `# Evaluación: ${company} — ${role}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 4.2\n\`\`\`\n`;
+
+    // #1 and #3 are the same role at Acme written by two concurrent workers;
+    // #2 is a different Acme role (must NOT be flagged as duplicate);
+    // #3 also has no tracker row (orphan — tracker dedup kept #1).
+    writeFileSync(join(vpReports, '001-acme-2026-01-04.md'), report('Acme', 'Staff AI Engineer'));
+    writeFileSync(join(vpReports, '002-acme-2026-01-05.md'), report('Acme', 'Platform Engineer'));
+    writeFileSync(join(vpReports, '003-acme-2026-01-05.md'), report('Acme', 'Staff AI Engineer'));
+
+    writeFileSync(vpTracker,
+      '# Applications Tracker\n\n' +
+      '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
+      '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
+      '| 1 | 2026-01-04 | Acme | Staff AI Engineer | 4.2/5 | Evaluated | ❌ | [1](reports/001-acme-2026-01-04.md) | ok |\n' +
+      '| 2 | 2026-01-05 | Acme | Platform Engineer | 4.0/5 | Evaluated | ❌ | [2](reports/002-acme-2026-01-05.md) | ok |\n');
+
+    const vpOut = run(NODE, ['verify-pipeline.mjs'], { env: vpEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    if (vpOut === null) {
+      fail('verify-pipeline crashed on duplicate/orphan report fixture');
+    } else {
+      if (vpOut.includes('Duplicate reports for same company+role') &&
+          vpOut.includes('001-acme-2026-01-04.md') && vpOut.includes('003-acme-2026-01-05.md')) {
+        pass('duplicate reports for the same company+role are flagged (#1425)');
+      } else {
+        fail('duplicate company+role reports not flagged');
+      }
+      if (vpOut.includes('002-acme-2026-01-05.md') && /Duplicate reports[^\n]*002-acme/.test(vpOut)) {
+        fail('different role at the same company falsely flagged as duplicate report');
+      } else {
+        pass('different role at the same company is not flagged as duplicate');
+      }
+      if (/Orphan report[^\n]*#3[^\n]*003-acme-2026-01-05\.md/.test(vpOut)) {
+        pass('orphan report with no tracker row is flagged (#1425)');
+      } else {
+        fail('orphan report not flagged');
+      }
+      if (/Orphan report[^\n]*(001|002)-acme/.test(vpOut)) {
+        fail('referenced report falsely flagged as orphan');
+      } else {
+        pass('referenced reports are not flagged as orphans');
+      }
+      // run() returns non-null only on exit 0 — warnings must not fail the check.
+      pass('duplicate/orphan report findings stay warning-level (exit 0)');
+    }
+
+    // Clean fixture: one row, one report — both checks must pass green.
+    rmSync(join(vpReports, '003-acme-2026-01-05.md'));
+    const vpClean = run(NODE, ['verify-pipeline.mjs'], { env: vpEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    if (vpClean !== null &&
+        vpClean.includes('No duplicate reports for the same company+role') &&
+        vpClean.includes('No orphan reports')) {
+      pass('clean tracker+reports fixture passes both report checks');
+    } else {
+      fail('clean fixture did not pass duplicate/orphan report checks');
+    }
+  } finally {
+    rmSync(vpTmp, { recursive: true, force: true });
+  }
+} catch (e) {
+  fail(`verify-pipeline report checks crashed: ${e.message}`);
+}
+
 // ── SHARED ROLE MATCHER + DEDUP-TRACKER SAFETY (#947) ───────────
 // dedup-tracker.mjs used to ship an older fuzzy role matcher than
 // merge-tracker.mjs. That weaker matcher collapsed sibling roles at the same
@@ -4071,6 +4178,72 @@ try {
   }
 } catch (e) {
   fail(`tracker-parse unit test crashed: ${e.message}`);
+}
+
+// #1431 "Apply to #13" is ambiguous: report numbers and tracker row numbers
+// diverge, and mapping company ↔ report# ↔ tracker# ↔ PDF used to require
+// opening three files. find.mjs resolves a report#, tracker#, or company/role
+// fragment to the full pipeline identity in one read-only lookup.
+console.log('\n🧪 Testing find.mjs pipeline identity lookup...');
+try {
+  const { parseTrackerRows, parsePdfIndex, findMatches } = await import(pathToFileURL(join(ROOT, 'find.mjs')).href);
+
+  // Tracker# and report# intentionally diverge: row 3 carries report 12, and a
+  // different row is numbered 12 — the exact friction the tool exists to solve.
+  const rows = parseTrackerRows([
+    '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |',
+    '|---|------|---------|------|-------|--------|-----|--------|-------|',
+    '| 3 | 2026-06-01 | Acme Labs | Platform Engineer | 4.2/5 | **Applied** (2026-06-02) | ✅ | [12](reports/012-acme-labs-2026-06-01.md) | strong fit |',
+    '| 12 | 2026-06-10 | Globex | Data Engineer | 3.8/5 | Evaluated | ❌ | [15](reports/015-globex-2026-06-10.md) | — |',
+  ].join('\n'));
+  const pdfIndex = parsePdfIndex(
+    '# report\tpdf\thtml\tformat\tdate — written by generate-pdf.mjs, do not edit\n' +
+    '012\toutput/cv-acme-labs.pdf\toutput/cv-acme-labs.html\tats\t2026-06-01\n');
+
+  const byTracker = findMatches(rows, '3', pdfIndex);
+  if (byTracker.length === 1 && byTracker[0].company === 'Acme Labs' &&
+      byTracker[0].trackerNum === 3 && byTracker[0].reportNum === '12' &&
+      byTracker[0].reportPath === 'reports/012-acme-labs-2026-06-01.md' &&
+      byTracker[0].status === 'Applied' &&
+      byTracker[0].pdfPath === 'output/cv-acme-labs.pdf') {
+    pass('find.mjs resolves a tracker# to company, report#, canonical status, and PDF path');
+  } else {
+    fail(`find.mjs tracker# lookup wrong: ${JSON.stringify(byTracker)}`);
+  }
+
+  // "12" is both Acme's report# and Globex's tracker# — both rows must surface
+  // (with the zero-padded "012" report-link form treated as the same number).
+  const ambiguous = findMatches(rows, '012', pdfIndex);
+  const companies = ambiguous.map(m => m.company).sort();
+  if (ambiguous.length === 2 && companies[0] === 'Acme Labs' && companies[1] === 'Globex') {
+    pass('find.mjs surfaces report#/tracker# collisions as multiple matches (zero-pad normalized)');
+  } else {
+    fail(`find.mjs numeric collision lookup wrong: ${JSON.stringify(ambiguous)}`);
+  }
+
+  const byFragment = findMatches(rows, 'acme', pdfIndex);
+  if (byFragment.length === 1 && byFragment[0].company === 'Acme Labs') {
+    pass('find.mjs matches a case-insensitive company fragment');
+  } else {
+    fail(`find.mjs company fragment lookup wrong: ${JSON.stringify(byFragment)}`);
+  }
+
+  // Fuzzy multi-word lookup reuses role-matcher.mjs (stopwords like "remote"
+  // dropped) instead of reinventing matching.
+  const byFuzzy = findMatches(rows, 'remote data engineer', pdfIndex);
+  if (byFuzzy.length === 1 && byFuzzy[0].company === 'Globex' && byFuzzy[0].pdfPath === null) {
+    pass('find.mjs fuzzy-matches a role phrase via role-matcher and reports a missing PDF');
+  } else {
+    fail(`find.mjs fuzzy role lookup wrong: ${JSON.stringify(byFuzzy)}`);
+  }
+
+  if (findMatches(rows, 'no-such-company', pdfIndex).length === 0) {
+    pass('find.mjs returns zero matches cleanly for an unknown query');
+  } else {
+    fail('find.mjs matched a query that exists nowhere in the tracker');
+  }
+} catch (e) {
+  fail(`find.mjs unit test crashed: ${e.message}`);
 }
 
 // dedup-tracker reads AND writes by column; with a Location column its status
@@ -4407,17 +4580,48 @@ try {
   }
   rmSync(readyUsers, { recursive: true, force: true });
 
+  // Auto-copy template: when modes/_profile.md or modes/_custom.md is missing but template exists,
+  // doctor --json auto-copies them, records them in autoCopied, and does not report them as missing (#1369).
+  const autoCopy = mkdtempSync(join(tmpdir(), 'co-autocopy-'));
+  mkdirSync(join(autoCopy, 'config'), { recursive: true });
+  mkdirSync(join(autoCopy, 'modes'), { recursive: true });
+  for (const f of ['cv.md', 'config/profile.yml', 'portals.yml']) {
+    writeFileSync(join(autoCopy, f), 'x');
+  }
+  writeFileSync(join(autoCopy, 'modes/_profile.template.md'), '# profile template\n');
+  writeFileSync(join(autoCopy, 'modes/_custom.template.md'), '# custom template\n');
+  const ac = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', autoCopy]) || '{}');
+  if (
+    ac.onboardingNeeded === false &&
+    Array.isArray(ac.missing) &&
+    ac.missing.length === 0 &&
+    Array.isArray(ac.autoCopied) &&
+    ac.autoCopied.includes('modes/_profile.md') &&
+    ac.autoCopied.includes('modes/_custom.md') &&
+    existsSync(join(autoCopy, 'modes/_profile.md')) &&
+    readFileSync(join(autoCopy, 'modes/_profile.md'), 'utf-8') === '# profile template\n' &&
+    existsSync(join(autoCopy, 'modes/_custom.md')) &&
+    readFileSync(join(autoCopy, 'modes/_custom.md'), 'utf-8') === '# custom template\n'
+  ) {
+    pass('Auto-copy template → modes/_profile.md and modes/_custom.md copied silently in --json mode (#1369)');
+  } else {
+    fail(`Auto-copy template failed in --json mode: ${JSON.stringify(ac)}`);
+  }
+  rmSync(autoCopy, { recursive: true, force: true });
+
   const claudeDoc = readFile('CLAUDE.md');
   const agentsDoc = readFile('AGENTS.md');
   if (
     /@\.\/AGENTS\.md/.test(claudeDoc) &&
     /node\s+doctor\.mjs\s+--user\s+\{USER\}\s+--json/.test(agentsDoc) &&
     /"warnings"\s*:\s*\[\.\.\.\]/.test(agentsDoc) &&
-    !/Does\s+`cv\.md`\s+exist\?/i.test(agentsDoc)
+    /"autoCopied"\s*:\s*\[\.\.\.\]/.test(agentsDoc) &&
+    !/Does\s+`cv\.md`\s+exist\?/i.test(agentsDoc) &&
+    !/Does\s+`cv\.md`\s+exist\?/i.test(claudeDoc)
   ) {
-    pass('CLAUDE.md delegates onboarding state to AGENTS.md and doctor --json');
+    pass('CLAUDE.md delegates onboarding state to AGENTS.md and doctor --json with autoCopied');
   } else {
-    fail('Agent docs still duplicate onboarding prerequisite checks or omit user-scoped doctor --json');
+    fail('Agent docs still duplicate onboarding prerequisite checks or omit user-scoped doctor --json/autoCopied');
   }
 } catch (e) {
   fail(`Cold-start trigger test crashed: ${e.message}`);
@@ -4957,7 +5161,7 @@ try {
 
   writeFileSync(join(batchDir, 'batch-runner.sh'), readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8').replace(/\r\n/g, '\n'));
   if (process.platform === 'win32') {
-    try { execFileSync('bash', ['-c', 'chmod +x batch/batch-runner.sh'], { cwd: tmp }); } catch {}
+    try { execFileSync(BASH, ['-c', 'chmod +x batch/batch-runner.sh'], { cwd: tmp }); } catch {}
   } else {
     execFileSync('chmod', ['+x', join(batchDir, 'batch-runner.sh')]);
   }
@@ -4976,7 +5180,7 @@ try {
     'exit 1',
   ].join('\n') + '\n');
   if (process.platform === 'win32') {
-    try { execFileSync('bash', ['-c', 'chmod +x bin/claude'], { cwd: tmp }); } catch {}
+    try { execFileSync(BASH, ['-c', 'chmod +x bin/claude'], { cwd: tmp }); } catch {}
   } else {
     execFileSync('chmod', ['+x', join(fakeBin, 'claude')]);
   }
@@ -9441,6 +9645,14 @@ try {
   if (importOk) pass('every bundled plugin entry imports cleanly with a default hook export');
   else fail('a bundled plugin failed to import or lacks a default export');
 
+  const notionMod = await import(pathToFileURL(join(ROOT, 'plugins', 'notion', 'index.mjs')).href);
+  const notionParseScore = notionMod.parseScore || notionMod.default?.parseScore;
+  if (typeof notionParseScore === 'function' && notionParseScore('4.2/5') === 4.2 && notionParseScore('5/5') === 5 && notionParseScore('**4.2/5**') === 4.2) {
+    pass('notion plugin parseScore sanitizes slash-formatted scores cleanly (4.2/5 -> 4.2, 5/5 -> 5) (#1414)');
+  } else {
+    fail(`notion plugin parseScore broken: 4.2/5 -> ${notionParseScore?.('4.2/5')}, 5/5 -> ${notionParseScore?.('5/5')}`);
+  }
+
   // Recursively collect every .mjs under plugins/ (the deny-list must not be flat-only).
   const allPluginMjs = [];
   const walkMjs = (d) => {
@@ -9623,6 +9835,542 @@ try {
   }
 } catch (e) {
   fail(`higheredjobs provider tests crashed: ${e.message}`);
+}
+
+// ── 51. PROVIDERS — JibeApply ────────────────────────────────────
+
+console.log('\n51. Provider — jibeapply');
+
+try {
+  const jibeapply = (await import(pathToFileURL(join(ROOT, 'providers/jibeapply.mjs')).href)).default;
+  const { parseJibeapplyResponse } = await import(pathToFileURL(join(ROOT, 'providers/jibeapply.mjs')).href);
+
+  if (jibeapply.id === 'jibeapply') pass('jibeapply.id is "jibeapply"');
+  else fail(`jibeapply.id is ${JSON.stringify(jibeapply.id)}`);
+
+  // detect() — /jobs path → /api/jobs
+  const hit = jibeapply.detect({ name: 'Acme', careers_url: 'https://acme.jibeapply.com/jobs?location=Germany' });
+  if (hit && hit.url === 'https://acme.jibeapply.com/api/jobs?location=Germany') {
+    pass('jibeapply.detect() rewrites /jobs → /api/jobs');
+  } else {
+    fail(`jibeapply.detect() returned ${JSON.stringify(hit)}`);
+  }
+
+  // detect() — /api/jobs already present (idempotent)
+  const hitApi = jibeapply.detect({ name: 'X', careers_url: 'https://acme.jibeapply.com/api/jobs' });
+  if (hitApi && hitApi.url === 'https://acme.jibeapply.com/api/jobs') {
+    pass('jibeapply.detect() leaves already-correct /api/jobs URL unchanged');
+  } else {
+    fail(`jibeapply.detect(api) returned ${JSON.stringify(hitApi)}`);
+  }
+
+  // detect() — null cases
+  if (jibeapply.detect({ name: 'X', careers_url: 'https://example.com/jobs' }) === null) {
+    pass('jibeapply.detect() returns null for non-jibeapply URL');
+  } else {
+    fail('jibeapply.detect() should return null for non-jibeapply URL');
+  }
+
+  // Path-spoofed: jibeapply.com in path, not host
+  if (jibeapply.detect({ name: 'Spoof', careers_url: 'https://evil.example/acme.jibeapply.com/jobs' }) === null) {
+    pass('jibeapply.detect() rejects path-spoofed URL');
+  } else {
+    fail('jibeapply.detect() must NOT detect path-spoofed URLs');
+  }
+
+  // Non-string careers_url
+  if (jibeapply.detect({ name: 'X', careers_url: 42 }) === null) {
+    pass('jibeapply.detect() returns null for non-string careers_url');
+  } else {
+    fail('jibeapply.detect() should return null for non-string careers_url');
+  }
+
+  // HTTP (non-HTTPS) must not be detected
+  if (jibeapply.detect({ name: 'X', careers_url: 'http://acme.jibeapply.com/jobs' }) === null) {
+    pass('jibeapply.detect() rejects HTTP (non-HTTPS) URL');
+  } else {
+    fail('jibeapply.detect() should reject HTTP URLs');
+  }
+
+  // parseJibeapplyResponse — normalization
+  const entry = { name: 'Acme', careers_url: 'https://acme.jibeapply.com/jobs' };
+  const sampleJson = {
+    jobs: [
+      { title: 'Senior QA', slug: 'senior-qa-berlin', city: 'Berlin', country: 'Germany', hiring_organization: 'Acme GmbH' },
+      { title: 'Backend Dev', req_id: 'REQ-123', full_location: 'Remote, Germany' },
+      { data: { title: 'Wrapped Job', slug: 'wrapped-job', city: 'Munich', country: 'Germany' } },
+      { title: '', slug: 'no-title' },          // missing title — skip
+      { title: 'No Slug' },                      // missing slug/req_id — skip
+    ],
+  };
+  const parsedJibe = parseJibeapplyResponse(sampleJson, entry);
+
+  if (parsedJibe.length === 3) pass('parseJibeapplyResponse extracts 3 valid jobs');
+  else fail(`parseJibeapplyResponse returned ${parsedJibe.length} jobs, expected 3`);
+
+  if (parsedJibe[0].url === 'https://acme.jibeapply.com/jobs/senior-qa-berlin') {
+    pass('parseJibeapplyResponse builds URL from origin + /jobs/ + slug');
+  } else {
+    fail(`row 0 url = ${JSON.stringify(parsedJibe[0].url)}`);
+  }
+
+  if (parsedJibe[0].location === 'Berlin, Germany') {
+    pass('parseJibeapplyResponse builds location from city/country');
+  } else {
+    fail(`row 0 location = ${JSON.stringify(parsedJibe[0].location)}`);
+  }
+
+  if (parsedJibe[0].company === 'Acme GmbH') {
+    pass('parseJibeapplyResponse uses hiring_organization when present');
+  } else {
+    fail(`row 0 company = ${JSON.stringify(parsedJibe[0].company)}`);
+  }
+
+  if (parsedJibe[1].url.includes('REQ-123') && parsedJibe[1].location === 'Remote, Germany') {
+    pass('parseJibeapplyResponse uses req_id and full_location');
+  } else {
+    fail(`row 1 = ${JSON.stringify(parsedJibe[1])}`);
+  }
+
+  if (parsedJibe[2].title === 'Wrapped Job') {
+    pass('parseJibeapplyResponse unwraps item.data');
+  } else {
+    fail(`row 2 title = ${JSON.stringify(parsedJibe[2].title)}`);
+  }
+
+  // parseJibeapplyResponse — falls back to entry.name when hiring_organization missing
+  const noOrg = parseJibeapplyResponse({ jobs: [{ title: 'Dev', slug: 'dev', city: 'Berlin', country: 'Germany' }] }, entry);
+  if (noOrg[0].company === 'Acme') {
+    pass('parseJibeapplyResponse falls back to entry.name when hiring_organization missing');
+  } else {
+    fail(`fallback company = ${JSON.stringify(noOrg[0].company)}`);
+  }
+
+  // parseJibeapplyResponse — empty input
+  if (parseJibeapplyResponse({}, entry).length === 0) pass('parseJibeapplyResponse({}) → empty result');
+  else fail('parseJibeapplyResponse({}) should be empty');
+
+  // parseJibeapplyResponse — falls back to entry.api's origin when careers_url
+  // can't be parsed, so job URLs stay absolute instead of degrading to "/jobs/<slug>"
+  const malformedCareersEntry = { name: 'Widget Co', careers_url: 'jobs.widgetco.com', api: 'https://jobs.widgetco.com/api/jobs' };
+  const apiOriginFallback = parseJibeapplyResponse({ jobs: [{ title: 'Dev', slug: 'dev-1' }] }, malformedCareersEntry);
+  if (apiOriginFallback[0]?.url === 'https://jobs.widgetco.com/jobs/dev-1') {
+    pass('parseJibeapplyResponse falls back to entry.api origin for a malformed careers_url');
+  } else {
+    fail(`parseJibeapplyResponse api-origin fallback: url = ${JSON.stringify(apiOriginFallback[0]?.url)}`);
+  }
+
+  // parseJibeapplyResponse — null/undefined entries in jobs must be skipped, not crash
+  const sparseJson = { jobs: [null, undefined, { title: 'Real Job', slug: 'real-job' }] };
+  try {
+    const parsedSparse = parseJibeapplyResponse(sparseJson, entry);
+    if (parsedSparse.length === 1 && parsedSparse[0].title === 'Real Job') {
+      pass('parseJibeapplyResponse skips null/undefined entries without crashing');
+    } else {
+      fail(`parseJibeapplyResponse sparse result = ${JSON.stringify(parsedSparse)}`);
+    }
+  } catch (e3) {
+    fail(`parseJibeapplyResponse should not throw on null/undefined entries: ${e3.message}`);
+  }
+
+  // fetch() pagination — 2 pages
+  let pageRequests = 0;
+  const fetchedJibe = await jibeapply.fetch(entry, {
+    transport: 'http',
+    fetchText: async () => { throw new Error('fetchText not expected'); },
+    fetchJson: async (url) => {
+      pageRequests++;
+      const u = new URL(url);
+      const page = parseInt(u.searchParams.get('page') || '1', 10);
+      if (page === 1) {
+        return { totalCount: 15, count: 10, jobs: Array.from({ length: 10 }, (_, i) => ({ title: `Job ${i}`, slug: `job-${i}` })) };
+      }
+      return { totalCount: 15, count: 10, jobs: Array.from({ length: 5 }, (_, i) => ({ title: `Job p2-${i}`, slug: `job-p2-${i}` })) };
+    },
+  });
+  if (pageRequests === 2 && fetchedJibe.length === 15) {
+    pass('jibeapply.fetch() paginates across 2 pages (10+5=15)');
+  } else {
+    fail(`jibeapply fetch pagination: requests=${pageRequests}, total=${fetchedJibe.length} (expected 2/15)`);
+  }
+
+  // fetch() pagination cap — an inflated totalCount must not trigger unbounded
+  // concurrent requests (MAX_PAGES = 50 in providers/jibeapply.mjs), and
+  // hitting the cap must be visible (console.error), not silent.
+  let hugeRequests = 0;
+  const jibeCapWarnings = [];
+  const originalConsoleError = console.error;
+  console.error = (msg) => jibeCapWarnings.push(msg);
+  let fetchedHuge;
+  try {
+    fetchedHuge = await jibeapply.fetch(entry, {
+      transport: 'http',
+      fetchText: async () => { throw new Error('fetchText not expected'); },
+      fetchJson: async () => {
+        hugeRequests++;
+        return { totalCount: 1_000_000, count: 10, jobs: Array.from({ length: 10 }, (_, i) => ({ title: `Job ${i}`, slug: `job-${i}` })) };
+      },
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
+  if (hugeRequests === 50 && fetchedHuge.length === 500) {
+    pass('jibeapply.fetch() caps pagination at MAX_PAGES despite an inflated totalCount');
+  } else {
+    fail(`jibeapply fetch pagination cap: requests=${hugeRequests}, total=${fetchedHuge.length} (expected 50/500)`);
+  }
+  if (jibeCapWarnings.some(w => /has more postings than max_pages allows/.test(w))) {
+    pass('jibeapply.fetch() warns (console.error) when the cap truncates real results');
+  } else {
+    fail(`jibeapply fetch cap: expected a truncation warning, got ${JSON.stringify(jibeCapWarnings)}`);
+  }
+
+  // fetch() pagination cap — entry.max_pages raises the cap for a genuinely
+  // large tenant (e.g. a Workday-scale Deutsche Bank equivalent on JibeApply)
+  let overriddenRequests = 0;
+  const bigEntry = { name: 'BigCo', careers_url: 'https://bigco.jibeapply.com/jobs', max_pages: 80 };
+  const fetchedOverridden = await jibeapply.fetch(bigEntry, {
+    transport: 'http',
+    fetchText: async () => { throw new Error('fetchText not expected'); },
+    fetchJson: async () => {
+      overriddenRequests++;
+      return { totalCount: 1_000_000, count: 10, jobs: Array.from({ length: 10 }, (_, i) => ({ title: `Job ${i}`, slug: `job-${i}` })) };
+    },
+  });
+  if (overriddenRequests === 80 && fetchedOverridden.length === 800) {
+    pass('jibeapply.fetch() honors entry.max_pages to raise the cap above the default');
+  } else {
+    fail(`jibeapply fetch max_pages override: requests=${overriddenRequests}, total=${fetchedOverridden.length} (expected 80/800)`);
+  }
+
+  // entry.max_pages is itself capped (MAX_PAGES_CAP = 500) — an absurd override
+  // can't turn this into an unbounded scan either
+  let cappedOverrideRequests = 0;
+  const absurdEntry = { name: 'AbsurdCo', careers_url: 'https://absurdco.jibeapply.com/jobs', max_pages: 100_000 };
+  const fetchedAbsurd = await jibeapply.fetch(absurdEntry, {
+    transport: 'http',
+    fetchText: async () => { throw new Error('fetchText not expected'); },
+    fetchJson: async () => {
+      cappedOverrideRequests++;
+      return { totalCount: 10_000_000, count: 10, jobs: Array.from({ length: 10 }, (_, i) => ({ title: `Job ${i}`, slug: `job-${i}` })) };
+    },
+  });
+  if (cappedOverrideRequests === 500 && fetchedAbsurd.length === 5000) {
+    pass('jibeapply.fetch() caps an absurd entry.max_pages at MAX_PAGES_CAP');
+  } else {
+    fail(`jibeapply fetch max_pages hard cap: requests=${cappedOverrideRequests}, total=${fetchedAbsurd.length} (expected 500/5000)`);
+  }
+
+  // fetch() pagination — a failure on a later page returns the jobs gathered
+  // so far instead of discarding everything (sequential, not Promise.all),
+  // and the failure itself is visible (console.error), not silent.
+  let flakyRequests = 0;
+  const jibeFlakyWarnings = [];
+  console.error = (msg) => jibeFlakyWarnings.push(msg);
+  let fetchedFlaky;
+  try {
+    fetchedFlaky = await jibeapply.fetch(entry, {
+      transport: 'http',
+      fetchText: async () => { throw new Error('fetchText not expected'); },
+      fetchJson: async (url) => {
+        flakyRequests++;
+        const u = new URL(url);
+        const page = parseInt(u.searchParams.get('page') || '1', 10);
+        if (page === 3) throw new Error('HTTP 503');
+        return { totalCount: 40, count: 10, jobs: Array.from({ length: 10 }, (_, i) => ({ title: `Job p${page}-${i}`, slug: `job-p${page}-${i}` })) };
+      },
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
+  if (flakyRequests === 3 && fetchedFlaky.length === 20) {
+    pass('jibeapply.fetch() returns partial results when a later page fails');
+  } else {
+    fail(`jibeapply fetch partial failure: requests=${flakyRequests}, total=${fetchedFlaky.length} (expected 3/20)`);
+  }
+  if (jibeFlakyWarnings.some(w => /page \d+ fetch failed/.test(w))) {
+    pass('jibeapply.fetch() warns (console.error) when a page fetch fails mid-pagination');
+  } else {
+    fail(`jibeapply fetch page failure: expected a fetch-failed warning, got ${JSON.stringify(jibeFlakyWarnings)}`);
+  }
+
+  // fetch() with explicit entry.api (non-jibeapply.com host)
+  let explicitApiUrl = null;
+  const brandedEntry = { name: 'Widget Co', careers_url: 'https://jobs.widgetco.com/jobs', api: 'https://jobs.widgetco.com/api/jobs?internal=false' };
+  await jibeapply.fetch(brandedEntry, {
+    transport: 'http',
+    fetchText: async () => { throw new Error('fetchText not expected'); },
+    fetchJson: async (url) => { explicitApiUrl = url; return { totalCount: 3, count: 3, jobs: [{ title: 'Dev', slug: 'dev-1' }] }; },
+  });
+  if (explicitApiUrl && explicitApiUrl.startsWith('https://jobs.widgetco.com/api/jobs')) {
+    pass('jibeapply.fetch() uses entry.api for non-jibeapply.com hosts');
+  } else {
+    fail(`jibeapply.fetch() with entry.api called url=${JSON.stringify(explicitApiUrl)}`);
+  }
+
+  // fetch() with entry.api — iCIMS-hosted JibeApply pattern: count === totalCount but jobs.length < count
+  let brandedRequests = 0;
+  const fetchedBranded = await jibeapply.fetch(brandedEntry, {
+    transport: 'http',
+    fetchText: async () => { throw new Error('fetchText not expected'); },
+    fetchJson: async (url) => {
+      brandedRequests++;
+      const u = new URL(url);
+      const page = parseInt(u.searchParams.get('page') || '1', 10);
+      // count === totalCount (iCIMS-hosted pattern), jobs only has page-worth of items
+      if (page === 1) return { totalCount: 15, count: 15, jobs: Array.from({ length: 10 }, (_, i) => ({ title: `J${i}`, slug: `j-${i}` })) };
+      return { totalCount: 15, count: 15, jobs: Array.from({ length: 5 }, (_, i) => ({ title: `J2-${i}`, slug: `j2-${i}` })) };
+    },
+  });
+  if (brandedRequests === 2 && fetchedBranded.length === 15) {
+    pass('jibeapply.fetch() paginates when count===totalCount but jobs.length < count');
+  } else {
+    fail(`jibeapply fetch iCIMS pattern: requests=${brandedRequests}, total=${fetchedBranded.length} (expected 2/15)`);
+  }
+
+  // fetch() throws when both entry.api is HTTP and careers_url is non-jibeapply.com
+  // (no valid API URL can be derived from either source)
+  try {
+    await jibeapply.fetch({ name: 'X', careers_url: 'https://jobs.example.com/jobs', api: 'http://evil.com/api/jobs' }, {
+      fetchText: async () => '', fetchJson: async () => { throw new Error('should not reach'); },
+    });
+    fail('jibeapply.fetch() should throw when no valid API URL can be derived');
+  } catch (e2) {
+    if (/cannot derive API URL/i.test(e2.message)) pass('jibeapply.fetch() throws when HTTP entry.api and non-jibeapply careers_url');
+    else fail(`jibeapply.fetch() wrong error: ${e2.message}`);
+  }
+
+} catch (e) {
+  fail(`jibeapply provider tests crashed: ${e.message}`);
+}
+
+// ── 52. INTERVIEW SESSION PRODUCER (#956 / #1242 contract) ──────
+
+console.log('\n52. Interview session producer (#1242 transcript contract)');
+
+// Scaffold is system-owned and MUST ship (tracked) so the updater can deliver it.
+for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/README.md']) {
+  if (!fileExists(f)) {
+    fail(`Missing session scaffold: ${f}`);
+  } else if (run('git', ['ls-files', f])) {
+    pass(`Session scaffold shipped (tracked): ${f}`);
+  } else {
+    fail(`Session scaffold exists but is NOT tracked (won't ship): ${f}`);
+  }
+}
+
+// Real session files contain real names/companies — they MUST be gitignored.
+{
+  const real = 'interview-prep/sessions/acme-corp-instructional-designer-behavioral-2026-06-01.md';
+  if (run('git', ['check-ignore', real])) {
+    pass('Real session files are gitignored (PII never committed)');
+  } else {
+    fail(`Real session file is NOT gitignored: ${real}`);
+  }
+}
+
+// ...but the scaffold itself must be force-included past that ignore rule.
+for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/README.md']) {
+  if (run('git', ['check-ignore', f])) {
+    fail(`Session scaffold is gitignored (won't ship): ${f}`);
+  } else {
+    pass(`Session scaffold is force-included past the ignore rule: ${f}`);
+  }
+}
+
+// The scaffold must be in SYSTEM_PATHS (the updater delivers/refreshes it).
+{
+  const updater = readFile('update-system.mjs');
+  const sysBlock = (updater.match(/SYSTEM_PATHS\s*=\s*\[([\s\S]*?)\]/) || [, ''])[1];
+  for (const p of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/README.md']) {
+    if (sysBlock.includes(`'${p}'`)) {
+      pass(`Session scaffold in SYSTEM_PATHS: ${p}`);
+    } else {
+      fail(`Session scaffold NOT in SYSTEM_PATHS (won't update): ${p}`);
+    }
+  }
+  // Never ship the directory itself — that would let an update wipe user sessions.
+  if (sysBlock.includes("'interview-prep/sessions/'")) {
+    fail("interview-prep/sessions/ dir is in SYSTEM_PATHS — an update could overwrite user sessions");
+  } else {
+    pass('interview-prep/sessions/ dir is NOT a SYSTEM_PATHS entry (user sessions safe)');
+  }
+}
+
+// Both producers must document writing a session transcript with competency tags.
+for (const mode of ['modes/interview/debrief.md', 'modes/interview/practice.md']) {
+  const body = readFile(mode);
+  if (body.includes('interview-prep/sessions/')) {
+    pass(`${mode} writes to interview-prep/sessions/`);
+  } else {
+    fail(`${mode} does not write a session transcript (producer missing)`);
+  }
+  if (body.includes('<!-- competency:')) {
+    pass(`${mode} emits the competency tag`);
+  } else {
+    fail(`${mode} does not emit the <!-- competency: --> tag`);
+  }
+}
+
+// The README is the consumer contract — it must document speaker labels + tag format.
+if (!fileExists('interview-prep/sessions/README.md')) {
+  fail('sessions/README.md missing — cannot verify the consumer contract');
+} else {
+  const readme = readFile('interview-prep/sessions/README.md');
+  if (readme.includes('**Interviewer:**') && readme.includes('**Candidate:**')) {
+    pass('sessions/README documents Interviewer/Candidate speaker labels');
+  } else {
+    fail('sessions/README missing speaker-label contract');
+  }
+  if (readme.includes('<!-- competency:')) {
+    pass('sessions/README documents the competency tag format');
+  } else {
+    fail('sessions/README missing competency tag format');
+  }
+}
+
+// ── match-star.mjs — fixture story-bank + top match assertion ───────────────
+
+console.log('\n🧪 Testing match-star.mjs keyword scorer...');
+
+try {
+  // Import the real production functions — tests exercise actual implementation
+  const { parseStories, tokenize, score } = await import(pathToFileURL(join(ROOT, 'match-star.mjs')).href);
+
+  // Inline fixture: two stories with distinct competency tags
+  const FIXTURE_MD = `
+### [Leadership] Led cross-functional rollout under deadline
+
+**Source:** Work
+**S (Situation):** Our team had 3 weeks to ship a platform migration affecting 6 departments.
+**T (Task):** I was asked to coordinate across engineering, ops, and comms with no formal authority.
+**A (Action):** I mapped dependencies, ran daily standups, and escalated blockers to leadership.
+**R (Result):** Shipped on time, zero downtime, positive feedback from all department leads.
+**Reflection:** Influence without authority is the real skill.
+**Best for questions about:** leadership, project management, cross-functional collaboration, deadline pressure
+
+### [Conflict] Resolved a data pipeline disagreement with a senior engineer
+
+**Source:** Work
+**S (Situation):** A senior engineer wanted to rewrite our ETL in Spark; I thought it was premature.
+**T (Task):** Present my case without creating a political problem.
+**A (Action):** I pulled query benchmarks and showed the bottleneck was upstream, not the pipeline itself.
+**R (Result):** Team agreed to a targeted fix; saved 6 weeks of rewrite work.
+**Reflection:** Data beats seniority.
+**Best for questions about:** conflict resolution, disagreement, data-driven decision making, stakeholder management
+`.trim();
+
+  const stories = parseStories(FIXTURE_MD);
+
+  if (stories.length === 2) {
+    pass('match-star fixture: parseStories returns 2 stories');
+  } else {
+    fail(`match-star fixture: expected 2 stories, got ${stories.length}`);
+  }
+
+  // Leadership question → should match story[0] (leadership/deadline tags)
+  const leadershipQ = tokenize('Tell me about a time you led a project under deadline pressure');
+  const leadershipScores = stories.map(s => score(s, leadershipQ, []));
+  if (leadershipScores[0] > leadershipScores[1]) {
+    pass('match-star scorer: leadership question surfaces the leadership story first');
+  } else {
+    fail(`match-star scorer: leadership question picked wrong story (scores: ${leadershipScores})`);
+  }
+
+  // Conflict question → should match story[1] (conflict/disagreement tags)
+  const conflictQ = tokenize('Describe a conflict or disagreement with a colleague');
+  const conflictScores = stories.map(s => score(s, conflictQ, []));
+  if (conflictScores[1] > conflictScores[0]) {
+    pass('match-star scorer: conflict question surfaces the conflict story first');
+  } else {
+    fail(`match-star scorer: conflict question picked wrong story (scores: ${conflictScores})`);
+  }
+
+  // Tag-match weight (3) should outweigh body-match weight (1) for a tag-exact token
+  const tagExactQ = tokenize('stakeholder management');
+  const tagExactScores = stories.map(s => score(s, tagExactQ, []));
+  if (tagExactScores[1] >= 6) {
+    pass('match-star scorer: tag-exact match yields ≥ 6 points (3 per token × 2 tokens)');
+  } else {
+    fail(`match-star scorer: tag-exact match score too low (got ${tagExactScores[1]})`);
+  }
+
+  // match-star.mjs file must exist (existsSync-guarded in the script itself)
+  if (existsSync(join(ROOT, 'match-star.mjs'))) {
+    pass('match-star.mjs: file present in repo root');
+  } else {
+    fail('match-star.mjs: file missing from repo root');
+  }
+
+} catch (e) {
+  fail(`match-star tests crashed: ${e.message}`);
+}
+
+// ── PREPARE-APPLICATION — ATS AUTO-FILL CONTRACT ────────────────
+
+console.log('\n prepare-application: ATS auto-fill contract');
+
+try {
+  const src = readFile('prepare-application.mjs');
+
+  // Must not make any network requests
+  if (!/\bfetch\s*\(/.test(src) && !/https?\.request/.test(src) && !/createConnection/.test(src)) {
+    pass('prepare-application.mjs makes no network requests');
+  } else {
+    fail('prepare-application.mjs calls a network API — must be prefill-only, no POST');
+  }
+
+  // Must have concrete handler functions for all three ATS
+  for (const fn of ['buildGreenhouseFields', 'buildAshbyFields', 'buildLeverFields']) {
+    if (new RegExp(`function ${fn}`).test(src)) {
+      pass(`prepare-application.mjs defines ${fn}`);
+    } else {
+      fail(`prepare-application.mjs missing concrete handler: ${fn}`);
+    }
+  }
+
+  // Must read config/profile.yml
+  if (/config\/profile\.yml/.test(src)) {
+    pass('prepare-application.mjs reads config/profile.yml');
+  } else {
+    fail('prepare-application.mjs does not read config/profile.yml');
+  }
+
+  // Must restrict PDF to output/ directory
+  if (/output[^'"`\n]*startsWith|startsWith.*output/.test(src)) {
+    pass('prepare-application.mjs restricts PDF path to output/');
+  } else {
+    fail('prepare-application.mjs missing output/ directory restriction for --pdf');
+  }
+
+  // Must enforce https-only
+  if (/protocol.*https:|https:.*protocol/.test(src)) {
+    pass('prepare-application.mjs enforces https-only URLs');
+  } else {
+    fail('prepare-application.mjs missing https enforcement');
+  }
+
+  // Must not reference old script name
+  if (!/submit-resume/.test(src)) {
+    pass('prepare-application.mjs does not reference old submit-resume name');
+  } else {
+    fail('prepare-application.mjs still references submit-resume');
+  }
+
+  // package.json must expose prepare:application, not submit:resume
+  const pkg = readFile('package.json');
+  if (/prepare.application.*prepare-application\.mjs/.test(pkg)) {
+    pass('package.json exposes prepare:application script');
+  } else {
+    fail('package.json missing prepare:application script pointing to prepare-application.mjs');
+  }
+  if (!/submit.resume/.test(pkg)) {
+    pass('package.json does not reference removed submit-resume.mjs');
+  } else {
+    fail('package.json still references removed submit-resume.mjs');
+  }
+} catch (e) {
+  fail(`prepare-application contract check crashed: ${e.message}`);
 }
 
 // ── SUMMARY ─────────────────────────────────────────────────────

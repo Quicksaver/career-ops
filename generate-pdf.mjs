@@ -386,6 +386,9 @@ async function generatePDF() {
   // Path-traversal guard: keep the PDF write inside the active user root, or the
   // project directory when no user is selected, so a
   // crafted output argument (e.g. "../../etc/cron.d/x") can't escape the repo.
+  // The fallback is anchored to the repo root (__dirname), not process.cwd():
+  // running the script from outside the repo used to falsely refuse in-repo
+  // outputs and would have allowed writes anywhere under an arbitrary cwd.
   const outputRoot = userContext.userRoot || __dirname;
   const relOut = relative(outputRoot, outputPath);
   if (relOut === '' || relOut.startsWith('..') || isAbsolute(relOut)) {

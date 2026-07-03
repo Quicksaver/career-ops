@@ -374,6 +374,8 @@ The per-user binary infers `users/<username>/` from its own location, so `--path
 
 Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.
 
+There is also an **experimental web UI** (alpha, opt-in — nothing runs unless you start it): see [`web/README.md`](web/README.md).
+
 ## Project Structure
 
 ```
