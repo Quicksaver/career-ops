@@ -30,6 +30,7 @@ Evaluate this JD with career-ops auto-pipeline: https://company.com/jobs/123
 Run the career-ops scan mode.
 Run the career-ops pipeline mode.
 Run the career-ops pdf mode.
+Run the career-ops email mode for the latest evaluated role. Draft only; never sends, submits, or clicks.
 Run the career-ops tracker mode.
 ```
 
@@ -40,6 +41,7 @@ codex exec "Evaluate this JD with career-ops auto-pipeline: https://company.com/
 codex exec "Run career-ops scan mode in this repo."
 codex exec "Run career-ops pipeline mode for <username>."
 codex exec "Run career-ops pdf mode for the latest evaluated role."
+codex exec "Run career-ops email mode for the latest evaluated role. Draft only; do not send, submit, or click anything."
 codex exec "Run career-ops tracker mode and summarize the current statuses."
 ```
 
@@ -114,6 +116,7 @@ npx playwright install chromium
 | Search authenticated portals | `/career-ops scan-auth <username> linkedin` |
 | Process pending URLs | `/career-ops pipeline <username>` or ask the agent to run `pipeline` for `<username>` |
 | Generate a PDF | `/career-ops pdf --user <username>` or ask the agent to run `pdf` for `<username>` |
+| Draft application email | `/career-ops email --user <username>` or ask the agent to run `email` for `<username>`; draft-only, never sends, submits, or clicks |
 | Batch evaluate | `/career-ops batch <username>` or use `codex exec "Run career-ops batch mode for <username> ..."` |
 | Check tracker status | `/career-ops tracker --user <username>` or ask the agent to run `tracker` for `<username>` |
 | Fill application form | `/career-ops apply --user <username>` or ask the agent to run `apply` for `<username>` |

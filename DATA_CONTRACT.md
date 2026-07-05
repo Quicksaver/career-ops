@@ -25,6 +25,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/article-digest.md` | Proof points from portfolio |
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
 | `users/{USER}/interview-prep/{company}-{role}.md` | Company-specific interview prep reports (written by `/career-ops interview-prep`) |
+| `users/{USER}/interview-prep/sessions/*.md` | Interview sessions — real transcripts and mock sessions (sensitive; gitignored except scaffold). Drives `patterns` Step 1b targeting signal and interview-redflag analysis. |
 | `users/{USER}/interview-prep/*` | Company-specific interview prep |
 | `users/{USER}/portals.yml` | Customized company list |
 | `users/{USER}/data/applications.md` | Application tracker source of truth |
@@ -62,6 +63,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/apply.md` | Application assistant instructions |
 | `modes/auto-pipeline.md` | Auto-pipeline instructions |
 | `modes/contacto.md` | LinkedIn outreach instructions |
+| `modes/email.md` | Formal application email draft instructions |
 | `modes/deep.md` | Research prompt instructions |
 | `modes/regional/*` | Regional market calibration modes |
 | `modes/ofertas.md` | Comparison instructions |
