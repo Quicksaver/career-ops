@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `6a13d8a7a5448c5f488cac1631a1da471c070335`
-- Fork ref: current `main` at `777da69ce3a6a31d59266dcd32e77e71269f3349`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `123`
-- Diff-size baseline after merge, before this inventory refresh: `148 files changed, 12595 insertions(+), 2612 deletions(-)`
+- Upstream ref: `upstream/main` at `2351915069d7147dfc22db8a0927f067e600fc12`
+- Fork ref: current `main` at `19acbb616be3f82627bfb12294356a14e7096eaf`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `125`
+- Diff-size baseline after merge, before this inventory refresh: `159 files changed, 12884 insertions(+), 2809 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,16 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15/1.16-era behavior and subsequent upstream fixes through `6a13d8a7a5448c5f488cac1631a1da471c070335` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15/1.16/1.17-era behavior and web v0.2.0 through `2351915069d7147dfc22db8a0927f067e600fc12` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- v1.17.0 / web v0.2.0 release baseline: upstream `VERSION`, Release Please manifest, changelog, web package metadata, and `web/CHANGELOG.md` now include the current release. The fork adopted the release metadata while preserving updater safeguards and explicit-user data routing.
+- Web inbox triage: upstream added the Abundance → Triage → Shortlist → Opt-in Score inbox flow (`web/src/components/inbox/*`, `web/src/lib/inbox.ts`) plus report progressive disclosure, mobile tap-target fixes, cleaner config copy, and `cleanChips` tests. The fork keeps these changes while preserving the web split between the system checkout (`CAREER_OPS_ROOT`) and the active user folder (`CAREER_OPS_USER`).
+- Provider and portal expansion: upstream added or hardened Amazon, Avature, SAP SuccessFactors/RMK/CSB, Get on Board, Dassault, Beesite, Softgarden, Workday, SmartRecruiters, Glints, and Jobstreet behavior, including Workday liveness probe max-page caps, `api:` honoring for Workday/SmartRecruiters, Avature offset self-heal, Glints v2 API support, and Jobstreet GraphQL migration docs. The fork adopted these providers under the existing active-user scan pipeline and portal-template model.
+- New workflow helpers: upstream added `agent-inbox.mjs`, `add-entry.mjs`, `followup-seed.mjs`, and `process-quality.mjs`, plus `modes/agent-inbox.md`, `modes/add.md`, formal email draft mode, application pre-scan knockout questions, process-friction aggregation, and transcript-driven targeting correction. The fork routes normal CLI use through `--user {USER}` and `users/{USER}/...`, while keeping explicit env/file overrides for isolated tests.
+- Report/PDF/updater fixes: upstream added `reserve-report-num.mjs --count N`, CSS `@page` margins for PDFs, configurable updater timeout budgets, and CLAUDE local-additions preservation. The fork keeps these behaviors with user-scoped reports/output and restores `CAREER_OPS_REPORTS_DIR` as a test fixture override for reservation tests.
+- Language and interview surface: upstream added Korean modes plus Spanish/French interview plan/practice/debrief translations. These are system-layer language assets; user-specific targeting and interview content still belong in `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, and `users/{USER}/interview-prep/`.
 - Docker/scaffolder install surface: `Dockerfile`, `docker-compose.yml`, `DOCKER.md`, `cops`, and `scaffolder/` were adopted. They are system-layer tooling; do not let them write personal data outside `users/{USER}/`.
 - New user-facing modes and docs: cover letters (`modes/cover.md`, `generate-cover-letter.mjs`, `templates/cover-letter-template.html`), interview onboarding (`modes/interview.md`), Arabic modes, and translated README updates were adopted. The cover-letter renderer was adapted so default output goes to `users/{USER}/output/`, while upstream's optional greeting/salutation placeholders and import-safe `buildHtml` behavior are preserved.
 - Deterministic onboarding: upstream `doctor.mjs --json` is now the cold-start source of truth. The fork version still requires `--user {USER}` or `CAREER_OPS_USER` and checks `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, and `users/{USER}/portals.yml`.
@@ -141,6 +147,16 @@ New upstream features or behavior now present:
 
 Conflict notes from this merge:
 
+- `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream `email`, `add`, `agent-inbox`, interview submodes, and onboarding docs with the fork's mandatory active-user router, `go`, `scan-handoff`, `scan-auth`, and quiet long-running monitoring rules. The canonical agent skill now exposes both the new upstream modes and the fork-only sourcing/auth modes.
+- `CLAUDE.md`: upstream expanded this file again; the fork restored the thin `@./AGENTS.md` wrapper so active-user, data-contract, and source-of-truth behavior continues to have one canonical instruction surface.
+- `DATA_CONTRACT.md`, `modes/patterns.md`, `modes/followup.md`, `modes/apply.md`, `modes/update.md`, `docs/SETUP.md`, `docs/SCRIPTS.md`, and `README.md`: merged upstream's new helpers and docs while rewriting user-data examples to `users/{USER}` and commands to explicit `--user {USER}` where they touch candidate data.
+- `scan.mjs`: adopted upstream's provider registry loader (`providers/_registry.mjs`) and provider additions while preserving `configureScanUserPaths(ctx)`, user-scoped portal/profile/pipeline/history/handoff paths, company block filtering, per-target `location_filter`, and the combined `emptyTargets` behavior.
+- `reserve-report-num.mjs`: combined upstream contiguous `--count N` reservation and range release with `users/{USER}/reports/`, arbitrary-width numeric prefixes, and the fork's test-only `CAREER_OPS_REPORTS_DIR` / `CAREER_OPS_REPORTS` override.
+- `merge-tracker.mjs` and `dedup-tracker.mjs`: kept upstream's stricter score/status TSV column detection and fuzzy duplicate safeguards while preserving user-context imports and `users/{USER}/data/applications.md` routing.
+- `prepare-application.mjs`: kept upstream's relative PDF containment hardening and adapted the error path/output guard to `users/{USER}/output/`.
+- `add-entry.mjs`, `agent-inbox.mjs`, `followup-seed.mjs`, and `process-quality.mjs`: upstream introduced these as root-file helpers; the fork adapted normal CLI use to explicit users and `users/{USER}` defaults, kept env/file overrides for tests, and moved user resolution inside CLI-only paths where imports/tests need pure helper functions.
+- `web/next.config.mjs` and `web/src/lib/career-ops.ts`: kept upstream web v0.2.0 behavior and the Turbopack root pin while preserving the fork's separation between system checkout resolution and active-user data resolution.
+- `test-all.mjs`, `agent-inbox-tests.mjs`, `followup-seed-tests.mjs`, `process-quality.test.mjs`, and `web/test-clean-chips.mjs`: adopted upstream coverage for the new workflow helpers, providers, updater budgets, PDF margins, and web chip cleanup while adapting fixtures that touch candidate files to `CAREER_OPS_USERS_DIR`, `CAREER_OPS_REPORTS_DIR`, and explicit `--user test`.
 - `.agents/skills/career-ops/SKILL.md`: combined upstream multi-CLI/Codex invocation notes with the fork's mandatory active-user routing, quiet long-running monitoring, `scan-auth`, and `scan-handoff` mode routing.
 - `README.md` and `docs/SETUP.md`: kept upstream Codex/headless examples, supported job-board documentation, and broader CLI list, but rewrote setup and command examples to use `users/{USER}` and explicit `<username>` prompts.
 - `modes/scan.md`: kept upstream's single-pass worker / no-subagent-fanout rule and preserved the fork's Spanish quiet-monitoring policy, `users/{USER}/portals.yml` configuration path, and scan-handoff completion guidance.
@@ -233,10 +249,14 @@ Files:
 - `cv-sync-check.mjs`
 - `doctor.mjs`
 - `analyze-patterns.mjs`
+- `add-entry.mjs`
+- `agent-inbox.mjs`
 - `followup-cadence.mjs`
+- `followup-seed.mjs`
 - `gemini-eval.mjs`
 - `generate-pdf.mjs`
 - `generate-cover-letter.mjs`
+- `process-quality.mjs`
 - `reserve-report-num.mjs`
 - `scan-ats-full.mjs`
 - `validate-portals.mjs`
