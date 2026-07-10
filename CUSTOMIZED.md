@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `2351915069d7147dfc22db8a0927f067e600fc12`
-- Fork ref: current `main` at `19acbb616be3f82627bfb12294356a14e7096eaf`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `125`
-- Diff-size baseline after merge, before this inventory refresh: `159 files changed, 12884 insertions(+), 2809 deletions(-)`
+- Upstream ref: `upstream/main` at `d9c338db88b868bb63549f2c998ae2dbb5d71ad7`
+- Fork ref: current `main` at `6c6506faf26bf7a640e864d67fdc483f0a8eb8b0`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `127`
+- Diff-size baseline after merge, before this inventory refresh: `199 files changed, 13203 insertions(+), 2576 deletions(-)`
 
 ## Merge Policy
 
@@ -30,9 +30,20 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9/1.10/1.11/1.12/1.13/1.14/1.15/1.16/1.17-era behavior and web v0.2.0 through `2351915069d7147dfc22db8a0927f067e600fc12` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `d9c338db88b868bb63549f2c998ae2dbb5d71ad7` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
+
+- v1.18.0 / web v0.3.0 release baseline: the fork adopted the current release metadata, dependency updates, accessibility/contrast and mobile tap-target fixes, Via-aware web parsing, and the split per-plugin registry while preserving the system-checkout/active-user web boundary.
+- Evaluation and career operations: upstream added salary-gap analysis, lifetime stats, funnel calibration/velocity, adjacent-title and upskill modes, offer-prep with draft-only negotiation replies, interview red-flag analysis, reply classification, and fuzzy interview-invite matching. Every command that reads candidate data is adapted to require an active user and resolve under `users/{USER}/`.
+- Tracker lifecycle: upstream added canonical `set-status.mjs`, the Via channel, duplicate-number detection, shared header-aware readers, and a `Hired` terminal state. The fork keeps its separate pre-application `Closed` state, preserves report/tracker ID parity by blocking conflicting TSVs instead of renumbering them, and exposes both `Hired` and `Closed` through the dashboard and analytics.
+- Scanner policy and evidence: upstream added user blacklists, company aliases, posting-age gates, `postedAt` persistence, per-title content filters, scan-run counters, JD fingerprints for cross-listings, a compact CLI browser extractor, and Ashby/Lever API overrides. These are wired into the fork's user-scoped portal/pipeline/history paths and coexist with company/location filters plus closed-duplicate reopen behavior.
+- Provider expansion: upstream added or hardened Tencent, 4dayweek, LaraJobs, EchoJobs, Lever EU, Cornerstone/CSOD, Rheinmetall, Phenom, Radancy, TKMS, Heckler & Koch, Deutsche Bahn, and the extracted auto-discovered provider test suites. Fork-only providers remain in the custom provider layer rather than duplicating upstream implementations.
+- CV safety and alternate rendering: upstream added `verify-cv-facts.mjs`, OpenAI-compatible headless tailoring, intentional `--allow-reorder`, and the opt-in `latex-tex` extract/patch/compile flow. The fork routes CV/profile/output access through `users/{USER}/`, includes user profile/custom mode context, keeps report-numbered artifact names, and runs the fact gate before PDF rendering.
+- Batch policy: upstream added `spend_tier` model routing and the auditable pre-screen discard gate. Claude tier mapping now runs against `users/{USER}/config/profile.yml`; Codex retains its explicit schema-checked worker path and uses its configured default unless `--model` is supplied. Discard logs live under `users/{USER}/batch/logs/`.
+- Dashboard i18n and terminal states: upstream extracted the Go TUI catalog and added `Hired` celebration behavior. The fork keeps its inline OPEN/APPLIED/INTERVIEW/OFFER/HIRED/REJECTED/CLOSED/DISCARDED/SKIP tab order, lazy report hydration, DATE/PDF/CONTACT defaults, full-row selection, lean responsive help row, and per-user binary/root inference.
+- Language surface: upstream added Hindi, Indonesian, Traditional Chinese, and German interview modes, and decoupled `language.output` from market-mode selection. These remain system-layer translations; candidate preferences and content stay in the active user's profile/mode files.
+- Instruction and test architecture: upstream now owns the thin `CLAUDE.md` wrapper, so the former fork-only wrapper restoration is retired as a customization. Upstream also split provider tests into `tests/providers/` with a shared CodeQL-safe harness; fork-specific tests remain in the core suite and use disposable explicit-user fixtures.
 
 - v1.17.0 / web v0.2.0 release baseline: upstream `VERSION`, Release Please manifest, changelog, web package metadata, and `web/CHANGELOG.md` now include the current release. The fork adopted the release metadata while preserving updater safeguards and explicit-user data routing.
 - Web inbox triage: upstream added the Abundance → Triage → Shortlist → Opt-in Score inbox flow (`web/src/components/inbox/*`, `web/src/lib/inbox.ts`) plus report progressive disclosure, mobile tap-target fixes, cleaner config copy, and `cleanChips` tests. The fork keeps these changes while preserving the web split between the system checkout (`CAREER_OPS_ROOT`) and the active user folder (`CAREER_OPS_USER`).
@@ -220,6 +231,13 @@ Conflict notes from this merge:
 - `batch/batch-runner.sh`: combined upstream secure `mktemp` JD files and score/status hardening with the fork's `local:jds/...` copy behavior, resolved URL prompt injection, Codex final-JSON schema contract, and per-user batch state.
 - `modes/ja/_shared.md`: adopted upstream Japanese parity updates while rewriting source-of-truth, voice DNA, story-bank, tracker, and CV-sync commands to `users/{USER}` paths.
 - `update-system.mjs`: kept upstream structural path coverage and new browser-liveness path while preserving the fork's `lib/` user-context layer and user-path rollback safeguards.
+- `verify-cv-facts.mjs`, `salary-gap.mjs`, `funnel-velocity.mjs`, `stats.mjs`, `upskill.mjs`, `invite-match.mjs`, `reply-watch.mjs`, `set-status.mjs`, and `openai-tailor.mjs`: upstream introduced these with single-root defaults; direct user-data execution now resolves through `lib/user-context.mjs`, while pure imports and `--self-test` paths stay usable without touching a real user.
+- `batch/batch-prompt.md` and `batch/batch-runner.sh`: combined upstream compensation reliability, `spend_tier`, pre-screen discard logging, typed final JSON, and CV fact validation with the fork's `{{USER_ROOT}}` prompt paths, explicit active user, Codex contract, report-numbered output, and per-user batch logs/state.
+- `scan.mjs`: combined upstream company aliases, blacklist, title-category content filters, posting-age/`postedAt`, fingerprints, and run metrics with fork company/location filters, active-user paths, scan handoff, and closed-duplicate reopen writes. Alias-aware company/title buckets are used for new dedupe; the exported legacy loader remains for compatibility tests.
+- `merge-tracker.mjs`: adopted upstream shared lock/atomic-write and header-aware tracker utilities, but intentionally keeps the fork's collision policy: a worker-reserved number already owned by another row blocks the TSV and leaves it pending; it is never silently renumbered away from its report/artifact identity.
+- `dashboard/internal/{data,i18n,ui}` and `dashboard/main.go`: combined upstream TUI i18n and `Hired` behavior with the fork's `Closed` state, inline tab order, async viewport report loads, lean table/chrome defaults, dated status-contact notes, and per-user path inference.
+- `test-all.mjs` and `tests/`: adopted upstream's auto-discovered provider layout and safe command harness, retained fork coverage for active-user routing and report-ID parity, and converted upstream single-root fixtures to disposable `CAREER_OPS_USERS_DIR` users.
+- `CLAUDE.md`: upstream now ships the same thin `@AGENTS.md` wrapper pattern, so this file no longer needs a fork-only restoration. Future merges should accept the upstream wrapper and keep fork behavior canonical in `AGENTS.md`.
 
 Future merge notes:
 
@@ -266,6 +284,15 @@ Files:
 - `match-star.mjs`
 - `ollama-eval.mjs`
 - `openai-eval.mjs`
+- `openai-tailor.mjs`
+- `verify-cv-facts.mjs`
+- `salary-gap.mjs`
+- `funnel-velocity.mjs`
+- `stats.mjs`
+- `upskill.mjs`
+- `invite-match.mjs`
+- `reply-watch.mjs`
+- `set-status.mjs`
 - `batch/batch-runner.sh`
 - `dashboard/main.go`
 - `modes/*.md`
@@ -284,7 +311,7 @@ What this customizes:
 - Career-ops commands must have an active user before any user-layer access. Explicit user selection is accepted via command text such as `/career-ops scan <username>`, via `--user <id>` / `--user=<id>`, or via `CAREER_OPS_USER`.
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
-- Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, and cover-letter PDFs default to `users/{USER}/output/`.
+- Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, cover-letter/CV outputs use `users/{USER}/output/`, and analytics/reply/status/tailoring commands read only the active user's tracker, reports, profile, and fact sources.
 - Report-number reservation scans all numeric report prefixes under `users/{USER}/reports/`, not only 3-digit prefixes. Keep this when users cross report 999; the printed value remains zero-padded to at least 3 digits for compatibility with existing artifact names.
 - `reconcile-pipeline.mjs` remains path-overridable for batch/user layouts: use `--state users/{USER}/batch/batch-state.tsv --pipeline users/{USER}/data/pipeline.md --reports users/{USER}/reports` when invoking it directly for a per-user batch cleanup. The script validates those paths stay inside the repository and rejects file/directory type mismatches before reading or writing.
 - The upstream SQLite tracker index is adapted to the same resolver: `node tracker.mjs sync --user {USER}` reads `users/{USER}/data/applications.md` and writes the derived `users/{USER}/data/applications.db`. The database is disposable derived state, not a replacement for the markdown source of truth.
@@ -333,6 +360,9 @@ What this customizes:
 - Preserves upstream session/rate-limit handling: Claude workers can pause a batch with `paused_rate_limit`, resume through `--resume-paused`, and avoid consuming retry budget when a session/rate limit is detected.
 - Preserves upstream Claude MCP isolation through `--strict-mcp-config`, while keeping Codex execution separate through the fork's schema-checked final JSON flow.
 - Injects `users/{USER}/modes/_profile.md` and `users/{USER}/config/profile.yml` into the temporary resolved worker prompt so batch scoring uses the same user-layer personalization as interactive scoring.
+- Preserves upstream `spend_tier` routing for Claude workers, but reads the tier from `users/{USER}/config/profile.yml`; Codex deliberately keeps its configured CLI model unless `--model` is explicit.
+- Preserves upstream pre-screen discards and their audit records under `users/{USER}/batch/logs/discard.log`; sourced helper tests fall back to the fixture-local batch directory without weakening runtime user routing.
+- Injects `users/{USER}/modes/_custom.md` after the profile context and keeps the batch CV fact gate/output command on the same `{{USER_ROOT}}/output/{REPORT_NUM}-...` artifact path.
 
 Future merge notes:
 
@@ -422,6 +452,8 @@ What this customizes:
 - Prints `Filtered by company: N removed` in scan summaries when a company block list is configured.
 - Adds `test-all.mjs` coverage that checks the scanner advertises the company block path and verifies `buildCompanyFilter` rejects configured employers while passing unrelated companies.
 - Preserves upstream `content_filter` as a separate title/description filter; do not collapse it into the company block filter because the two policies answer different questions.
+- Preserves upstream `data/blacklist.md` as a user-owned exact company block layer and `company_aliases` as a dedupe identity layer; neither replaces the fork's substring-based `company_filter.block` policy.
+- Applies upstream posting-age, `postedAt`, fingerprint, and scan-run metrics inside the active user's pipeline/history/run files so scanner evidence never falls back to root `data/`.
 
 Future merge notes:
 
@@ -590,6 +622,8 @@ What this customizes:
 - Preserves upstream customizable columns / column picker behavior and cross-platform default-app open helpers while keeping user-root normalization for report/PDF targets.
 - Preserves upstream in-viewer status editing and status-cell-only row refresh while keeping the fork's `NewViewerModelWithFileRoot(...)` report/PDF link rewriting against the resolved user folder.
 - Preserves upstream EUR/GBP/CHF compensation parsing and additional international-city derivation in dashboard pipeline data without changing the fork's per-user dashboard root inference.
+- Preserves upstream TUI language switching and localized status/column labels while keeping the fork's compact inline tab layout and responsive single-line help row.
+- Adds `Hired` between `Offer` and `Rejected` without collapsing the fork's distinct `Closed` tab; `Hired` counts as having reached offer in analytics, while `Closed` remains pre-application and excluded from funnel progression.
 
 Future merge notes:
 
@@ -896,6 +930,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
 - Bounded batch runs through `--limit` are now upstream baseline; preserve only the fork-specific user-scoped/Codex integration around the flag.
 - Batch status/watch progress monitoring through user-scoped batch state.
+- User-scoped `spend_tier`, pre-screen discard logs, CV fact validation, salary/funnel/stats/upskill analytics, reply matching, invite matching, and canonical status updates.
 - `local:jds/...` batch input handling.
 - Conditional batch PDF generation for `Skip` decisions and profile hard stops. Score-threshold configuration is now upstream behavior through `auto_pdf_score_threshold`.
 - Per-user adaptation for upstream tracker report-link normalization and `merge-tracker.mjs --migrate`.
@@ -914,6 +949,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Upstream Docker/scaffolder tooling that preserves the user-layer data contract.
 - Upstream cover-letter and interview modes that route generated artifacts and context through `users/{USER}/`.
 - Generic JD/PDF extraction commands.
+- Dashboard configurability equivalent to the fork's combined `Hired` + `Closed` inline-tab layout, lazy report hydration, compact column defaults, and per-user root inference.
 - Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.
 
 If upstream covers one of these, prefer deleting the local customization over carrying duplicate behavior.
