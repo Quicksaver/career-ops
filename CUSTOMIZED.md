@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `d9c338db88b868bb63549f2c998ae2dbb5d71ad7`
-- Fork ref: current `main` at `6c6506faf26bf7a640e864d67fdc483f0a8eb8b0`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `127`
-- Diff-size baseline after merge, before this inventory refresh: `199 files changed, 13203 insertions(+), 2576 deletions(-)`
+- Upstream ref: `upstream/main` at `e7645129e8e484c22a78bfbd609e2385484d82c9`
+- Fork ref: current `main` at `1802a7f5671d39fc0a0dcc562ac63f6383db4a0d`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `129`
+- Diff-size baseline after merge, before this inventory refresh: `204 files changed, 13367 insertions(+), 2657 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,14 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `d9c338db88b868bb63549f2c998ae2dbb5d71ad7` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `e7645129e8e484c22a78bfbd609e2385484d82c9` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Deterministic user instruction composition: every routed mode now loads the shared system rules first, then `users/{USER}/modes/_profile.md`, then `users/{USER}/modes/_custom.md`, and finally the selected mode. `_custom.md` remains procedural/style context only and cannot introduce candidate facts.
+- Configurable document templates: `cv-templates.mjs` discovers and validates named HTML/LaTeX CV and cover-letter templates, with defaults selected from the active user's profile. `build-cv-latex.mjs`, PDF mode, and cover mode use the shared resolver while preserving report-linked output and active-user containment.
+- New document and assessment helpers: `img-to-pdf.mjs` converts one image to a one-page PDF through the existing Playwright runtime, and `assessment-log.mjs` records append-only assessment vendor/topic/threshold/score/staleness observations. Normal CLI use requires an explicit user; assessment data and generated outputs remain under `users/{USER}/`.
+- Scanner/docs/web refinements: cross-listing fingerprints and blacklist behavior now have user-facing FAQ/script documentation, CRLF-safe doc assertions and CI rationale comments were adopted, and the web assistant/copy/theme controls now use the shared `Button` primitive without changing their behavior.
 - v1.18.0 / web v0.3.0 release baseline: the fork adopted the current release metadata, dependency updates, accessibility/contrast and mobile tap-target fixes, Via-aware web parsing, and the split per-plugin registry while preserving the system-checkout/active-user web boundary.
 - Evaluation and career operations: upstream added salary-gap analysis, lifetime stats, funnel calibration/velocity, adjacent-title and upskill modes, offer-prep with draft-only negotiation replies, interview red-flag analysis, reply classification, and fuzzy interview-invite matching. Every command that reads candidate data is adapted to require an active user and resolve under `users/{USER}/`.
 - Tracker lifecycle: upstream added canonical `set-status.mjs`, the Via channel, duplicate-number detection, shared header-aware readers, and a `Hired` terminal state. The fork keeps its separate pre-application `Closed` state, preserves report/tracker ID parity by blocking conflicting TSVs instead of renumbering them, and exposes both `Hired` and `Closed` through the dashboard and analytics.
@@ -158,6 +162,11 @@ New upstream features or behavior now present:
 
 Conflict notes from this merge:
 
+- `.agents/skills/career-ops/SKILL.md`, `AGENTS.md`, and `modes/_shared.md`: accepted upstream's deterministic `_profile` → `_custom` → selected-mode order and factual-source guard, while resolving every user customization reference through `users/{USER}` and retaining the fork's active-user, `go`, `scan-handoff`, `scan-auth`, and quiet-monitoring contracts.
+- `assessment-log.mjs`, `cv-templates.mjs`, `img-to-pdf.mjs`, and `build-cv-latex.mjs`: upstream introduced or extended these helpers with root-oriented defaults. The merge routes assessment/profile access through `lib/user-context.mjs`, requires a user for normal CLI execution, and keeps generated image/LaTeX output inside the active user root; import-only helpers and self-tests remain data-independent.
+- `DATA_CONTRACT.md`, `docs/FAQ.md`, `docs/SCRIPTS.md`, `modes/cover.md`, `modes/latex.md`, `modes/pdf.md`, and `modes/scan.md`: adopted assessment logging, template selection, image conversion, cross-listing, and blacklist documentation while rewriting candidate-data paths and examples to `users/{USER}` plus explicit `--user` arguments.
+- `test-all.mjs`: combined upstream template, CRLF, workflow-order, assessment, and image self-tests with the fork's disposable `CAREER_OPS_USERS_DIR` fixtures and explicit active-user path markers. The merged quick suite passes 1,745 checks.
+- `web/src/components/assistant-console.tsx`, `web/src/components/copyable-command.tsx`, and `web/src/components/theme-toggle.tsx`: adopted the shared `Button` primitive refactor unchanged; the web typecheck, 19 tests, audit, and production build remain green.
 - `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream `email`, `add`, `agent-inbox`, interview submodes, and onboarding docs with the fork's mandatory active-user router, `go`, `scan-handoff`, `scan-auth`, and quiet long-running monitoring rules. The canonical agent skill now exposes both the new upstream modes and the fork-only sourcing/auth modes.
 - `CLAUDE.md`: upstream expanded this file again; the fork restored the thin `@./AGENTS.md` wrapper so active-user, data-contract, and source-of-truth behavior continues to have one canonical instruction surface.
 - `DATA_CONTRACT.md`, `modes/patterns.md`, `modes/followup.md`, `modes/apply.md`, `modes/update.md`, `docs/SETUP.md`, `docs/SCRIPTS.md`, and `README.md`: merged upstream's new helpers and docs while rewriting user-data examples to `users/{USER}` and commands to explicit `--user {USER}` where they touch candidate data.
@@ -311,7 +320,7 @@ What this customizes:
 - Career-ops commands must have an active user before any user-layer access. Explicit user selection is accepted via command text such as `/career-ops scan <username>`, via `--user <id>` / `--user=<id>`, or via `CAREER_OPS_USER`.
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
-- Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, cover-letter/CV outputs use `users/{USER}/output/`, and analytics/reply/status/tailoring commands read only the active user's tracker, reports, profile, and fact sources.
+- Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, cover-letter/CV/image outputs use `users/{USER}/output/`, assessment events use `users/{USER}/data/assessments.tsv`, and analytics/reply/status/tailoring commands read only the active user's tracker, reports, profile, and fact sources.
 - Report-number reservation scans all numeric report prefixes under `users/{USER}/reports/`, not only 3-digit prefixes. Keep this when users cross report 999; the printed value remains zero-padded to at least 3 digits for compatibility with existing artifact names.
 - `reconcile-pipeline.mjs` remains path-overridable for batch/user layouts: use `--state users/{USER}/batch/batch-state.tsv --pipeline users/{USER}/data/pipeline.md --reports users/{USER}/reports` when invoking it directly for a per-user batch cleanup. The script validates those paths stay inside the repository and rejects file/directory type mismatches before reading or writing.
 - The upstream SQLite tracker index is adapted to the same resolver: `node tracker.mjs sync --user {USER}` reads `users/{USER}/data/applications.md` and writes the derived `users/{USER}/data/applications.db`. The database is disposable derived state, not a replacement for the markdown source of truth.
@@ -936,6 +945,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Per-user adaptation for upstream tracker report-link normalization and `merge-tracker.mjs --migrate`.
 - Per-user adaptation for upstream `merge-tracker.mjs` filesystem locking and atomic writes.
 - Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
+- Per-user adaptation for upstream `assessment-log.mjs`, `cv-templates.mjs`, `img-to-pdf.mjs`, and template-aware `build-cv-latex.mjs`.
 - Per-user adaptation for upstream `verify-portals.mjs`, `reconcile-pipeline.mjs`, pipeline liveness sweeps, `doctor.mjs --strict`, and any new scan/batch helpers that read `portals.yml`, `data/`, or `batch/`.
 - User-scoped scan handoff artifacts at `users/{USER}/data/scan-handoff.json` plus the explicit `/career-ops scan-handoff` follow-up mode.
 - Explicit `/career-ops go` sourcing shorthand with conditional scan-handoff, authenticated LinkedIn scan, conditional pipeline execution, and non-fatal provider/company scan failure semantics.
