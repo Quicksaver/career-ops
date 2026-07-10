@@ -206,8 +206,11 @@ Active user: {ACTIVE_USER}
 
 After determining the mode, load the necessary files before executing:
 
-### Modes that require `_shared.md` + their mode file:
-Read `modes/_shared.md` + `modes/{mode}.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present).
+If `users/{ACTIVE_USER}/modes/_custom.md` exists, read it after `users/{ACTIVE_USER}/modes/_profile.md` and before the selected mode file. It contains user house rules and procedural preferences. It may override workflow/style defaults, but it never adds factual claims about the candidate.
+
+### Modes that require `_shared.md` + their mode file
+
+Read `modes/_shared.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`.
 
 Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `scan-handoff`, `go`, `batch`
 
@@ -215,15 +218,17 @@ For `scan-handoff`, also read `modes/scan.md` before `modes/scan-handoff.md` bec
 
 For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.md`, and `modes/pipeline.md` because the shorthand coordinates those modes conditionally.
 
-### Standalone modes (only their mode file):
-Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_USER}/`.
+### Standalone modes with profile and custom context
+
+Read `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`, plus any user-layer files the mode names from `users/{ACTIVE_USER}/`.
 
 Applies to: `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`
 
-### Modes delegated to subagent:
-For `go`, `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
+### Modes delegated to subagent
 
-```
+For `go`, `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + the active user's `_profile.md` (if present) + `_custom.md` (if present) + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
+
+```python
 Agent(
   subagent_type="general-purpose",
   prompt="[output language directive]\n\nACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-handoff/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Keep routine tool polls silent; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of users/{ACTIVE_USER}/modes/_custom.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",

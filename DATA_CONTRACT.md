@@ -33,7 +33,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/applications.md` | Application tracker source of truth |
 | `users/{USER}/data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync --user {USER}` — safe to delete) |
 | `users/{USER}/data/pipeline.md` | URL inbox |
-| `users/{USER}/data/scan-history.tsv` | Scan history |
+| `users/{USER}/data/scan-history.tsv` | Scan history (9 tab-separated columns; column 8 is the local SimHash JD fingerprint and column 9 is the posting date) |
 | `users/{USER}/data/scan-runs.tsv` | Per-run scan counters appended by `scan.mjs` and read by `stats.mjs` |
 | `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
@@ -41,9 +41,10 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/data/offers/*` | Received offers/contracts, promise notes, prep reports, and reply drafts (PII; written by `offer-prep`) |
 | `users/{USER}/data/salary-observations.tsv` | Append-only compensation observation log read by `salary-gap.mjs` |
-| `users/{USER}/data/status-log.tsv` | Append-only status transition ledger written by `set-status.mjs` and read by `funnel-velocity.mjs` |
+| `users/{USER}/data/status-log.tsv` | Append-only status transition ledger read by `funnel-velocity.mjs`; the planned `set-status.mjs` append path lands with upstream #1695, so this file may not exist yet |
 | `users/{USER}/data/upskill/*` | Skill-gap analysis reports written by the `upskill` mode |
 | `users/{USER}/data/blacklist.md` | Opt-in do-not-apply company list; only the user or an agent acting on explicit instruction may write it |
+| `users/{USER}/data/assessments.tsv` | Append-only skills-assessment log: `{date}\t{company}\t{report#\|-}\t{platform}\t{subject}\t{threshold%\|-}\t{score%\|-}\t{stale_note}`. Appended by `node assessment-log.mjs --user {USER} add`; never edited in place |
 | `users/{USER}/data/active-interviews.md` | Active interview process notes |
 | `users/{USER}/data/reply-candidates.json` | Candidate matches produced from application replies |
 | `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |

@@ -70,7 +70,7 @@ User-facing content (CV, cover letters, application emails, form answers, recrui
 - `users/{USER}/article-digest.md`
 - `users/{USER}/config/profile.yml`
 - `users/{USER}/modes/_profile.md`
-- `users/{USER}/modes/_custom.md`
+- `users/{USER}/modes/_custom.md` (procedural/style rules only — governs workflow and output preferences, never introduces factual claims)
 - `users/{USER}/writing-samples/`
 - `users/{USER}/voice-dna.md` (voice/style only — governs *how* text reads, never introduces factual claims)
 - `users/{USER}/interview-prep/story-bank.md` and `users/{USER}/interview-prep/{company}-{role}.md` (the user's own STAR stories and interview-prep notes — same trust level as `cv.md`; consumed by the `interview` and `apply`/`match-star` modes)
@@ -159,6 +159,8 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `process-quality.mjs` | Recruiting-process friction aggregator — parses `[process-friction]` tags candidates add to `users/{USER}/data/active-interviews.md` Notes and reports per-company friction rate (JSON or `--summary` table output) |
 | `salary-gap.mjs` | Desired/advertised/actual compensation gap analyzer over reports and `users/{USER}/data/salary-observations.tsv` (JSON or `--summary`) |
 | `users/{USER}/data/salary-observations.tsv` | Append-only salary observation log |
+| `assessment-log.mjs` | Skills-assessment event logger — `add` appends platform/subject/threshold/score plus a candidate-observed staleness note to `users/{USER}/data/assessments.tsv` (JSON or `--summary`) |
+| `users/{USER}/data/assessments.tsv` | Append-only skills-assessment log, created on first `add` |
 | `users/{USER}/data/follow-ups.md` | Follow-up history tracker |
 | `users/{USER}/data/blacklist.md` | Opt-in do-not-apply company list; never auto-populated and respected by scan/evaluation/application gates |
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever/PCSX APIs plus structured and plugin providers directly, zero LLM cost |

@@ -23,7 +23,7 @@ Do not generate a generic or placeholder cover letter under any circumstances.
 
 ## Step 1 — Load candidate profile
 
-Read `config/profile.yml` for:
+Read `users/{USER}/config/profile.yml` for:
 - `candidate.name`, `email`, `phone`, `location`, `linkedin`, `github`
 - `candidate.credentials` (derive from cv.md Education + Certifications if not in profile.yml)
 - `cover_letter.notice_period_days` (default: omit if key absent)
@@ -36,7 +36,7 @@ Read `cv.md` for:
 
 Read `article-digest.md` if it exists — supplementary proof points and metrics take precedence over cv.md where they overlap.
 
-Read `modes/_profile.md` if it exists — the candidate's personalization file. It captures their target roles, adaptive framing and archetypes, exit narrative, cross-cutting advantage, proof points, comp targets, negotiation scripts, location policy, and any voice or writing-style rules they have added. Its rules **govern the letter's voice and structure and override the generic defaults in this mode**, so the candidate's personalization is never lost.
+Read `users/{USER}/modes/_profile.md` if it exists — the candidate's personalization file. It captures their target roles, adaptive framing and archetypes, exit narrative, cross-cutting advantage, proof points, comp targets, negotiation scripts, location policy, and any voice or writing-style rules they have added. Its rules **govern the letter's voice and structure and override the generic defaults in this mode**, so the candidate's personalization is never lost.
 
 ---
 
@@ -264,6 +264,13 @@ End the draft with: "How does this read? Once you approve I'll generate the PDF.
 10. **Tone consistency** — apply the chosen tone (Step 6D) uniformly. Don't shift register mid-letter.
 
 ---
+
+Resolve the cover-letter template with the shared resolver (do not hardcode `cover-letter-template.html`):
+
+- If the user named a template, run: `node cv-templates.mjs --user {USER} resolve cover "<name>"`
+- Otherwise run: `node cv-templates.mjs --user {USER} resolve cover` (returns the `cover_letter.template` default from `users/{USER}/config/profile.yml`, or the base template when unset).
+
+Fill the resolved template's `{{...}}` placeholders. A non-zero exit means the named template is missing/invalid — surface it, do not silently fall back.
 
 ## Step 9 — Generate PDF
 

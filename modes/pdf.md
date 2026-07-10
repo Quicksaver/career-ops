@@ -119,9 +119,22 @@ Examples of legitimate reformulation:
 
 ## Template HTML
 
-**Before generating: read `modes/_custom.md` (if it exists) and apply its formatting/content house rules to every CV in this session — including every item of a batch.** Rules recorded there (date formats, section-order preferences, content to always/never include) are persistent user instructions, not suggestions; if the user corrects the same thing twice in conversation, write it into `modes/_custom.md` so it stops drifting.
+**Before generating: read `users/{USER}/modes/_custom.md` (if it exists) and apply its formatting/content house rules to every CV in this session — including every item of a batch.** Rules recorded there (date formats, section-order preferences, content to always/never include) are persistent user instructions, not suggestions; if the user corrects the same thing twice in conversation, write it into `users/{USER}/modes/_custom.md` so it stops drifting.
 
-Use the template in `cv-template.html`. Replace the `{{...}}` placeholders with personalized content:
+### Selecting the template
+
+Resolve which template to fill with the shared resolver (do not hardcode `cv-template.html`):
+
+- If the user named a template this turn (e.g. "use the *modern* template"), run:
+  `node cv-templates.mjs --user {USER} resolve cv "<name>"`
+- Otherwise run: `node cv-templates.mjs --user {USER} resolve cv`
+  (this returns the `cv.template` default from `users/{USER}/config/profile.yml`, or the base `cv-template.html` when unset).
+
+The command prints the absolute path of the template to fill; a non-zero exit means the named template is missing or invalid — surface that message to the user instead of silently falling back.
+
+To show the user their options (e.g. "what CV templates do I have?"), run `node cv-templates.mjs --user {USER} list cv` and present each `displayName`.
+
+Then fill the resolved template's `{{...}}` placeholders with personalized content:
 
 | Placeholder | Content |
 |-------------|-----------|
@@ -155,7 +168,7 @@ Use the template in `cv-template.html`. Replace the `{{...}}` placeholders with 
 
 The `{{PHOTO}}` slot is **off by default** and intentionally market-specific:
 
-- **DACH / much of continental Europe** (Germany, Austria, Switzerland): a professional photo is standard and often expected. Opt in by setting `candidate.photo` in `config/profile.yml` (a local file path or a `data:` URL).
+- **DACH / much of continental Europe** (Germany, Austria, Switzerland): a professional photo is standard and often expected. Opt in by setting `candidate.photo` in `users/{USER}/config/profile.yml` (a local file path or a `data:` URL).
 - **US / UK / Canada / Australia and many ATS-first markets**: photos are discouraged and can trip bias-avoidance filters. Leave `candidate.photo` empty — the `{{PHOTO}}` line is dropped entirely, no `<img>` is emitted, and the CV renders **pixel-for-pixel identical** to today's photoless layout.
 
 When set, the photo floats into the top corner (mirrored for RTL/Arabic) and the header/summary text wraps beside it; `.cv-photo` in `cv-template.html` controls its size and framing.

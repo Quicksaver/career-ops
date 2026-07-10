@@ -2,10 +2,12 @@
 
 import { readFile, writeFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
-import { resolve, dirname, basename, join } from 'path';
+import { resolve, dirname, basename, join, relative, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { tmpdir } from 'os';
 import { escapeLatex, sanitizeUrl } from './lib/latex-escape.mjs';
+import { resolveTemplate } from './cv-templates.mjs';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = resolve(__dirname, 'templates', 'cv-template.tex');
@@ -59,30 +61,44 @@ function buildSkills(categories) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
 
-  if (args.length === 0 || args.includes('--help')) {
+  if (rawArgs.length === 0 || rawArgs.includes('--help')) {
     console.error('Usage:');
-    console.error('  node build-cv-latex.mjs <input.json> <output.tex>');
+    console.error('  node build-cv-latex.mjs --user <id> <input.json> <output.tex> [--template=<name>]');
     console.error('  node build-cv-latex.mjs --test');
     process.exit(1);
   }
 
-  if (args.includes('--test')) {
+  if (rawArgs.includes('--test')) {
     await runSelfTest();
     return;
   }
 
-  const [inputPath, outputPath] = args;
+  let userContext;
+  try {
+    userContext = getUserContext(rawArgs);
+  } catch (err) {
+    printUserContextErrorAndExit(err);
+  }
+  const args = userContext.args;
+
+  const [inputPath, outputPath] = args.filter((arg) => !arg.startsWith('--'));
 
   if (!inputPath || !outputPath) {
-    console.error('Usage: node build-cv-latex.mjs <input.json> <output.tex>');
+    console.error('Usage: node build-cv-latex.mjs --user <id> <input.json> <output.tex> [--template=<name>]');
     process.exit(1);
   }
 
   const absInput = resolve(inputPath);
   const absOutput = resolve(outputPath);
   const outDir = dirname(absOutput);
+
+  const relOut = relative(userContext.userRoot, absOutput);
+  if (relOut === '' || relOut.startsWith('..') || isAbsolute(relOut)) {
+    console.error(`Refusing to write the LaTeX file outside the active user root: ${absOutput}`);
+    process.exit(1);
+  }
 
   if (!existsSync(absInput)) {
     console.error(`Input file not found: ${absInput}`);
@@ -98,12 +114,22 @@ async function main() {
     process.exit(1);
   }
 
-  if (!existsSync(TEMPLATE_PATH)) {
-    console.error(`Template not found: ${TEMPLATE_PATH}`);
+  // Honor a selected .tex template variant (cv.template default or --template=<name>),
+  // falling back to the base cv-template.tex when no variant exists.
+  const texName = (args.find((a) => a.startsWith('--template=')) || '').split('=')[1];
+  let TEMPLATE_PATH_RESOLVED;
+  try {
+    TEMPLATE_PATH_RESOLVED = resolveTemplate('cv', texName, { format: 'tex', fallback: true, profilePath: userPath(userContext, 'config/profile.yml') });
+  } catch {
+    TEMPLATE_PATH_RESOLVED = TEMPLATE_PATH;
+  }
+
+  if (!existsSync(TEMPLATE_PATH_RESOLVED)) {
+    console.error(`Template not found: ${TEMPLATE_PATH_RESOLVED}`);
     process.exit(1);
   }
 
-  let template = await readFile(TEMPLATE_PATH, 'utf-8');
+  let template = await readFile(TEMPLATE_PATH_RESOLVED, 'utf-8');
 
   const emailUrl = sanitizeUrl(payload.email?.url || '');
   const emailDisplay = payload.email?.display || emailUrl;

@@ -15,7 +15,7 @@ Export a tailored, ATS-optimized CV as a `.tex` file and compile it to PDF via `
 9. Reorder experience bullets by JD relevance
 10. Inject keywords naturally into existing achievements
 11. Build a JSON payload (see schema below) and write to `/tmp/cv-{candidate}-{company}.json`
-12. Run: `node build-cv-latex.mjs /tmp/cv-{candidate}-{company}.json users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex`
+12. Run: `node build-cv-latex.mjs --user {USER} /tmp/cv-{candidate}-{company}.json users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex`
 13. Run: `node generate-latex.mjs users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf`
 14. Report: .tex path, .pdf path, file sizes, section count, keyword coverage %
 
