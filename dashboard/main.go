@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/santifer/career-ops/dashboard/internal/data"
+	"github.com/santifer/career-ops/dashboard/internal/i18n"
 	"github.com/santifer/career-ops/dashboard/internal/model"
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 	"github.com/santifer/career-ops/dashboard/internal/ui/screens"
@@ -49,7 +50,18 @@ func (m appModel) Init() tea.Cmd {
 	return m.pipeline.LoadVisibleReports()
 }
 
+// Update manages global app state and routes incoming messages to active screens.
 func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "t", "T":
+			// Toggle language globally, unless the user is actively typing in a text input field
+			if !(m.state == viewPipeline && m.pipeline.IsTextInputActive()) {
+				i18n.ToggleLang()
+			}
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.pipeline.Resize(msg.Width, msg.Height)
@@ -91,6 +103,14 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reloadPipelineData()
 		return m, m.pipeline.LoadVisibleReports()
 
+	case screens.PipelineUpdateStatusAndNotesMsg:
+		err := data.UpdateApplicationStatusAndNotes(msg.CareerOpsPath, msg.App, msg.NewStatus, msg.NewNotes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "WARN: status and notes update failed: %v\n", err)
+		}
+		m.reloadPipelineData()
+		return m, nil
+
 	case screens.PipelineRefreshMsg:
 		m.reloadPipelineData()
 		return m, m.pipeline.LoadVisibleReports()
@@ -119,6 +139,26 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case screens.ViewerUpdateStatusMsg:
+		normalized := data.NormalizeStatus(msg.NewStatus)
+		if normalized == "hired" {
+			err := data.UpdateApplicationStatus(m.careerOpsPath, msg.App, msg.NewStatus)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "WARN: status update failed: %v\n", err)
+				m.reloadPipelineData()
+				return m, nil
+			}
+			m.state = viewPipeline
+			m.pipeline, _ = m.pipeline.StartHiredFlow(msg.App)
+			m.reloadPipelineData()
+			return m, nil
+		}
+		if normalized == "discarded" || normalized == "skip" {
+			m.state = viewPipeline
+			m.pipeline, _ = m.pipeline.StartDiscardReasonFlow(msg.App, msg.NewStatus)
+			m.reloadPipelineData()
+			return m, nil
+		}
+
 		err := data.UpdateApplicationStatus(m.careerOpsPath, msg.App, msg.NewStatus)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "WARN: status update failed: %v\n", err)
@@ -416,7 +456,14 @@ func main() {
 	pathFlag := flag.String("path", "", "Optional path to career-ops project directory or users/<user> folder")
 	userFlag := flag.String("user", "", "Optional career-ops user ID under users/")
 	usersDirFlag := flag.String("users-dir", "", "Override users directory (defaults to {path}/users or CAREER_OPS_USERS_DIR)")
+	langFlag := flag.String("lang", "", "Language for UI (en, tr). Defaults to auto-detect/en.")
 	flag.Parse()
+
+	if *langFlag != "" {
+		i18n.SetLang(*langFlag)
+	} else if os.Getenv("LANG") != "" {
+		i18n.SetLang(os.Getenv("LANG"))
+	}
 
 	userID := *userFlag
 	if userID == "" {

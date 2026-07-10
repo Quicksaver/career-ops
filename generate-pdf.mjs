@@ -4,12 +4,18 @@
  * generate-pdf.mjs — HTML → PDF via Playwright
  *
  * Usage:
- *   node career-ops/generate-pdf.mjs [--user <id>] <input.html> <output.pdf> [--format=letter|a4] [--report=NNN]
+ *   node career-ops/generate-pdf.mjs [--user <id>] <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--allow-reorder]
  *
  * --report links the generated PDF to its tracker/report number and records
  * the linkage in users/{USER}/data/pdf-index.tsv so downstream tools (e.g. the TUI
  * dashboard's `d`/`D` hotkeys) can locate the exact PDF for an application.
  * Without --report a manifest row is still written, just unkeyed.
+ *
+ * --allow-reorder downgrades the CV section-order guard from a thrown error
+ * to a console warning, for JDs where the section order was deliberately
+ * tailored (e.g. Projects moved ahead of Education for a technical-heavy
+ * role) rather than accidentally scrambled by an agent. Without this flag,
+ * any divergence from cv.md's section order still fails generation.
  *
  * Requires: @playwright/test (or playwright) installed.
  * Uses Chromium headless to render the HTML and produce a clean, ATS-parseable PDF.
@@ -179,6 +185,11 @@ function normalizeTextForATS(html) {
     // wrong for half of users \u2014 better to leave the glyph than emit bad data.
     t = t.replace(/\u20AC/g, () => { bump('euro', 1); return 'EUR '; });
     t = t.replace(/\u00A3/g, () => { bump('pound', 1); return 'GBP '; });
+    // Markdown bold from tailored CV builders (SUMMARY_TEXT uses **…**).
+    t = t.replace(/\*\*([^*]+?)\*\*/g, (_, inner) => {
+      bump('markdown-bold', 1);
+      return `<strong>${inner}</strong>`;
+    });
     return t;
   }
 }
@@ -244,7 +255,16 @@ function extractSourceSectionOrder(markdown) {
   return sections;
 }
 
-function validateCvSectionOrder(html, cvMarkdown) {
+/**
+ * @param {string} html
+ * @param {string} cvMarkdown
+ * @param {{ allowReorder?: boolean }} [options] - `allowReorder` downgrades a
+ *   detected divergence from a thrown error to a console warning, for JDs
+ *   where the section order was deliberately tailored (e.g. Projects moved
+ *   ahead of Education for a technical-heavy role) rather than accidentally
+ *   scrambled by an agent. See #1646.
+ */
+export function validateCvSectionOrder(html, cvMarkdown, { allowReorder = false } = {}) {
   const rendered = extractRenderedSectionOrder(html);
   const source = extractSourceSectionOrder(cvMarkdown);
   if (rendered.length < 2 || source.length < 2) return;
@@ -262,7 +282,12 @@ function validateCvSectionOrder(html, cvMarkdown) {
         .filter(section => renderedComparable.some(renderedSection => renderedSection.key === section.key))
         .map(section => section.title)
         .join(' -> ');
-      throw new Error(`CV section order diverges from cv.md: rendered ${renderedOrder}; cv.md ${sourceOrder}`);
+      const message = `CV section order diverges from cv.md: rendered ${renderedOrder}; cv.md ${sourceOrder}`;
+      if (allowReorder) {
+        console.warn(`⚠️  ${message} (proceeding — --allow-reorder set)`);
+        return;
+      }
+      throw new Error(message);
     }
   }
 }
@@ -373,13 +398,15 @@ async function generatePDF() {
   const args = userContext.args;
 
   // Parse arguments
-  let inputPath, outputPath, format = 'a4', reportNum = '';
+  let inputPath, outputPath, format = 'a4', reportNum = '', allowReorder = false;
 
   for (const arg of args) {
     if (arg.startsWith('--format=')) {
       format = arg.split('=')[1].toLowerCase();
     } else if (arg.startsWith('--report=')) {
       reportNum = arg.split('=')[1].trim();
+    } else if (arg === '--allow-reorder') {
+      allowReorder = true;
     } else if (!inputPath) {
       inputPath = arg;
     } else if (!outputPath) {
@@ -388,7 +415,13 @@ async function generatePDF() {
   }
 
   if (!inputPath || !outputPath) {
-    console.error('Usage: node generate-pdf.mjs [--user <id>] <input.html> <output.pdf> [--format=letter|a4] [--report=NNN]');
+    console.error('Usage: node generate-pdf.mjs [--user <id>] <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--allow-reorder]');
+    console.error('');
+    console.error('This script only converts an already-built HTML file to PDF.');
+    console.error('The input HTML is produced by the pdf mode: the agent fills cv-template.html');
+    console.error('with content tailored to the specific job (see modes/pdf.md) — there is no');
+    console.error('mechanical markdown-to-HTML step by design. Run `/career-ops pdf` in your AI');
+    console.error('CLI to drive the full flow end to end.');
     process.exit(1);
   }
 
@@ -433,7 +466,7 @@ async function generatePDF() {
   } catch (err) {
     if (err?.code !== 'ENOENT') throw err;
   }
-  validateCvSectionOrder(html, cvMarkdown);
+  validateCvSectionOrder(html, cvMarkdown, { allowReorder });
 
   const themeResult = applyThemeOverrides(html, await loadThemeOverrides());
   html = themeResult.html;

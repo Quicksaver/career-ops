@@ -4,7 +4,7 @@ description: AI job search command center -- evaluate offers, generate CVs, scan
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | scan | scan-handoff | scan-auth | deep | pdf | latex | cover | email | add | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | followup | update]"
+argument-hint: "[go | scan | scan-handoff | scan-auth | deep | pdf | latex | latex-tex | cover | email | add | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | offer-prep | titles | upskill | followup | update]"
 license: MIT
 ---
 
@@ -93,6 +93,7 @@ Determine the mode from `$mode`:
 | `interview/debrief` | `interview/debrief` |
 | `pdf` | `pdf` |
 | `latex` | `latex` |
+| `latex-tex` | `latex-tex` |
 | `email` | `email` |
 | `training` | `training` |
 | `project` | `project` |
@@ -107,6 +108,9 @@ Determine the mode from `$mode`:
 | `scan-auth` | `scan-auth` |
 | `batch` | `batch` |
 | `patterns` | `patterns` |
+| `offer-prep` | `offer-prep` |
+| `titles` | `titles` |
+| `upskill` | `upskill` |
 | `followup` | `followup` |
 | `update` | `update` |
 | `cover` | `cover` |
@@ -115,6 +119,21 @@ Determine the mode from `$mode`:
 **Auto-pipeline detection:** If `$mode` is not a known sub-command AND contains JD text (keywords: "responsibilities", "requirements", "qualifications", "about the role", "we're looking for", company name + role) or a URL to a JD, execute `auto-pipeline`.
 
 If `$mode` is not a sub-command AND doesn't look like a JD, show discovery.
+
+---
+
+## Output Language Directive
+
+Before executing any mode, read `config/profile.yml` if it exists and resolve:
+
+- `language.output` → ISO language code for human-facing output. Default: `en`.
+- `language.modes_dir` → optional market-mode directory. This controls market vocabulary and local evaluation rules only.
+
+Inject this directive after loading the mode instructions and before producing any user-visible content:
+
+> Write all human-facing output in `{language.output}` regardless of the language of these instructions or of the job description. This includes reports, tracker notes, PDFs, cover letters, outreach, interview prep, form answers, and summaries. If `language.modes_dir` supplies market-specific vocabulary, keep the market logic but explain terms in `{language.output}` when needed.
+
+`language.output` is authoritative for prose. `modes_dir` is market context; it must not force the prose language.
 
 ---
 
@@ -154,6 +173,7 @@ Available commands:
   /career-ops interview/debrief → Post-interview debrief: close gaps, predict next round
   /career-ops pdf       → PDF only, ATS-optimized CV
   /career-ops latex     → Export CV as LaTeX/Overleaf .tex
+  /career-ops latex-tex → Tailor your own resume.tex in place (opt-in; cv.md stays default)
   /career-ops cover     → Cover letter: standalone JD paste or /career-ops cover {slug}
   /career-ops email     → Formal application email draft (draft-only; never sends, submits, or clicks)
   /career-ops add       → Add a project/paper/role to your CV (fetch + preview + confirm)
@@ -168,6 +188,9 @@ Available commands:
   /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
   /career-ops batch     → Batch processing with parallel workers
   /career-ops patterns  → Analyze rejection patterns and improve targeting
+  /career-ops offer-prep → Read a received offer/contract with the candidate: clause walk + lawyer questions (not legal advice)
+  /career-ops titles    → Suggest adjacent job titles from your CV to broaden the search
+  /career-ops upskill   → Aggregate skill-gap analysis from your evaluated reports
   /career-ops followup  → Follow-up cadence tracker: flag overdue, generate drafts
   /career-ops update    → Update career-ops system files with diff preview + compat check
 
@@ -195,7 +218,7 @@ For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.m
 ### Standalone modes (only their mode file):
 Read `modes/{mode}.md` plus any user-layer files it names from `users/{ACTIVE_USER}/`.
 
-Applies to: `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `training`, `project`, `patterns`, `followup`, `cover`, `email`, `add`, `scan-auth`
+Applies to: `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`
 
 ### Modes delegated to subagent:
 For `go`, `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
@@ -203,7 +226,7 @@ For `go`, `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ 
 ```
 Agent(
   subagent_type="general-purpose",
-  prompt="ACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-handoff/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Keep routine tool polls silent; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of users/{ACTIVE_USER}/modes/_custom.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
+  prompt="[output language directive]\n\nACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-handoff/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Keep routine tool polls silent; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of users/{ACTIVE_USER}/modes/_custom.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
   description="career-ops {mode}"
 )
 ```

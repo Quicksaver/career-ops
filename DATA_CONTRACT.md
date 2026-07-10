@@ -18,6 +18,8 @@ Commands must resolve an active user before reading or writing any user-layer fi
 |------|---------|
 | `users/{USER}/cv.md` | CV in markdown |
 | `users/{USER}/config/profile.yml` | Identity, targets, comp range |
+| `users/{USER}/config/cv-facts.json` | CV fact-check allowlist and forbidden phrases |
+| `users/{USER}/config/benchmarks.yml` | Optional market-calibration benchmark overrides copied from `templates/benchmarks.yml` |
 | `users/{USER}/config/plugins.yml` | Plugin activation toggles (opt-in; seeded from `config/plugins.example.yml`) |
 | `users/{USER}/modes/_profile.md` | Archetypes, narrative, negotiation scripts |
 | `users/{USER}/modes/_custom.md` | House rules, custom workflows, and output preferences (procedural; survives updates) |
@@ -32,10 +34,18 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync --user {USER}` — safe to delete) |
 | `users/{USER}/data/pipeline.md` | URL inbox |
 | `users/{USER}/data/scan-history.tsv` | Scan history |
+| `users/{USER}/data/scan-runs.tsv` | Per-run scan counters appended by `scan.mjs` and read by `stats.mjs` |
 | `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
 | `users/{USER}/data/pdf-index.tsv` | Generated PDF manifest used by dashboard PDF hotkeys |
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
+| `users/{USER}/data/offers/*` | Received offers/contracts, promise notes, prep reports, and reply drafts (PII; written by `offer-prep`) |
+| `users/{USER}/data/salary-observations.tsv` | Append-only compensation observation log read by `salary-gap.mjs` |
+| `users/{USER}/data/status-log.tsv` | Append-only status transition ledger written by `set-status.mjs` and read by `funnel-velocity.mjs` |
+| `users/{USER}/data/upskill/*` | Skill-gap analysis reports written by the `upskill` mode |
+| `users/{USER}/data/blacklist.md` | Opt-in do-not-apply company list; only the user or an agent acting on explicit instruction may write it |
+| `users/{USER}/data/active-interviews.md` | Active interview process notes |
+| `users/{USER}/data/reply-candidates.json` | Candidate matches produced from application replies |
 | `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |
 | `users/{USER}/plugins.local/` | User/private plugins (never auto-updated) |
 | `users/{USER}/plugins.lock` | Integrity pins and recorded consent for enabled plugins (generated; never auto-updated) |
@@ -72,10 +82,14 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/tracker.md` | Tracker instructions |
 | `modes/training.md` | Training evaluation instructions |
 | `modes/patterns.md` | Pattern analysis instructions |
+| `modes/titles.md` | Adjacent job-title suggestion instructions |
+| `modes/upskill.md` | Skill-gap analysis instructions |
 | `modes/followup.md` | Follow-up cadence instructions |
+| `modes/offer-prep.md` | Offer-stage contract reading companion instructions |
 | `modes/interview/*` | Interview prep planning, practice, and debrief skills |
 | `modes/de/*` | German language modes |
 | `modes/fr/*` | French language modes |
+| `modes/hi/*` | Hindi language modes |
 | `modes/ja/*` | Japanese language modes |
 | `modes/pl/*` | Polish language modes |
 | `modes/pt/*` | Portuguese language modes |
@@ -90,7 +104,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `scan-auth/*.mjs` | Authenticated portal scanner classes |
 | `plugins/` | Bundled plugins + the plugin engine (opt-in external integrations) |
 | `plugins.mjs` | Plugin CLI (list/run/available/add/new/enable/skill/trust/remove) |
-| `plugins-registry.json` | Curated list of approved community plugins (the trust root) |
+| `plugins-registry/` | Curated community plugins, one `<id>.json` per plugin (the trust root) |
 | `plugin-install.mjs` / `plugin-audit.mjs` / `validate-plugin-registry.mjs` | Plugin install/audit/registry-validation utilities |
 | `config/plugins.example.yml` | Plugin activation template (seed for `users/{USER}/config/plugins.yml`) |
 | `batch/batch-prompt.md` | Batch worker prompt |

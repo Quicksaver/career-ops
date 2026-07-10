@@ -28,6 +28,8 @@ var (
 	reBatchID         = regexp.MustCompile(`(?m)^\*\*Batch ID:\*\*\s*(\d+)`)
 	reListingISODate  = regexp.MustCompile(`(?i)(?:posted|published|first published|date posted|posting date|listing date)[^\n\d]{0,40}(\d{4}-\d{2}-\d{2})`)
 	reListingTextDate = regexp.MustCompile(`(?i)(?:posted|published|first published|date posted|posting date|listing date)[^\n\d]{0,40}((?:\d{1,2}\s+)?(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})`)
+	reDiscardReasons  = regexp.MustCompile(`(?s)discard_reasons:\s*\n((?:\s*-\s*.+?\n)+)`)
+	reDiscardItem     = regexp.MustCompile(`\s*-\s*([^\n]+)`)
 )
 
 // resolveReportPath converts a report link from the tracker into a path
@@ -562,25 +564,27 @@ func NormalizeStatus(raw string) string {
 	}
 
 	switch {
-	// Most restrictive first — accepts both English and Spanish
-	case strings.Contains(s, "no aplicar") || strings.Contains(s, "no_aplicar") || s == "skip" || strings.Contains(s, "geo blocker"):
+	// Most restrictive first — accepts English, Spanish, and Turkish
+	case s == "hired" || s == "contratado" || s == "contratada" || s == "accepted" || s == "accept" || s == "kabul edildi" || s == "kabul_edildi" || s == "işe alındı" || s == "ise alindi":
+		return "hired"
+	case strings.Contains(s, "no aplicar") || strings.Contains(s, "no_aplicar") || s == "skip" || strings.Contains(s, "geo blocker") || strings.Contains(s, "uygun değil") || strings.Contains(s, "uygun_değil") || strings.Contains(s, "uygun degil") || strings.Contains(s, "uygun_degil"):
 		return "skip"
-	case strings.Contains(s, "interview") || strings.Contains(s, "entrevista"):
+	case strings.Contains(s, "interview") || strings.Contains(s, "entrevista") || strings.Contains(s, "mülakat") || strings.Contains(s, "mulakat"):
 		return "interview"
-	case s == "offer" || strings.Contains(s, "oferta"):
+	case s == "offer" || strings.Contains(s, "oferta") || strings.Contains(s, "teklif"):
 		return "offer"
-	case strings.Contains(s, "responded") || strings.Contains(s, "respondido"):
+	case strings.Contains(s, "responded") || strings.Contains(s, "respondido") || strings.Contains(s, "yanıt verildi") || strings.Contains(s, "yanıt_verildi") || strings.Contains(s, "yanit verildi") || strings.Contains(s, "yanit_verildi"):
 		return "responded"
-	case strings.Contains(s, "applied") || strings.Contains(s, "aplicado") || s == "enviada" || s == "aplicada" || s == "sent":
+	case strings.Contains(s, "applied") || strings.Contains(s, "aplicado") || s == "enviada" || s == "aplicada" || s == "sent" || strings.Contains(s, "başvuruldu") || strings.Contains(s, "basvuruldu"):
 		return "applied"
-	case strings.Contains(s, "rejected") || strings.Contains(s, "rechazado") || s == "rechazada":
+	case strings.Contains(s, "rejected") || strings.Contains(s, "rechazado") || s == "rechazada" || strings.Contains(s, "reddedildi"):
 		return "rejected"
 	case strings.Contains(s, "closed") || strings.Contains(s, "expired") || s == "cerrada" || s == "cancelada":
 		return "closed"
 	case strings.Contains(s, "discarded") || strings.Contains(s, "descartado") || s == "descartada" ||
-		strings.HasPrefix(s, "duplicado") || strings.HasPrefix(s, "dup"):
+		strings.HasPrefix(s, "duplicado") || strings.HasPrefix(s, "dup") || strings.Contains(s, "iptal edildi") || strings.Contains(s, "iptal_edildi") || strings.Contains(s, "ıptal edildi") || strings.Contains(s, "ıptal_edildi"):
 		return "discarded"
-	case strings.Contains(s, "evaluated") || strings.Contains(s, "evaluada") || s == "condicional" || s == "hold" || s == "monitor" || s == "evaluar" || s == "verificar":
+	case strings.Contains(s, "evaluated") || strings.Contains(s, "evaluada") || s == "condicional" || s == "hold" || s == "monitor" || s == "evaluar" || s == "verificar" || strings.Contains(s, "değerlendirildi") || strings.Contains(s, "degerlendirildi"):
 		return "evaluated"
 	default:
 		return s
@@ -687,7 +691,7 @@ func splitTrackerRow(line string) []string {
 var trackerHeaderAliases = map[string]string{
 	"#": "num", "num": "num", "date": "date",
 	"company": "company", "empresa": "company",
-	"role": "role", "puesto": "role",
+	"via": "via", "role": "role", "puesto": "role",
 	"location": "location", "score": "score", "status": "status",
 	"pdf": "pdf", "report": "report", "notes": "notes",
 }
@@ -713,9 +717,11 @@ func detectTrackerColumns(lines []string) map[string]int {
 		m := make(map[string]int)
 		for i, c := range cells {
 			if name, ok := trackerHeaderAliases[strings.ToLower(c)]; ok {
-				if _, seen := m[name]; !seen {
-					m[name] = i
-				}
+				// Unconditional assign: with a duplicated header name the LAST
+				// occurrence wins, matching detectColumns in tracker-parse.mjs
+				// (which this function mirrors) — first-wins here made the two
+				// runtimes map the same header row differently.
+				m[name] = i
 			}
 		}
 		complete := true
@@ -744,41 +750,7 @@ func resolveTrackerColumns(lines []string) map[string]int {
 // UpdateApplicationStatus updates the status of an application in
 // applications.md and records the dashboard status change as a dated note.
 func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, newStatus string) error {
-	filePath := filepath.Join(careerOpsPath, "applications.md")
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		filePath = filepath.Join(careerOpsPath, "data", "applications.md")
-		content, err = os.ReadFile(filePath)
-		if err != nil {
-			return err
-		}
-	}
-
-	lines := strings.Split(string(content), "\n")
-	found := false
-
-	// Locate the Status column by header name so a customized layout (e.g. an
-	// inserted Location column) is written to the right cell. Falls back to the
-	// legacy fixed index when no header is present.
-	statusIdx := resolveTrackerColumns(lines)["status"]
-
-	for i, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
-			continue
-		}
-		// Match by report number
-		if app.ReportNumber != "" && strings.Contains(line, fmt.Sprintf("[%s]", app.ReportNumber)) {
-			lines[i] = replaceStatusAndAddInteraction(line, app.Status, newStatus, time.Now().Format("2006-01-02"), statusIdx)
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("application not found: report %s", app.ReportNumber)
-	}
-
-	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
+	return UpdateApplicationStatusAndNotes(careerOpsPath, app, newStatus, "")
 }
 
 // replaceStatusInLine rewrites only the Status cell of a tracker row, leaving
@@ -870,7 +842,11 @@ func statusCellIndex(cells []string, canonicalIdx int, want string) int {
 func spliceCellValue(cell, newVal string) string {
 	trimmed := strings.TrimSpace(cell)
 	if trimmed == "" {
-		return cell
+		if len(cell) >= 2 {
+			half := len(cell) / 2
+			return cell[:half] + newVal + cell[half:]
+		}
+		return " " + newVal + " "
 	}
 	start := strings.Index(cell, trimmed)
 	return cell[:start] + newVal + cell[start+len(trimmed):]
@@ -1084,4 +1060,142 @@ func safePct(part, whole int) float64 {
 		return 0
 	}
 	return float64(part) / float64(whole) * 100
+}
+
+// UpdateApplicationStatusAndNotes updates both the status and notes of an application in applications.md.
+func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus string, newNotes string) error {
+	filePath := filepath.Join(careerOpsPath, "applications.md")
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		filePath = filepath.Join(careerOpsPath, "data", "applications.md")
+		content, err = os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+	}
+
+	lines := strings.Split(string(content), "\n")
+	found := false
+
+	colmap := resolveTrackerColumns(lines)
+	statusIdx, statusOk := colmap["status"]
+	if newStatus != "" && !statusOk {
+		return fmt.Errorf("status column not found in tracker")
+	}
+	notesIdx, notesOk := colmap["notes"]
+	if newNotes != "" && !notesOk {
+		return fmt.Errorf("notes column not found in tracker, cannot append notes")
+	}
+
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
+			continue
+		}
+		if app.ReportNumber != "" && strings.Contains(line, fmt.Sprintf("[%s]", app.ReportNumber)) {
+			l := line
+			effectiveNotes := newNotes
+			if newStatus != "" {
+				l = replaceStatusInLine(l, app.Status, newStatus, statusIdx)
+				if !strings.EqualFold(strings.TrimSpace(app.Status), strings.TrimSpace(newStatus)) {
+					baseNotes := app.Notes
+					if effectiveNotes != "" {
+						baseNotes = effectiveNotes
+					}
+					effectiveNotes = appendStatusInteraction(baseNotes, newStatus, time.Now().Format("2006-01-02"))
+				}
+			}
+			if effectiveNotes != "" {
+				l = replaceNotesInLine(l, app.Notes, effectiveNotes, notesIdx)
+			}
+			lines[i] = l
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("application not found: report %s", app.ReportNumber)
+	}
+
+	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+func replaceNotesInLine(line, oldNotes, newNotes string, notesField int) string {
+	if notesField < 0 {
+		return line
+	}
+	if strings.Contains(line, "\t") {
+		prefix, body, found := strings.Cut(line, "|")
+		if !found {
+			return line
+		}
+		cells := strings.Split(body, "\t")
+		if notesField < len(cells) {
+			cells[notesField] = spliceCellValue(cells[notesField], newNotes)
+			return prefix + "|" + strings.Join(cells, "\t")
+		}
+		return line
+	}
+
+	segments := strings.Split(line, "|")
+	idx := notesField + 1
+	if idx < len(segments) {
+		segments[idx] = spliceCellValue(segments[idx], newNotes)
+		return strings.Join(segments, "|")
+	}
+	return line
+}
+
+// LoadReportDiscardReasons parses predicted discard reasons from a report file.
+func LoadReportDiscardReasons(careerOpsPath, reportPath string) []string {
+	if reportPath == "" {
+		return nil
+	}
+	p := reportPath
+	if strings.Contains(p, "](") {
+		idx := strings.Index(p, "](")
+		p = p[idx+2:]
+		p = strings.TrimSuffix(p, ")")
+	}
+	fullPath := filepath.Join(careerOpsPath, p)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return nil
+	}
+	text := string(content)
+
+	match := reDiscardReasons.FindStringSubmatch(text)
+	if len(match) < 2 {
+		return nil
+	}
+
+	itemsMatch := reDiscardItem.FindAllStringSubmatch(match[1], -1)
+	var reasons []string
+	for _, item := range itemsMatch {
+		reasons = append(reasons, strings.TrimSpace(item[1]))
+	}
+	return reasons
+}
+
+// SaveAnonymousStat records an anonymized win stat to data/reported-hires.tsv.
+func SaveAnonymousStat(careerOpsPath string, role string, weeks int) error {
+	dirPath := filepath.Join(careerOpsPath, "data")
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return err
+	}
+	filePath := filepath.Join(dirPath, "reported-hires.tsv")
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err == nil && fi.Size() == 0 {
+		_, _ = f.WriteString("Date\tRoleType\tWeeksToHire\n")
+	}
+
+	dateStr := time.Now().Format("2006-01-02")
+	_, err = f.WriteString(fmt.Sprintf("%s\t%s\t%d\n", dateStr, role, weeks))
+	return err
 }

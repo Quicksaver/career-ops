@@ -20,7 +20,7 @@ import (
 func tabIndexForFilter(t *testing.T, filter string) int {
 	t.Helper()
 
-	for i, tab := range pipelineTabs {
+	for i, tab := range getPipelineTabs() {
 		if tab.filter == filter {
 			return i
 		}
@@ -31,17 +31,18 @@ func tabIndexForFilter(t *testing.T, filter string) int {
 }
 
 func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
-	if len(pipelineTabs) == 0 {
+	tabs := getPipelineTabs()
+	if len(tabs) == 0 {
 		t.Fatal("expected pipeline tabs")
 	}
-	if pipelineTabs[0].filter != filterEvaluated {
-		t.Fatalf("expected first tab to be Evaluated, got %+v", pipelineTabs[0])
+	if tabs[0].filter != filterEvaluated {
+		t.Fatalf("expected first tab to be Evaluated, got %+v", tabs[0])
 	}
-	if pipelineTabs[0].label != "OPEN" {
-		t.Fatalf("expected first tab label to be Open, got %+v", pipelineTabs[0])
+	if tabs[0].label != "OPEN" {
+		t.Fatalf("expected first tab label to be Open, got %+v", tabs[0])
 	}
-	if pipelineTabs[len(pipelineTabs)-1].filter != filterSkip {
-		t.Fatalf("expected last tab to be Skip, got %+v", pipelineTabs[len(pipelineTabs)-1])
+	if tabs[len(tabs)-1].filter != filterSkip {
+		t.Fatalf("expected last tab to be Skip, got %+v", tabs[len(tabs)-1])
 	}
 	if tabIndexForFilter(t, filterClosed) >= tabIndexForFilter(t, filterDiscarded) {
 		t.Fatal("expected Closed tab to appear before Discarded")
@@ -50,7 +51,11 @@ func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 		tabIndexForFilter(t, filterOffer) >= tabIndexForFilter(t, filterRejected) {
 		t.Fatal("expected Offer tab to appear between Interview and Rejected")
 	}
-	for _, tab := range pipelineTabs {
+	if tabIndexForFilter(t, filterHired) <= tabIndexForFilter(t, filterOffer) ||
+		tabIndexForFilter(t, filterHired) >= tabIndexForFilter(t, filterRejected) {
+		t.Fatal("expected Hired tab to appear between Offer and Rejected")
+	}
+	for _, tab := range tabs {
 		if tab.filter == filterAll || tab.label == "ALL" {
 			t.Fatalf("All tab should not be rendered, found %+v", tab)
 		}
