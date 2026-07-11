@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `1e082972be2368d61937a05c681f7f0737b91eb9`
-- Fork ref: current `main` at `af691ae8f6dfdd270414894a9a04c887a362c2e8`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `131`
-- Diff-size baseline after merge, before this inventory refresh: `205 files changed, 13467 insertions(+), 2677 deletions(-)`
+- Upstream ref: `upstream/main` at `7dda4302bbadd376444734bed36925072d0c3b97`
+- Fork ref: current `main` at `09ef7fdab9fe9aae3b6e7610bfd3c3bc1e72dc43`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `133`
+- Diff-size baseline after merge, before this inventory refresh: `205 files changed, 13476 insertions(+), 2678 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,11 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `1e082972be2368d61937a05c681f7f0737b91eb9` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `7dda4302bbadd376444734bed36925072d0c3b97` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- AI-maturity legitimacy signal: Block G now flags a possible AI-buzzword/infrastructure mismatch only when at least two of three evidence classes are present: transformation language that exceeds the role's scope/seniority, a very small team carrying organization-wide transformation expectations, and a legacy-heavy industry base rate. The note is descriptive, uses no additional research queries, suggests concrete interview probes, and remains orthogonal to both application score and the High Confidence / Proceed with Caution / Suspicious legitimacy tier.
 - Deterministic HTML CV rendering: `build-cv-html.mjs` now turns a compact structured payload into the final ATS-safe HTML, so agents no longer spend output tokens reproducing template markup. The fork requires an active user for normal execution, preserves the report-linked `{REPORT_NUM}-{company}-{date}` artifact identity, restricts output to `users/{USER}/`, restricts template reads to `templates/`, and retains supported local/data-image profile photos.
 - Template resolution hardening: `cv-templates.mjs` now allowlists `html` and `tex` formats, closing the format-based path-traversal route while retaining active-user profile defaults. `generate-cover-letter.mjs` now uses the same resolver with `users/{USER}/config/profile.yml`, so configured and per-payload cover templates affect real PDF generation rather than only mode instructions.
 - Template and headless-tailoring documentation: the FAQ now explains named CV/cover templates and `docs/SCRIPTS.md` lists `openai-tailor.mjs` plus the deterministic HTML renderer. All candidate-data examples remain explicit-user/user-scoped in this fork.
@@ -165,6 +166,7 @@ New upstream features or behavior now present:
 
 Conflict notes from this merge:
 
+- `modes/oferta.md`: the upstream AI-buzzword/infrastructure mismatch signal merged cleanly into Block G. The fork retained its bounded-research and non-prescriptive legitimacy behavior, and corrected the adjacent employment-classification jurisdiction lookup to `users/{USER}/config/profile.yml` so both signals remain inside the active-user contract.
 - `build-cv-html.mjs` and `modes/pdf.md`: adopted upstream's compact JSON → deterministic HTML workflow while replacing candidate-name/root-output examples with the fork's report-linked artifact basename and `users/{USER}/output/` paths. Normal CLI execution requires `--user`, rejects output outside the active user root, rejects templates outside `templates/`, and keeps self-test execution data-independent.
 - `generate-cover-letter.mjs`, `modes/cover.md`, and `test/cover-resolver.test.mjs`: combined upstream's shared cover-template resolver with the fork's active-user output flow. Production resolution now reads `cover_letter.template` from `users/{USER}/config/profile.yml`, generated PDFs stay under `users/{USER}/output/`, and pure resolver/build tests still import without selecting a real user.
 - `docs/FAQ.md` and `docs/SCRIPTS.md`: kept upstream's custom-template and OpenAI-tailoring documentation while restoring user-scoped profile/output paths, preserving the blacklist FAQ, and documenting the deterministic renderer's user/output/template boundaries.
