@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `e7645129e8e484c22a78bfbd609e2385484d82c9`
-- Fork ref: current `main` at `1802a7f5671d39fc0a0dcc562ac63f6383db4a0d`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `129`
-- Diff-size baseline after merge, before this inventory refresh: `204 files changed, 13367 insertions(+), 2657 deletions(-)`
+- Upstream ref: `upstream/main` at `1e082972be2368d61937a05c681f7f0737b91eb9`
+- Fork ref: current `main` at `af691ae8f6dfdd270414894a9a04c887a362c2e8`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `131`
+- Diff-size baseline after merge, before this inventory refresh: `205 files changed, 13467 insertions(+), 2677 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,13 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `e7645129e8e484c22a78bfbd609e2385484d82c9` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `1e082972be2368d61937a05c681f7f0737b91eb9` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Deterministic HTML CV rendering: `build-cv-html.mjs` now turns a compact structured payload into the final ATS-safe HTML, so agents no longer spend output tokens reproducing template markup. The fork requires an active user for normal execution, preserves the report-linked `{REPORT_NUM}-{company}-{date}` artifact identity, restricts output to `users/{USER}/`, restricts template reads to `templates/`, and retains supported local/data-image profile photos.
+- Template resolution hardening: `cv-templates.mjs` now allowlists `html` and `tex` formats, closing the format-based path-traversal route while retaining active-user profile defaults. `generate-cover-letter.mjs` now uses the same resolver with `users/{USER}/config/profile.yml`, so configured and per-payload cover templates affect real PDF generation rather than only mode instructions.
+- Template and headless-tailoring documentation: the FAQ now explains named CV/cover templates and `docs/SCRIPTS.md` lists `openai-tailor.mjs` plus the deterministic HTML renderer. All candidate-data examples remain explicit-user/user-scoped in this fork.
 - Deterministic user instruction composition: every routed mode now loads the shared system rules first, then `users/{USER}/modes/_profile.md`, then `users/{USER}/modes/_custom.md`, and finally the selected mode. `_custom.md` remains procedural/style context only and cannot introduce candidate facts.
 - Configurable document templates: `cv-templates.mjs` discovers and validates named HTML/LaTeX CV and cover-letter templates, with defaults selected from the active user's profile. `build-cv-latex.mjs`, PDF mode, and cover mode use the shared resolver while preserving report-linked output and active-user containment.
 - New document and assessment helpers: `img-to-pdf.mjs` converts one image to a one-page PDF through the existing Playwright runtime, and `assessment-log.mjs` records append-only assessment vendor/topic/threshold/score/staleness observations. Normal CLI use requires an explicit user; assessment data and generated outputs remain under `users/{USER}/`.
@@ -162,6 +165,10 @@ New upstream features or behavior now present:
 
 Conflict notes from this merge:
 
+- `build-cv-html.mjs` and `modes/pdf.md`: adopted upstream's compact JSON → deterministic HTML workflow while replacing candidate-name/root-output examples with the fork's report-linked artifact basename and `users/{USER}/output/` paths. Normal CLI execution requires `--user`, rejects output outside the active user root, rejects templates outside `templates/`, and keeps self-test execution data-independent.
+- `generate-cover-letter.mjs`, `modes/cover.md`, and `test/cover-resolver.test.mjs`: combined upstream's shared cover-template resolver with the fork's active-user output flow. Production resolution now reads `cover_letter.template` from `users/{USER}/config/profile.yml`, generated PDFs stay under `users/{USER}/output/`, and pure resolver/build tests still import without selecting a real user.
+- `docs/FAQ.md` and `docs/SCRIPTS.md`: kept upstream's custom-template and OpenAI-tailoring documentation while restoring user-scoped profile/output paths, preserving the blacklist FAQ, and documenting the deterministic renderer's user/output/template boundaries.
+- `cv-templates.mjs`, `test/cv-templates.test.mjs`, `test-all.mjs`, and `update-system.mjs`: adopted the upstream template-format allowlist, cover resolver tests, renderer self-test, and updater registration. The merged quick suite passes 1,748 checks; a separate temporary-user smoke test rendered the deterministic HTML through `generate-pdf.mjs` and recorded the report-linked manifest entry.
 - `.agents/skills/career-ops/SKILL.md`, `AGENTS.md`, and `modes/_shared.md`: accepted upstream's deterministic `_profile` → `_custom` → selected-mode order and factual-source guard, while resolving every user customization reference through `users/{USER}` and retaining the fork's active-user, `go`, `scan-handoff`, `scan-auth`, and quiet-monitoring contracts.
 - `assessment-log.mjs`, `cv-templates.mjs`, `img-to-pdf.mjs`, and `build-cv-latex.mjs`: upstream introduced or extended these helpers with root-oriented defaults. The merge routes assessment/profile access through `lib/user-context.mjs`, requires a user for normal CLI execution, and keeps generated image/LaTeX output inside the active user root; import-only helpers and self-tests remain data-independent.
 - `DATA_CONTRACT.md`, `docs/FAQ.md`, `docs/SCRIPTS.md`, `modes/cover.md`, `modes/latex.md`, `modes/pdf.md`, and `modes/scan.md`: adopted assessment logging, template selection, image conversion, cross-listing, and blacklist documentation while rewriting candidate-data paths and examples to `users/{USER}` plus explicit `--user` arguments.
@@ -320,7 +327,7 @@ What this customizes:
 - Career-ops commands must have an active user before any user-layer access. Explicit user selection is accepted via command text such as `/career-ops scan <username>`, via `--user <id>` / `--user=<id>`, or via `CAREER_OPS_USER`.
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
-- Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, cover-letter/CV/image outputs use `users/{USER}/output/`, assessment events use `users/{USER}/data/assessments.tsv`, and analytics/reply/status/tailoring commands read only the active user's tracker, reports, profile, and fact sources.
+- Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, deterministic CV/cover-letter/image outputs use `users/{USER}/output/`, assessment events use `users/{USER}/data/assessments.tsv`, and analytics/reply/status/tailoring commands read only the active user's tracker, reports, profile, and fact sources.
 - Report-number reservation scans all numeric report prefixes under `users/{USER}/reports/`, not only 3-digit prefixes. Keep this when users cross report 999; the printed value remains zero-padded to at least 3 digits for compatibility with existing artifact names.
 - `reconcile-pipeline.mjs` remains path-overridable for batch/user layouts: use `--state users/{USER}/batch/batch-state.tsv --pipeline users/{USER}/data/pipeline.md --reports users/{USER}/reports` when invoking it directly for a per-user batch cleanup. The script validates those paths stay inside the repository and rejects file/directory type mismatches before reading or writing.
 - The upstream SQLite tracker index is adapted to the same resolver: `node tracker.mjs sync --user {USER}` reads `users/{USER}/data/applications.md` and writes the derived `users/{USER}/data/applications.db`. The database is disposable derived state, not a replacement for the markdown source of truth.
@@ -932,6 +939,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Any fork provider adapter now covered by upstream first-party modules such as RemoteOK, Remotive, IBM, or Working Nomads. Working Nomads is already on the upstream-style module path; only the fork's local filter compatibility should remain unless upstream adds equivalent filters.
 - A shared retry/backoff helper for provider fetches.
 - Report-numbered CV artifact naming.
+- Deterministic HTML CV rendering that preserves active-user containment, selected system templates, supported local/data-image photos, and report-linked artifact names.
 - Config-driven CV theme tokens.
 - Per-user dashboard binary build/run flow.
 - Dashboard listing-date parsing/display.
