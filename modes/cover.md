@@ -304,7 +304,7 @@ Assemble the JSON payload:
     "closing": "{approved closing}",
     "language_closing": "{approved language sentence or null}"
   },
-  "output_path": "output/{company-slug}-{role-slug}-cover.pdf"
+  "output_path": "{company-slug}-{role-slug}-cover.pdf"
 }
 ```
 
@@ -312,7 +312,7 @@ Write payload to `/tmp/cover-payload-{company-slug}.json`.
 
 Run:
 ```bash
-node generate-cover-letter.mjs --payload /tmp/cover-payload-{company-slug}.json
+node generate-cover-letter.mjs --user {USER} --payload /tmp/cover-payload-{company-slug}.json
 ```
 
 Report the output path and file size.
@@ -333,8 +333,8 @@ After the PDF is confirmed, add a brief note:
 
 When invoked as `/career-ops cover {slug}`:
 
-1. Find the matching report in `reports/` by slug
+1. Find the matching report in `users/{USER}/reports/` by slug
 2. Extract the `## Cover Letter Draft` section — use it as a pre-populated starting point for the draft
 3. Run all steps as normal (research, keywords, prompts, gaps) — the draft is a starting point, not the final output
 4. When presenting the draft in Step 8, show what was auto-generated and what was changed based on the user's answers
-5. After PDF generation, update the report's `## Cover Letter Draft` section with a note: `PDF generated: output/{path} on {date}`
+5. After PDF generation, update the report's `## Cover Letter Draft` section with a note: `PDF generated: users/{USER}/output/{path} on {date}`

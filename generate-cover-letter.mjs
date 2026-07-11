@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node generate-cover-letter.mjs --user <username> --payload payload.json
- *   node generate-cover-letter.mjs --user <username> --payload payload.json --out output/slug-cover.pdf
+ *   node generate-cover-letter.mjs --user <username> --payload payload.json --out slug-cover.pdf
  *
  * Fills templates/cover-letter-template.html with the payload, then renders
  * it to PDF via the same Playwright pipeline used for CVs (generate-pdf.mjs).
@@ -23,6 +23,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from "./lib/user-context.mjs";
+import { resolveTemplate } from "./cv-templates.mjs";
 
 function safeOutputPath(raw, outputRoot) {
   // Derive a sanitized filename from raw string (strip path separators and dots)
@@ -107,16 +108,30 @@ function buildFootnotesBlock(footnotes) {
   return `<div class="footnotes">\n${lines}\n  </div>`;
 }
 
-export function buildHtml(payload) {
+// Resolve the cover-letter template through the shared resolver so a
+// `cover_letter.template` profile default, an explicit `payload.template`, and
+// installed template packs are all honored. Any resolver failure (no profile,
+// no templates dir, bad config) falls back to the base template, preserving the
+// original hardcoded behavior.
+export function resolveCoverTemplatePath(payload = {}, opts = {}) {
+  const scriptDir = dirname(fileURLToPath(import.meta.url));
+  const base = resolve(scriptDir, "templates", "cover-letter-template.html");
+  try {
+    return resolveTemplate("cover", payload.template, { format: "html", fallback: true, ...opts });
+  } catch {
+    return base;
+  }
+}
+
+export function buildHtml(payload, templatePath) {
   _require(payload, ["candidate", "letter"], "payload");
   const candidate = payload.candidate;
   const letter = payload.letter;
   _require(candidate, ["name"], "candidate");
   _require(letter, ["role_title", "opening", "profile_intro"], "letter");
 
-  const scriptDir = dirname(fileURLToPath(import.meta.url));
-  const templatePath = resolve(scriptDir, "templates", "cover-letter-template.html");
-  let html = readFileSync(templatePath, "utf-8");
+  const resolvedPath = templatePath || resolveCoverTemplatePath(payload);
+  let html = readFileSync(resolvedPath, "utf-8");
 
   // Optional salutation (e.g. "Dear Jane Smith,"). Omitted -> no salutation,
   // preserving the original behavior for payloads that don't set it.
@@ -165,7 +180,7 @@ async function main() {
   if (args.help || !args.payload) {
     console.log(`
 Usage:
-  node generate-cover-letter.mjs --user <username> --payload payload.json [--out output/path.pdf]
+  node generate-cover-letter.mjs --user <username> --payload payload.json [--out filename.pdf]
 
   --payload   Path to the JSON payload file (required)
   --out       Override output path from payload (optional)
@@ -208,7 +223,10 @@ Usage:
   const { renderHtmlToPdf } = await import("./generate-pdf.mjs");
 
   try {
-    const html = buildHtml(payload);
+    const templatePath = resolveCoverTemplatePath(payload, {
+      profilePath: userPath(userContext, "config/profile.yml"),
+    });
+    const html = buildHtml(payload, templatePath);
     const outputPath = resolve(payload.output_path);
     await renderHtmlToPdf(html, outputPath, { format: "a4" });
     console.log(`\nCover letter PDF: ${payload.output_path}`);

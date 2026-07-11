@@ -15,6 +15,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run merge` | `merge-tracker.mjs` | Merge batch TSVs into applications.md |
 | `npm run pdf` | `generate-pdf.mjs` | Convert HTML to ATS-optimized PDF |
 | `npm run img-to-pdf` | `img-to-pdf.mjs` | Convert a single screenshot/image into a single-page PDF |
+| `node build-cv-html.mjs` | `build-cv-html.mjs` | Build deterministic HTML from a structured CV payload under the active user's output root |
 | `npm run build:latex` | `build-cv-latex.mjs` | Build .tex from structured JSON payload |
 | `npm run sync-check` | `cv-sync-check.mjs` | Validate CV/profile consistency |
 | `npm run patterns` | `analyze-patterns.mjs` | Analyze tracker outcomes and report patterns |
@@ -31,6 +32,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run tracker` | `tracker.mjs` | SQLite derived index over applications.md — sync/query/history/export |
 | `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 | `npm run invite-match` | `invite-match.mjs` | Fuzzy-match a pasted interview-invite email against `data/applications.md` |
+| `npm run openai:tailor` | `openai-tailor.mjs` | Tailor a CV via any OpenAI-compatible endpoint (headless companion to `openai-eval.mjs`) |
 
 ---
 
@@ -147,6 +149,19 @@ node img-to-pdf.mjs --self-test
 MVP scope: one image in, one PDF page out. Multi-image/multi-page conversion is not implemented.
 
 **Exit codes:** `0` PDF generated, `1` missing arguments, unsupported image type, missing input file, existing output without `--force`, or generation failure.
+
+---
+
+## build-cv-html
+
+Builds deterministic ATS-safe HTML from a structured JSON payload and a selected system template. The renderer owns markup and HTML escaping, requires an active user for normal CLI use, and refuses to write outside `users/{USER}/`. The optional template path must remain inside `templates/`; use `cv-templates.mjs --user <username> resolve cv` to select it.
+
+```bash
+node build-cv-html.mjs --user <username> /tmp/cv-payload.json users/<username>/output/001-company-YYYY-MM-DD.html templates/cv-template.html
+node build-cv-html.mjs --test
+```
+
+**Exit codes:** `0` HTML generated, `1` missing/invalid input, unresolved placeholders, unsafe output/template path, or render failure.
 
 ---
 
