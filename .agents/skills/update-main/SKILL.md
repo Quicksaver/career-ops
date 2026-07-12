@@ -3,6 +3,8 @@ description: Update current branch with changes from main, report on new feature
 name: update-main
 ---
 
+**This skill does not require a user profile selection.**
+
 Study @CUSTOMIZED.md. Treat it as the current inventory of fork-specific behavior, conflict-prone files, and customizations that may become redundant when upstream adds equivalent features.
 
 Keep `CUSTOMIZED.md` readable for humans: do not hard-wrap prose lines; let editors wrap long lines visually. Keep headings, lists, tables, and code blocks structurally formatted.
