@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `7dda4302bbadd376444734bed36925072d0c3b97`
-- Fork ref: current `main` at `09ef7fdab9fe9aae3b6e7610bfd3c3bc1e72dc43`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `133`
-- Diff-size baseline after merge, before this inventory refresh: `205 files changed, 13476 insertions(+), 2678 deletions(-)`
+- Upstream ref: `upstream/main` at `026ac2fcb84ca37ebb0459cb71ed51692e574c06`
+- Fork ref: current `main` at `c8fabd5e400b1008a4451ee48b14f926a3e80926`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `136`
+- Diff-size baseline after merge, before this inventory refresh: `205 files changed, 13528 insertions(+), 2705 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,11 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `7dda4302bbadd376444734bed36925072d0c3b97` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `026ac2fcb84ca37ebb0459cb71ed51692e574c06` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Author attribution documentation: the English and German README author credit now uses the author's full name, with the English name linked to the About page. This is presentation-only and does not interact with user-specific data or active-user routing.
 - AI-maturity legitimacy signal: Block G now flags a possible AI-buzzword/infrastructure mismatch only when at least two of three evidence classes are present: transformation language that exceeds the role's scope/seniority, a very small team carrying organization-wide transformation expectations, and a legacy-heavy industry base rate. The note is descriptive, uses no additional research queries, suggests concrete interview probes, and remains orthogonal to both application score and the High Confidence / Proceed with Caution / Suspicious legitimacy tier.
 - Deterministic HTML CV rendering: `build-cv-html.mjs` now turns a compact structured payload into the final ATS-safe HTML, so agents no longer spend output tokens reproducing template markup. The fork requires an active user for normal execution, preserves the report-linked `{REPORT_NUM}-{company}-{date}` artifact identity, restricts output to `users/{USER}/`, restricts template reads to `templates/`, and retains supported local/data-image profile photos.
 - Template resolution hardening: `cv-templates.mjs` now allowlists `html` and `tex` formats, closing the format-based path-traversal route while retaining active-user profile defaults. `generate-cover-letter.mjs` now uses the same resolver with `users/{USER}/config/profile.yml`, so configured and per-payload cover templates affect real PDF generation rather than only mode instructions.
