@@ -40,8 +40,6 @@ Execute the same as the `oferta` mode (read `modes/oferta.md` for all A-F blocks
 
 **Agency-mediated postings (#1596):** if the JD smells like a recruiter/agency listing ("our client", agency domain, no employer named), ask the user which agency it came through BEFORE writing the tracker row. Record the end employer as `?` (never "Confidential"), the agency in the Via field / `via=` TSV tag, and a distinguishing descriptor in Notes — see `modes/oferta.md` and `modes/tracker.md` for the full convention and reveal workflow.
 
-**Agency-mediated postings (#1596):** if the JD smells like a recruiter/agency listing ("our client", agency domain, no employer named), ask the user which agency it came through BEFORE writing the tracker row. Record the end employer as `?` (never "Confidential"), the agency in the Via field / `via=` TSV tag, and a distinguishing descriptor in Notes — see `modes/oferta.md` and `modes/tracker.md` for the full convention and reveal workflow.
-
 The evaluation inherits `oferta`'s bounded research budget. Keep company, compensation, and hiring-signal lookup inline within the agent assigned to this role and finish at the shared query cap.
 
 ## Step 2 — Save Report .md
