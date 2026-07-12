@@ -173,7 +173,6 @@ After detecting archetype, read `users/{USER}/modes/_profile.md` for the user's 
 6. Generate a PDF without reading the JD first
 7. Use corporate-speak
 8. Ignore the tracker (every evaluated offer gets registered)
-9. Spawn nested subagents, or hand company/role/comp research to an open-ended research skill — research is bounded and inline (see Tools → Subagent delegation)
 
 ### ALWAYS
 
@@ -190,6 +189,7 @@ After detecting archetype, read `users/{USER}/modes/_profile.md` for the user's 
 8b. Case study URLs in PDF Professional Summary (recruiter may only read this).
 9. **Tracker additions as TSV** -- NEVER edit applications.md directly. Write TSV in `users/{USER}/batch/tracker-additions/`.
 10. **Include `**URL:**` in every report header.**
+11. Keep career-ops coordination in the root agent, with the direct pipeline fan-out for three or more URLs assigned one URL per subagent (see Tools → Execution ownership).
 
 ### Tools
 
@@ -197,20 +197,20 @@ After detecting archetype, read `users/{USER}/modes/_profile.md` for the user's 
 |------|-----|
 | WebSearch | Comp research, trends, company culture, LinkedIn contacts, fallback for JDs |
 | WebFetch | Fallback for extracting JDs from static pages |
-| Playwright | Verify offers (browser_navigate + browser_snapshot). **NEVER 2+ agents with Playwright in parallel.** |
+| Playwright | Verify offers (browser_navigate + browser_snapshot) within the agent assigned to the current role. |
 | Read | `users/{USER}/cv.md`, `users/{USER}/modes/_profile.md`, `users/{USER}/article-digest.md`, `templates/cv-template.html` |
 | Write | Temporary HTML for PDF in `users/{USER}/output/`, tracker TSVs, reports .md in `users/{USER}/reports/` |
 | Edit | Update tracker |
 | Canva MCP | Optional visual CV generation. Duplicate base design, edit text, export PDF. Requires `cv.canva_resume_design_id` in `users/{USER}/config/profile.yml`. |
 | Bash | `node generate-pdf.mjs --user {USER}` |
 
-### Subagent delegation (cost guardrail)
+### Execution ownership (cost and browser guardrail)
 
-A mode may tell you to run work in a background subagent (e.g. `scan`, or parallel `pipeline` URLs) to spare the main agent's context. Any subagent you spawn for career-ops is a **single-pass worker**:
+Run `go`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two URLs serially in the root agent. For a direct pipeline with three or more pending URLs, coordinate one subagent per URL from the root agent. Give every worker `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, a single role, an atomically reserved report number, and the active user's shared/profile/custom context. State that all user-layer relative paths resolve inside `USER_ROOT`.
 
-- It MUST NOT spawn further subagents, and MUST NOT invoke other skills — especially open-ended or recursive research skills (e.g. a `deep-research` skill). Those fan out into nested agents and can burn tens of millions of tokens on one run.
-- Company, role, and compensation research is ALWAYS done **inline**, with the small explicit set of WebSearch/WebFetch queries the mode names (e.g. `oferta` Blocks C/D) — never delegated to a recursive research harness.
-- One `/career-ops <JD>` evaluates one role; it must never explode into a self-replicating swarm of agents. If you are about to delegate research or nest agents, stop and do it inline, bounded.
+- Perform company, role, and compensation research inline within the agent assigned to the role, using the small explicit set of WebSearch/WebFetch queries named by the mode, such as the `oferta` Blocks C/D budget.
+- Evaluate one role per `/career-ops <JD>` invocation.
+- Run one `batch/batch-runner.sh` invocation at a time from the root agent and supervise it through completion. Script-managed `--parallel N` workers remain internal to that root-owned invocation.
 
 ### Time-to-offer priority
 - Working demo + metrics > perfection

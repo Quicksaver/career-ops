@@ -38,7 +38,7 @@ Every `/career-ops` invocation runs against exactly one active user ID. User dat
 users/{USER}/
 ```
 
-Resolve the active user before doing mode routing, reading files, launching subagents, or running scripts:
+Resolve the active user before doing mode routing, reading files, or running scripts:
 
 1. If the current invocation explicitly names a user, set that as `ACTIVE_USER`.
    - Preferred: `/career-ops go <username>`, `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`
@@ -62,17 +62,16 @@ After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 
 ## Long-Running Command Quiet Mode
 
-For `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, keep process monitoring quiet:
+For `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
 
-- Start the command, then reserve user-visible updates for meaningful events rather than routine "still running" or "currently at phase X" messages.
-- Keep long-running commands alive through long duration, high match counts, deeper-than-expected pagination, and larger/noisier-than-anticipated output. Long authenticated scans, especially LinkedIn, can legitimately take a long time. Let the process finish so it can persist its output.
-- Stop a running long-running command only when the user explicitly says to stop, the command exits/fails, it requests login/CAPTCHA/account verification/other user action, or there is a confirmed destructive/data-corruption risk. For abnormal behaviour outside those blockers, report the concern at the allowed quiet-mode cadence and keep monitoring.
-- Poll the process internally only as needed for liveness. If it is still running normally, wait at least 10 minutes between user-visible status updates.
-- Treat command stdout/stderr as the progress source. Keep phase-by-phase progress in the command output rather than paraphrasing it back to the user.
-- For Codex tool sessions, keep routine `write_stdin` polls silent. Poll with the longest supported wait, and if the tool returns before 10 minutes, continue polling silently until the command completes or a real action is needed.
-- Reserve user-visible messages for completion, failure, required action, suspected hangs, concrete warnings, and explicit status requests.
-- Report immediately only when the command completes, fails, asks for login/CAPTCHA/user action, appears hung, or produces a concrete warning that changes what the user should do.
-- If the user explicitly asks for status while the command is running, answer once with the current observed state, then return to quiet monitoring.
+- Keep the current agent turn active until the workflow completes and final reconciliation and verification succeed, or until user action, an explicit stop, a confirmed destructive risk, or exhausted safe recovery provides the terminal outcome.
+- Treat background and detached processes as actively supervised work owned by the current turn. Send the final response after the terminal outcome.
+- Poll the process and persisted state at least every 60 seconds with the longest supported wait. Keep routine polls silent; the 10-minute interval applies to normal user-visible liveness updates.
+- Use stdout/stderr, logs, artifacts, runner PID/session, state counts, lock ownership, and live-worker checks as the progress source.
+- When the runner exits early or state stalls, inspect the evidence, clear proven ownerless locks, recover stale `processing` entries, resume with the same active user and parallelism, and continue monitoring.
+- Reserve user-visible updates for completion, required user action, suspected hangs, concrete warnings, material recovery, explicit status requests, and at most one normal liveness update every 10 minutes.
+- Treat a status request as an intermediate update, then return to silent monitoring.
+- Complete the run by confirming all workers have exited, reconciling pipeline state, merging tracker additions, running `node verify-pipeline.mjs --user {ACTIVE_USER}`, and reporting completed, skipped, failed, and remaining counts.
 ## Mode Routing
 
 Determine the mode from `$mode`:
@@ -224,16 +223,12 @@ Read `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}
 
 Applies to: `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`
 
-### Modes delegated to subagent
+### Execution ownership for long-running modes
 
-For `go`, `scan`, `scan-handoff`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + the active user's `_profile.md` (if present) + `_custom.md` (if present) + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
+Run `go`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serially in the root agent. Keep the current root turn active through completion, including browser interaction, monitoring, recovery, reconciliation, and verification.
 
-```python
-Agent(
-  subagent_type="general-purpose",
-  prompt="[output language directive]\n\nACTIVE_USER={ACTIVE_USER}\nUSER_ROOT=users/{ACTIVE_USER}\nAll user-layer paths are relative to USER_ROOT.\nFor scan/scan-handoff/scan-auth/pipeline/batch monitoring, stay quiet while the process runs. Keep routine tool polls silent; report completion, failure, required user action, suspected hang, or at most one normal liveness update every 10 minutes.\n\n[content of modes/_shared.md]\n\n[content of users/{ACTIVE_USER}/modes/_profile.md if present]\n\n[content of users/{ACTIVE_USER}/modes/_custom.md if present]\n\n[content of modes/{mode}.md]\n\n[invocation-specific data]",
-  description="career-ops {mode}"
-)
-```
+For a direct pipeline with three or more pending URLs, launch one subagent per URL and coordinate the fan-out from the root agent. Give each worker `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, and the loaded shared/profile/custom/mode instructions. State that all user-layer relative paths resolve inside `USER_ROOT`. Each worker completes its assigned URL directly, keeps research inline and bounded, and returns its terminal result to the root coordinator.
+
+Run one `batch/batch-runner.sh` invocation at a time directly from the root agent and supervise it through its terminal outcome. Treat any configured `--parallel N` workers as internal batch-runner activity under that single root-owned invocation. Commands such as `scan.mjs`, `scan-auth.mjs`, and liveness checks follow the same root-owned subprocess model.
 
 Execute the instructions from the loaded mode file.

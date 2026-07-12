@@ -4,7 +4,11 @@ Two usage modes: **conductor --chrome** (navigates portals in real time) or **st
 
 ## Quiet monitoring
 
-While `/career-ops batch`, `batch/batch-runner.sh`, or delegated workers are running, do not send routine "still running" updates or narrate each worker phase. Use command stdout/stderr, logs, and written artifacts as the progress source, check liveness internally, and report only completion, failure, required login/CAPTCHA/user action, a suspected hang, or at most one normal liveness update every 10 minutes. In Codex tool sessions, do not narrate routine `write_stdin` polls; use the longest supported wait and keep waiting silently if the tool returns before 10 minutes. If the user explicitly asks for status, answer once with the current observed state and then return to quiet monitoring.
+Keep the current agent turn active through queue completion, recovery, reconciliation, and verification. Treat background and detached workers as actively supervised work. Poll internally at least every 60 seconds, keep routine polls silent, and reserve user-visible updates for meaningful events or one normal liveness update every 10 minutes. Send the final response after the run reaches its terminal outcome.
+
+## Execution ownership
+
+Start one `batch/batch-runner.sh` invocation at a time directly from the root agent. Keep the root turn responsible for monitoring, recovery, reconciliation, tracker merging, and verification until the runner reaches its terminal outcome. Treat `--parallel N` as bounded internal concurrency managed by that single runner invocation.
 
 ## Architecture
 

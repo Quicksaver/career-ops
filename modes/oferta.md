@@ -32,7 +32,7 @@ Hard limits for Blocks D and G combined:
 - hard cap: 5 total WebSearch queries
 - Prefer targeted queries that answer more than one question; stop early when enough evidence exists.
 - Do not invoke `deep-research`, `deep`, or any other research skill.
-- Do not spawn subagents or delegate research to another agent.
+- Keep evaluation and research within the agent assigned to this role.
 - Do not continue researching after the query cap is reached; summarize the evidence found and explicitly mark missing data as unavailable.
 
 If deeper company research is useful, recommend running `/career-ops deep` separately after the evaluation.

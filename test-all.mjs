@@ -2165,6 +2165,28 @@ if (
   fail('pipeline mode missing batch liveness sweep for unconfirmed entries');
 }
 
+const longRunAgentsDoc = readFile('AGENTS.md');
+const longRunSkillDoc = readFile('.agents/skills/career-ops/SKILL.md');
+const batchModeDoc = readFile('modes/batch.md');
+const supervisionMarkers = [
+  'supervise the workflow through completion while keeping routine monitoring quiet',
+  'Treat background and detached processes as actively supervised work owned by the current turn',
+  'at least every 60 seconds',
+  'recover stale `processing` entries',
+  'Send the final response after the terminal outcome',
+];
+if (
+  supervisionMarkers.every(marker => longRunAgentsDoc.includes(marker)) &&
+  supervisionMarkers.every(marker => longRunSkillDoc.includes(marker)) &&
+  longRunSkillDoc.includes('Supervise this terminal task through completion.') &&
+  pipelineMode.includes('Treat background and detached workers as actively supervised work') &&
+  batchModeDoc.includes('Treat background and detached workers as actively supervised work')
+) {
+  pass('long-running modes require supervised polling, recovery, and terminal completion');
+} else {
+  fail('long-running supervision contract is incomplete or inconsistent');
+}
+
 // --- salary tracking mode wiring (#1656 PR-2) ---
 const trackerModeDoc = readFile('modes/tracker.md');
 const patternsModeDoc = readFile('modes/patterns.md');

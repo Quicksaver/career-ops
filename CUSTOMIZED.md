@@ -832,31 +832,43 @@ Future merge notes:
 - If upstream adds first-class LinkedIn age filtering, retire this local mapping only if upstream preserves the same `linkedin_searches.date_posted` contract or provides a clear migration for user portal configs.
 - Keep the exported search builder or an equivalent testable boundary so future changes can verify generated URLs without touching per-user pipeline data.
 
-## Quiet Long-Running Command Monitoring
+## Long-Running Supervision And Execution Ownership
 
-The fork instructs agents to avoid routine 30-second "still running" messages during multi-minute `go`, `scan`, `scan-auth`, `pipeline`, and `batch` runs.
+The fork keeps multi-minute career-ops workflows quiet while making the current root turn responsible for supervising each run through its terminal outcome. It also separates root-owned serial workflows from the direct-pipeline fan-out used for larger inboxes.
 
 Files:
 
 - `AGENTS.md`
 - `.agents/skills/career-ops/SKILL.md`
+- `modes/_shared.md`
+- `modes/auto-pipeline.md`
+- `modes/oferta.md`
 - `modes/scan.md`
 - `modes/go.md`
 - `modes/scan-auth.md`
 - `modes/pipeline.md`
 - `modes/batch.md`
+- `test-all.mjs`
 
 What this customizes:
 
-- Keeps scanner and pipeline monitoring quiet after command start.
-- Allows internal liveness polling, but limits normal user-visible status updates to at most once every 10 minutes.
-- Requires Codex tool polling to stay silent and use the longest supported wait instead of narrating each `write_stdin` poll.
-- Still requires immediate reporting for completion, failure, required login/CAPTCHA/user action, suspected hangs, or warnings that change what the user should do.
-- Preserves one-off status answers when the user explicitly asks, then returns to quiet monitoring.
+- Keeps the active agent turn open until `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch` reaches completion, requires user action, receives an explicit stop, encounters confirmed destructive risk, or exhausts safe recovery.
+- Treats background and detached processes as work owned by the current turn. Agents poll process output and persisted state at least every 60 seconds, keep routine polls silent, and limit normal user-visible liveness updates to at most once every 10 minutes.
+- Uses stdout/stderr, logs, artifacts, PID/session state, lock ownership, worker liveness, and persisted counters as progress evidence. Proven ownerless locks and stale `processing` entries are recovered before resuming with the same active user and parallelism.
+- Finishes long-running work by confirming worker exit, reconciling pipeline state, merging tracker additions, running `node verify-pipeline.mjs --user {USER}`, and reporting completed, skipped, failed, and remaining counts.
+- Keeps `go`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serial in the root agent. `modes/scan.md` now expresses this as affirmative root-agent execution instead of recommending a background scan subagent.
+- Uses one subagent per surviving URL when a direct pipeline has three or more pending URLs. The root agent coordinates the fan-out, reconciliation, tracker merge, and final verification.
+- Requires every delegated pipeline prompt to carry `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, an atomically reserved report number, and the loaded shared/profile/custom/pipeline instructions. The prompt states that all user-layer relative paths resolve inside `USER_ROOT`.
+- Keeps each role's extraction, evaluation, and bounded company/compensation research within the agent assigned to that role, preserving one-role-per-worker scope.
+- Starts one `batch/batch-runner.sh` invocation at a time directly from the root agent. Configured `--parallel N` workers remain bounded internal concurrency managed by that single root-owned runner.
+- Adds `test-all.mjs` assertions for the cross-file supervision contract in `AGENTS.md`, the career-ops skill, pipeline mode, and batch mode.
 
 Future merge notes:
 
-- Preserve the quiet long-running command monitoring rule unless upstream provides an equivalent low-noise policy.
+- Preserve quiet polling together with terminal supervision; an equivalent upstream policy must cover process and persisted-state checks, safe recovery, reconciliation, verification, and terminal count reporting.
+- Preserve the execution split: root-owned serial scan/auth/apply/small-pipeline work, one-worker-per-URL fan-out for direct pipelines with three or more surviving URLs, and one root-owned batch-runner invocation with script-managed internal parallelism.
+- Keep delegated worker prompts explicit about `ACTIVE_USER`, `USER_ROOT`, user-layer path resolution, one assigned URL, and atomically reserved report numbers.
+- Keep the supervision assertions synchronized with wording changes across instructions and mode files.
 
 ## Local Maintenance Skill
 

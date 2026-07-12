@@ -6,19 +6,9 @@ Scans configured job portals, filters by title relevance, and adds new offers to
 >
 > **Rule (v1.8+):** If a company's local parser completes successfully in Level 0, the agent **must not** repeat that company in Playwright (Level 1) or API (Level 2). In Level 3, general queries remain active, but results from companies already covered by a parser are discarded. See [Rule: Successful Local Parser](#rule-successful-local-parser--no-expensive-scraping-repetition).
 
-## Recommended Execution
+## Root-agent execution
 
-Execute as a worker/subagent if your CLI supports it, to avoid consuming the main interactive context:
-
-```python
-Agent(
-    subagent_type="general-purpose",
-    prompt="[content of this file + specific data]",
-    run_in_background=True
-)
-```
-
-The spawned subagent is a **single-pass worker**: it runs the scan with the parsers/APIs/Playwright/WebSearch named below, directly. It must **not** spawn further subagents or invoke other skills (see `modes/_shared.md` → Subagent delegation). Scanning is bounded by `portals.yml`; it is never an open-ended research task.
+Run the complete scan serially in the root agent. Keep the root turn active while parsers, APIs, Playwright, and bounded WebSearch steps execute. Supervise each subprocess through completion and preserve one browser owner for the full scan. Bound discovery by `portals.yml` and the levels below.
 
 ## Politica de ruido durante ejecucion
 
