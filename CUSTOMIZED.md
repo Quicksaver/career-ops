@@ -927,6 +927,23 @@ Future merge notes:
 - Remove or replace them if upstream adds generic JD/PDF extraction commands.
 - If keeping them long-term, make them parameterized instead of hardcoded.
 
+## Repository Icon Synchronization
+
+Files:
+
+- `web/src/app/icon.svg`
+- `web/public/bimi-logo.svg`
+- `favicon.svg`
+
+What this customizes:
+
+- Keeps a root-level favicon copy of the web app icon so repository-aware tools can display career-ops with its branded icon.
+
+Future merge notes:
+
+- Treat `web/src/app/icon.svg` as the canonical visual source; whenever it changes, update `web/public/bimi-logo.svg` and `favicon.svg` so all three SVG surfaces stay identical.
+- When adding another repository-level icon, review all existing icon surfaces and update this inventory with the new synchronization relationship.
+
 ## Other Small Deltas
 
 Files:
