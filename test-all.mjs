@@ -1816,14 +1816,13 @@ for (const skillPath of ['.claude/skills/career-ops/SKILL.md', '.agents/skills/c
     ['users/{ACTIVE_USER}/modes/_profile.md', 'users/{ACTIVE_USER}/modes/_custom.md', 'modes/{mode}.md'],
   );
   const delegatedModeOrder = sectionOrder(
-    '### Modes delegated to subagent',
+    '### Execution ownership for long-running modes',
     'Execute the instructions from the loaded mode file.',
-    ['content of modes/_shared.md', 'content of users/{ACTIVE_USER}/modes/_profile.md if present', 'content of users/{ACTIVE_USER}/modes/_custom.md if present', 'content of modes/{mode}.md'],
+    ['ACTIVE_USER', 'USER_ROOT=users/{ACTIVE_USER}', 'loaded shared/profile/custom/mode instructions'],
   );
 
   if (
     skill.includes('modes/_custom.md') &&
-    skill.includes('[content of users/{ACTIVE_USER}/modes/_custom.md if present]') &&
     sharedModeOrder &&
     standaloneModeOrder &&
     delegatedModeOrder
@@ -1981,11 +1980,11 @@ if (
   ofertaMode.includes('single-pass') &&
   ofertaMode.includes('hard cap: 5 total WebSearch queries') &&
   ofertaMode.includes('Do not invoke `deep-research`') &&
-  ofertaMode.includes('Do not spawn subagents') &&
+  ofertaMode.includes('Keep evaluation and research within the agent assigned to this role') &&
   ofertaMode.includes('Do not continue researching after the query cap is reached') &&
   autoPipelineMode.includes('bounded research budget') &&
-  autoPipelineMode.includes('must not invoke `deep-research`') &&
-  autoPipelineMode.includes('must not spawn subagents')
+  autoPipelineMode.includes('lookup inline within the agent assigned to this role') &&
+  autoPipelineMode.includes('finish at the shared query cap')
 ) {
   pass('eval modes bound company/comp research to a non-recursive query budget (#1235)');
 } else {
@@ -2234,7 +2233,8 @@ const supervisionMarkers = [
 if (
   supervisionMarkers.every(marker => longRunAgentsDoc.includes(marker)) &&
   supervisionMarkers.every(marker => longRunSkillDoc.includes(marker)) &&
-  longRunSkillDoc.includes('Supervise this terminal task through completion.') &&
+  longRunSkillDoc.includes('Keep the current root turn active through completion') &&
+  longRunSkillDoc.includes('supervise it through its terminal outcome') &&
   pipelineMode.includes('Treat background and detached workers as actively supervised work') &&
   batchModeDoc.includes('Treat background and detached workers as actively supervised work')
 ) {

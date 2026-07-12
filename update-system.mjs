@@ -197,6 +197,7 @@ const SYSTEM_PATHS = [
   'openai-tailor.mjs',
   'eval-golden.mjs',
   'evals/',
+  'favicon.svg',
   'openrouter-runner.mjs',
   'test-all.mjs',
   'detect-reposts.test.mjs',

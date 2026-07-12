@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `026ac2fcb84ca37ebb0459cb71ed51692e574c06`
-- Fork ref: current `main` at `c8fabd5e400b1008a4451ee48b14f926a3e80926`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `136`
-- Diff-size baseline after merge, before this inventory refresh: `205 files changed, 13528 insertions(+), 2705 deletions(-)`
+- Upstream ref: `upstream/main` at `ec5fa155a7af51f624b1228e98e060b7731d6ca4`
+- Fork ref: current `main` at `3b180058ea7de2877b5798f862d6413f0c9ab009`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `140`
+- Diff-size baseline after merge, before this inventory refresh: `209 files changed, 13574 insertions(+), 2707 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,17 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `026ac2fcb84ca37ebb0459cb71ed51692e574c06` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `ec5fa155a7af51f624b1228e98e060b7731d6ca4` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Cheap-model golden evaluation harness: `eval-golden.mjs` and the synthetic `evals/` corpus provide deterministic replay scoring for archetype agreement and tolerance-banded score drift, with optional live evaluation through `openai-eval.mjs`. Replay remains user-independent; this fork requires `--user <id>` for live mode and forwards it to the existing user-scoped evaluator so CV reads stay under `users/{USER}/`.
+- Browser extraction control: `browser-extract.mjs --max-chars N` can raise or lower the default 12,000-character JD text cap without changing listing-mode result limits. Invalid and non-positive values fall back to the safe default.
+- Dashboard Spanish localization: the upstream `es` catalog and locale detection are adopted. The merge filled the fork-only Open, Offer, Hired, Closed, Date, and Contact labels so Spanish does not lose the customized lifecycle tabs or columns.
+- PDF launch-failure cleanup: `generate-pdf.mjs` now removes temporary HTML even when Chromium fails to launch and defensively closes an opened browser without masking the original rendering error. This composes with the fork's active-user output boundary and PDF manifest behavior.
+- Report numbering above 999: upstream now accepts arbitrary-width report prefixes and release ranges in `reserve-report-num.mjs`, making the fork's existing arbitrary-width reservation customization redundant at those parsing points; the user-scoped reports directory, contiguous reservations, and report/artifact ID parity remain fork behavior.
+- Automated scan triage: the GitHub workflow now recognizes generated Markdown scan headers and emoji-led scan-result titles while anchoring the broader pattern to machine-report headings to avoid closing ordinary prose mentions.
+- Auto-pipeline instructions: upstream removed a duplicated agency-mediated-posting paragraph. The conflict resolution keeps that cleanup and retains the fork's bounded research wording, which allows the assigned agent to finish the shared query budget without weakening the established delegation boundary.
 - Author attribution documentation: the English and German README author credit now uses the author's full name, with the English name linked to the About page. This is presentation-only and does not interact with user-specific data or active-user routing.
 - AI-maturity legitimacy signal: Block G now flags a possible AI-buzzword/infrastructure mismatch only when at least two of three evidence classes are present: transformation language that exceeds the role's scope/seniority, a very small team carrying organization-wide transformation expectations, and a legacy-heavy industry base rate. The note is descriptive, uses no additional research queries, suggests concrete interview probes, and remains orthogonal to both application score and the High Confidence / Proceed with Caution / Suspicious legitimacy tier.
 - Deterministic HTML CV rendering: `build-cv-html.mjs` now turns a compact structured payload into the final ATS-safe HTML, so agents no longer spend output tokens reproducing template markup. The fork requires an active user for normal execution, preserves the report-linked `{REPORT_NUM}-{company}-{date}` artifact identity, restricts output to `users/{USER}/`, restricts template reads to `templates/`, and retains supported local/data-image profile photos.
@@ -132,7 +139,7 @@ New upstream features or behavior now present:
 - Sourcing shorthand: the fork adds `/career-ops go` as a coordinated sourcing mode that runs zero-token scan, conditionally runs scan-handoff when the latest scan wrote handoff items, runs authenticated LinkedIn scan, and conditionally runs pipeline only when the scan phases added pending jobs.
 - Updater/runtime fixes: upstream registered Kimi paths in updater system manifests and fixed updater self-reexec checkout discovery from import closure analysis. The fork keeps those fixes while preserving `users/`, root `voice-dna.md`, and other user-path safety guards; `scaffolder/bin/skill-entrypoints.mjs` also materializes `.kimi/skills/career-ops/SKILL.md` so Kimi behaves like the other CLI entrypoints on filesystems without symlink support.
 - Tracker parser consolidation: upstream extracted header-name tracker column parsing into `tracker-parse.mjs` and expanded tests so `merge-tracker.mjs`, `dedup-tracker.mjs`, `followup-cadence.mjs`, and `analyze-patterns.mjs` share the same `Location`-column-safe mapping. The fork adopted the shared parser while keeping production readers on `users/{USER}/data/applications.md`; `CAREER_OPS_TRACKER` remains a fixture/non-standard override.
-- Evaluation research bounds: upstream added an explicit single-pass research budget to `modes/oferta.md` and `modes/auto-pipeline.md`, capping company/comp/hiring-signal lookup at 5 WebSearch queries and forbidding recursive `deep`/subagent research inside normal evaluations. This aligns with the fork's quality-over-quantity behavior and should be preserved unless upstream provides an equivalent global budget mechanism.
+- Evaluation research bounds: upstream added an explicit single-pass research budget to `modes/oferta.md` and `modes/auto-pipeline.md`, capping company/comp/hiring-signal lookup at 5 WebSearch queries and keeping research inside the agent assigned to each role instead of recursively launching research workers. This preserves the fork's one-role-per-worker pipeline fan-out while bounding work within each evaluation.
 - Setup support docs: upstream added `docs/FAQ.md` and linked it from `README.md`/`SUPPORT.md`. The fork keeps the FAQ but rewrites scanner and batch examples to use `--user {USER}` plus `users/{USER}/portals.yml` instead of root single-user paths.
 - Test/CI coverage: upstream now runs Go dashboard tests in GitHub Actions and adds quick-suite coverage for Remotive normalization, shared tracker parsing, `dedup-tracker.mjs` with an inserted Location column, fresh-install `scan.mjs` pipeline creation, and bounded evaluation research. The fork keeps those tests while preserving explicit-user fixtures for production paths.
 - v1.15 release baseline: upstream `VERSION`, Release Please manifest, and `CHANGELOG.md` now include v1.15.0. The fork adopted the release metadata while preserving updater safeguards for user-layer files.
@@ -938,6 +945,7 @@ Files:
 What this customizes:
 
 - Keeps a root-level favicon copy of the web app icon so repository-aware tools can display career-ops with its branded icon.
+- Registers `favicon.svg` in `update-system.mjs` as system-layer content so updater coverage validation includes the fork-owned repository icon.
 
 Future merge notes:
 
