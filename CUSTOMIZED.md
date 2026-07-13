@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `ec5fa155a7af51f624b1228e98e060b7731d6ca4`
-- Fork ref: current `main` at `3b180058ea7de2877b5798f862d6413f0c9ab009`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `140`
-- Diff-size baseline after merge, before this inventory refresh: `209 files changed, 13574 insertions(+), 2707 deletions(-)`
+- Upstream ref: `upstream/main` at `c553fb24e925baf0183e5f849111025b6c6284be`
+- Fork ref: current `main` at `23b9f18776d650571ddc6622626e6dca2bd6bc44`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `143`
+- Diff-size baseline after merge, before this inventory refresh: `225 files changed, 16378 insertions(+), 2900 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,21 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.18 behavior and web v0.3.0 through `ec5fa155a7af51f624b1228e98e060b7731d6ca4` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.19 behavior and web v0.3.0 through `c553fb24e925baf0183e5f849111025b6c6284be` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- v1.19.0 release baseline: release metadata, changelog, README updates, and scaffolder package metadata are adopted through `c553fb24e925baf0183e5f849111025b6c6284be`.
+- Dashboard discard learning loop: the pipeline status picker now asks for a predicted, canonical, or custom reason when a row moves to `Discarded` or `SKIP`, writes the reason atomically with the status, and feeds aggregated `discard_reasons` into pattern recommendations. The fork composes this with its dated `Status changed to ...` contact notes, distinct `Closed` state, lazy report hydration, user-root path containment, and semicolon-delimited Notes history.
+- Truthful PDF tailoring gate: `jd-skill-gap.mjs` classifies JD requirements as named CV skills, resume-supported skills, or real gaps before drafting. Normal execution requires `--user <id>`, reads `users/{USER}/cv.md`, and uses user-scoped JD scratch files; no candidate claims are added automatically.
+- Manual reply ingestion: `paste-reply.mjs` provides a no-Gmail interactive/file input path into reply-watch. Normal execution now requires an active user and appends only to `users/{USER}/data/reply-candidates.json`; the environment path override remains limited to isolated tests.
+- Targeted upskill analysis: `upskill.mjs` can analyze a local JD or guarded remote URL in addition to aggregate tracker reports. The merge fixed direct-URL normalization and removed the upstream fallback to a system example CV so suppression evidence comes only from `users/{USER}/cv.md` and `users/{USER}/config/profile.yml`.
+- Compact JD extraction routing: `oferta` and `auto-pipeline` may opt into `browser-extract.mjs` through `scan.extractor: cli`; the switch is read from `users/{USER}/config/profile.yml`, while Playwright remains the fallback.
+- Provider and fetch hardening: upstream adds the Meituan provider and example portal entry, improves Workday CXS requests with browser-like headers, preserves Glints fetch behavior, and extends shared HTTP/provider tests. These providers remain stateless and receive user-selected portal configuration through the existing user-scoped scanner.
+- OpenRouter prompt caching: the static system prefix is sent as an ephemeral cache-control text block so supporting providers can reuse it across evaluations without changing prompt contents or the fork's user-scoped prompt composition.
+- Tracker parsing hardening: pipe-delimited additions now preserve empty interior PDF/Notes cells, and `—`/`-` join `N/A`/`DUP` as recognized no-score sentinels. Fixture tests explicitly clear inherited active-user variables when exercising path overrides so sandbox report links remain self-contained.
+- Interview-prep URL fallback: interview preparation may fetch a supplied job URL only when no matching user report exists; `users/{USER}/reports/` remains authoritative whenever a report is available.
+- Documentation provenance: upstream README translations add Wikidata backlinks for author/place entities. This is presentation-only and does not affect the active-user or candidate-fact boundary.
 - Cheap-model golden evaluation harness: `eval-golden.mjs` and the synthetic `evals/` corpus provide deterministic replay scoring for archetype agreement and tolerance-banded score drift, with optional live evaluation through `openai-eval.mjs`. Replay remains user-independent; this fork requires `--user <id>` for live mode and forwards it to the existing user-scoped evaluator so CV reads stay under `users/{USER}/`.
 - Browser extraction control: `browser-extract.mjs --max-chars N` can raise or lower the default 12,000-character JD text cap without changing listing-mode result limits. Invalid and non-positive values fall back to the safe default.
 - Dashboard Spanish localization: the upstream `es` catalog and locale detection are adopted. The merge filled the fork-only Open, Offer, Hired, Closed, Date, and Contact labels so Spanish does not lose the customized lifecycle tabs or columns.
@@ -174,6 +185,11 @@ New upstream features or behavior now present:
 
 Conflict notes from this merge:
 
+- `AGENTS.md`, `modes/pdf.md`, `jd-skill-gap.mjs`, `paste-reply.mjs`, `upskill.mjs`, `modes/reply-watch.md`, and `docs/SCRIPTS.md`: adopted the new skill-gap, manual-reply, and targeted-upskill workflows while replacing upstream root `cv.md`, `config/profile.yml`, `data/`, `reports/`, and output assumptions with explicit `--user {USER}` routing and `users/{USER}/...` paths.
+- `dashboard/internal/data/career.go`, `dashboard/internal/data/career_test.go`, `dashboard/internal/ui/screens/pipeline.go`, and `dashboard/main.go`: combined the upstream discard-reason picker and atomic Notes write with the fork's dated dashboard interaction notes, distinct `Closed` state, lazy viewport hydration, and per-user dashboard root. Reason reads reject path traversal and normalize quoted YAML values before showing them in the picker.
+- `batch/batch-prompt.md` and `analyze-patterns.mjs`: retained the new `discard_reasons` Machine Summary field and removed a duplicate report-summary block introduced by overlap; learning-loop recommendations now point to `users/{USER}/modes/_custom.md` instead of the tracked root template.
+- `tracker-columns-tests.mjs`: preserved upstream empty-cell regression coverage while clearing inherited `CAREER_OPS_USER` and `CAREER_OPS_USERS_DIR` inside explicit tracker/additions fixtures; otherwise the fork's active-user resolver rebased sandbox report links outside the fixture.
+- `modes/oferta.md`, `modes/auto-pipeline.md`, and `modes/interview-prep.md`: kept upstream compact extraction and URL-fallback instructions, with profile and report lookups restored to the active user's layer.
 - `modes/oferta.md`: the upstream AI-buzzword/infrastructure mismatch signal merged cleanly into Block G. The fork retained its bounded-research and non-prescriptive legitimacy behavior, and corrected the adjacent employment-classification jurisdiction lookup to `users/{USER}/config/profile.yml` so both signals remain inside the active-user contract.
 - `build-cv-html.mjs` and `modes/pdf.md`: adopted upstream's compact JSON → deterministic HTML workflow while replacing candidate-name/root-output examples with the fork's report-linked artifact basename and `users/{USER}/output/` paths. Normal CLI execution requires `--user`, rejects output outside the active user root, rejects templates outside `templates/`, and keeps self-test execution data-independent.
 - `generate-cover-letter.mjs`, `modes/cover.md`, and `test/cover-resolver.test.mjs`: combined upstream's shared cover-template resolver with the fork's active-user output flow. Production resolution now reads `cover_letter.template` from `users/{USER}/config/profile.yml`, generated PDFs stay under `users/{USER}/output/`, and pure resolver/build tests still import without selecting a real user.
@@ -672,6 +688,7 @@ What this customizes:
 - Preserves upstream EUR/GBP/CHF compensation parsing and additional international-city derivation in dashboard pipeline data without changing the fork's per-user dashboard root inference.
 - Preserves upstream TUI language switching and localized status/column labels while keeping the fork's compact inline tab layout and responsive single-line help row.
 - Adds `Hired` between `Offer` and `Rejected` without collapsing the fork's distinct `Closed` tab; `Hired` counts as having reached offer in analytics, while `Closed` remains pre-application and excluded from funnel progression.
+- Combines upstream's discard-reason picker with the fork's contact semantics: a discard/skip transition and its reason are written together, while the Notes cell also retains the dated `Status changed to ...` interaction used by the `CONTACT` column.
 
 Future merge notes:
 
@@ -686,6 +703,7 @@ Future merge notes:
 - Preserve the fork's lean dashboard chrome unless upstream adds equivalent configurability: no secondary status-count row, no separate sort/view/shown row, no grouped view toggle, and current sort shown only in the bottom help row.
 - Preserve the fork's dashboard table defaults unless upstream adds user-configurable column presets: flat-only rows, `DATE`/`CONTACT` labels, and visible `PDF` plus `CONTACT` columns.
 - Preserve the `CONTACT` interaction semantics: manual dashboard status changes should update the tracker notes with a dated interaction, and parser changes should continue reading the latest ISO date from notes plus legacy dated status cells before falling back to the tracker date.
+- Preserve atomic discard updates together with `CONTACT` semantics: selecting a discard/skip reason must write status, dated interaction, and the `DISCARD:`/`SKIP:` tag in one tracker update without replacing existing notes.
 - Preserve the selected-row highlight behavior when table rendering changes: the highlight should cover the full row across all visible columns, separators, and trailing whitespace.
 - Keep passive dashboard/viewer chrome unhighlighted when theme or renderer code changes; only selected rows and active picker rows should use background fills.
 
@@ -1125,6 +1143,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Upstream cover-letter and interview modes that route generated artifacts and context through `users/{USER}/`.
 - Generic JD/PDF extraction commands.
 - Dashboard configurability equivalent to the fork's combined `Hired` + `Closed` inline-tab layout, lazy report hydration, compact column defaults, and per-user root inference.
+- Dashboard discard-reason handling equivalent to the fork's combined atomic reason write, dated status interaction, existing Notes preservation, distinct `Closed` state, and user-root report containment.
 - Equivalent user-layer ignores for interview prep, scan summaries, `article-digest.md`, and editor folders.
 
 If upstream covers one of these, prefer deleting the local customization over carrying duplicate behavior.
