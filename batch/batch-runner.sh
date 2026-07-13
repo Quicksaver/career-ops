@@ -50,6 +50,8 @@ RATE_LIMIT_SLEEP=300
 BATCH_PAUSED=false
 STATUS_ONLY=false
 WATCH_MODE=false
+DEFER_VERIFICATION=false
+VERIFICATION_FAILED=false
 
 # Return success for non-negative integer or decimal strings.
 is_decimal_number() {
@@ -87,6 +89,8 @@ Options:
                        Codex reasoning effort: minimal, low, medium, high, or xhigh
   --status             Show batch progress and a per-job table, then exit
   --watch              Live-refresh progress until the run completes
+  --defer-verification Skip the batch-local final verifier because a parent
+                       coordinator will run structured verification
   -h, --help           Show this help
 
 Files:
@@ -149,6 +153,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --status) STATUS_ONLY=true; shift ;;
     --watch) WATCH_MODE=true; shift ;;
+    --defer-verification) DEFER_VERIFICATION=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -733,11 +738,14 @@ const ok =
   typeof payload.report_num === "string" &&
   typeof payload.company === "string" &&
   typeof payload.role === "string" &&
-  (typeof payload.score === "number" || payload.score === null) &&
-  (typeof payload.legitimacy === "string" || payload.legitimacy === null) &&
-  (typeof payload.pdf === "string" || payload.pdf === null) &&
-  (typeof payload.report === "string" || payload.report === null) &&
-  (typeof payload.error === "string" || payload.error === null);
+    (typeof payload.score === "number" || payload.score === null) &&
+    (typeof payload.legitimacy === "string" || payload.legitimacy === null) &&
+    (typeof payload.via === "string" || payload.via === null) &&
+    (typeof payload.company_confidential === "boolean" || payload.company_confidential === null) &&
+    (typeof payload.pdf === "string" || payload.pdf === null) &&
+    (typeof payload.report === "string" || payload.report === null) &&
+    (typeof payload.tracker === "string" || payload.tracker === null) &&
+    (typeof payload.error === "string" || payload.error === null);
 process.exit(ok ? 0 : 1);
 ' "$final_file"
 }
@@ -1023,7 +1031,28 @@ process_offer() {
     final_json_status="completed"
   fi
 
-  if [[ ( $exit_code -eq 0 && "$final_json_valid" == "true" && "$final_json_status" == "completed" && -n "$report_file" && -n "$tracker_file" ) || ( "$timed_out" == "true" && -n "$report_file" && -n "$tracker_file" ) ]]; then
+  local artifacts_valid=false
+  local artifact_validation_error=""
+  if [[ -n "$report_file" && -n "$tracker_file" ]]; then
+    local -a artifact_args=(
+      "$SCRIPT_DIR/validate-worker-artifacts.mjs"
+      --report "$report_file"
+      --tracker "$tracker_file"
+      --repair
+    )
+    if [[ "$final_json_valid" == "true" && -f "$final_file" ]]; then
+      artifact_args+=(--final "$final_file")
+    fi
+    if artifact_validation_error=$(node "${artifact_args[@]}" 2>&1); then
+      artifacts_valid=true
+      artifact_validation_error=""
+    else
+      artifact_validation_error=$(printf '%s' "$artifact_validation_error" | tr '\r\n\t' ' ' | cut -c1-500)
+      echo "WARN: Worker #$id artifact validation failed: $artifact_validation_error" >> "$log_file"
+    fi
+  fi
+
+  if [[ ( $exit_code -eq 0 && "$final_json_valid" == "true" && "$final_json_status" == "completed" && "$artifacts_valid" == "true" ) || ( "$timed_out" == "true" && "$artifacts_valid" == "true" ) ]]; then
     # Try to extract score from worker output
     local score="-"
     score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file" "$log_file")
@@ -1049,6 +1078,9 @@ process_offer() {
     fi
     local error_msg
     error_msg=$(build_contract_error "$exit_code" "$timed_out" "$final_file" "$final_json_valid" "$final_json_status" "$report_file" "$tracker_file")
+    if [[ -n "$artifact_validation_error" ]]; then
+      error_msg="$error_msg,artifact-validation: $artifact_validation_error"
+    fi
     local worker_error
     worker_error=$(worker_json_field "$final_file" error)
     if [[ -n "$worker_error" ]]; then
@@ -1075,7 +1107,12 @@ merge_tracker() {
   node "$PROJECT_DIR/reconcile-pipeline.mjs" --user "$USER_ID" || echo "⚠️  Pipeline reconcile had issues (see above)"
   echo ""
   echo "=== Verifying pipeline integrity ==="
-  node "$PROJECT_DIR/verify-pipeline.mjs" --user "$USER_ID" || echo "⚠️  Verification found issues (see above)"
+  if [[ "$DEFER_VERIFICATION" == "true" ]]; then
+    echo "Deferred to parent coordinator."
+  elif ! node "$PROJECT_DIR/verify-pipeline.mjs" --user "$USER_ID"; then
+    VERIFICATION_FAILED=true
+    echo "❌ Verification found blocking integrity errors."
+  fi
 }
 
 # Print summary
@@ -1451,6 +1488,9 @@ main() {
   # Print summary
   print_summary
 
+  if [[ "$VERIFICATION_FAILED" == "true" ]]; then
+    exit 1
+  fi
   exit 0
 }
 

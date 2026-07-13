@@ -404,6 +404,12 @@ try {
   } else {
     fail('batch runner does not pass reasoning effort to Codex workers');
   }
+  if (batchRunner.includes('validate-worker-artifacts.mjs') && batchRunner.includes('--repair') &&
+      batchRunner.includes('artifact-validation:')) {
+    pass('batch runner validates and normalizes report/TSV artifacts before completed state');
+  } else {
+    fail('batch runner can mark inconsistent report/TSV artifacts completed');
+  }
   if (runner.includes('resolveParallel') && runner.includes('parallel_source') &&
       batchRunner.includes('resolve-parallel.mjs')) {
     pass('go and direct batch runners share argument/profile/default parallel resolution');
@@ -417,6 +423,13 @@ try {
     pass('go runner streams bounded live progress to stderr with a quiet opt-out');
   } else {
     fail('go runner live progress forwarding is not fully wired');
+  }
+  if (runner.includes("child.once('close'") && runner.includes('stream.end(resolve)') &&
+      runner.includes('captureFailure: [1]') && runner.includes('verificationFailure(') &&
+      batchRunner.includes('--defer-verification')) {
+    pass('go runner drains phase logs and preserves structured verifier failures');
+  } else {
+    fail('go runner can still truncate or obscure structured verifier failures');
   }
   if (process.platform === 'win32' || (statSync(join(ROOT, 'go-runner.mjs')).mode & 0o111)) {
     pass('go-runner.mjs is executable');

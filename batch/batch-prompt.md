@@ -276,6 +276,7 @@ Rules:
 - Use `[]` for `hard_stops`, `soft_gaps`, `top_strengths`, or `discard_reasons` when empty.
 - `score` is numeric only, without `/5`.
 - `final_decision` must reflect the full evaluation, not only the CV match.
+- `company_confidential: true` requires a non-null `via`. Prefer the named agency/recruiter; when no agency is named, use the known application or discovery portal (for example `"Empregos.org"`) rather than inventing an employer. If no intermediary or source channel is supported by the JD metadata, fail the worker instead of emitting an untraceable `?` row.
 - `advertised_comp` is the JD's **own** figure, verbatim; `null` when the JD states nothing — never estimate it and never substitute researched market data (Block D research stays in Block D). Batch workers never write `{{USER_ROOT}}/data/salary-observations.tsv` — the report itself is the advertised observation (`salary-gap.mjs` reads it).
 - Do not invent missing data. If confidence is limited, set `confidence: "Low"` and explain the limitation in the human-readable sections.
 
@@ -377,7 +378,7 @@ Write exactly one TSV line to:
 {{USER_ROOT}}/batch/tracker-additions/{{ID}}.tsv
 ```
 
-Format, no header, 9 tab-separated columns:
+Format, no header: nine required tab-separated columns, followed by tagged optional fields when required:
 
 ```text
 {{REPORT_NUM}}\t{{DATE}}\t{company}\t{role}\t{status}\t{score}/5\t{pdf_emoji}\t[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)\t{one_sentence_note}
@@ -399,7 +400,9 @@ Column order is important:
 
 **Important:** TSV order has status BEFORE score. `applications.md` displays score before status. `merge-tracker.mjs` handles the conversion.
 
-**Optional fields (column ≥ 10):** if the offer came through an agency/recruiter (#1596), append a labeled field `via={Agency}` (for example `via=Hays`) — never positional; the label is mandatory. One extra unlabeled field is interpreted as the legacy location column. If the end employer is unknown, use `?` as company and add the descriptor in notes (for example `fintech, Leeds`). `merge-tracker.mjs` rejects ambiguous extras (two unlabeled extras, or two `via=` fields).
+**Fields after column 9:** if the offer came through an agency/recruiter, append a labeled field `via={Agency}` (for example `via=Hays`) — never positional. If the end employer is unknown (`company=?` / `company_confidential: true`), this `via=` field is **mandatory**; use the named agency or the supported application/discovery portal. One extra unlabeled field is interpreted as the legacy location column. `merge-tracker.mjs` rejects ambiguous extras (two unlabeled extras or two `via=` fields).
+
+Do not assert that every TSV has exactly nine fields. Direct, named-employer rows normally have nine; confidential or agency-mediated rows have at least ten because `via=` is present. Before returning success, ensure the TSV Via matches the Machine Summary `via` value exactly.
 
 Valid canonical statuses are defined in `templates/states.yml`: `Evaluated`, `Applied`, `Responded`, `Interview`, `Offer`, `Hired`, `Rejected`, `Closed`, `Discarded`, `SKIP`. Use `SKIP` when the final decision is `Skip` or the PDF gate is blocked by a hard stop. Use `Evaluated` for non-skip reports pending a decision. Never translate status labels in the TSV.
 
@@ -429,8 +432,11 @@ Success:
   "role": "{role}",
   "score": {score_num},
   "legitimacy": "{High Confidence|Proceed with Caution|Suspicious}",
+  "via": {via_json_string_or_null},
+  "company_confidential": {true_or_false},
   "pdf": {pdf_path_json_string_or_null},
   "report": "{report_path}",
+  "tracker": "{{USER_ROOT}}/batch/tracker-additions/{{ID}}.tsv",
   "error": null
 }
 ```
@@ -448,13 +454,16 @@ Failure:
   "role": "{role_or_unknown}",
   "score": null,
   "legitimacy": null,
+  "via": null,
+  "company_confidential": null,
   "pdf": null,
   "report": {report_path_json_string_or_null},
+  "tracker": {tracker_path_json_string_or_null},
   "error": "{error_description}"
 }
 ```
 
-`report_path_json_string_or_null` means either a properly JSON-encoded path string or the native JSON value `null` when no report exists.
+`report_path_json_string_or_null` and `tracker_path_json_string_or_null` mean either a properly JSON-encoded path string or the native JSON value `null` when the artifact does not exist.
 
 ---
 

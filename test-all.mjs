@@ -1693,6 +1693,12 @@ if (/\{\{REPORT_NUM\}\}\\t\{\{DATE\}\}/.test(batchTrackerStep) && !/Compute `\{n
 } else {
   fail('batch workers still compute tracker numbers independently');
 }
+if (/company=\?[^\n]*via=[^\n]*mandatory/i.test(batchTrackerStep) &&
+    /Do not assert that every TSV has exactly nine fields/i.test(batchTrackerStep)) {
+  pass('batch tracker contract makes Via mandatory for confidential employers without forcing nine fields');
+} else {
+  fail('batch tracker contract still permits company=? without a Via channel');
+}
 
 const batchMachineSummary = batchPrompt.match(/#### Machine Summary[\s\S]*?### Step 3 \u2014 Save the Report/)?.[0] ?? '';
 const patternsMachineFields = readFile('analyze-patterns.mjs').match(/const MACHINE_SUMMARY_FIELDS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? '';

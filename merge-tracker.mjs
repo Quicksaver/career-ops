@@ -559,6 +559,7 @@ let updated = 0;
 let skipped = 0;
 const newLines = [];
 const blockedFiles = new Set();
+const integrityBlockedFiles = new Set();
 
 for (const file of tsvFiles) {
   const content = readFileSync(join(ADDITIONS_DIR, file), 'utf-8').trim();
@@ -573,6 +574,21 @@ for (const file of tsvFiles) {
   if (addition.via && COLMAP.via == null) {
     console.warn(`⚠️  ${file}: carries via=${addition.via} but the tracker has no Via column — value dropped. Add it with: node merge-tracker.mjs --migrate-via`);
     addition.via = '';
+  }
+
+  // In trackers that expose a Via column, a confidential employer without a
+  // channel cannot be deduplicated safely:
+  // every `?` company shares the same company key, while Via is the only stable
+  // identity for the agency or source portal. Keep the TSV pending and fail the
+  // merge instead of writing an invalid `? | —` tracker row that only the final
+  // verifier would catch later. Legacy trackers without Via retain their
+  // migration-compatible warning path above.
+  if (COLMAP.via != null && String(addition.company).trim() === '?' && !String(addition.via || '').trim()) {
+    console.warn(`⚠️  Blocking ${file}: company=? requires a tagged via=Agency-or-Portal field`);
+    blockedFiles.add(file);
+    integrityBlockedFiles.add(file);
+    skipped++;
+    continue;
   }
 
   // Normalize the report link to be relative to the tracker file's directory.
@@ -748,4 +764,9 @@ if (VERIFY && !DRY_RUN) {
   } catch (e) {
     process.exit(1);
   }
+}
+
+if (integrityBlockedFiles.size > 0) {
+  console.error(`❌ ${integrityBlockedFiles.size} tracker addition(s) remain unmerged because they failed integrity guards.`);
+  process.exitCode = 1;
 }

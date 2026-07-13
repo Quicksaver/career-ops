@@ -282,17 +282,25 @@ async function runCommand(name, command, args, options = {}) {
   });
   if (options.stdin) child.stdin.end(options.stdin);
   else child.stdin.end();
+  let spawnError = null;
+  child.once('error', (error) => { spawnError = error; });
   const result = await new Promise((resolve) => {
-    child.on('error', (error) => resolve({ code: null, signal: null, error }));
-    child.on('exit', (code, signal) => resolve({ code, signal, error: null }));
+    // `close` fires only after stdout/stderr have closed. Waiting for `exit`
+    // could return while the final JSON was still being drained.
+    child.once('close', (code, signal) => resolve({ code, signal, error: spawnError }));
   });
   activeChild = null;
   progress?.stdout.flush();
   progress?.stderr.flush();
-  stream.end();
+  await new Promise((resolve, reject) => {
+    stream.once('error', reject);
+    stream.end(resolve);
+  });
+  const accepted = options.accept ? options.accept.includes(result.code) : result.code === 0;
+  const capturedFailure = Array.isArray(options.captureFailure) && options.captureFailure.includes(result.code);
   const phase = {
     name,
-    status: (options.accept ? options.accept.includes(result.code) : result.code === 0) ? 'completed' : 'failed',
+    status: accepted ? 'completed' : 'failed',
     exit_code: result.code,
     signal: result.signal,
     started_at: started,
@@ -302,7 +310,7 @@ async function runCommand(name, command, args, options = {}) {
   phases.push(phase);
   log(`${name} ${phase.status}`);
   const tail = commandTail(errorOutput);
-  if (phase.status === 'failed') {
+  if (phase.status === 'failed' && !capturedFailure) {
     const detail = result.error?.message || tail.trim().slice(-1000) || `exit ${result.code ?? result.signal}`;
     throw Object.assign(new Error(`${name} failed: ${detail}`), {
       phase: name, result, logPath, output: stdoutOutput.join(''), tail,
@@ -316,6 +324,13 @@ function parseJsonOutput(result, label) {
   try { return JSON.parse(text); } catch {
     throw new Error(`${label} returned invalid JSON; see ${result.logPath}`);
   }
+}
+
+function verificationFailure(label, verification) {
+  const findings = Array.isArray(verification.errors) ? verification.errors : [];
+  const detail = findings.slice(0, 5).map(item => item.message || item.code || item.id).join('; ');
+  const suffix = findings.length > 5 ? `; plus ${findings.length - 5} more` : '';
+  return new Error(`${label} found ${findings.length} blocking error(s): ${detail}${suffix}`);
 }
 
 function loadHandoff() {
@@ -569,6 +584,7 @@ async function main() {
         const batchArgs = [
           '--user', context.userId, '--cli', batchCli,
           '--parallel', String(parallelSettings.parallel),
+          '--defer-verification',
         ];
         if (batchCli === 'codex' && codexSettings.model) {
           batchArgs.push('--model', codexSettings.model);
@@ -590,11 +606,13 @@ async function main() {
     const initialVerification = parseJsonOutput(
       await runCommand('verify-pipeline', process.execPath, [
         systemPath('verify-pipeline.mjs'), '--user', context.userId, '--json',
-      ], { maxStdout: 32 * 1024 * 1024 }),
+      ], { maxStdout: 32 * 1024 * 1024, captureFailure: [1] }),
       'verify-pipeline',
     );
     const verificationPath = join(runDir, 'verification.initial.json');
     writeFileSync(verificationPath, `${JSON.stringify(initialVerification, null, 2)}\n`, 'utf-8');
+    summary.verification = initialVerification;
+    if (initialVerification.errors.length > 0) throw verificationFailure('verify-pipeline', initialVerification);
     let finalVerification = initialVerification;
 
     if (initialVerification.warnings.length > 0) {
@@ -665,9 +683,13 @@ async function main() {
       finalVerification = parseJsonOutput(
         await runCommand('verify-pipeline-post-triage', process.execPath, [
           systemPath('verify-pipeline.mjs'), '--user', context.userId, '--json',
-        ], { maxStdout: 32 * 1024 * 1024 }),
+        ], { maxStdout: 32 * 1024 * 1024, captureFailure: [1] }),
         'verify-pipeline-post-triage',
       );
+      if (finalVerification.errors.length > 0) {
+        summary.verification = finalVerification;
+        throw verificationFailure('verify-pipeline-post-triage', finalVerification);
+      }
       const remainingIds = new Set(finalVerification.warnings.map(warning => warning.id));
       const unresolvedDuplicates = summary.warning_triage.confirmed_duplicates
         .filter(item => remainingIds.has(item.warning_id));

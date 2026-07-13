@@ -9,8 +9,11 @@
     "role",
     "score",
     "legitimacy",
+    "via",
+    "company_confidential",
     "pdf",
     "report",
+    "tracker",
     "error"
   ],
   "properties": {
@@ -36,10 +39,19 @@
     "legitimacy": {
       "type": ["string", "null"]
     },
+    "via": {
+      "type": ["string", "null"]
+    },
+    "company_confidential": {
+      "type": ["boolean", "null"]
+    },
     "pdf": {
       "type": ["string", "null"]
     },
     "report": {
+      "type": ["string", "null"]
+    },
+    "tracker": {
       "type": ["string", "null"]
     },
     "error": {

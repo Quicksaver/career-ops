@@ -444,6 +444,47 @@ Future merge notes:
   profile values into every batch worker.
 - If post-batch pipeline reconciliation is refactored, make sure the reconciler receives the user-scoped state, pipeline, and reports paths together; otherwise it can look for report files in the wrong reports directory.
 
+## Batch Artifact Integrity And Verification Propagation
+
+The fork treats the worker's report, tracker addition, and structured final JSON as one consistency boundary. A worker cannot be marked complete merely because each artifact exists independently, and confidential-employer rows cannot enter a Via-aware tracker without a supported agency or source channel.
+
+Files:
+
+- `batch/batch-prompt.md`
+- `batch/batch-output-schema.json`
+- `batch/validate-worker-artifacts.mjs`
+- `batch/batch-runner.sh`
+- `merge-tracker.mjs`
+- `verify-pipeline.mjs`
+- `go-runner.mjs`
+- `test-all.mjs`
+- `tests/workflows/batch-artifacts.test.mjs`
+- `tests/workflows/go-runner.test.mjs`
+
+What this customizes:
+
+- Defines tracker additions as nine required TSV columns plus tagged optional fields. Direct named-employer rows normally have nine columns; agency-mediated and confidential-employer rows append `via={Agency-or-Portal}` rather than being forced into an exactly-nine-column contract.
+- Extends the schema-checked worker result with `via`, `company_confidential`, and `tracker`, keeping those control fields explicit instead of inferring them from worker prose or artifact filenames.
+- Requires `company_confidential: true` and `company: "?"` to carry a supported Via value. Workers prefer a named agency or recruiter, then a known application/discovery portal; they fail closed when the source material supports neither.
+- Adds a deterministic artifact finalizer that parses the report's YAML Machine Summary and the tracker TSV, then validates company, role, score, Via, confidential-company state, and structured final-JSON artifact references as one unit.
+- Allows one deliberately narrow repair: when the report has a valid Via and the tracker TSV omitted it, `--repair` appends the report value as a tagged `via=` field. Conflicting Via values, missing report evidence, confidential employers without a channel, malformed optional fields, and other cross-artifact disagreements remain hard failures.
+- Runs artifact validation before either normal worker completion or timeout artifact recovery can mark a batch item completed. Validation failures are persisted as `artifact-validation:` batch errors for diagnosis and retry.
+- Adds a second integrity gate in `merge-tracker.mjs`: when the destination tracker exposes a Via column, a `company=?` addition without `via=` stays pending and the merge exits nonzero. Legacy trackers without a Via column retain their migration-compatible behavior.
+- Makes standalone batch verification authoritative: blocking `verify-pipeline.mjs` errors make `batch/batch-runner.sh` exit nonzero. The internal `--defer-verification` option is used only when `go-runner.mjs` owns the final structured verification phase, avoiding two competing final gates.
+- Makes `verify-pipeline.mjs --json` assign `process.exitCode` instead of terminating with `process.exit()`, allowing warning-heavy JSON larger than the pipe buffer to flush completely before Node exits.
+- Makes `go-runner.mjs` wait for child-process `close` and log-stream completion, capture verifier exit code `1` as structured JSON, retain that payload in the run summary, and report the actual blocking findings instead of an arbitrary truncated warning tail.
+- Adds regression coverage for deterministic Via completion, cross-artifact Via mismatch rejection, untraceable confidential-employer rejection, merge-time blocking with pending-file preservation, verifier JSON above 64 KiB, and the coordinator's log-drain/structured-failure wiring.
+
+Future merge notes:
+
+- Keep the prompt, final JSON schema, artifact validator, runner gate, and tracker merge guard synchronized. Adding or renaming a cross-artifact field in only one layer weakens the completion contract or causes every worker to fail.
+- Do not simplify the TSV rule to exactly nine fields. The first nine columns are required; tagged `via=` metadata is part of the integrity model for agency and confidential listings.
+- Keep deterministic repair evidence-preserving and one-directional: a missing tracker Via may be copied from the report, but the validator must not invent a Via, overwrite a conflicting value, or mutate the report to match the tracker.
+- Preserve pending TSVs on merge integrity failures so operators can inspect or retry them. Do not silently discard, merge, or renumber a blocked confidential-employer row.
+- Preserve the standalone-versus-parent verification split: direct batch runs must fail on blocking verification errors, while the deterministic `go` coordinator may defer the batch-local check only because it immediately performs and records its own structured verification.
+- Preserve Node's graceful stdout flush and the coordinator's `close`/stream-drain ordering. Reintroducing immediate `process.exit()` or resolving child phases on `exit` can truncate valid JSON and obscure the real failure.
+- If upstream adds an equivalent artifact transaction, retire this layer only after testing missing Via repair, conflicting Via rejection, confidential-source enforcement, pending-file preservation, large verifier output, and structured coordinator failure propagation end to end.
+
 ## Custom Provider Layer
 
 The fork adds a large structured provider surface for zero-token scanning and keeps local compatibility filters around some providers that upstream later adopted.
@@ -1122,6 +1163,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Dashboard listing-date parsing/display.
 - Batch runner support for both Claude and Codex workers.
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
+- Cross-artifact batch validation equivalent to the fork's report/TSV/final-JSON consistency gate, confidential-employer Via requirement, bounded deterministic repair, merge-time pending-file preservation, and structured verifier failure propagation.
 - Optional profile-driven batch parallelism with argument ->
   `batch.parallel` -> `1` precedence and bounded validation.
 - Codex model/reasoning argument -> profile -> global resolution across every
