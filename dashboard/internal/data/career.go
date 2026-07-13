@@ -753,6 +753,126 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 	return UpdateApplicationStatusAndNotes(careerOpsPath, app, newStatus, "")
 }
 
+// UpdateApplicationStatusAndNotes atomically updates both the Status cell and
+// the Notes cell for an application row. It is used by the discard reason
+// picker (Issue 1380) to commit `DISCARD: <reason>` alongside the new status
+// in a single file write, preventing a second partial update from leaving the
+// tracker in a half-written state.
+//
+// notesAppend is appended (with a semicolon separator if notes are non-empty) to
+// whatever the Notes cell already contains. Pass an empty string to leave
+// notes unchanged.
+func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus, notesAppend string) error {
+	filePath := filepath.Join(careerOpsPath, "applications.md")
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		filePath = filepath.Join(careerOpsPath, "data", "applications.md")
+		content, err = os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+	}
+
+	lines := strings.Split(string(content), "\n")
+	cols := resolveTrackerColumns(lines)
+	statusIdx, statusOk := cols["status"]
+	if !statusOk {
+		return fmt.Errorf("status column not found in tracker")
+	}
+	notesIdx, notesOk := cols["notes"]
+	statusChanged := !strings.EqualFold(strings.TrimSpace(app.Status), strings.TrimSpace(newStatus))
+	if (statusChanged || notesAppend != "") && !notesOk {
+		return fmt.Errorf("notes column not found in tracker, cannot append notes")
+	}
+
+	found := false
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
+			continue
+		}
+		if app.ReportNumber == "" || !strings.Contains(line, fmt.Sprintf("[%s]", app.ReportNumber)) {
+			continue
+		}
+		// Update status
+		updated, ok := replaceStatusInLine(line, app.Status, newStatus, statusIdx)
+		if !ok {
+			return fmt.Errorf("failed to replace status: status cell '%s' not matched in row", app.Status)
+		}
+		// Preserve the fork's dated status interaction and append any discard reason
+		// in the same write so the tracker cannot be left half-updated.
+		additions := make([]string, 0, 2)
+		if statusChanged {
+			statusEntry := fmt.Sprintf("Status changed to %s %s", strings.TrimSpace(newStatus), time.Now().Format("2006-01-02"))
+			if !strings.Contains(app.Notes, statusEntry) {
+				additions = append(additions, statusEntry)
+			}
+		}
+		if notesAppend != "" && !strings.Contains(app.Notes, notesAppend) {
+			additions = append(additions, notesAppend)
+		}
+		for _, note := range additions {
+			var ok bool
+			updated, ok = appendNotesInLine(updated, note, notesIdx)
+			if !ok {
+				return fmt.Errorf("failed to append notes: notes column index %d out of bounds", notesIdx)
+			}
+		}
+		lines[i] = updated
+		found = true
+		break
+	}
+
+	if !found {
+		return fmt.Errorf("application not found: report %s", app.ReportNumber)
+	}
+
+	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// appendNotesInLine appends text to the Notes cell of a tracker row without
+// disturbing any other cell. notesField is the 0-based column index returned
+// by resolveTrackerColumns.
+func appendNotesInLine(line, text string, notesField int) (string, bool) {
+	if notesField < 0 {
+		return line, false
+	}
+	if strings.Contains(line, "\t") {
+		prefix, body, found := strings.Cut(line, "|")
+		if !found {
+			return line, false
+		}
+		cells := strings.Split(body, "\t")
+		if notesField < len(cells) {
+			old := strings.TrimSpace(cells[notesField])
+			if strings.Contains(old, text) {
+				return line, true
+			}
+			if old == "" {
+				cells[notesField] = " " + text + " "
+			} else {
+				cells[notesField] = " " + old + "; " + text + " "
+			}
+			return prefix + "|" + strings.Join(cells, "\t"), true
+		}
+		return line, false
+	}
+
+	segments := strings.Split(line, "|")
+	if notesField+1 < len(segments) {
+		old := strings.TrimSpace(segments[notesField+1])
+		if strings.Contains(old, text) {
+			return line, true
+		}
+		if old == "" {
+			segments[notesField+1] = " " + text + " "
+		} else {
+			segments[notesField+1] = " " + old + "; " + text + " "
+		}
+		return strings.Join(segments, "|"), true
+	}
+	return line, false
+}
+
 // replaceStatusInLine rewrites only the Status cell of a tracker row, leaving
 // every other cell untouched. The previous implementation used
 // strings.Replace(line, oldStatus, …, 1), which replaces the first occurrence of
@@ -765,31 +885,22 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 // statusField is the Status column index in splitTrackerRow field space (5 in
 // the legacy layout), resolved from the table header so a customized layout
 // (e.g. an inserted Location column) targets the right cell.
-func replaceStatusInLine(line, oldStatus, newStatus string, statusField int) string {
-	return replaceStatusAndAddInteraction(line, oldStatus, newStatus, "", statusField)
-}
-
-func replaceStatusAndAddInteraction(line, oldStatus, newStatus, interactionDate string, statusField int) string {
+func replaceStatusInLine(line, oldStatus, newStatus string, statusField int) (string, bool) {
 	want := strings.TrimSpace(oldStatus)
-	addInteraction := interactionDate != "" && !strings.EqualFold(strings.TrimSpace(oldStatus), strings.TrimSpace(newStatus))
-	notesField := statusField + 3 // Status, PDF, Report, Notes
 
 	// Mixed "| " + tab-separated format (mirrors ParseApplications). The body is
 	// tab-split, so cell index equals the field index.
 	if strings.Contains(line, "\t") {
 		prefix, body, found := strings.Cut(line, "|")
 		if !found {
-			return line
+			return line, false
 		}
 		cells := strings.Split(body, "\t")
 		if idx := statusCellIndex(cells, statusField, want); idx >= 0 {
 			cells[idx] = spliceCellValue(cells[idx], newStatus)
-			if addInteraction && notesField < len(cells) {
-				cells[notesField] = spliceCellValueAllowEmpty(cells[notesField], appendStatusInteraction(strings.TrimSpace(cells[notesField]), newStatus, interactionDate))
-			}
-			return prefix + "|" + strings.Join(cells, "\t")
+			return prefix + "|" + strings.Join(cells, "\t"), true
 		}
-		return line
+		return line, false
 	}
 
 	// Pure pipe format. strings.Split keeps the segments between pipes; content
@@ -798,24 +909,9 @@ func replaceStatusAndAddInteraction(line, oldStatus, newStatus, interactionDate 
 	segments := strings.Split(line, "|")
 	if idx := statusCellIndex(segments, statusField+1, want); idx >= 0 {
 		segments[idx] = spliceCellValue(segments[idx], newStatus)
-		notesSegment := notesField + 1
-		if addInteraction && notesSegment < len(segments) {
-			segments[notesSegment] = spliceCellValueAllowEmpty(segments[notesSegment], appendStatusInteraction(strings.TrimSpace(segments[notesSegment]), newStatus, interactionDate))
-		}
-		return strings.Join(segments, "|")
+		return strings.Join(segments, "|"), true
 	}
-	return line
-}
-
-func appendStatusInteraction(notes, status, date string) string {
-	entry := fmt.Sprintf("Status changed to %s %s", strings.TrimSpace(status), date)
-	if strings.Contains(notes, entry) {
-		return notes
-	}
-	if notes == "" {
-		return entry
-	}
-	return notes + "; " + entry
+	return line, false
 }
 
 // statusCellIndex returns the index of the Status cell. It prefers the canonical
@@ -850,17 +946,6 @@ func spliceCellValue(cell, newVal string) string {
 	}
 	start := strings.Index(cell, trimmed)
 	return cell[:start] + newVal + cell[start+len(trimmed):]
-}
-
-func spliceCellValueAllowEmpty(cell, newVal string) string {
-	trimmed := strings.TrimSpace(cell)
-	if trimmed != "" {
-		return spliceCellValue(cell, newVal)
-	}
-	if len(cell) >= 2 {
-		return cell[:1] + newVal + cell[len(cell)-1:]
-	}
-	return newVal
 }
 
 // cleanTableCell removes trailing pipes and whitespace from a table cell value.
@@ -1062,90 +1147,6 @@ func safePct(part, whole int) float64 {
 	return float64(part) / float64(whole) * 100
 }
 
-// UpdateApplicationStatusAndNotes updates both the status and notes of an application in applications.md.
-func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus string, newNotes string) error {
-	filePath := filepath.Join(careerOpsPath, "applications.md")
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		filePath = filepath.Join(careerOpsPath, "data", "applications.md")
-		content, err = os.ReadFile(filePath)
-		if err != nil {
-			return err
-		}
-	}
-
-	lines := strings.Split(string(content), "\n")
-	found := false
-
-	colmap := resolveTrackerColumns(lines)
-	statusIdx, statusOk := colmap["status"]
-	if newStatus != "" && !statusOk {
-		return fmt.Errorf("status column not found in tracker")
-	}
-	notesIdx, notesOk := colmap["notes"]
-	if newNotes != "" && !notesOk {
-		return fmt.Errorf("notes column not found in tracker, cannot append notes")
-	}
-
-	for i, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
-			continue
-		}
-		if app.ReportNumber != "" && strings.Contains(line, fmt.Sprintf("[%s]", app.ReportNumber)) {
-			l := line
-			effectiveNotes := newNotes
-			if newStatus != "" {
-				l = replaceStatusInLine(l, app.Status, newStatus, statusIdx)
-				if !strings.EqualFold(strings.TrimSpace(app.Status), strings.TrimSpace(newStatus)) {
-					baseNotes := app.Notes
-					if effectiveNotes != "" {
-						baseNotes = effectiveNotes
-					}
-					effectiveNotes = appendStatusInteraction(baseNotes, newStatus, time.Now().Format("2006-01-02"))
-				}
-			}
-			if effectiveNotes != "" {
-				l = replaceNotesInLine(l, app.Notes, effectiveNotes, notesIdx)
-			}
-			lines[i] = l
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("application not found: report %s", app.ReportNumber)
-	}
-
-	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
-}
-
-func replaceNotesInLine(line, oldNotes, newNotes string, notesField int) string {
-	if notesField < 0 {
-		return line
-	}
-	if strings.Contains(line, "\t") {
-		prefix, body, found := strings.Cut(line, "|")
-		if !found {
-			return line
-		}
-		cells := strings.Split(body, "\t")
-		if notesField < len(cells) {
-			cells[notesField] = spliceCellValue(cells[notesField], newNotes)
-			return prefix + "|" + strings.Join(cells, "\t")
-		}
-		return line
-	}
-
-	segments := strings.Split(line, "|")
-	idx := notesField + 1
-	if idx < len(segments) {
-		segments[idx] = spliceCellValue(segments[idx], newNotes)
-		return strings.Join(segments, "|")
-	}
-	return line
-}
-
 // LoadReportDiscardReasons parses predicted discard reasons from a report file.
 func LoadReportDiscardReasons(careerOpsPath, reportPath string) []string {
 	if reportPath == "" {
@@ -1157,7 +1158,11 @@ func LoadReportDiscardReasons(careerOpsPath, reportPath string) []string {
 		p = p[idx+2:]
 		p = strings.TrimSuffix(p, ")")
 	}
-	fullPath := filepath.Join(careerOpsPath, p)
+	fullPath := filepath.Clean(filepath.Join(careerOpsPath, p))
+	rel, err := filepath.Rel(careerOpsPath, fullPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil
+	}
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		return nil
@@ -1172,7 +1177,10 @@ func LoadReportDiscardReasons(careerOpsPath, reportPath string) []string {
 	itemsMatch := reDiscardItem.FindAllStringSubmatch(match[1], -1)
 	var reasons []string
 	for _, item := range itemsMatch {
-		reasons = append(reasons, strings.TrimSpace(item[1]))
+		reason := strings.Trim(strings.TrimSpace(item[1]), `"'`)
+		if reason != "" {
+			reasons = append(reasons, reason)
+		}
 	}
 	return reasons
 }

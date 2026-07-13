@@ -148,19 +148,21 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories across evaluations |
 | `users/{USER}/interview-prep/{company}-{role}.md` | Company-specific interview intel reports |
 | `analyze-patterns.mjs` | Pattern analysis script (JSON output). Includes ATS channel analysis (per-vendor advance rate; motivated by Bommasani et al., Algorithmic Monocultures in Hiring, FAccT 2026). |
-| `upskill.mjs` | Aggregate skill-gap analyzer — weighted gap map from tracked reports, known skills from `cv.md`/`config/profile.yml` excluded (JSON output) |
+| `upskill.mjs` | Aggregate or targeted skill-gap analyzer — excludes skills already supported by `users/{USER}/cv.md` and `users/{USER}/config/profile.yml` (JSON or `--summary`) |
 | `stats.mjs` | Lifetime pipeline stats aggregator (JSON or `--summary`) — tracker roll-up, canonical `ever*` funnel, lifetime scan totals, portal coverage, follow-up compliance, scan-run trends |
 | `users/{USER}/data/scan-runs.tsv` | Per-run scan counters (appended by `scan.mjs`, read by `stats.mjs`) |
 | `followup-cadence.mjs` | Follow-up cadence calculator (JSON output) |
 | `followup-seed.mjs` | Seeds `users/{USER}/data/follow-ups.md` with a pinned first follow-up date when a row turns Applied (JSON output) |
 | `set-status.mjs` | Canonical locked/validated/atomic tracker status writer: `node set-status.mjs --user {USER} <report#\|company> <State> [--note]` |
-| `invite-match.mjs` | Fuzzy-matches a pasted interview-invite email against `users/{USER}/data/applications.md` (JSON or `--summary`) |
+| `invite-match.mjs` | Fuzzy-matches a pasted interview-invite email against `users/{USER}/data/applications.md`, ranking candidates when a company has multiple tracker entries (JSON or `--summary`) |
+| `paste-reply.mjs` | Manual/no-Gmail input path into `reply-watch.mjs` — appends a normalized email candidate to `users/{USER}/data/reply-candidates.json`; never classifies or touches the tracker itself |
 | `detect-reposts.mjs` | Repost detector — flags roles re-listed 2+ times in 90 days from scan-history.tsv (JSON or `--summary` table output) |
 | `process-quality.mjs` | Recruiting-process friction aggregator — parses `[process-friction]` tags candidates add to `users/{USER}/data/active-interviews.md` Notes and reports per-company friction rate (JSON or `--summary` table output) |
 | `salary-gap.mjs` | Desired/advertised/actual compensation gap analyzer over reports and `users/{USER}/data/salary-observations.tsv` (JSON or `--summary`) |
 | `users/{USER}/data/salary-observations.tsv` | Append-only salary observation log |
 | `assessment-log.mjs` | Skills-assessment event logger — `add` appends platform/subject/threshold/score plus a candidate-observed staleness note to `users/{USER}/data/assessments.tsv` (JSON or `--summary`) |
 | `users/{USER}/data/assessments.tsv` | Append-only skills-assessment log, created on first `add` |
+| `jd-skill-gap.mjs` | Zero-LLM JD skill-gap checker — classifies requirements against `users/{USER}/cv.md` as existing / supportedByResume / gap; never auto-adds a claim to the CV |
 | `users/{USER}/data/follow-ups.md` | Follow-up history tracker |
 | `users/{USER}/data/blacklist.md` | Opt-in do-not-apply company list; never auto-populated and respected by scan/evaluation/application gates |
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever/PCSX APIs plus structured and plugin providers directly, zero LLM cost |
@@ -505,7 +507,9 @@ Write one TSV file per evaluation to `users/{USER}/batch/tracker-additions/{ID}.
 
 **Batch numbering rule:** Do not recalculate the tracker number from `applications.md` inside workers. Parallel workers can race and choose the same value. Use the runner-reserved `REPORT_NUM` for the TSV first column, report link, and artifact names.
 
-**Optional Via field:** when the application goes through an agency/recruiter, append a tagged extra field `via={Agency}` after notes. Unknown end employer uses `?` as the company plus a distinguishing descriptor in notes. `merge-tracker.mjs` rejects ambiguous extras, and `--migrate-via` adds the Via column to an existing tracker.
+**Backfilled entries with no evaluation (#1799):** for a row added retroactively without ever running an evaluation (e.g. a rejection email for a role you never scored), the `score` field must be one of the recognized score-cell sentinels — `N/A`, `—` (em dash), or `-` (hyphen) — never left blank and never some other placeholder. `merge-tracker.mjs`'s column-swap guard (`looksLikeScoreCell` in `tracker-parse.mjs`, #1427) identifies the score column by content pattern (`X.X/5` or one of these sentinels); an unrecognized placeholder makes the row ambiguous and it gets skipped with a warning instead of merged.
+
+**Optional Via field (#1596):** when the application goes through an agency/recruiter, append a **tagged** extra field `via={Agency}` (e.g. `via=Hays`) after notes — never a positional slot; the tag is mandatory. A single untagged extra field keeps its legacy meaning (location). Unknown end employer → write `?` as company (locale-invariant structural marker — never the word "Confidential") plus a distinguishing descriptor in notes. `merge-tracker.mjs` rejects ambiguous extras loudly, and `--migrate-via` adds the Via column to an existing tracker.
 
 **Report link normalization:** The TSV always carries a user-root-relative `[num](reports/...)` link. `merge-tracker.mjs` rewrites it so the link is relative to the tracker file's own directory before writing it into the tracker — `../reports/...` when the tracker is at `users/{USER}/data/applications.md`. This keeps links clickable from the tracker because markdown links resolve relative to the file that contains them. Normalization is idempotent. To fix links in an existing tracker, run `node merge-tracker.mjs --user {USER} --migrate` (see #760).
 

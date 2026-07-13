@@ -36,7 +36,9 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run validate:portals` | `validate-portals.mjs` | Validate portals.yml shape before scanning |
 | `npm run tracker` | `tracker.mjs` | SQLite derived index over applications.md — sync/query/history/export |
 | `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
-| `npm run invite-match` | `invite-match.mjs` | Fuzzy-match a pasted interview-invite email against `data/applications.md` |
+| `npm run invite-match -- --user {USER}` | `invite-match.mjs` | Fuzzy-match a pasted interview-invite email against `users/{USER}/data/applications.md` |
+| `npm run paste-reply -- --user {USER}` | `paste-reply.mjs` | Manual/no-Gmail input into the active user's reply-watch pipeline |
+| `node jd-skill-gap.mjs --user {USER} <jd-file>` | `jd-skill-gap.mjs` | Zero-LLM JD requirements check against the active user's CV |
 | `npm run openai:tailor` | `openai-tailor.mjs` | Tailor a CV via any OpenAI-compatible endpoint (headless companion to `openai-eval.mjs`) |
 
 ---
@@ -235,7 +237,7 @@ npm run sync-check -- --user <username>
 
 ## patterns
 
-Analyzes application outcomes, scores, archetypes, blockers, remote policy, and company size from `users/{USER}/data/applications.md` and linked reports. New reports should include `## Machine Summary` YAML; `analyze-patterns.mjs` uses it first and falls back to legacy markdown parsing for older reports.
+Analyzes application outcomes, scores, archetypes, blockers, remote policy, company size, and discard reasons from `users/{USER}/data/applications.md` and linked reports. New reports should include `## Machine Summary` YAML; `analyze-patterns.mjs` uses it first and falls back to legacy markdown parsing for older reports.
 
 ```bash
 npm run patterns -- --user <username>
@@ -250,12 +252,14 @@ node analyze-patterns.mjs --self-test
 
 ## upskill
 
-Aggregates skill gaps across every tracked report (#1520, phase 1). Extracts skill tokens from each report's Machine Summary `hard_stops`/`soft_gaps` and Gap table, removes skills already present in `cv.md`/`config/profile.yml` (exact-alias matching only — an umbrella term never suppresses a specific skill), and weights each gap by inverse report score (`5.0 − score`, counted once per report). Tiers (Critical/High/Medium/Low) use fixed thresholds over the share of low-fit (score < 4.0) reports naming the gap. Output carries `schema_version` so the `upskill` mode's diff-vs-previous section never compares across extraction-rule changes, plus coverage stats (`reportsWithMachineSummary` vs `reportsRead`).
+Aggregates skill gaps across every tracked report or analyzes one target JD. It removes skills already present in `users/{USER}/cv.md` and `users/{USER}/config/profile.yml` (exact-alias matching only — an umbrella term never suppresses a specific skill). Aggregate mode weights each gap by inverse report score (`5.0 − score`, counted once per report); targeted mode accepts a URL or local JD file and applies an SSRF egress guard before fetching.
 
 ```bash
-npm run upskill
-npm run upskill -- --summary
-npm run upskill -- --min-reports 3
+npm run upskill -- --user <username>
+npm run upskill -- --user <username> --summary
+npm run upskill -- --user <username> --min-reports 3
+node upskill.mjs --user <username> --url-text path/to/jd.md
+node upskill.mjs --user <username> https://company.example/jobs/123
 node upskill.mjs --self-test
 ```
 
@@ -525,6 +529,30 @@ node find.mjs --user <username> acme --json       # machine-readable output
 Multiple matches print as a table; zero matches print a clean message.
 
 **Exit codes:** `0` at least one match, `1` no match, missing query, or no `users/{USER}/data/applications.md`.
+
+---
+
+## paste-reply
+
+Manual, no-Gmail input path into `reply-watch.mjs`'s classification pipeline (#1802). `paste-reply.mjs` normalizes a pasted (or file-provided) email's subject/from/body into the exact candidate shape `reply-watch.mjs` expects and appends it to `users/{USER}/data/reply-candidates.json` — existing candidates are never overwritten. It does not classify the reply itself and never touches `users/{USER}/data/applications.md`.
+
+```bash
+npm run paste-reply -- --user <username>                    # interactive
+node paste-reply.mjs --user <username> --file email.txt      # file input
+```
+
+`--file` format (header lines optional, blank line separates headers from body):
+
+```text
+Subject: <subject line>
+From: <sender>
+
+<body text...>
+```
+
+If no `Subject:`/`From:` header lines are found, the whole file is treated as the body. After appending, run `node reply-watch.mjs --user <username>` to classify the new candidate and review suggested tracker updates.
+
+**Exit codes:** `0` candidate appended, `1` missing `--file` argument, input file not found, or no subject/body text found.
 
 ---
 

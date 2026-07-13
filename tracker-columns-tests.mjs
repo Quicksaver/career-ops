@@ -49,6 +49,11 @@ function runScript(script, args, sandbox) {
     CAREER_OPS_ADDITIONS: sandbox.additions,
     CAREER_OPS_TRACKER_LOCK: sandbox.lock,
   };
+  // These are explicit fixture overrides, so an outer test runner's active
+  // user must not rebase report links or the derived index into another temp
+  // tree. Keep the sandbox self-contained and exercise the override contract.
+  delete env.CAREER_OPS_USER;
+  delete env.CAREER_OPS_USERS_DIR;
   try {
     const stdout = execFileSync(NODE, [join(ROOT, script), ...args], {
       cwd: ROOT, env, encoding: 'utf-8', timeout: 30000,
@@ -544,6 +549,29 @@ if (!HAS_WEB) {
   }
 
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ── Test 17: pipe rows preserve empty interior cells ──────────────────────
+{
+  const EMPTY_PDF = '| 42 | 2026-01-01 | Foo | Bar Engineer | 4.0/5 | Evaluated |  | [42](reports/042-foo-2026-01-01.md) | some note |';
+  const EMPTY_NOTES = '| 43 | 2026-01-02 | Baz | Platform Engineer | 4.1/5 | Evaluated | ✅ | [43](reports/043-baz-2026-01-02.md) |  | Singapore';
+  const sb = makeSandbox(HEADER_10, { '42-foo.tsv': EMPTY_PDF, '43-baz.tsv': EMPTY_NOTES });
+  const res = runScript('merge-tracker.mjs', [], sb);
+  const foo = dataRows(sb.tracker).find(l => l.includes('Foo'));
+  const baz = dataRows(sb.tracker).find(l => l.includes('Baz'));
+  const fooCells = foo ? foo.split('|').map(s => s.trim()) : [];
+  const bazCells = baz ? baz.split('|').map(s => s.trim()) : [];
+  if (res.code === 0 && fooCells[8] === '' && fooCells[9] === '[42](reports/042-foo-2026-01-01.md)' && fooCells[10] === 'some note') {
+    pass('merge: empty PDF cell does not shift Report or Notes');
+  } else {
+    fail(`merge: empty PDF cell shifted columns (code ${res.code}) row: ${foo}\n${res.stdout}`);
+  }
+  if (res.code === 0 && bazCells[5] === 'Singapore' && bazCells[10] === '') {
+    pass('merge: empty Notes cell does not shift a later Location');
+  } else {
+    fail(`merge: empty Notes cell shifted Location (code ${res.code}) row: ${baz}\n${res.stdout}`);
+  }
+  rmSync(sb.dir, { recursive: true, force: true });
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

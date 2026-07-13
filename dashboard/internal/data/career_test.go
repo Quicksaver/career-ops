@@ -72,6 +72,63 @@ func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
 	}
 }
 
+func TestUpdateApplicationStatusAndNotesCommitsDiscardReasonAtomically(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+
+	applications := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 8 | 2026-07-01 | Acme | Platform Engineer | 3.1/5 | Evaluated | ❌ | [8](reports/008.md) | needs review |
+`
+	path := filepath.Join(dataDir, "applications.md")
+	if err := os.WriteFile(path, []byte(applications), 0o644); err != nil {
+		t.Fatalf("failed to write tracker: %v", err)
+	}
+
+	apps := ParseApplications(tempDir)
+	if len(apps) != 1 {
+		t.Fatalf("expected 1 parsed application, got %d", len(apps))
+	}
+	if err := UpdateApplicationStatusAndNotes(tempDir, apps[0], "Discarded", "DISCARD: salary_too_low"); err != nil {
+		t.Fatalf("UpdateApplicationStatusAndNotes: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	today := time.Now().Format("2006-01-02")
+	want := "needs review; Status changed to Discarded " + today + "; DISCARD: salary_too_low"
+	if !strings.Contains(string(got), "| Discarded |") || !strings.Contains(string(got), want) {
+		t.Fatalf("status and discard reason were not committed together, file now:\n%s", got)
+	}
+}
+
+func TestLoadReportDiscardReasonsNormalizesQuotedYamlAndRejectsTraversal(t *testing.T) {
+	tempDir := t.TempDir()
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("failed to create reports dir: %v", err)
+	}
+	report := "## Machine Summary\n\n```yaml\ndiscard_reasons:\n  - \"salary_too_low\"\n  - 'hybrid_required'\nnext_action: skip\n```\n"
+	if err := os.WriteFile(filepath.Join(reportsDir, "008.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("failed to write report: %v", err)
+	}
+
+	got := LoadReportDiscardReasons(tempDir, "[8](reports/008.md)")
+	if strings.Join(got, ",") != "salary_too_low,hybrid_required" {
+		t.Fatalf("discard reasons = %#v, want normalized YAML values", got)
+	}
+	if got := LoadReportDiscardReasons(tempDir, "../../outside.md"); got != nil {
+		t.Fatalf("path traversal returned reasons: %#v", got)
+	}
+}
+
 func TestClosedStatusNormalizationAndMetrics(t *testing.T) {
 	cases := map[string]string{
 		"Closed":     "closed",

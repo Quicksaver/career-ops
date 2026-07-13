@@ -6,7 +6,7 @@ When the candidate pastes a job (text or URL), ALWAYS deliver the 7 blocks (A-F 
 
 When the candidate pastes a **URL** (not JD text), confirm the posting is still live before doing any evaluation. A dead link must never reach Block A — a 404/expired page wastes a full A-G evaluation, report, and PDF on phantom content.
 
-1. Get the page content: if you arrived here from `auto-pipeline` (its Step 0.5 already navigated and cleared the link), reuse that snapshot — do not navigate again. On a direct URL entry, navigate with Playwright (`browser_navigate` + `browser_snapshot`) and read the title, URL, and visible content.
+1. Get the page content: if you arrived here from `auto-pipeline` (its Step 0.5 already navigated and cleared the link), reuse that snapshot — do not navigate again. On a direct URL entry, navigate with Playwright (`browser_navigate` + `browser_snapshot`) and read the title, URL, and visible content. **Opt-in:** if `scan.extractor: cli` is set in `users/{USER}/config/profile.yml`, run `node browser-extract.mjs <url>` (default `--mode jd`) instead and use its compact `{ "url", "title", "text" }` (the distilled JD main text rather than the full page a11y tree — fewer tokens for the model, board-dependent), **falling back silently** to `browser_navigate` + `browser_snapshot` if it errors or is missing.
 2. Classify the posting:
    - **active posting evidence:** title/role + a real job description or an application/apply path
    - **closed posting evidence:** expired/closed/"no longer accepting applications", missing JD with only nav/footer, hard redirect to a generic careers/search page, or 404/410
@@ -305,7 +305,7 @@ After saving the report and recording in the tracker, append a cover letter draf
 **How to generate the draft:**
 
 1. Read `cv.md` — select 4 achievement bullets most relevant to the JD's top requirements (exact wording, real metrics only)
-2. Read `config/profile.yml` — extract candidate name, current role, years of experience
+2. Read `users/{USER}/config/profile.yml` — extract candidate name, current role, years of experience
 3. Write a 2-sentence opening based on the role title and JD mission language
 4. Write a 1-paragraph profile intro from the cv.md summary, adapted to the JD domain
 5. Leave the "Problems / Why this company / Approach" section as a placeholder — this requires user input
@@ -451,4 +451,4 @@ If — and only if — the user **explicitly stated a role-specific desired numb
 {tracker#}\t{YYYY-MM-DD}\tdesired\t{amount}\t{currency}\tuser\t{short context note}
 ```
 
-Never infer a desired number from the JD, the score, or past conversations. The profile default (`config/profile.yml` → `compensation.target_range`) needs no line — `salary-gap.mjs` reads it as the fallback. The advertised figure also needs no line: the report's `advertised_comp` **is** the advertised observation.
+Never infer a desired number from the JD, the score, or past conversations. The profile default (`users/{USER}/config/profile.yml` → `compensation.target_range`) needs no line — `salary-gap.mjs` reads it as the fallback. The advertised figure also needs no line: the report's `advertised_comp` **is** the advertised observation.

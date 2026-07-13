@@ -265,13 +265,15 @@ top_strengths:
 risk_level: "{Low | Medium | High}"
 confidence: "{Low | Medium | High}"
 next_action: "{one concrete next step}"
+discard_reasons:
+  - "{predicted reason if final_decision is Skip/Consider, e.g. salary_too_low, hybrid_required, tech_stack_mismatch, seniority_mismatch, geo_restriction, size_mismatch, company_culture, or other specific reason}"
 via: {agency/recruiter firm as a quoted string, or null for direct applications}
 company_confidential: {true when the end employer is unknown (company is "?"), else false}
 advertised_comp: {verbatim JD salary/range as a quoted string (e.g. "80-90k EUR"), or null when the JD states nothing}
 ```
 
 Rules:
-
+- Use `[]` for `hard_stops`, `soft_gaps`, `top_strengths`, or `discard_reasons` when empty.
 - `score` is numeric only, without `/5`.
 - `final_decision` must reflect the full evaluation, not only the CV match.
 - `advertised_comp` is the JD's **own** figure, verbatim; `null` when the JD states nothing — never estimate it and never substitute researched market data (Block D research stays in Block D). Batch workers never write `{{USER_ROOT}}/data/salary-observations.tsv` — the report itself is the advertised observation (`salary-gap.mjs` reads it).
