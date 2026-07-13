@@ -231,4 +231,23 @@ For a direct pipeline with three or more pending URLs, launch one subagent per U
 
 Run one `batch/batch-runner.sh` invocation at a time directly from the root agent and supervise it through its terminal outcome. Treat any configured `--parallel N` workers as internal batch-runner activity under that single root-owned invocation. Commands such as `scan.mjs`, `scan-auth.mjs`, and liveness checks follow the same root-owned subprocess model.
 
+For a full `go` invocation, prefer `./go-runner.mjs --user {ACTIVE_USER}`. It is
+the deterministic root-owned coordinator and invokes schema-constrained agent
+work for scan handoff and read-only final warning triage; batch evaluation
+continues to use one contract-validated worker per job. Only model-confirmed
+duplicate tracker/report warnings may be repaired, by the deterministic
+duplicate resolver followed by re-verification. Every other warning stays
+user-facing and can require human review based on severity or impact. Keep the
+current turn active while the runner executes and apply the same
+quiet-monitoring and stop semantics.
+Resolve Codex model and reasoning independently with this precedence:
+`go-runner.mjs` arguments, `users/{ACTIVE_USER}/config/profile.yml` under
+`codex.model` / `codex.reasoning_effort`, then Codex global defaults. The runner
+must pass resolved non-global values to the handoff worker, warning-triage
+worker, and all Codex batch workers.
+
+Parallelism resolves independently as `--parallel N`, then `batch.parallel`
+in `users/{ACTIVE_USER}/config/profile.yml`, then the system default `1`.
+`--parallel` is optional on both the go runner and direct batch runner.
+
 Execute the instructions from the loaded mode file.

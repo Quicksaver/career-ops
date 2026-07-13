@@ -70,6 +70,11 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/scan-handoff.md` | Agent/WebSearch scan handoff instructions |
 | `modes/scan-auth.md` | Authenticated portal scanner instructions |
 | `modes/go.md` | Sourcing-loop shorthand instructions |
+| `go-runner.mjs` | Deterministic end-to-end sourcing coordinator |
+| `resolve-parallel.mjs` | Resolves batch parallelism from argument, user profile, or system default |
+| `resolve-verify-warnings.mjs` | Validates and applies model-confirmed duplicate-only warning resolutions |
+| `pipeline-liveness.mjs` | Machine-readable pending-queue liveness preflight |
+| `sync-pipeline-batch.mjs` | Stable pipeline-to-batch queue synchronizer |
 | `modes/batch.md` | Batch processing instructions |
 | `modes/apply.md` | Application assistant instructions |
 | `modes/auto-pipeline.md` | Auto-pipeline instructions |
@@ -110,6 +115,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `config/plugins.example.yml` | Plugin activation template (seed for `users/{USER}/config/plugins.yml`) |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
+| `schemas/*` | Strict JSON contracts for deterministic agent steps |
 | `dashboard/*` | Go TUI dashboard |
 | `templates/*` | Base templates |
 | `fonts/*` | Self-hosted fonts |

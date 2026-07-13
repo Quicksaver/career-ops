@@ -8,7 +8,7 @@ Keep the current agent turn active through queue completion, recovery, reconcili
 
 ## Execution ownership
 
-Start one `batch/batch-runner.sh` invocation at a time directly from the root agent. Keep the root turn responsible for monitoring, recovery, reconciliation, tracker merging, and verification until the runner reaches its terminal outcome. Treat `--parallel N` as bounded internal concurrency managed by that single runner invocation.
+Start one `batch/batch-runner.sh` invocation at a time directly from the root agent. Keep the root turn responsible for monitoring, recovery, reconciliation, tracker merging, and verification until the runner reaches its terminal outcome. Treat `--parallel N` as bounded internal concurrency managed by that single runner invocation. The flag is optional: worker count resolves from explicit `--parallel`, then `batch.parallel` in the active user's `config/profile.yml`, then system default `1`.
 
 ## Architecture
 
@@ -115,7 +115,7 @@ Options:
 - `--resume-paused` — resume jobs paused after a Claude session/rate limit
 - `--start-from N` — start from ID N
 - `--limit N` — max number of jobs to process in this run
-- `--parallel N` — N workers in parallel
+- `--parallel N` — optional worker-count override; profile `batch.parallel`, then `1`
 - `--max-retries N` — attempts per job (default: 2)
 - `--rate-limit-sleep N` — seconds to wait before retrying a transient rate-limited worker (default: 300; use 0 to pause the batch immediately)
 

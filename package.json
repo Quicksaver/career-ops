@@ -4,6 +4,7 @@
   "description": "AI-powered job search pipeline — works with any AI coding CLI (Claude Code, OpenCode, Gemini, Codex, Qwen)",
   "private": true,
   "scripts": {
+    "go": "node go-runner.mjs",
     "doctor": "node doctor.mjs",
     "or": "node openrouter-runner.mjs",
     "or:scan": "node openrouter-runner.mjs scan",
@@ -25,6 +26,8 @@
     "update": "node update-system.mjs apply",
     "rollback": "node update-system.mjs rollback",
     "liveness": "node check-liveness.mjs",
+    "pipeline:liveness": "node pipeline-liveness.mjs",
+    "pipeline:sync-batch": "node sync-pipeline-batch.mjs",
     "extract": "node browser-extract.mjs",
     "scan": "node scan.mjs",
     "scan-auth": "node scan-auth.mjs",

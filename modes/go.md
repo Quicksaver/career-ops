@@ -16,6 +16,40 @@ This mode is a shorthand coordinator. It does not replace the individual mode ru
 
 Follow each child mode's filtering, deduplication, liveness, quiet-monitoring, and user-layer rules.
 
+## Deterministic runner
+
+Prefer the executable coordinator for end-to-end runs:
+
+```bash
+./go-runner.mjs --user {USER} --batch-cli codex
+```
+
+The runner owns phase gating, per-user locking, pending counters, JSON-validated
+handoff-agent output, bulk liveness, pipeline-to-batch synchronization, batch
+supervision, reconciliation, final verification, and read-only prompt-based
+warning triage. When verification has warnings, the triage worker reviews each
+one. Only confirmed duplicate tracker/report groups may be repaired, through a
+constrained deterministic resolver followed by verification again. Orphans,
+submission risks, and every other warning remain user warnings and may set
+`needs_human_review` based on severity or impact. Detailed phase logs go to
+`users/{USER}/data/go-runs/`; stdout contains exactly one JSON summary. The
+`--parallel` option is optional. Parallelism resolves in this order:
+
+1. `--parallel N` on `go-runner.mjs`
+2. `batch.parallel` in `users/{USER}/config/profile.yml`
+3. System default `1`
+
+The resolved value is passed explicitly to the batch runner.
+
+Codex model settings resolve independently with this precedence:
+
+1. `--codex-model` / `--codex-reasoning-effort` on `go-runner.mjs`
+2. `codex.model` / `codex.reasoning_effort` in `users/{USER}/config/profile.yml`
+3. Codex global configuration (the runner omits that CLI override)
+
+The resolved non-global values are passed to the scan-handoff and warning-triage
+`codex exec` calls and every batch-worker `codex exec` call.
+
 ## Preconditions
 
 Resolve `ACTIVE_USER` first. Do not read or write user-layer files until the active user is known.
@@ -108,6 +142,7 @@ Scan: completed, N new pending, E provider/company errors
 Handoff: skipped|completed, N new pending, E errors
 LinkedIn: completed|needs login|skipped, N new pending, E errors
 Pipeline: skipped|completed, processed N pending jobs
+Warning triage: skipped|completed, W user warnings, D duplicate groups resolved, human review yes|no
 ```
 
 If a catastrophic issue stopped the sequence, state which phase stopped, the exact blocking reason, and the command the user should run next.

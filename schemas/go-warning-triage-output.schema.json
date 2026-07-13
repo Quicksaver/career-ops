@@ -1,0 +1,85 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "needs_human_review", "warnings"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["completed"]
+    },
+    "needs_human_review": { "type": "boolean" },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "warning_id",
+          "warning_code",
+          "classification",
+          "severity",
+          "needs_human_review",
+          "rationale",
+          "evidence",
+          "duplicate_resolution"
+        ],
+        "properties": {
+          "warning_id": { "type": "string", "minLength": 1 },
+          "warning_code": { "type": "string", "minLength": 1 },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "informational",
+              "legitimate_exception",
+              "actionable",
+              "needs_human_review",
+              "confirmed_duplicate"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "needs_human_review": { "type": "boolean" },
+          "rationale": { "type": "string", "minLength": 1 },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "observation"],
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "observation": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "duplicate_resolution": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": [
+              "keeper_tracker_num",
+              "duplicate_tracker_nums",
+              "keeper_report_file",
+              "duplicate_report_files"
+            ],
+            "properties": {
+              "keeper_tracker_num": { "type": ["integer", "null"], "minimum": 1 },
+              "duplicate_tracker_nums": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "integer", "minimum": 1 }
+              },
+              "keeper_report_file": { "type": ["string", "null"] },
+              "duplicate_report_files": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

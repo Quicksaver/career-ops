@@ -11,6 +11,7 @@
  * Usage:
  *   node check-liveness.mjs <url1> [url2] ...
  *   node check-liveness.mjs --file urls.txt
+ *   node check-liveness.mjs --json --file urls.txt
  *
  * Exit code: 0 if all active, 1 if any expired or uncertain
  */
@@ -28,6 +29,7 @@ import { checkLivenessViaApi } from './liveness-api.mjs';
 
 async function main() {
   const args = process.argv.slice(2);
+  const json = args.includes('--json');
 
   // Portals like pracuj.pl serve a Cloudflare anti-bot wall to headless Chromium.
   // On a challenge we retry once in a headed browser (which clears it); pass
@@ -38,7 +40,7 @@ async function main() {
   // after ~2 rapid hits, so a bulk run needs spacing. Default base 5000ms.
   const throttleArg = args.find((a) => a === '--throttle' || a.startsWith('--throttle='));
   const throttleBaseMs = throttleArg ? (Number(throttleArg.split('=')[1]) || 5000) : 0;
-  const positional = args.filter((a) => a !== '--no-fallback' && a !== throttleArg);
+  const positional = args.filter((a) => a !== '--no-fallback' && a !== '--json' && a !== throttleArg);
 
   if (positional.length === 0) {
     console.error('Usage: node check-liveness.mjs [--no-fallback] [--throttle[=ms]] <url1> [url2] ...');
@@ -58,7 +60,7 @@ async function main() {
     noFallback ? null : 'headed fallback on challenge',
     throttleBaseMs ? `throttle ~${throttleBaseMs / 1000}-${(throttleBaseMs * 2) / 1000}s` : null,
   ].filter(Boolean);
-  console.log(`Checking ${urls.length} URL(s)...${notes.length ? ` (${notes.join(', ')})` : ''}\n`);
+  if (!json) console.log(`Checking ${urls.length} URL(s)...${notes.length ? ` (${notes.join(', ')})` : ''}\n`);
 
   // Lazy browser: the API rung resolves ATS postings with no browser at all, so we
   // only launch Playwright if a URL actually needs the fallback.
@@ -71,6 +73,7 @@ async function main() {
   }
 
   let active = 0, expired = 0, uncertain = 0, viaApi = 0;
+  const results = [];
 
   // Sequential — project rule: never Playwright in parallel
   for (let i = 0; i < urls.length; i++) {
@@ -91,8 +94,11 @@ async function main() {
     }
 
     const icon = { active: '✅', expired: '❌', uncertain: '⚠️' }[result];
-    console.log(`${icon} ${result.padEnd(10)} ${api ? '(api) ' : '      '}${url}`);
-    if (result !== 'active') console.log(`           ${reason}`);
+    if (!json) {
+      console.log(`${icon} ${result.padEnd(10)} ${api ? '(api) ' : '      '}${url}`);
+      if (result !== 'active') console.log(`           ${reason}`);
+    }
+    results.push({ url, result, reason: reason || null, via: api ? 'api' : 'browser' });
     if (result === 'active') active++;
     else if (result === 'expired') expired++;
     else uncertain++;
@@ -105,11 +111,26 @@ async function main() {
   if (headed) await headed.close();
   if (browser) await browser.close();
 
-  console.log(`\nResults: ${active} active  ${expired} expired  ${uncertain} uncertain  (${viaApi} via API, no browser)`);
+  if (json) {
+    console.log(JSON.stringify({
+      status: 'completed',
+      active,
+      expired,
+      uncertain,
+      via_api: viaApi,
+      results,
+    }));
+  } else {
+    console.log(`\nResults: ${active} active  ${expired} expired  ${uncertain} uncertain  (${viaApi} via API, no browser)`);
+  }
   if (expired > 0 || uncertain > 0) process.exit(1);
 }
 
 main().catch(err => {
-  console.error('Fatal:', err.message);
+  if (process.argv.includes('--json')) {
+    console.log(JSON.stringify({ status: 'failed', error: err.message }));
+  } else {
+    console.error('Fatal:', err.message);
+  }
   process.exit(1);
 });

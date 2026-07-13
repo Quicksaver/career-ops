@@ -29,7 +29,9 @@ STATE_LOCK_TIMEOUT_SECONDS=30
 MAIN_PID="${BASHPID:-$$}"
 
 # Defaults
-PARALLEL=1
+PARALLEL=""
+PARALLEL_EXPLICIT=false
+PARALLEL_SOURCE=""
 DRY_RUN=false
 RETRY_FAILED=false
 RESUME_PAUSED=false
@@ -37,7 +39,8 @@ START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
 SKIP_PDF=false
-MODEL=""  # explicit override; otherwise Claude resolves from spend_tier
+MODEL=""  # explicit override; otherwise Claude uses spend_tier and Codex uses global config
+REASONING_EFFORT=""  # Codex-only explicit override; otherwise Codex global config applies
 CLI="${CAREER_OPS_BATCH_CLI:-claude}"
 LIMIT=0
 WORKER_TIMEOUT_SECONDS="${CAREER_OPS_WORKER_TIMEOUT_SECONDS:-900}"
@@ -63,7 +66,7 @@ Usage: batch-runner.sh [OPTIONS]
 
 Options:
   --user ID           Required. User folder under users/ID
-  --parallel N         Number of parallel workers (default: 1)
+  --parallel N         Worker-count override (profile batch.parallel, then 1)
   --dry-run            Show what would be processed, don't execute
   --retry-failed       Only retry offers marked as "failed" in state
   --resume-paused      Resume offers paused by a Claude session/rate limit
@@ -78,9 +81,10 @@ Options:
   --skip-pdf           Skip PDF generation entirely (write ❌ in tracker PDF column)
   --rate-limit-sleep N Seconds to wait before retrying a rate-limited worker
                        (default: 300)
-  --model NAME         Override the tier-resolved Claude model passed to
-                       `claude -p --model` (otherwise uses config/profile.yml
-                       spend_tier: economy/standard/premium; default standard)
+  --model NAME         Explicit worker model for the selected CLI. Without it,
+                       Claude uses spend_tier and Codex uses its global config.
+  --reasoning-effort LEVEL
+                       Codex reasoning effort: minimal, low, medium, high, or xhigh
   --status             Show batch progress and a per-job table, then exit
   --watch              Live-refresh progress until the run completes
   -h, --help           Show this help
@@ -112,7 +116,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --user) USER_ID="$2"; shift 2 ;;
     --user=*) USER_ID="${1#--user=}"; shift ;;
-    --parallel) PARALLEL="$2"; shift 2 ;;
+    --parallel)
+      [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: --parallel requires an argument"; exit 1; }
+      PARALLEL="$2"
+      PARALLEL_EXPLICIT=true
+      shift 2
+      ;;
     --dry-run) DRY_RUN=true; shift ;;
     --retry-failed) RETRY_FAILED=true; shift ;;
     --resume-paused) RESUME_PAUSED=true; shift ;;
@@ -128,13 +137,33 @@ while [[ $# -gt 0 ]]; do
       RATE_LIMIT_SLEEP="$2"
       shift 2
       ;;
-    --model) MODEL="$2"; shift 2 ;;
+    --model)
+      [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: --model requires an argument"; exit 1; }
+      MODEL="$2"
+      shift 2
+      ;;
+    --reasoning-effort)
+      [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: --reasoning-effort requires an argument"; exit 1; }
+      REASONING_EFFORT="$2"
+      shift 2
+      ;;
     --status) STATUS_ONLY=true; shift ;;
     --watch) WATCH_MODE=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
+
+if [[ -n "$REASONING_EFFORT" ]]; then
+  case "$REASONING_EFFORT" in
+    minimal|low|medium|high|xhigh) ;;
+    *) echo "ERROR: --reasoning-effort must be minimal, low, medium, high, or xhigh"; exit 1 ;;
+  esac
+  if [[ "$CLI" != "codex" ]]; then
+    echo "ERROR: --reasoning-effort is only valid with --cli codex"
+    exit 1
+  fi
+fi
 
 validate_user() {
   if [[ -z "$USER_ID" ]]; then
@@ -255,6 +284,37 @@ check_status_prerequisites() {
     echo "No state file found at $STATE_FILE"
     exit 0
   fi
+}
+
+resolve_parallelism() {
+  if [[ "$PARALLEL_EXPLICIT" == "true" ]]; then
+    if [[ ! "$PARALLEL" =~ ^[0-9]+$ ]] || (( PARALLEL < 1 || PARALLEL > 32 )); then
+      echo "ERROR: --parallel must be an integer from 1 to 32" >&2
+      exit 1
+    fi
+    PARALLEL_SOURCE="argument"
+    return
+  fi
+
+  # Preserve the script's standalone/default behavior in minimal fixtures and
+  # partial installations that have no batch configuration to resolve.
+  if [[ ! -f "$PROFILE_FILE" ]] ||
+      ! awk '/^batch[[:space:]]*:/ { found=1 } END { exit(found ? 0 : 1) }' "$PROFILE_FILE"; then
+    PARALLEL=1
+    PARALLEL_SOURCE="default"
+    return
+  fi
+
+  if [[ ! -f "$PROJECT_DIR/resolve-parallel.mjs" ]]; then
+    echo "ERROR: $PROJECT_DIR/resolve-parallel.mjs is required when profile batch settings are present." >&2
+    exit 1
+  fi
+  local resolution
+  if ! resolution=$(node "$PROJECT_DIR/resolve-parallel.mjs" --profile "$PROFILE_FILE"); then
+    echo "ERROR: Could not resolve batch parallelism." >&2
+    exit 1
+  fi
+  IFS=$'\t' read -r PARALLEL PARALLEL_SOURCE <<< "$resolution"
 }
 
 # Initialize state file if it doesn't exist
@@ -507,7 +567,7 @@ spend_tier_to_model() {
   esac
 }
 
-# Resolve the model to pass to `claude -p --model`. --model always wins.
+# Resolve the worker model. --model always wins.
 resolve_worker_model() {
   if [[ -n "$MODEL" ]]; then
     RESOLVED_MODEL="$MODEL"
@@ -858,6 +918,9 @@ process_offer() {
     if [[ -n "$RESOLVED_MODEL" ]]; then
       worker_args+=(--model "$RESOLVED_MODEL")
     fi
+    if [[ -n "$REASONING_EFFORT" ]]; then
+      worker_args+=(-c "model_reasoning_effort=\"$REASONING_EFFORT\"")
+    fi
     worker_args+=(-)
   fi
 
@@ -1179,6 +1242,8 @@ main() {
 
   check_prerequisites
 
+  resolve_parallelism
+
   resolve_worker_model
 
   if [[ "$DRY_RUN" == "false" ]]; then
@@ -1204,9 +1269,9 @@ main() {
   echo "=== career-ops batch runner ==="
   echo "User: $USER_ID"
   if (( LIMIT > 0 )); then
-    echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES | Limit: $LIMIT"
+    echo "Parallel: $PARALLEL ($PARALLEL_SOURCE) | Max retries: $MAX_RETRIES | Limit: $LIMIT"
   else
-    echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
+    echo "Parallel: $PARALLEL ($PARALLEL_SOURCE) | Max retries: $MAX_RETRIES"
   fi
   echo "CLI: $CLI | Worker timeout: ${WORKER_TIMEOUT_SECONDS}s"
   if [[ "$RESOLVED_SPEND_TIER" == "override" ]]; then
@@ -1215,6 +1280,13 @@ main() {
     echo "Model: $RESOLVED_MODEL (spend_tier=${RESOLVED_SPEND_TIER})"
   else
     echo "Model: CLI default (spend_tier=${RESOLVED_SPEND_TIER}; no hardcoded $CLI mapping)"
+  fi
+  if [[ "$CLI" == "codex" ]]; then
+    if [[ -n "$REASONING_EFFORT" ]]; then
+      echo "Reasoning effort: $REASONING_EFFORT (explicit override)"
+    else
+      echo "Reasoning effort: Codex global default"
+    fi
   fi
   echo "Input: $total_input offers"
   echo ""

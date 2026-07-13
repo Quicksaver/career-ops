@@ -38,6 +38,8 @@ try {
   printUserContextErrorAndExit(err);
 }
 
+const JSON_OUTPUT = userContext.args.includes('--json');
+
 const APPS_FILE = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
 const TRACKER_DIR = dirname(APPS_FILE);
 const TRACKER_ROOT = userContext.userRoot || (basename(TRACKER_DIR) === 'data' ? dirname(TRACKER_DIR) : TRACKER_DIR);
@@ -81,13 +83,41 @@ const ALIASES = {
 
 let errors = 0;
 let warnings = 0;
+const errorFindings = [];
+const warningFindings = [];
 
-function error(msg) { console.log(`❌ ${msg}`); errors++; }
-function warn(msg) { console.log(`⚠️  ${msg}`); warnings++; }
-function ok(msg) { console.log(`✅ ${msg}`); }
+function finding(level, code, id, message, details = {}) {
+  const item = { id, code, message, details };
+  if (level === 'error') {
+    errors++;
+    errorFindings.push(item);
+    if (!JSON_OUTPUT) console.log(`❌ ${message}`);
+  } else {
+    warnings++;
+    warningFindings.push(item);
+    if (!JSON_OUTPUT) console.log(`⚠️  ${message}`);
+  }
+}
+function error(message, code = 'integrity_error', id = code, details = {}) {
+  finding('error', code, id, message, details);
+}
+function warn(message, code = 'integrity_warning', id = code, details = {}) {
+  finding('warning', code, id, message, details);
+}
+function ok(msg) { if (!JSON_OUTPUT) console.log(`✅ ${msg}`); }
 
 // --- Read applications.md ---
 if (!existsSync(APPS_FILE)) {
+  if (JSON_OUTPUT) {
+    console.log(JSON.stringify({
+      schema_version: 1,
+      status: 'clean',
+      errors: [],
+      warnings: [],
+      counts: { entries: 0, errors: 0, warnings: 0 },
+    }));
+    process.exit(0);
+  }
   console.log('\n📊 No applications.md found. This is normal for a fresh setup.');
   console.log('   The file will be created when you evaluate your first offer.\n');
   process.exit(0);
@@ -142,7 +172,9 @@ for (const line of lines) {
   });
 }
 
-console.log(`\n📊 Checking ${entries.length} entries in applications.md${userContext.userId ? ` for user "${userContext.userId}"` : ''}\n`);
+if (!JSON_OUTPUT) {
+  console.log(`\n📊 Checking ${entries.length} entries in applications.md${userContext.userId ? ` for user "${userContext.userId}"` : ''}\n`);
+}
 
 // --- Check 1: Canonical statuses ---
 let badStatuses = 0;
@@ -152,19 +184,19 @@ for (const e of entries) {
   const statusOnly = clean.replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
 
   if (!CANONICAL_STATUSES.includes(statusOnly) && !ALIASES[statusOnly]) {
-    error(`#${e.num}: Non-canonical status "${e.status}"`);
+    error(`#${e.num}: Non-canonical status "${e.status}"`, 'noncanonical_status', `noncanonical-status:${e.num}`, { tracker_num: e.num, status: e.status });
     badStatuses++;
   }
 
   // Check for markdown bold in status
   if (e.status.includes('**')) {
-    error(`#${e.num}: Status contains markdown bold: "${e.status}"`);
+    error(`#${e.num}: Status contains markdown bold: "${e.status}"`, 'bold_status', `bold-status:${e.num}`, { tracker_num: e.num, status: e.status });
     badStatuses++;
   }
 
   // Check for dates in status
   if (/\d{4}-\d{2}-\d{2}/.test(e.status)) {
-    error(`#${e.num}: Status contains date: "${e.status}" — dates go in date column`);
+    error(`#${e.num}: Status contains date: "${e.status}" — dates go in date column`, 'dated_status', `dated-status:${e.num}`, { tracker_num: e.num, status: e.status });
     badStatuses++;
   }
 }
@@ -181,7 +213,26 @@ for (const e of entries) {
 }
 for (const [key, group] of companyRoleMap) {
   if (group.length > 1) {
-    warn(`Possible duplicates: ${group.map(e => `#${e.num}`).join(', ')} (${group[0].company} — ${group[0].role})`);
+    const nums = group.map(e => e.num).sort((a, b) => a - b);
+    warn(
+      `Possible duplicates: ${group.map(e => `#${e.num}`).join(', ')} (${group[0].company} — ${group[0].role})`,
+      'possible_duplicate_tracker',
+      `possible-duplicate-tracker:${nums.join(':')}`,
+      {
+        tracker_nums: nums,
+        entries: group.map(e => ({
+          tracker_num: e.num,
+          date: e.date,
+          company: e.company,
+          role: e.role,
+          via: e.via,
+          score: e.score,
+          status: e.status,
+          report: e.report,
+          notes: e.notes,
+        })),
+      },
+    );
     dupes++;
   }
 }
@@ -198,7 +249,7 @@ for (const e of entries) {
   if (!match) continue;
   const link = match[1];
   if (!existsSync(join(TRACKER_DIR, link)) && !existsSync(join(TRACKER_ROOT, link))) {
-    error(`#${e.num}: Report not found: ${link}`);
+    error(`#${e.num}: Report not found: ${link}`, 'broken_report_link', `broken-report-link:${e.num}`, { tracker_num: e.num, report_link: link });
     brokenReports++;
   }
 }
@@ -209,7 +260,7 @@ let badScores = 0;
 for (const e of entries) {
   const s = e.score.replace(/\*\*/g, '').trim();
   if (!/^\d+\.?\d*\/5$/.test(s) && s !== 'N/A' && s !== 'DUP') {
-    error(`#${e.num}: Invalid score format: "${e.score}"`);
+    error(`#${e.num}: Invalid score format: "${e.score}"`, 'invalid_score', `invalid-score:${e.num}`, { tracker_num: e.num, score: e.score });
     badScores++;
   }
 }
@@ -222,7 +273,7 @@ for (const line of lines) {
   if (line.includes('---') || line.includes('Empresa')) continue;
   const parts = line.split('|');
   if (parts.length <= MAX_IDX) {
-    error(`Row with too few columns (need ${MAX_IDX} data cols): ${line.substring(0, 80)}...`);
+    error(`Row with too few columns (need ${MAX_IDX} data cols): ${line.substring(0, 80)}...`, 'malformed_tracker_row', `malformed-tracker-row:${badRows + 1}`, { row: line });
     badRows++;
   }
 }
@@ -234,7 +285,12 @@ if (existsSync(ADDITIONS_DIR)) {
   const files = readdirSync(ADDITIONS_DIR).filter(f => f.endsWith('.tsv'));
   pendingTsvs = files.length;
   if (pendingTsvs > 0) {
-    warn(`${pendingTsvs} pending TSVs in tracker-additions/ (not merged)`);
+    warn(
+      `${pendingTsvs} pending TSVs in tracker-additions/ (not merged)`,
+      'pending_tracker_additions',
+      'pending-tracker-additions',
+      { files: files.sort().map(name => `batch/tracker-additions/${name}`) },
+    );
   }
 }
 if (pendingTsvs === 0) ok('No pending TSVs');
@@ -243,7 +299,7 @@ if (pendingTsvs === 0) ok('No pending TSVs');
 let boldScores = 0;
 for (const e of entries) {
   if (e.score.includes('**')) {
-    warn(`#${e.num}: Score has markdown bold: "${e.score}"`);
+    warn(`#${e.num}: Score has markdown bold: "${e.score}"`, 'bold_score', `bold-score:${e.num}`, { tracker_num: e.num, score: e.score });
     boldScores++;
   }
 }
@@ -265,7 +321,7 @@ if (existsSync(REPORTS_DIR)) {
       const { mtimeMs } = statSync(full);
       if (now - mtimeMs > SENTINEL_MAX_AGE_MS) {
         unlinkSync(full);
-        warn(`Removed stale reservation sentinel: ${name}`);
+        warn(`Removed stale reservation sentinel: ${name}`, 'stale_reservation_removed', `stale-reservation-removed:${name}`, { file: `reports/${name}`, resolved: true });
         staleSentinels++;
       }
     } catch {
@@ -323,7 +379,13 @@ for (const name of reportFiles) {
 }
 for (const group of reportsByRole.values()) {
   if (group.length > 1) {
-    warn(`Duplicate reports for same company+role: ${group.join(', ')}`);
+    const sorted = [...group].sort();
+    warn(
+      `Duplicate reports for same company+role: ${group.join(', ')}`,
+      'duplicate_reports_same_role',
+      `duplicate-reports:${sorted.join(':')}`,
+      { files: sorted.map(name => `reports/${name}`) },
+    );
     dupReports++;
   }
 }
@@ -349,7 +411,7 @@ let orphanReports = 0;
 for (const name of reportFiles) {
   const num = parseInt(name.match(REPORT_FILE_RE)[1], 10);
   if (!referencedNums.has(num)) {
-    warn(`Orphan report — no tracker row references #${num}: reports/${name}`);
+    warn(`Orphan report — no tracker row references #${num}: reports/${name}`, 'orphan_report', `orphan-report:${name}`, { report_num: num, file: `reports/${name}` });
     orphanReports++;
   }
 }
@@ -367,15 +429,15 @@ for (const e of entries) {
   const via = String(e.via || '').trim();
   if (company === '?') {
     if (COLMAP.via == null) {
-      warn(`#${e.num}: unknown employer (?) but the tracker has no Via column — add it with: node merge-tracker.mjs --migrate-via`);
+      warn(`#${e.num}: unknown employer (?) but the tracker has no Via column — add it with: node merge-tracker.mjs --migrate-via`, 'missing_via_column', `missing-via-column:${e.num}`, { tracker_num: e.num });
       viaIssues++;
     } else if (!via || via === '—') {
-      error(`#${e.num}: unknown employer (?) with no Via channel — record the agency/recruiter firm`);
+      error(`#${e.num}: unknown employer (?) with no Via channel — record the agency/recruiter firm`, 'missing_via_value', `missing-via-value:${e.num}`, { tracker_num: e.num });
       viaIssues++;
     }
   }
   if (CONFIDENTIAL_WORD_RE.test(company)) {
-    warn(`#${e.num}: company "${company}" looks like a confidentiality placeholder — use the structural marker ? (locale-invariant, can't collide with a real firm)`);
+    warn(`#${e.num}: company "${company}" looks like a confidentiality placeholder — use the structural marker ? (locale-invariant, can't collide with a real firm)`, 'confidential_company_placeholder', `confidential-company-placeholder:${e.num}`, { tracker_num: e.num, company });
     viaIssues++;
   }
 }
@@ -398,7 +460,13 @@ for (const e of entries) {
 for (const [key, vias] of channelsByRole) {
   if (vias.size > 1) {
     const list = [...vias.values()];
-    warn(`Cross-channel duplicate — ${key.replace('::', ' / ')} reached via ${list.map(v => v.raw).join(' AND ')} (rows ${list.map(v => `#${v.num}`).join(', ')}) — double-submission risk, resolve by hand`);
+    const nums = list.map(v => v.num).sort((a, b) => a - b);
+    warn(
+      `Cross-channel duplicate — ${key.replace('::', ' / ')} reached via ${list.map(v => v.raw).join(' AND ')} (rows ${list.map(v => `#${v.num}`).join(', ')}) — double-submission risk, resolve by hand`,
+      'cross_channel_duplicate_risk',
+      `cross-channel-duplicate:${nums.join(':')}`,
+      { tracker_nums: nums, channels: list.map(v => ({ tracker_num: v.num, via: v.raw })) },
+    );
     viaIssues++;
   }
 }
@@ -422,21 +490,31 @@ for (const e of entries) {
 let dupeNums = 0;
 for (const [num, group] of numGroups) {
   if (group.length > 1) {
-    error(`Duplicate tracker number #${num} used by ${group.length} rows: ${group.map(e => `${e.company} — ${e.role}`).join(' | ')}`);
+    error(`Duplicate tracker number #${num} used by ${group.length} rows: ${group.map(e => `${e.company} — ${e.role}`).join(' | ')}`, 'duplicate_tracker_number', `duplicate-tracker-number:${num}`, { tracker_num: num, entries: group.map(e => ({ company: e.company, role: e.role })) });
     dupeNums++;
   }
 }
 if (dupeNums === 0) ok('No duplicate tracker numbers');
 
 // --- Summary ---
-console.log('\n' + '='.repeat(50));
-console.log(`📊 Pipeline Health: ${errors} errors, ${warnings} warnings`);
-if (errors === 0 && warnings === 0) {
-  console.log('🟢 Pipeline is clean!');
-} else if (errors === 0) {
-  console.log('🟡 Pipeline OK with warnings');
+if (JSON_OUTPUT) {
+  console.log(JSON.stringify({
+    schema_version: 1,
+    status: errors > 0 ? 'errors' : warnings > 0 ? 'warnings' : 'clean',
+    errors: errorFindings,
+    warnings: warningFindings,
+    counts: { entries: entries.length, errors, warnings },
+  }));
 } else {
-  console.log('🔴 Pipeline has errors — fix before proceeding');
+  console.log('\n' + '='.repeat(50));
+  console.log(`📊 Pipeline Health: ${errors} errors, ${warnings} warnings`);
+  if (errors === 0 && warnings === 0) {
+    console.log('🟢 Pipeline is clean!');
+  } else if (errors === 0) {
+    console.log('🟡 Pipeline OK with warnings');
+  } else {
+    console.log('🔴 Pipeline has errors — fix before proceeding');
+  }
 }
 
 process.exit(errors > 0 ? 1 : 0);

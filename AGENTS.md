@@ -445,6 +445,29 @@ When spawning headless workers for batch processing, use the appropriate command
 | Antigravity CLI | `agy -p "prompt"` |
 | Grok Build CLI | `grok -p "prompt"` |
 
+For a complete deterministic sourcing cycle under Codex, run
+`./go-runner.mjs --user {USER}`. The coordinator invokes deterministic scripts
+for scan, authenticated scan, liveness, queue synchronization, batch merge,
+reconciliation, and verification. It invokes schema-constrained one-off Codex
+workers for `scan-handoff`, where browser/WebSearch judgment remains necessary,
+and final warning triage when deterministic verification reports warnings.
+Batch evaluation keeps its existing one-worker-per-job JSON contract. Warning
+triage is read-only; only confirmed duplicate tracker/report groups can be
+changed, through `resolve-verify-warnings.mjs`, followed by deterministic
+re-verification. All other findings remain user warnings and may set
+`needs_human_review` according to their severity or impact.
+
+`go-runner.mjs` resolves Codex model and reasoning independently in this order:
+`--codex-model` / `--codex-reasoning-effort`, then `codex.model` /
+`codex.reasoning_effort` in `users/{USER}/config/profile.yml`, then Codex global
+defaults. It passes resolved argument/profile values to scan-handoff, warning
+triage, and every Codex batch worker.
+
+`--parallel` is optional for `go-runner.mjs` and `batch/batch-runner.sh`.
+Resolve it as the explicit argument, then `batch.parallel` in
+`users/{USER}/config/profile.yml`, then the system default `1`. The go runner
+passes the resolved value explicitly to its batch-runner invocation.
+
 **Parallel fan-outs — reserve report numbers first.** When orchestrating N parallel evaluators (headless workers, subagents, or multiple agent windows), reserve the report-number range before spawning: `node reserve-report-num.mjs --count N` prints e.g. `042-049`; hand each worker its own number. Each slot claim is individually atomic; the contiguous range is an ergonomic allocation, not an all-or-nothing transaction — on collision the partially claimed slots are released and the reservation restarts past the collision. Release with `node reserve-report-num.mjs --release 042-049` when done (stale sentinels are GC'd after 4h, so reserve right before spawning; collision restarts leave permanent — harmless — gaps in the sequence). Never let parallel workers compute `max+1` themselves — that is the #749 race.
 
 ## Stack and Conventions

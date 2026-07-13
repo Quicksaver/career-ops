@@ -360,15 +360,23 @@ Future merge notes:
 
 The fork makes the batch runner usable with Codex as well as Claude, and adds smaller resumable processing controls for long pipeline runs.
 
-File:
+Files:
 
 - `batch/batch-runner.sh`
 - `batch/batch-output-schema.json`
+- `resolve-parallel.mjs`
+- `lib/parallel-config.mjs`
+- `batch/README.md`
+- `config/profile.example.yml`
 
 What this customizes:
 
 - Replaces the Claude-only worker assumption with a generic headless worker setting.
 - Adds `--cli claude|codex`, defaulting to `claude`, and supports `CAREER_OPS_BATCH_CLI` so local runs can select Codex without editing the script.
+- Makes `--parallel` optional and resolves worker count as explicit argument,
+  then `users/{USER}/config/profile.yml` `batch.parallel`, then system default
+  `1`. Values outside `1-32` fail closed, and the startup summary records the
+  resolved source.
 - Keeps Claude behavior on `claude -p --dangerously-skip-permissions --append-system-prompt-file ...`.
 - Adds Codex behavior through `codex exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR"`, passing the combined resolved prompt through stdin rather than a huge argv string.
 - Requires Codex workers to write their final message through `--output-last-message` and validate it against `batch/batch-output-schema.json`.
@@ -386,7 +394,15 @@ What this customizes:
 - Preserves upstream session/rate-limit handling: Claude workers can pause a batch with `paused_rate_limit`, resume through `--resume-paused`, and avoid consuming retry budget when a session/rate limit is detected.
 - Preserves upstream Claude MCP isolation through `--strict-mcp-config`, while keeping Codex execution separate through the fork's schema-checked final JSON flow.
 - Injects `users/{USER}/modes/_profile.md` and `users/{USER}/config/profile.yml` into the temporary resolved worker prompt so batch scoring uses the same user-layer personalization as interactive scoring.
-- Preserves upstream `spend_tier` routing for Claude workers, but reads the tier from `users/{USER}/config/profile.yml`; Codex deliberately keeps its configured CLI model unless `--model` is explicit.
+- Preserves upstream `spend_tier` routing for Claude workers, but reads the tier from `users/{USER}/config/profile.yml`; direct Codex batch runs deliberately keep the Codex global model unless `--model` is explicit.
+- Treats `--model` as an explicit override for either worker CLI and adds the
+  Codex-only `--reasoning-effort minimal|low|medium|high|xhigh` override, which
+  is forwarded to every Codex batch worker as `model_reasoning_effort`.
+- Keeps direct batch invocation semantics distinct from go-runner resolution:
+  without explicit `--model` or `--reasoning-effort`, direct Codex batches use
+  Codex global defaults. `go-runner.mjs` resolves its argument/profile/global
+  hierarchy first and passes any resolved non-global values into the batch
+  invocation explicitly.
 - Preserves upstream pre-screen discards and their audit records under `users/{USER}/batch/logs/discard.log`; sourced helper tests fall back to the fixture-local batch directory without weakening runtime user routing.
 - Injects `users/{USER}/modes/_custom.md` after the profile context and keeps the batch CV fact gate/output command on the same `{{USER_ROOT}}/output/{REPORT_NUM}-...` artifact path.
 
@@ -404,6 +420,12 @@ Future merge notes:
 - Preserve the active-user requirement for `--status` and `--watch`; upstream root-batch fixtures need `CAREER_OPS_USERS_DIR` plus `--user test` in this fork.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 - Preserve upstream rate-limit pause semantics and Claude MCP isolation. If the worker command code is refactored again, test that `paused_rate_limit` does not consume retry budget and Claude workers still include `--strict-mcp-config`.
+- Preserve optional parallel resolution as argument, profile `batch.parallel`,
+  then `1`, including the `1-32` validation and logged source. Do not restore a
+  shell-level default that masks the profile value.
+- Preserve Codex `--reasoning-effort` validation and forwarding alongside the
+  existing model override; go-runner relies on both flags to carry its resolved
+  profile values into every batch worker.
 - If post-batch pipeline reconciliation is refactored, make sure the reconciler receives the user-scoped state, pipeline, and reports paths together; otherwise it can look for report files in the wrong reports directory.
 
 ## Custom Provider Layer
@@ -869,14 +891,102 @@ What this customizes:
 - Requires every delegated pipeline prompt to carry `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, an atomically reserved report number, and the loaded shared/profile/custom/pipeline instructions. The prompt states that all user-layer relative paths resolve inside `USER_ROOT`.
 - Keeps each role's extraction, evaluation, and bounded company/compensation research within the agent assigned to that role, preserving one-role-per-worker scope.
 - Starts one `batch/batch-runner.sh` invocation at a time directly from the root agent. Configured `--parallel N` workers remain bounded internal concurrency managed by that single root-owned runner.
+- Resolves optional batch concurrency consistently for both go and direct batch
+  execution: explicit `--parallel`, then active-user `batch.parallel`, then `1`.
+  The go coordinator records the effective value and source in its final JSON.
 - Adds `test-all.mjs` assertions for the cross-file supervision contract in `AGENTS.md`, the career-ops skill, pipeline mode, and batch mode.
 
 Future merge notes:
 
 - Preserve quiet polling together with terminal supervision; an equivalent upstream policy must cover process and persisted-state checks, safe recovery, reconciliation, verification, and terminal count reporting.
 - Preserve the execution split: root-owned serial scan/auth/apply/small-pipeline work, one-worker-per-URL fan-out for direct pipelines with three or more surviving URLs, and one root-owned batch-runner invocation with script-managed internal parallelism.
+- `go-runner.mjs` and `batch/batch-runner.sh` resolve optional parallelism deterministically as explicit `--parallel`, then the active user's `config/profile.yml` `batch.parallel`, then system default `1`. The go summary records both the resolved value and its source.
 - Keep delegated worker prompts explicit about `ACTIVE_USER`, `USER_ROOT`, user-layer path resolution, one assigned URL, and atomically reserved report numbers.
 - Keep the supervision assertions synchronized with wording changes across instructions and mode files.
+
+## Deterministic `go` Runner
+
+Files:
+
+- `go-runner.mjs`
+- `resolve-parallel.mjs`
+- `resolve-verify-warnings.mjs`
+- `check-liveness.mjs`
+- `pipeline-liveness.mjs`
+- `sync-pipeline-batch.mjs`
+- `verify-pipeline.mjs`
+- `batch/batch-runner.sh`
+- `lib/codex-config.mjs`
+- `lib/parallel-config.mjs`
+- `lib/pipeline-queue.mjs`
+- `schemas/go-handoff-output.schema.json`
+- `schemas/go-warning-triage-output.schema.json`
+- `tests/workflows/go-runner.test.mjs`
+- `package.json`
+- `update-system.mjs`
+- `config/profile.example.yml`
+- `DATA_CONTRACT.md`
+- `docs/SCRIPTS.md`
+- `batch/README.md`
+- `AGENTS.md`
+- `.agents/skills/career-ops/SKILL.md`
+- `modes/go.md`
+- `modes/batch.md`
+
+What this customizes:
+
+- Adds an executable, user-scoped coordinator for the complete conditional `go`
+  sequence: doctor, scan, schema-constrained handoff when the latest scan has
+  items, LinkedIn unless explicitly skipped, and pipeline/batch processing only
+  when the sourcing phases increased the pending count.
+- Keeps scan, LinkedIn scan, liveness, queue synchronization, batch execution,
+  tracker merge, reconciliation, and verification deterministic and directly
+  script-driven.
+- Uses schema-constrained Codex invocations for the browser/WebSearch handoff
+  phase and read-only final warning triage. Handoff additions are cross-checked
+  against persisted pending counts. Warning triage is deterministically chunked
+  at 50 findings per one-off call and its aggregate contract is validated before
+  any repair is considered.
+- Adds structured verifier warning IDs/evidence. Only confirmed duplicate
+  tracker/report groups can produce a repair plan; a deterministic resolver
+  validates the exact candidates, merges tracker history, archives marked
+  duplicate reports/output artifacts, records a user-layer audit ledger, and
+  re-verifies. Repairs are backed up under the user root and recorded in
+  `data/duplicate-resolutions.jsonl`. Every non-duplication finding remains a
+  user warning; high-impact or ambiguous findings can set
+  `needs_human_review`, which keeps the final run status partial.
+- Adds an idempotent `pipeline.md` to `batch-input.tsv` synchronizer with stable
+  IDs so the resumable batch runner cannot silently miss newly scanned jobs.
+- Adds JSON output to `check-liveness.mjs` plus a deterministic pipeline wrapper
+  that moves only confirmed-expired rows and uses `set-status.mjs` for any
+  matching tracker row.
+- Serializes concurrent `go` runs with a per-user PID lock, owns child process
+  groups for stop handling, writes phase logs under the user root, and emits one
+  final JSON summary. A run is complete only when the pending queue is empty and
+  no warning requires human review; otherwise it reports partial, while setup or
+  authenticated-login requirements report blocked.
+- Registers the runner, helpers, shared library, tests, and JSON schema in the
+  updater-managed system layer so updates do not leave a partial coordinator.
+- Resolves Codex model and reasoning independently as runner argument, active
+  user `profile.yml`, then global Codex default, and forwards resolved
+  non-global values to handoff, warning triage, and every batch Codex worker.
+- Resolves parallelism independently as runner argument, active-user
+  `batch.parallel`, then `1`, records `parallel` and `parallel_source`, and passes
+  the resolved value explicitly to the batch runner.
+
+Future merge notes:
+
+- Preserve the strict handoff output schema and observed-state cross-check; do
+  not make agent prose a control signal.
+- Preserve the duplicate-only mutation boundary: orphan reports, submission
+  risks, and other warning classifications must never become automatic actions.
+- Preserve warning chunking, severity/impact-based `needs_human_review`, and the
+  completed-versus-partial final status contract; warning volume must not make a
+  single unconstrained prompt or silently downgrade review requirements.
+- Preserve stable batch IDs and append-only synchronization because
+  `batch-state.tsv` references those IDs across retries and resumes.
+- Keep `verify-pipeline.mjs --json` finding IDs, codes, and evidence stable
+  enough for schema-constrained triage and deterministic candidate validation.
 
 ## Local Maintenance Skill
 
@@ -985,6 +1095,13 @@ On every upstream update, explicitly check whether upstream now includes:
 - Dashboard listing-date parsing/display.
 - Batch runner support for both Claude and Codex workers.
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
+- Optional profile-driven batch parallelism with argument ->
+  `batch.parallel` -> `1` precedence and bounded validation.
+- Codex model/reasoning argument -> profile -> global resolution across every
+  Codex call owned by the deterministic go coordinator.
+- Deterministic `go-runner.mjs` orchestration with strict handoff/final-triage
+  schemas, stable queue synchronization, structured verification, duplicate-only
+  repair, and human-review-preserving final status.
 - Bounded batch runs through `--limit` are now upstream baseline; preserve only the fork-specific user-scoped/Codex integration around the flag.
 - Batch status/watch progress monitoring through user-scoped batch state.
 - User-scoped `spend_tier`, pre-screen discard logs, CV fact validation, salary/funnel/stats/upskill analytics, reply matching, invite matching, and canonical status updates.

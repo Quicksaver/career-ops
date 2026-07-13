@@ -8,8 +8,11 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 
 | Command | Script | Purpose |
 |---------|--------|---------|
+| `npm run go -- --user {USER}` | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator with JSON output |
+| `node resolve-parallel.mjs --profile users/{USER}/config/profile.yml --json` | `resolve-parallel.mjs` | Resolve argument/profile/default batch parallelism |
 | `npm run doctor` | `doctor.mjs` | Validate setup prerequisites |
 | `npm run verify` | `verify-pipeline.mjs` | Check pipeline data integrity |
+| `node resolve-verify-warnings.mjs` | `resolve-verify-warnings.mjs` | Apply schema-validated duplicate-only warning resolutions |
 | `npm run normalize` | `normalize-statuses.mjs` | Fix non-canonical statuses |
 | `npm run dedup` | `dedup-tracker.mjs` | Remove duplicate tracker entries |
 | `npm run merge` | `merge-tracker.mjs` | Merge batch TSVs into applications.md |
@@ -25,6 +28,8 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run update` | `update-system.mjs apply` | Apply upstream update |
 | `npm run rollback` | `update-system.mjs rollback` | Rollback last update |
 | `npm run liveness` | `check-liveness.mjs` | Test if job URLs are still active |
+| `npm run pipeline:liveness -- --user {USER}` | `pipeline-liveness.mjs` | Bulk-check Pending URLs and move confirmed expired rows |
+| `npm run pipeline:sync-batch -- --user {USER}` | `sync-pipeline-batch.mjs` | Idempotently append live Pending rows to the resumable batch input |
 | `npm run extract` | `browser-extract.mjs` | Headless read-only page extractor (opt-in `scan.extractor: cli`) — compact JSON for scan/JD |
 | `npm run scan` | `scan.mjs` | Zero-token portal scanner |
 | `npm run scan:full` | `scan-ats-full.mjs` | Reverse ATS discovery scanner |
@@ -46,14 +51,52 @@ npm run doctor -- --user <username>
 
 **Exit codes:** `0` all checks passed, `1` one or more checks failed (fix messages printed).
 
+## go
+
+Runs the deterministic sourcing coordinator:
+
+```bash
+npm run go -- --user <username> --batch-cli codex
+```
+
+Optional Codex overrides apply to every Codex CLI call made by the run:
+
+```bash
+npm run go -- --user <username> \
+  --codex-model gpt-5.3-codex \
+  --codex-reasoning-effort high
+```
+
+Each setting resolves independently as command argument, then
+`users/{USER}/config/profile.yml` under `codex.model` or
+`codex.reasoning_effort`, then the global Codex configuration. Global fallback
+is implemented by omitting the corresponding CLI override.
+
+Batch parallelism resolves as an explicit `--parallel N` override, then
+`batch.parallel` in `users/{USER}/config/profile.yml`, then the system default
+of `1`. The resolved value and its source are included as `parallel` and
+`parallel_source` in the final JSON summary. The same hierarchy applies when
+`batch/batch-runner.sh` is invoked directly.
+
+After deterministic verification, `go-runner.mjs` invokes one read-only,
+schema-constrained Codex warning-triage worker only when warnings exist. The
+worker classifies every warning and may confirm duplicate tracker entries or
+same-role duplicate reports. `resolve-verify-warnings.mjs` validates those
+candidate sets, merges/archives only the confirmed duplicates, records an
+append-only `data/duplicate-resolutions.jsonl` audit entry, and reruns
+verification. Orphan reports, submission risks, Via issues, formatting issues,
+and all other warning types are never auto-remediated; they remain in the final
+JSON with `needs_human_review` determined from severity and impact.
+
 ---
 
 ## verify
 
-Health check for pipeline data integrity. Validates `users/{USER}/data/applications.md` against nine rules: canonical statuses (per `templates/states.yml`), no duplicate company+role pairs, all report links point to existing files, scores match `X.XX/5` / `N/A` / `DUP`, rows have proper pipe-delimited format, no pending TSVs in `users/{USER}/batch/tracker-additions/`, no markdown bold in scores, no two `users/{USER}/reports/*.md` files covering the same company+role, and no orphan reports without a tracker row (#1425). The report checks are warning-level: duplicate reports can be legitimate (re-evaluation after a JD change), so they never fail the run.
+Health check for pipeline data integrity. Validates twelve areas: canonical statuses, duplicate company+role pairs, report links, score format, row structure, pending tracker-addition TSVs, bold scores, stale report reservations, same-role duplicate reports, orphan reports, Via/channel consistency, and unique tracker numbers. Ambiguous duplicate/report/channel findings remain warning-level because legitimate re-evaluations and distinct submissions can look alike.
 
 ```bash
 npm run verify -- --user <username>
+npm run verify -- --user <username> --json   # structured finding IDs, codes, and evidence
 ```
 
 **Exit codes:** `0` pipeline clean (zero errors), `1` errors found. Warnings (e.g. possible duplicates) do not cause a non-zero exit.

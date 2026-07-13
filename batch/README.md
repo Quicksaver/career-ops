@@ -30,7 +30,7 @@ Process multiple job offers in parallel via headless workers. Each worker runs t
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--parallel N` | `1` | Number of concurrent headless workers |
+| `--parallel N` | `batch.parallel`, then `1` | Number of concurrent headless workers; explicit flag wins |
 | `--dry-run` | off | Preview pending offers without processing |
 | `--retry-failed` | off | Only retry offers marked as `failed` in state |
 | `--resume-paused` | off | Resume offers paused after a Claude session/rate limit |
@@ -38,6 +38,7 @@ Process multiple job offers in parallel via headless workers. Each worker runs t
 | `--limit N` | `0` | Max number of offers to process in this run (0 = no limit) |
 | `--max-retries N` | `2` | Max retry attempts per offer before giving up |
 | `--rate-limit-sleep N` | `300` | Seconds to wait before retrying a transient rate-limited worker; use `0` to pause the batch immediately |
+| `--reasoning-effort LEVEL` | Codex global default | Codex-only reasoning override: `minimal`, `low`, `medium`, `high`, or `xhigh` |
 
 ## Directory Layout
 
