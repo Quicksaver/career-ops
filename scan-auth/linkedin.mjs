@@ -224,8 +224,9 @@ export default class LinkedInScanner {
     // Single page for all searches — avoids Playwright stealing window focus
     const page = await context.newPage();
 
-    for (const search of toRun) {
-      log(`\n── Search: ${search.name} ──`);
+    for (const [searchIndex, search] of toRun.entries()) {
+      const searchPrompt = new URL(search.url).searchParams.get('keywords') || search.name;
+      log(`\n── Search ${searchIndex + 1}/${toRun.length}: ${searchPrompt} ──`);
       stats.searched++;
       consecutiveFailures = 0; // reset circuit breaker per search
 

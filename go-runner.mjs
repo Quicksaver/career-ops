@@ -35,11 +35,13 @@ Options:
   --throttle[=MS]       Throttle bulk liveness browser checks
   --no-fallback         Disable headed liveness fallback
   --skip-linkedin       Skip authenticated LinkedIn scan explicitly
+  --quiet               Suppress live phase progress on stderr
   --json                Reserved; final output is always one JSON object
   -h, --help            Show this help
 
-The runner writes detailed phase logs under users/<id>/data/go-runs/ and emits
-exactly one machine-readable JSON summary to stdout.`;
+The runner writes detailed phase logs under users/<id>/data/go-runs/, emits
+live phase progress to stderr, and emits exactly one machine-readable JSON
+summary to stdout.`;
 
 let context;
 try {
@@ -88,10 +90,11 @@ const codexReasoningEffort = optionValue('--codex-reasoning-effort');
 const throttle = rawArgs.find((arg) => arg === '--throttle' || arg.startsWith('--throttle='));
 const noFallback = rawArgs.includes('--no-fallback');
 const skipLinkedIn = rawArgs.includes('--skip-linkedin');
+const quiet = rawArgs.includes('--quiet');
 const valueOptions = new Set([
   '--parallel', '--agent-cli', '--batch-cli', '--codex-model', '--codex-reasoning-effort',
 ]);
-const flagOptions = new Set(['--json', '--no-fallback', '--skip-linkedin', '--throttle']);
+const flagOptions = new Set(['--json', '--no-fallback', '--skip-linkedin', '--quiet', '--throttle']);
 const unknown = [];
 for (let i = 0; i < rawArgs.length; i++) {
   const arg = rawArgs[i];
@@ -189,6 +192,56 @@ function commandTail(chunks, limit = 12000) {
   return joined.length > limit ? joined.slice(-limit) : joined;
 }
 
+function createProgressForwarder(name, predicate) {
+  let buffered = '';
+
+  function emit(line) {
+    const normalized = line.endsWith('\r') ? line.slice(0, -1) : line;
+    if (!normalized.trim()) return;
+    if (predicate !== true && !predicate(normalized)) return;
+    process.stderr.write(`[go:${name}] ${normalized}\n`);
+  }
+
+  return {
+    write(chunk) {
+      buffered += chunk.toString();
+      let newline = buffered.indexOf('\n');
+      while (newline >= 0) {
+        emit(buffered.slice(0, newline));
+        buffered = buffered.slice(newline + 1);
+        newline = buffered.indexOf('\n');
+      }
+    },
+    flush() {
+      if (buffered) emit(buffered);
+      buffered = '';
+    },
+  };
+}
+
+function scanProgressLine(line) {
+  const text = line.trim();
+  return text.startsWith('[scan-progress]') ||
+    /^(Scanning |Portal Scan|Companies scanned:|Job boards scanned:|Total jobs found:|New offers added:|Agent\/WebSearch handoff:|Network errors \(|Errors \(|Results saved to )/.test(text);
+}
+
+function scanAuthProgressLine(line) {
+  const text = line.trim();
+  return /^\[scan-auth\] (Starting|Launching|Checking|Session active|Added|Wrote|WARN:|ERROR:)/.test(text) ||
+    /^\[linkedin\] (── Search|Page |Found |Reached max|Navigating|Waiting|Search .* failed|⚠)/.test(text) ||
+    /^── Search /.test(text) ||
+    /^(LinkedIn Scan Summary|Searches run:|Listings found:|Extracted:|Filtered out:|Already seen:|Viewed skipped:|JDs saved:|Errors:|No new listings found this run\.)/.test(text);
+}
+
+function handoffProgressLine(line) {
+  return line.includes('[handoff-progress]');
+}
+
+function compactProgressValue(value, maxLength = 180) {
+  const text = String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
 async function runCommand(name, command, args, options = {}) {
   if (interruptedSignal) throw new Error(`interrupted by ${interruptedSignal}`);
   const logPath = join(runDir, `${String(phases.length + 1).padStart(2, '0')}-${name}.log`);
@@ -197,11 +250,17 @@ async function runCommand(name, command, args, options = {}) {
   const errorOutput = [];
   const maxStdout = options.maxStdout ?? 24000;
   const stream = createWriteStream(logPath, { flags: 'a' });
+  const progress = quiet || !options.progress
+    ? null
+    : {
+        stdout: createProgressForwarder(name, options.progress),
+        stderr: createProgressForwarder(name, options.progress),
+      };
   const started = new Date().toISOString();
   log(`${name} started`);
   const child = spawn(command, args, {
     cwd: context.projectRoot,
-    env: { ...process.env, CAREER_OPS_USER: context.userId },
+    env: { ...process.env, CAREER_OPS_USER: context.userId, ...(options.env || {}) },
     detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -209,6 +268,7 @@ async function runCommand(name, command, args, options = {}) {
   activeProcessGroup = child.pid;
   child.stdout.on('data', (chunk) => {
     stream.write(chunk);
+    progress?.stdout.write(chunk);
     stdoutOutput.push(chunk.toString());
     errorOutput.push(chunk.toString());
     while (stdoutOutput.join('').length > maxStdout && stdoutOutput.length > 1) stdoutOutput.shift();
@@ -216,6 +276,7 @@ async function runCommand(name, command, args, options = {}) {
   });
   child.stderr.on('data', (chunk) => {
     stream.write(chunk);
+    progress?.stderr.write(chunk);
     errorOutput.push(chunk.toString());
     while (errorOutput.join('').length > 24000 && errorOutput.length > 1) errorOutput.shift();
   });
@@ -226,6 +287,8 @@ async function runCommand(name, command, args, options = {}) {
     child.on('exit', (code, signal) => resolve({ code, signal, error: null }));
   });
   activeChild = null;
+  progress?.stdout.flush();
+  progress?.stderr.flush();
   stream.end();
   const phase = {
     name,
@@ -275,7 +338,7 @@ USER_ROOT=${context.userRoot}
 HANDOFF_FILE=${handoffPath}
 
 Execute exactly the scan-handoff phase, not the full go, scan, scan-auth, pipeline, or batch flow.
-Read AGENTS.md, modes/scan.md, modes/scan-handoff.md, users/${context.userId}/portals.yml, and the handoff file before acting. All user-layer relative paths resolve inside USER_ROOT. Do not spawn subagents. Process every handoff item once. Use the available browser/Playwright tools for careers URLs and liveness verification; use web search only for search-query items. Apply title, location, company, blacklist, deduplication, and liveness rules. Deduplicate against this user's scan-history.tsv, pipeline.md, and applications.md. Never add a WebSearch-derived URL without browser verification. Write accepted rows and scan-history statuses through the documented user-layer formats. Continue past company-specific failures; set status=partial and record each error. Use status=blocked only when explicit user action is required or safe progress is impossible. Do not edit system files or candidate fact sources.
+Read AGENTS.md, modes/scan.md, modes/scan-handoff.md, users/${context.userId}/portals.yml, and the handoff file before acting. All user-layer relative paths resolve inside USER_ROOT. Do not spawn subagents. Process every handoff item once. Before starting each item, emit exactly one commentary line in this format: [handoff-progress] {index}/{total}: {company} ({method}) — {search query or careers URL}. Use the available browser/Playwright tools for careers URLs and liveness verification; use web search only for search-query items. Apply title, location, company, blacklist, deduplication, and liveness rules. Deduplicate against this user's scan-history.tsv, pipeline.md, and applications.md. Never add a WebSearch-derived URL without browser verification. Write accepted rows and scan-history statuses through the documented user-layer formats. Continue past company-specific failures; set status=partial and record each error. Use status=blocked only when explicit user action is required or safe progress is impossible. Do not edit system files or candidate fact sources.
 
 Your final response must contain only the JSON object required by the supplied output schema. Counts must describe this invocation only. Set user_action to null unless requires_user_action is true.`;
 }
@@ -405,12 +468,22 @@ async function main() {
     summary.baseline_pending = readPendingCount();
 
     const beforeScan = readPendingCount();
-    await runCommand('scan', process.execPath, [systemPath('scan.mjs'), '--user', context.userId]);
+    await runCommand('scan', process.execPath, [systemPath('scan.mjs'), '--user', context.userId], {
+      progress: scanProgressLine,
+      env: { CAREER_OPS_PROGRESS: '1' },
+    });
     const afterScan = readPendingCount();
     summary.scan = { status: 'completed', added_pending: Math.max(0, afterScan - beforeScan) };
+    log(`scan added ${summary.scan.added_pending} pending job(s); queue now ${afterScan}`);
 
     const handoff = loadHandoff();
     if (handoff.valid && handoff.items.length) {
+      log(`scan-handoff queued ${handoff.items.length} task(s)`);
+      handoff.items.forEach((item, index) => {
+        const detail = item.query || item.careers_url || item.url || '';
+        const suffix = detail ? ` — ${compactProgressValue(detail)}` : '';
+        log(`scan-handoff task ${index + 1}/${handoff.items.length}: ${compactProgressValue(item.company)} (${compactProgressValue(item.method)})${suffix}`);
+      });
       const finalPath = join(runDir, 'handoff.final.json');
       const args = [
         'exec', '--dangerously-bypass-approvals-and-sandbox', '--ephemeral',
@@ -424,13 +497,17 @@ async function main() {
       }
       args.push('-');
       const beforeHandoff = readPendingCount();
-      await runCommand('scan-handoff-agent', agentCli, args, { stdin: handoffPrompt(handoff.path) });
+      await runCommand('scan-handoff-agent', agentCli, args, {
+        stdin: handoffPrompt(handoff.path),
+        progress: handoffProgressLine,
+      });
       if (!existsSync(finalPath)) throw new Error('scan-handoff agent did not write its final JSON contract');
       const handoffResult = JSON.parse(readFileSync(finalPath, 'utf-8'));
       summary.handoff = {
         ...handoffResult,
         observed_added_pending: Math.max(0, readPendingCount() - beforeHandoff),
       };
+      log(`scan-handoff processed ${handoffResult.processed_items}/${handoff.items.length} task(s), added ${summary.handoff.observed_added_pending} pending job(s); queue now ${readPendingCount()}`);
       if (handoffResult.status === 'blocked' || handoffResult.requires_user_action) {
         summary.status = 'blocked';
         summary.user_action = handoffResult.user_action || 'Scan handoff requires user action.';
@@ -447,11 +524,12 @@ async function main() {
       try {
         await runCommand('scan-auth-linkedin', process.execPath, [
           systemPath('scan-auth.mjs'), '--user', context.userId, 'linkedin',
-        ]);
+        ], { progress: scanAuthProgressLine });
         summary.linkedin = {
           status: 'completed',
           added_pending: Math.max(0, readPendingCount() - beforeLinkedIn),
         };
+        log(`LinkedIn added ${summary.linkedin.added_pending} pending job(s); queue now ${readPendingCount()}`);
       } catch (error) {
         const logText = `${error.output || ''}\n${error.tail || ''}\n${error.message}`;
         if (/not logged in|captcha|account verification|login required/i.test(logText)) {
@@ -498,7 +576,8 @@ async function main() {
         if (batchCli === 'codex' && codexSettings.reasoningEffort) {
           batchArgs.push('--reasoning-effort', codexSettings.reasoningEffort);
         }
-        await runCommand('batch', systemPath('batch/batch-runner.sh'), batchArgs);
+        log(`batch queue ready: ${readPendingCount()} pending job(s)`);
+        await runCommand('batch', systemPath('batch/batch-runner.sh'), batchArgs, { progress: true });
       }
       await runCommand('merge-tracker', process.execPath, [systemPath('merge-tracker.mjs'), '--user', context.userId]);
       await runCommand('reconcile-pipeline', process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);

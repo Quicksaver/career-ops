@@ -927,6 +927,8 @@ Future merge notes:
 Files:
 
 - `go-runner.mjs`
+- `scan.mjs`
+- `scan-auth/linkedin.mjs`
 - `resolve-parallel.mjs`
 - `resolve-verify-warnings.mjs`
 - `check-liveness.mjs`
@@ -983,6 +985,10 @@ What this customizes:
   final JSON summary. A run is complete only when the pending queue is empty and
   no warning requires human review; otherwise it reports partial, while setup or
   authenticated-login requirements report blocked.
+- Streams bounded operational progress to stderr while preserving stdout as the
+  single final JSON object: zero-token target/provider start and completion,
+  handoff task activity, LinkedIn search prompts, queue deltas, and batch job
+  start/completion. `--quiet` retains the previous phase-log-only behavior.
 - Registers the runner, helpers, shared library, tests, and JSON schema in the
   updater-managed system layer so updates do not leave a partial coordinator.
 - Resolves Codex model and reasoning independently as runner argument, active
@@ -1003,6 +1009,9 @@ Future merge notes:
   single unconstrained prompt or silently downgrade review requirements.
 - Preserve stable batch IDs and append-only synchronization because
   `batch-state.tsv` references those IDs across retries and resumes.
+- Preserve the stderr/stdout boundary for live progress so shell and API callers
+  can continue parsing the single stdout JSON object; keep `--quiet` available
+  for unattended callers that want log-only phase details.
 - Keep `verify-pipeline.mjs --json` finding IDs, codes, and evidence stable
   enough for schema-constrained triage and deterministic candidate validation.
 

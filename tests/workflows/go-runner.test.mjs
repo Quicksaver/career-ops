@@ -410,6 +410,14 @@ try {
   } else {
     fail('parallel profile fallback is not wired into both runners');
   }
+  if (runner.includes('createProgressForwarder') && runner.includes('progress: scanProgressLine') &&
+      runner.includes('progress: scanAuthProgressLine') && runner.includes('progress: handoffProgressLine') &&
+      runner.includes('progress: true') &&
+      runner.includes('--quiet')) {
+    pass('go runner streams bounded live progress to stderr with a quiet opt-out');
+  } else {
+    fail('go runner live progress forwarding is not fully wired');
+  }
   if (process.platform === 'win32' || (statSync(join(ROOT, 'go-runner.mjs')).mode & 0o111)) {
     pass('go-runner.mjs is executable');
   } else {

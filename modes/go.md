@@ -32,8 +32,12 @@ one. Only confirmed duplicate tracker/report groups may be repaired, through a
 constrained deterministic resolver followed by verification again. Orphans,
 submission risks, and every other warning remain user warnings and may set
 `needs_human_review` based on severity or impact. Detailed phase logs go to
-`users/{USER}/data/go-runs/`; stdout contains exactly one JSON summary. The
-`--parallel` option is optional. Parallelism resolves in this order:
+`users/{USER}/data/go-runs/`. Live progress goes to stderr: the current
+zero-token provider/target, handoff task, authenticated search prompt, queue
+additions, and batch job are visible while the run is active. Stdout still
+contains exactly one JSON summary, so machine consumers remain stable. Pass
+`--quiet` to retain log-only phase output. The `--parallel` option is optional.
+Parallelism resolves in this order:
 
 1. `--parallel N` on `go-runner.mjs`
 2. `batch.parallel` in `users/{USER}/config/profile.yml`

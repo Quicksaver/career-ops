@@ -1379,6 +1379,10 @@ async function parallelFetch(tasks, limit) {
   return results;
 }
 
+function scanProgressValue(value) {
+  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
+}
+
 // ── Main ────────────────────────────────────────────────────────────
 
 async function verifyOffers(offers, { headedFallback = false, throttleBaseMs = 0, rediscover = false } = {}) {
@@ -1672,10 +1676,20 @@ async function main() {
   const errors = [...resolveErrors];
   const emptyTargets = [];
 
+  let startedTargets = 0;
+  let completedTargets = 0;
+  const showProgress = process.env.CAREER_OPS_PROGRESS === '1';
   const tasks = targets.map(company => async () => {
     let provider = company._provider;
     const ctx = makeHttpCtx();
     let sourceName = provider.id === 'local-parser' ? 'local-parser' : `${provider.id}-api`;
+    const startedIndex = ++startedTargets;
+    let fetchedForTarget = 0;
+    let acceptedForTarget = 0;
+    let targetFailed = false;
+    if (showProgress) {
+      console.log(`[scan-progress] started ${startedIndex}/${targets.length}: ${scanProgressValue(company.name)} via ${scanProgressValue(provider.id)}`);
+    }
     try {
       let jobs;
       try {
@@ -1695,6 +1709,7 @@ async function main() {
       if (!Array.isArray(jobs)) {
         throw new Error(`${provider.id}: fetch() did not return an array`);
       }
+      fetchedForTarget = jobs.length;
       totalFound += jobs.length;
       const targetLocationFilter = company.location_filter
         ? buildLocationFilter(company.location_filter)
@@ -1812,13 +1827,21 @@ async function main() {
           tracked: Boolean(careersUrlDomain),
           careersUrlDomain,
         });
+        acceptedForTarget++;
       }
     } catch (err) {
+      targetFailed = true;
       errors.push({
         company: company.name,
         error: err.message,
         kind: classifyFetchError(err),
       });
+    } finally {
+      const completedIndex = ++completedTargets;
+      const outcome = targetFailed ? 'failed' : 'completed';
+      if (showProgress) {
+        console.log(`[scan-progress] ${outcome} ${completedIndex}/${targets.length}: ${scanProgressValue(company.name)} via ${scanProgressValue(provider.id)} — ${fetchedForTarget} found, ${acceptedForTarget} candidate(s)`);
+      }
     }
   });
 
