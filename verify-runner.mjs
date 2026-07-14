@@ -646,6 +646,9 @@ async function main() {
   Object.defineProperty(summary, 'humanReviewRecap', {
     value: [], writable: true, enumerable: false,
   });
+  Object.defineProperty(summary, 'unresolvedRecap', {
+    value: [], writable: true, enumerable: false,
+  });
   try {
     const reviewSchema = JSON.parse(readFileSync(reviewSchemaPath, 'utf-8'));
     assertOpenAIStructuredOutputSchema(reviewSchema, reviewSchemaPath);
@@ -799,6 +802,12 @@ async function main() {
     const finalPartition = partitionReviewedFindings(verification, ledger);
     const finalKeys = new Set(finalPartition.active.map(item => `${item.level}:${item.id}`));
     summary.humanReviewRecap = summary.humanReviewRecap.filter(item => finalKeys.has(item.key));
+    summary.unresolvedRecap = finalPartition.active.map(item => ({
+      key: `${item.level}:${item.id}`,
+      job_ids: findingJobIds(item),
+      finding_level: item.level,
+      finding_code: item.code,
+    }));
     summary.final_verification = verification;
     summary.seen_findings = finalPartition.seen.map(item => ({
       finding_level: item.finding.level,
@@ -892,6 +901,15 @@ function printHumanSummary(result) {
   if (quiet) console.log(`[verify] logs: ${result.logs}`);
   if (result.error) console.log(`[verify] error: ${result.error}`);
   const humanReview = result.humanReviewRecap || [];
+  const humanReviewKeys = new Set(humanReview.map(item => item.key));
+  const unresolvedIssues = (result.unresolvedRecap || [])
+    .filter(item => !humanReviewKeys.has(item.key));
+  if (unresolvedIssues.length > 0) {
+    console.log(`[verify] unresolved issues (${unresolvedIssues.length}):`);
+    for (const item of unresolvedIssues) {
+      console.log(`[verify] unresolved ${item.finding_level}, ${formatJobIds(item.job_ids)}, ${item.finding_code}`);
+    }
+  }
   if (humanReview.length > 0) {
     console.log(`[verify] human review required (${humanReview.length}):`);
     for (const item of humanReview) {

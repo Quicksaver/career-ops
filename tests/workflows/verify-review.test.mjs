@@ -808,12 +808,22 @@ try {
   const manualLines = manualRun.stdout.trim().split(/\r?\n/);
   if (manualJsonProcess.status === 0 && manualJson.status === 'partial' &&
       !Object.hasOwn(manualJson, 'humanReviewRecap') &&
+      !Object.hasOwn(manualJson, 'unresolvedRecap') &&
       manualRun.status === 0 && manualRun.stdout.includes('[verify] summary: partial') &&
       manualRun.stdout.includes('[verify] human review required (1):') &&
       manualLines.at(-1) === '[verify] human review, job #27, bold_score → needs_human_review') {
     pass('non-JSON verification repeats human-review items in a compact final recap');
   } else {
     fail(`verify human-review recap wrong: status=${manualRun.status} stdout=${manualRun.stdout}`);
+  }
+
+  const verifyRunnerSource = readFileSync(join(ROOT, 'verify-runner.mjs'), 'utf-8');
+  if (verifyRunnerSource.includes("console.log(`[verify] unresolved issues (${unresolvedIssues.length}):`)") &&
+      verifyRunnerSource.includes('!humanReviewKeys.has(item.key)') &&
+      verifyRunnerSource.includes('findingJobIds(item)')) {
+    pass('non-JSON verification repeats non-manual unresolved findings without duplicating manual items');
+  } else {
+    fail('verify unresolved-issue recap is not fully wired');
   }
 
   const interruptedRows = [];

@@ -1109,6 +1109,11 @@ What this customizes:
   repeated as `human review, job(s) #..., {finding code} → needs_human_review`.
   This recap is non-enumerable runner state used only by the human renderer, so
   `--json` retains its existing machine contract and stdout purity.
+- Also repeats every other still-unresolved raw finding at the end of a direct
+  human run with its warning/error level, related tracker/report IDs, and issue
+  code. Manual items stay in their dedicated block and are excluded from the
+  general unresolved block. Both recap collections are non-enumerable and never
+  appear in `--json` output.
 - Adds an idempotent `pipeline.md` to `batch-input.tsv` synchronizer with stable
   IDs so the resumable batch runner cannot silently miss newly scanned jobs.
 - Adds JSON output to `check-liveness.mjs` plus a deterministic pipeline wrapper
