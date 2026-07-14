@@ -1065,8 +1065,11 @@ What this customizes:
   `keeper_report_file` and `duplicate_report_files`. Redundant cross-type fields
   are mechanically cleared, report paths are canonicalized to the exact
   `reports/...` candidates emitted by the verifier, exact warning candidates
-  are semantically revalidated, and paired tracker/report plans must still
-  agree on canonical identity. This prevents a valid duplicate judgment from
+  are semantically revalidated, and tracker/report plans with the same exact
+  candidate report set must still agree on canonical identity. A broader
+  report warning may contain orphaned reports beyond a tracker-backed subset;
+  its whole-group decision therefore does not override an evidence-backed
+  decision for that exact subset. This prevents a valid duplicate judgment from
   failing late because a reviewer copied the combined identity or user-root
   paths into both warning types.
 - Aggregates all semantic contract errors in a five-finding reviewer response
@@ -1089,6 +1092,11 @@ What this customizes:
   resume requires an exact match with the saved post-duplicate verification,
   normalizes/revalidates the saved applicable decisions, retains the completed
   duplicate result, and retries apply without prompting reviewers again.
+  After every completed apply/reverify boundary, the runner also saves the
+  exact post-review verification state. A later `--resume-run` whose current
+  findings match that checkpoint continues at the next pass and reuses the
+  already committed duplicate/apply action results, rather than replaying the
+  completed repair pass.
   Raw/invalid reviewer outputs are never resumable decisions. Retry, checkpoint,
   and normalization counts are exposed under `review_resilience`.
 - Keeps the prompt reviewer read-only. Only

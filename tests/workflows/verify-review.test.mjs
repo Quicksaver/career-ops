@@ -264,6 +264,59 @@ try {
     fail(`normalized paired duplicate decisions did not validate: ${error.message}`);
   }
 
+  const trackerDuplicateDecision = decision(relatedFindings[0], {
+    classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium',
+    duplicate_resolution: {
+      keeper_tracker_num: 1, duplicate_tracker_nums: [2],
+      keeper_report_file: null, duplicate_report_files: [],
+    },
+  });
+  const reportDuplicateDecision = decision(relatedFindings[1], {
+    classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium',
+    duplicate_resolution: {
+      keeper_tracker_num: null, duplicate_tracker_nums: [],
+      keeper_report_file: 'reports/001-one.md',
+      duplicate_report_files: ['reports/002-two.md'],
+    },
+  });
+  try {
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: relatedFindings.slice(0, 2) },
+      { findings: [trackerDuplicateDecision, reportDuplicateDecision] },
+    );
+    pass('exact tracker/report duplicate candidate sets accept a matching keeper');
+  } catch (error) {
+    fail(`matching exact duplicate decisions conflicted: ${error.message}`);
+  }
+  try {
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: relatedFindings.slice(0, 2) },
+      { findings: [trackerDuplicateDecision, decision(relatedFindings[1], {})] },
+    );
+    fail('exact tracker/report duplicate candidate sets accepted conflicting dispositions');
+  } catch (error) {
+    if (error.message.includes('duplicate consistency validation failed')) {
+      pass('exact tracker/report duplicate candidate sets still require one disposition');
+    } else {
+      fail(`exact duplicate conflict returned the wrong diagnostic: ${error.message}`);
+    }
+  }
+  const broadReportFinding = {
+    level: 'warning',
+    id: 'duplicate-reports:001-one.md:002-two.md:003-orphan.md',
+    code: 'duplicate_reports_same_role',
+    details: { files: ['reports/001-one.md', 'reports/002-two.md', 'reports/003-orphan.md'] },
+  };
+  try {
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: [relatedFindings[0], broadReportFinding] },
+      { findings: [trackerDuplicateDecision, decision(broadReportFinding, {})] },
+    );
+    pass('a non-duplicate report superset does not invalidate a proven tracker subset');
+  } catch (error) {
+    fail(`broad report superset incorrectly conflicted with tracker subset: ${error.message}`);
+  }
+
   const jobIdFixtures = [
     reviewLib.findingJobIds(relatedFindings[0]),
     reviewLib.findingJobIds(relatedFindings[1]),

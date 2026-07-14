@@ -436,6 +436,13 @@ try {
   } else {
     fail('go runner retention and completed-run compaction are not fully wired');
   }
+  if (verifyRunner.includes('loadCompletedPassCheckpoint') &&
+      verifyRunner.includes('verification.post-review.pass-') &&
+      verifyRunner.includes('resuming after completed pass')) {
+    pass('verify resume continues after a completed repair pass without replaying it');
+  } else {
+    fail('verify resume cannot recover a completed repair pass');
+  }
   if (batchRunner.includes('model_reasoning_effort=') && batchRunner.includes('--reasoning-effort')) {
     pass('batch runner passes reasoning effort to each Codex worker');
   } else {

@@ -29,6 +29,7 @@ import {
   partitionReviewedFindings,
   readReviewLedger,
   reviewChunkSignature,
+  validateDuplicateConsistency,
   validateReviewDecisions,
   verificationFindings,
 } from './lib/verification-review.mjs';
@@ -274,46 +275,9 @@ The raw verifier intentionally reports broad possible problems. Your job is to d
 - patch_tracker: only for a bounded, evidence-backed correction to company, Via, canonical status, score, or report link. It is supported for noncanonical_status, bold_status, dated_status, broken_report_link, invalid_score, bold_score, missing_via_value, and confidential_company_placeholder. Supply only fields that must change; use null for every untouched field.
 - manual_review: when the finding is real but no supported deterministic action is safe, evidence conflicts, or a user decision is required. Use classification needs_human_review and needs_human_review=true.
 
-Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions, but do not copy tracker fields into a report finding or report fields into a tracker finding. The resolver deterministically enforces lifecycle-first keeper selection, with Rejected ranked between Responded and Applied, so the kept row retains its original report/CV artifacts without renaming. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
+Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions, but do not copy tracker fields into a report finding or report fields into a tracker finding. Exact tracker/report candidate sets must agree on duplicate disposition and keeper. A broader report warning can contain orphaned reports beyond an exact tracker-backed subset; deciding that the whole broad group is not one duplicate group does not prevent a proven subset from being resolved. The resolver deterministically enforces lifecycle-first keeper selection, with Rejected ranked between Responded and Applied, so the kept row retains its original report/CV artifacts without renaming. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
 
 Return finding_id, finding_code, and finding_level verbatim. Set all unused resolution objects to null. Your final response must contain only the JSON required by the supplied output schema.`;
-}
-
-function validateDuplicateConsistency(verification, review) {
-  const findings = verificationFindings(verification);
-  const findingsByKey = new Map(findings.map(item => [`${item.level}:${item.id}`, item]));
-  const decisionsByKey = new Map(review.findings.map(item => [
-    `${item.finding_level}:${item.finding_id}`, item,
-  ]));
-  const reportFindings = findings.filter(item => item.code === 'duplicate_reports_same_role');
-  const errors = [];
-
-  for (const decision of review.findings.filter(item =>
-    item.finding_code === 'possible_duplicate_tracker' && item.disposition === 'resolve_duplicate')) {
-    const finding = findingsByKey.get(`${decision.finding_level}:${decision.finding_id}`);
-    const entries = finding?.details?.entries || [];
-    const reportFiles = entries
-      .map(entry => String(entry.report || '').match(/\]\(([^)]+)\)/)?.[1]?.split('/').pop())
-      .filter(Boolean);
-    if (new Set(reportFiles).size < 2) continue;
-    const overlapping = reportFindings.find(candidate => {
-      const files = new Set((candidate.details?.files || []).map(file => file.split('/').pop()));
-      return reportFiles.every(file => files.has(file));
-    });
-    if (!overlapping) continue;
-    const reportDecision = decisionsByKey.get(`${overlapping.level}:${overlapping.id}`);
-    if (!reportDecision || reportDecision.disposition !== 'resolve_duplicate') {
-      errors.push(`${decision.finding_id} conflicts with non-duplicate report decision ${overlapping.id}`);
-      continue;
-    }
-    const keeperEntry = entries.find(entry => entry.tracker_num === decision.duplicate_resolution.keeper_tracker_num);
-    const expectedKeeper = String(keeperEntry?.report || '').match(/\]\(([^)]+)\)/)?.[1]?.split('/').pop();
-    const selectedKeeper = reportDecision.duplicate_resolution?.keeper_report_file?.split('/').pop();
-    if (expectedKeeper && selectedKeeper !== expectedKeeper) {
-      errors.push(`${overlapping.id}: report keeper must match tracker keeper #${decision.duplicate_resolution.keeper_tracker_num}`);
-    }
-  }
-  if (errors.length > 0) throw new Error(`duplicate consistency validation failed:\n- ${errors.join('\n- ')}`);
 }
 
 function duplicateTriage(review) {
@@ -358,7 +322,7 @@ function sameVerificationFindings(left, right) {
     rightMap.get(`${item.level}:${item.id}`) === item.fingerprint);
 }
 
-function latestPhaseJson(phaseName) {
+function latestPhaseJson(phaseName, predicate = value => value?.status === 'completed') {
   if (!existsSync(runDir)) return null;
   const candidates = readdirSync(runDir)
     .filter(name => /^\d+-/.test(name) && name.endsWith(`-${phaseName}.log`))
@@ -366,7 +330,7 @@ function latestPhaseJson(phaseName) {
   for (const name of candidates) {
     try {
       const value = JSON.parse(readFileSync(join(runDir, name), 'utf-8').trim());
-      if (value?.status === 'completed') return value;
+      if (predicate(value)) return value;
     } catch {}
   }
   return null;
@@ -381,7 +345,54 @@ function priorActionResult(kind, pass) {
     } catch {}
   }
   const phaseName = kind === 'duplicates' ? `resolve-duplicates-${pass}` : `apply-review-${pass}`;
-  return latestPhaseJson(phaseName);
+  return latestPhaseJson(phaseName) ||
+    (kind === 'review' ? latestPhaseJson(`apply-review-resume-${pass}`) : null);
+}
+
+function readJsonCheckpoint(path, predicate = () => true) {
+  if (!existsSync(path)) return null;
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf-8'));
+    return predicate(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function postReviewVerification(pass) {
+  const checkpointPath = join(
+    runDir, `verification.post-review.pass-${String(pass).padStart(2, '0')}.json`,
+  );
+  const isVerification = value =>
+    value && Array.isArray(value.errors) && Array.isArray(value.warnings);
+  return readJsonCheckpoint(checkpointPath, isVerification) ||
+    latestPhaseJson(`verify-pipeline-post-review-resume-${pass}`, isVerification) ||
+    latestPhaseJson(`verify-pipeline-post-review-${pass}`, isVerification);
+}
+
+function completedPassReview(pass) {
+  const validReview = value => value?.status === 'completed' && Array.isArray(value.findings);
+  const suffix = String(pass).padStart(2, '0');
+  return readJsonCheckpoint(join(runDir, `review.applicable-resume-${suffix}.json`), validReview) ||
+    readJsonCheckpoint(join(runDir, `review.applicable-${suffix}.json`), validReview) ||
+    readJsonCheckpoint(join(runDir, `review.pass-${suffix}.json`), validReview);
+}
+
+function loadCompletedPassCheckpoint(currentVerification) {
+  if (!resumeRun) return null;
+  for (let pass = maxPasses; pass >= 1; pass--) {
+    const applyResult = priorActionResult('review', pass);
+    if (!applyResult) continue;
+    const savedVerification = postReviewVerification(pass);
+    if (!savedVerification || !sameVerificationFindings(savedVerification, currentVerification)) continue;
+    return {
+      pass,
+      review: completedPassReview(pass),
+      duplicateResult: priorActionResult('duplicates', pass),
+      applyResult,
+    };
+  }
+  return null;
 }
 
 function loadPendingApplyCheckpoint(currentVerification) {
@@ -644,7 +655,31 @@ async function main() {
         if (finding) reviewedThisRun.add(finding.fingerprint);
       }
       verification = await rawVerification(`verify-pipeline-post-review-resume-${pass}`);
+      writeJsonAtomic(
+        join(runDir, `verification.post-review.pass-${String(pass).padStart(2, '0')}.json`),
+        verification,
+      );
       firstPass = pass + 1;
+    } else {
+      const completedPass = loadCompletedPassCheckpoint(verification);
+      if (completedPass) {
+        const pass = completedPass.pass;
+        summary.passes = pass;
+        summary.review_resilience.checkpoints_reused++;
+        if (completedPass.review) summary.reviews.push(...completedPass.review.findings);
+        aggregateActions(summary.actions, completedPass.duplicateResult);
+        aggregateActions(summary.actions, completedPass.applyResult);
+        const currentFindings = new Map(verificationFindings(verification).map(item => [
+          `${item.level}:${item.id}`, item,
+        ]));
+        for (const decision of (completedPass.review?.findings || [])
+          .filter(item => item.disposition === 'manual_review')) {
+          const finding = currentFindings.get(`${decision.finding_level}:${decision.finding_id}`);
+          if (finding) reviewedThisRun.add(finding.fingerprint);
+        }
+        log(`resuming after completed pass ${pass}; deterministic actions and post-review verification reused`);
+        firstPass = pass + 1;
+      }
     }
 
     for (let pass = firstPass; pass <= maxPasses; pass++) {
@@ -718,6 +753,10 @@ async function main() {
         if (finding) reviewedThisRun.add(finding.fingerprint);
       }
       verification = await rawVerification(`verify-pipeline-post-review-${pass}`);
+      writeJsonAtomic(
+        join(runDir, `verification.post-review.pass-${String(pass).padStart(2, '0')}.json`),
+        verification,
+      );
     }
 
     const ledger = readReviewLedger(reviewLedgerPath);
