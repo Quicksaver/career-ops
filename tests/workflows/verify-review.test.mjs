@@ -135,6 +135,33 @@ try {
     fail(`normalized archive_orphan decisions did not validate: ${error.message}`);
   }
 
+  const restorePathReview = {
+    status: 'completed', needs_human_review: false,
+    findings: [decision(archiveFindings[0], {
+      classification: 'confirmed_orphan', disposition: 'restore_orphan',
+      orphan_resolution: {
+        report_file: `users/test/${archiveFindings[0].details.file}`,
+        tracker_tsv: 'users/test/batch/tracker-additions/merged/636.tsv',
+      },
+    })],
+  };
+  const normalizedRestorePathReview = reviewLib.normalizeReviewDecisions(
+    [archiveFindings[0]], restorePathReview,
+  );
+  try {
+    reviewLib.validateReviewDecisions([archiveFindings[0]], normalizedRestorePathReview.review);
+    const resolution = normalizedRestorePathReview.review.findings[0].orphan_resolution;
+    if (resolution.report_file === archiveFindings[0].details.file &&
+        resolution.tracker_tsv === 'batch/tracker-additions/merged/636.tsv' &&
+        normalizedRestorePathReview.normalizations.length === 1) {
+      pass('restore_orphan report and tracker TSV paths are canonicalized before checkpointing');
+    } else {
+      fail(`restore_orphan path normalization wrong: ${JSON.stringify(normalizedRestorePathReview)}`);
+    }
+  } catch (error) {
+    fail(`normalized restore_orphan paths did not validate: ${error.message}`);
+  }
+
   const aggregateInvalidReview = {
     status: 'completed', needs_human_review: false,
     findings: archiveFindings.slice(0, 2).map(finding => decision(finding, {
@@ -296,6 +323,40 @@ try {
     fail(`orphan restore wrong: result=${JSON.stringify(restored)} tracker=${restoredTracker}`);
   }
 
+  writeFileSync(join(reportsDir, '012-legacy-tabs-2026-01-02.md'), [
+    '# Evaluation: Legacy Tabs — Backend Engineer', '',
+    '**URL:** https://example.com/jobs/12', '',
+    '## Machine Summary', '```yaml', 'company: Legacy Tabs',
+    'role: Backend Engineer', 'score: 3.1', '```', '',
+  ].join('\n'));
+  writeFileSync(join(mergedDir, '8.tsv'), [
+    '012', '2026-01-02', 'Legacy Tabs', 'Backend Engineer', 'Evaluated', '3.1/5',
+    '—', '[012](reports/012-legacy-tabs-2026-01-02.md)', 'legacy escaped tabs',
+  ].join('\\t') + '\n');
+  const legacyOrphanVerification = {
+    errors: [], warnings: [{
+      id: 'orphan-report:012-legacy-tabs-2026-01-02.md', code: 'orphan_report',
+      message: 'Legacy escaped TSV fixture',
+      details: { report_num: 12, file: 'reports/012-legacy-tabs-2026-01-02.md' },
+    }],
+  };
+  const legacyOrphanFinding = reviewLib.verificationFindings(legacyOrphanVerification)[0];
+  const legacyRestored = applyReview(legacyOrphanVerification, [decision(legacyOrphanFinding, {
+    classification: 'confirmed_orphan', disposition: 'restore_orphan',
+    rationale: 'Legacy merged artifact is otherwise a complete tracker row.',
+    evidence: [{ path: 'batch/tracker-additions/merged/8.tsv', observation: 'Row matches report 012.' }],
+    orphan_resolution: {
+      report_file: 'reports/012-legacy-tabs-2026-01-02.md',
+      tracker_tsv: 'batch/tracker-additions/merged/8.tsv',
+    },
+  })]);
+  if (legacyRestored.tracker_rows_restored === 1 &&
+      readFileSync(trackerPath, 'utf-8').includes('| 12 |')) {
+    pass('orphan restoration accepts legacy merged TSVs with escaped tab separators');
+  } else {
+    fail(`legacy escaped TSV restore wrong: ${JSON.stringify(legacyRestored)}`);
+  }
+
   const archiveVerification = {
     errors: [],
     warnings: [{
@@ -409,6 +470,26 @@ try {
     "          keeper_report_file: `users/test/${reportFiles[0]}`, duplicate_report_files: reportFiles.slice(1).map(file => `users/test/${file}`),",
     "        },",
     "        orphan_resolution: null, tracker_patch: null,",
+    "      };",
+    "    });",
+    "  }",
+    "  if (process.env.FAKE_CODEX_RESTORE_ORPHAN) {",
+    "    findings = input.findings.map(finding => {",
+    "      if (finding.code !== 'orphan_report') return {",
+    "        finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
+    "        classification: 'false_positive', disposition: 'mark_seen', severity: 'low', needs_human_review: false,",
+    "        rationale: 'Fixture reviewer accepted an unrelated finding.', evidence: [],",
+    "        duplicate_resolution: null, orphan_resolution: null, tracker_patch: null,",
+    "      };",
+    "      const reportNum = finding.details.report_num;",
+    "      return {",
+    "        finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
+    "        classification: 'confirmed_orphan', disposition: 'restore_orphan', severity: 'low', needs_human_review: false,",
+    "        rationale: 'Fixture has a preserved merged tracker row.',",
+    "        evidence: [{ path: `users/test/batch/tracker-additions/merged/${reportNum}.tsv`, observation: 'Preserved row matches.' }],",
+    "        duplicate_resolution: null,",
+    "        orphan_resolution: { report_file: `users/test/${finding.details.file}`, tracker_tsv: `users/test/batch/tracker-additions/merged/${reportNum}.tsv` },",
+    "        tracker_patch: null,",
     "      };",
     "    });",
     "  }",
@@ -582,6 +663,45 @@ try {
     pass('combined tracker/report reviewer output is normalized before duplicate resolution');
   } else {
     fail(`combined duplicate runner normalization wrong: ${JSON.stringify(normalizedDuplicateRun)}`);
+  }
+
+  const resumeReportFile = '070-resume-orphan-2026-01-07.md';
+  writeFileSync(join(reportsDir, resumeReportFile), [
+    '# Evaluation: Resume Orphan — Backend Engineer', '',
+    '**URL:** https://example.com/jobs/resume-orphan', '',
+    '## Machine Summary', '```yaml', 'company: Resume Orphan',
+    'role: Backend Engineer', 'score: 3.0', '```', '',
+  ].join('\n'));
+  const callsBeforeApplyResume = readFileSync(callCount, 'utf-8').trim().split(/\r?\n/).filter(Boolean).length;
+  const pendingApplyFailure = spawnSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '0', '--quiet', '--json',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_RESTORE_ORPHAN: '1' },
+    encoding: 'utf-8',
+  });
+  const pendingApplyRun = JSON.parse(pendingApplyFailure.stdout);
+  writeFileSync(join(mergedDir, '70.tsv'),
+    `070\t2026-01-07\tResume Orphan\tBackend Engineer\tEvaluated\t3.0/5\t—\t[070](reports/${resumeReportFile})\tresume fixture\n`);
+  const resumedApplyRun = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '0', '--resume-run', pendingApplyRun.run_id,
+    '--quiet', '--json',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_RESTORE_ORPHAN: '1' },
+    encoding: 'utf-8',
+  }));
+  const callsAfterApplyResume = readFileSync(callCount, 'utf-8').trim().split(/\r?\n/).filter(Boolean).length;
+  if (pendingApplyFailure.status === 1 && pendingApplyRun.status === 'failed' &&
+      pendingApplyRun.error.includes('restore artifacts are missing') &&
+      resumedApplyRun.status === 'completed' && resumedApplyRun.actions.tracker_rows_restored === 1 &&
+      resumedApplyRun.review_resilience.checkpoints_reused === 1 &&
+      callsAfterApplyResume - callsBeforeApplyResume === 1) {
+    pass('resume continues a fingerprint-matched pending apply without repeating prompt review');
+  } else {
+    fail(`pending apply resume wrong: failed=${JSON.stringify(pendingApplyRun)} resumed=${JSON.stringify(resumedApplyRun)} callDelta=${callsAfterApplyResume - callsBeforeApplyResume}`);
   }
 
   const humanRun = spawnSync(process.execPath, [

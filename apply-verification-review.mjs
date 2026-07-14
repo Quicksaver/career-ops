@@ -94,7 +94,11 @@ function decisionFinding(decision, findingMap) {
 function parseMergedTsv(path) {
   const lines = readFileSync(path, 'utf-8').split(/\r?\n/).filter(line => line.trim());
   if (lines.length !== 1) throw new Error(`${path}: expected exactly one non-empty TSV line`);
-  const parts = lines[0].split('\t');
+  let parts = lines[0].split('\t');
+  // Two legacy merged artifacts were written with literal "\\t" separators
+  // before worker-artifact validation enforced real tabs. Accept that exact
+  // legacy representation during deterministic orphan restoration only.
+  if (parts.length === 1 && lines[0].includes('\\t')) parts = lines[0].split('\\t');
   if (parts.length < 9) throw new Error(`${path}: expected at least nine TSV columns`);
   const extras = parts.slice(9).map(value => value.trim()).filter(Boolean);
   const viaFields = extras.filter(value => /^via=/i.test(value));

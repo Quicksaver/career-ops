@@ -1051,7 +1051,14 @@ What this customizes:
   outcome. For `archive_orphan`, `verify-runner.mjs` derives `report_file` from
   the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot
   omit the required object or redirect an archive to another path. Restore
-  metadata remains constrained to a matching preserved tracker-addition TSV.
+  report paths are fixed to verifier evidence and tracker TSV paths are
+  canonicalized from project-relative `users/{USER}/batch/...` output to the
+  user-root-relative `batch/tracker-additions/merged/*.tsv` contract before
+  semantic validation. Restore metadata remains constrained to a matching
+  preserved tracker-addition TSV. The restore parser also accepts the two
+  historical merged artifacts whose separators were stored as literal `\t`
+  text; current batch artifact validation continues to reject that malformed
+  representation, so this compatibility path does not weaken new writes.
 - Makes duplicate action metadata type-specific before checkpointing. Tracker
   duplicate findings retain only `keeper_tracker_num` and
   `duplicate_tracker_nums`; report duplicate findings retain only
@@ -1077,8 +1084,13 @@ What this customizes:
   Matching checkpoints are normalized and semantically revalidated under the
   current contract when loaded, while their original decision chain remains
   available solely for matching later checkpoints from the same historical
-  run. Raw/invalid reviewer outputs are never resumable decisions. Retry,
-  checkpoint, and normalization counts are exposed under `review_resilience`.
+  run. Each successful deterministic action phase also writes an atomic result
+  checkpoint. If duplicate repair commits but the following apply phase fails,
+  resume requires an exact match with the saved post-duplicate verification,
+  normalizes/revalidates the saved applicable decisions, retains the completed
+  duplicate result, and retries apply without prompting reviewers again.
+  Raw/invalid reviewer outputs are never resumable decisions. Retry, checkpoint,
+  and normalization counts are exposed under `review_resilience`.
 - Keeps the prompt reviewer read-only. Only
   `resolve-verify-warnings.mjs` and `apply-verification-review.mjs` may mutate
   data, and both revalidate prompt output against deterministic verifier

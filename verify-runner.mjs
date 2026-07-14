@@ -269,7 +269,7 @@ The raw verifier intentionally reports broad possible problems. Your job is to d
 - resolve_duplicate: only for possible_duplicate_tracker or duplicate_reports_same_role when strong evidence proves the candidates are the same posting. Same company/title alone is insufficient. Partition every deterministic candidate exactly in duplicate_resolution. For tracker duplicates, select the most advanced lifecycle row as keeper using Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed; use canonical identity evidence only to break equal-status ties.
   - For possible_duplicate_tracker, populate only keeper_tracker_num and duplicate_tracker_nums. Set keeper_report_file to null and duplicate_report_files to [].
   - For duplicate_reports_same_role, populate only keeper_report_file and duplicate_report_files. Set keeper_tracker_num to null and duplicate_tracker_nums to [].
-- restore_orphan: only for a true orphan_report whose valid evaluation should remain tracked. Cite and return the existing user-root-relative batch/tracker-additions/merged/*.tsv that matches the report.
+- restore_orphan: only for a true orphan_report whose valid evaluation should remain tracked. Cite and return the existing user-root-relative batch/tracker-additions/merged/*.tsv that matches the report. tracker_tsv must start exactly with batch/tracker-additions/merged/; never prefix it with users/ACTIVE_USER/ or an absolute path.
 - archive_orphan: only for a true orphan_report that is redundant, obsolete, or should not remain an active evaluation. The report and matching outputs will be backed up and archived.
 - patch_tracker: only for a bounded, evidence-backed correction to company, Via, canonical status, score, or report link. It is supported for noncanonical_status, bold_status, dated_status, broken_report_link, invalid_score, bold_score, missing_via_value, and confidential_company_placeholder. Supply only fields that must change; use null for every untouched field.
 - manual_review: when the finding is real but no supported deterministic action is safe, evidence conflicts, or a user decision is required. Use classification needs_human_review and needs_human_review=true.
@@ -347,6 +347,75 @@ function decisionsStillPresent(originalFindings, review, currentVerification) {
     needs_human_review: findings.some(item => item.needs_human_review),
     findings,
   };
+}
+
+function sameVerificationFindings(left, right) {
+  const leftFindings = verificationFindings(left);
+  const rightMap = new Map(verificationFindings(right).map(item => [
+    `${item.level}:${item.id}`, item.fingerprint,
+  ]));
+  return leftFindings.length === rightMap.size && leftFindings.every(item =>
+    rightMap.get(`${item.level}:${item.id}`) === item.fingerprint);
+}
+
+function latestPhaseJson(phaseName) {
+  if (!existsSync(runDir)) return null;
+  const candidates = readdirSync(runDir)
+    .filter(name => /^\d+-/.test(name) && name.endsWith(`-${phaseName}.log`))
+    .sort((left, right) => Number.parseInt(right, 10) - Number.parseInt(left, 10));
+  for (const name of candidates) {
+    try {
+      const value = JSON.parse(readFileSync(join(runDir, name), 'utf-8').trim());
+      if (value?.status === 'completed') return value;
+    } catch {}
+  }
+  return null;
+}
+
+function priorActionResult(kind, pass) {
+  const checkpointPath = join(runDir, `action-result.${kind}.pass-${String(pass).padStart(2, '0')}.json`);
+  if (existsSync(checkpointPath)) {
+    try {
+      const value = JSON.parse(readFileSync(checkpointPath, 'utf-8'));
+      if (value?.status === 'completed') return value;
+    } catch {}
+  }
+  const phaseName = kind === 'duplicates' ? `resolve-duplicates-${pass}` : `apply-review-${pass}`;
+  return latestPhaseJson(phaseName);
+}
+
+function loadPendingApplyCheckpoint(currentVerification) {
+  if (!resumeRun) return null;
+  for (let pass = maxPasses; pass >= 1; pass--) {
+    const verificationPath = join(runDir, `verification.apply-${String(pass).padStart(2, '0')}.json`);
+    const reviewPath = join(runDir, `review.applicable-${String(pass).padStart(2, '0')}.json`);
+    if (!existsSync(verificationPath) || !existsSync(reviewPath)) continue;
+    try {
+      const savedVerification = JSON.parse(readFileSync(verificationPath, 'utf-8'));
+      if (!sameVerificationFindings(savedVerification, currentVerification)) continue;
+      const savedReview = JSON.parse(readFileSync(reviewPath, 'utf-8'));
+      const currentMap = new Map(verificationFindings(currentVerification).map(item => [
+        `${item.level}:${item.id}`, item,
+      ]));
+      const expected = savedReview.findings.map(decision =>
+        currentMap.get(`${decision.finding_level}:${decision.finding_id}`));
+      if (expected.some(item => !item)) continue;
+      const normalized = normalizeReviewDecisions(expected, savedReview);
+      validateReviewDecisions(expected, normalized.review);
+      validateDuplicateConsistency(currentVerification, normalized.review);
+      return {
+        pass,
+        expected,
+        review: normalized.review,
+        normalizations: normalized.normalizations,
+        duplicateResult: priorActionResult('duplicates', pass),
+        applyResult: priorActionResult('review', pass),
+      };
+    } catch (error) {
+      log(`ignored invalid pending apply checkpoint for pass ${pass}: ${validationErrors(error).join('; ')}`);
+    }
+  }
+  return null;
 }
 
 function aggregateActions(target, result) {
@@ -541,8 +610,44 @@ async function main() {
     let verification = await rawVerification('verify-pipeline-initial');
     summary.initial_verification = verification;
     const reviewedThisRun = new Set();
+    let firstPass = 1;
 
-    for (let pass = 1; pass <= maxPasses; pass++) {
+    const pendingApply = loadPendingApplyCheckpoint(verification);
+    if (pendingApply) {
+      const pass = pendingApply.pass;
+      summary.passes = pass;
+      summary.reviews.push(...pendingApply.review.findings);
+      summary.review_resilience.checkpoints_reused++;
+      summary.review_resilience.mechanical_normalizations += pendingApply.normalizations.length;
+      log(`resuming validated apply checkpoint for pass ${pass} (${pendingApply.review.findings.length} decision(s), ${pendingApply.normalizations.length} normalization(s))`);
+      if (pendingApply.duplicateResult) aggregateActions(summary.actions, pendingApply.duplicateResult);
+
+      let applyResult = pendingApply.applyResult;
+      if (applyResult) {
+        log(`apply-review-${pass} reused completed action result`);
+      } else {
+        const applicableReviewPath = join(runDir, `review.applicable-resume-${String(pass).padStart(2, '0')}.json`);
+        const applyVerificationPath = join(runDir, `verification.apply-resume-${String(pass).padStart(2, '0')}.json`);
+        writeJsonAtomic(applicableReviewPath, pendingApply.review);
+        writeJsonAtomic(applyVerificationPath, verification);
+        applyResult = parseJson(await runCommand(`apply-review-resume-${pass}`, process.execPath, [
+          systemPath('apply-verification-review.mjs'), '--user', context.userId,
+          '--verification', applyVerificationPath, '--review', applicableReviewPath,
+          '--run-id', runId, '--json',
+        ]), `apply-review-resume-${pass}`);
+        writeJsonAtomic(join(runDir, `action-result.review.pass-${String(pass).padStart(2, '0')}.json`), applyResult);
+      }
+      aggregateActions(summary.actions, applyResult);
+      for (const decision of pendingApply.review.findings.filter(item => item.disposition === 'manual_review')) {
+        const finding = pendingApply.expected.find(item =>
+          item.level === decision.finding_level && item.id === decision.finding_id);
+        if (finding) reviewedThisRun.add(finding.fingerprint);
+      }
+      verification = await rawVerification(`verify-pipeline-post-review-resume-${pass}`);
+      firstPass = pass + 1;
+    }
+
+    for (let pass = firstPass; pass <= maxPasses; pass++) {
       const ledger = readReviewLedger(reviewLedgerPath);
       const partition = partitionReviewedFindings(verification, ledger);
       const active = partition.active.filter(finding => !reviewedThisRun.has(finding.fingerprint));
@@ -591,6 +696,7 @@ async function main() {
           systemPath('resolve-verify-warnings.mjs'), '--user', context.userId,
           '--verification', verificationPath, '--triage', triagePath, '--json',
         ]), `resolve-duplicates-${pass}`);
+        writeJsonAtomic(join(runDir, `action-result.duplicates.pass-${String(pass).padStart(2, '0')}.json`), duplicateResult);
         aggregateActions(summary.actions, duplicateResult);
         verificationForApply = await rawVerification(`verify-pipeline-post-duplicates-${pass}`);
       }
@@ -604,6 +710,7 @@ async function main() {
         systemPath('apply-verification-review.mjs'), '--user', context.userId,
         '--verification', applyVerificationPath, '--review', applicableReviewPath, '--run-id', runId, '--json',
       ]), `apply-review-${pass}`);
+      writeJsonAtomic(join(runDir, `action-result.review.pass-${String(pass).padStart(2, '0')}.json`), applyResult);
       aggregateActions(summary.actions, applyResult);
 
       for (const decision of decisions.filter(item => item.disposition === 'manual_review')) {
