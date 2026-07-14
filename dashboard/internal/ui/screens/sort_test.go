@@ -8,7 +8,7 @@ import (
 )
 
 func TestSortCycleIncludesNewColumns(t *testing.T) {
-	want := map[string]bool{sortLocation: false, sortPay: false, sortLast: false}
+	want := map[string]bool{sortID: false, sortLocation: false, sortPay: false, sortLast: false}
 	for _, s := range sortCycle {
 		if _, ok := want[s]; ok {
 			want[s] = true
@@ -17,6 +17,26 @@ func TestSortCycleIncludesNewColumns(t *testing.T) {
 	for mode, found := range want {
 		if !found {
 			t.Errorf("sort cycle is missing %q", mode)
+		}
+	}
+}
+
+func TestSortByID(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Number: 12, Company: "Twelve", Status: "Applied"},
+		{Number: 101, Company: "OneOhOne", Status: "Applied"},
+		{Number: 3, Company: "Three", Status: "Applied"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
+	pm.activeTab = tabIndexForFilter(t, filterApplied)
+	pm.sortMode = sortID
+	pm.applyFilterAndSort()
+
+	want := []int{101, 12, 3}
+	for i, id := range want {
+		if pm.filtered[i].Number != id {
+			t.Fatalf("ID sort: position %d = #%d, want #%d", i, pm.filtered[i].Number, id)
 		}
 	}
 }

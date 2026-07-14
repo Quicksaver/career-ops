@@ -165,6 +165,7 @@ func TestSortModeLabel(t *testing.T) {
 
 	enCases := []sortTestCase{
 		{name: "score", mode: "score", want: "score"},
+		{name: "id", mode: "id", want: "#id"},
 		{name: "date", mode: "date", want: "date"},
 		{name: "company", mode: "company", want: "company"},
 		{name: "status", mode: "status", want: "status"},
@@ -184,6 +185,7 @@ func TestSortModeLabel(t *testing.T) {
 
 	trCases := []sortTestCase{
 		{name: "score", mode: "score", want: "puan"},
+		{name: "id", mode: "id", want: "#id"},
 		{name: "date", mode: "date", want: "tarih"},
 		{name: "company", mode: "company", want: "şirket"},
 		{name: "status", mode: "status", want: "durum"},
@@ -203,6 +205,7 @@ func TestSortModeLabel(t *testing.T) {
 
 	esCases := []sortTestCase{
 		{name: "score", mode: "score", want: "puntuación"},
+		{name: "id", mode: "id", want: "#id"},
 		{name: "date", mode: "date", want: "fecha"},
 		{name: "company", mode: "company", want: "empresa"},
 		{name: "status", mode: "status", want: "estado"},

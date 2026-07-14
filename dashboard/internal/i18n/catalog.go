@@ -131,6 +131,7 @@ type Catalog struct {
 
 	// Sort & view modes
 	SortScore    string
+	SortID       string
 	SortDate     string
 	SortCompany  string
 	SortStatus   string
@@ -146,6 +147,8 @@ func (c *Catalog) SortModeLabel(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "score":
 		return c.SortScore
+	case "id":
+		return c.SortID
 	case "date":
 		return c.SortDate
 	case "company":
@@ -351,6 +354,7 @@ var En = Catalog{
 
 	// Sort & view modes
 	SortScore:    "score",
+	SortID:       "#id",
 	SortDate:     "date",
 	SortCompany:  "company",
 	SortStatus:   "status",
@@ -484,6 +488,7 @@ var Tr = Catalog{
 
 	// Sort & view modes
 	SortScore:    "puan",
+	SortID:       "#id",
 	SortDate:     "tarih",
 	SortCompany:  "şirket",
 	SortStatus:   "durum",
@@ -617,6 +622,7 @@ var Es = Catalog{
 
 	// Sort & view modes
 	SortScore:    "puntuación",
+	SortID:       "#id",
 	SortDate:     "fecha",
 	SortCompany:  "empresa",
 	SortStatus:   "estado",

@@ -113,6 +113,7 @@ const storyTemplateURL = "https://github.com/santifer/career-ops/issues/new?temp
 // Sort modes
 const (
 	sortScore    = "score"
+	sortID       = "id"
 	sortDate     = "date"
 	sortCompany  = "company"
 	sortStatus   = "status"
@@ -154,7 +155,7 @@ func getPipelineTabs() []pipelineTab {
 	}
 }
 
-var sortCycle = []string{sortScore, sortDate, sortCompany, sortStatus, sortLocation, sortPay, sortLast}
+var sortCycle = []string{sortScore, sortID, sortDate, sortCompany, sortStatus, sortLocation, sortPay, sortLast}
 
 // ColumnID identifies an optional table column in the pipeline view.
 type ColumnID int
@@ -1196,6 +1197,9 @@ func (m *PipelineModel) applyFilterAndSort() {
 // sortLess returns the comparator for the active sort mode.
 func (m PipelineModel) sortLess() func(a, b model.CareerApplication) bool {
 	switch m.sortMode {
+	case sortID:
+		// Highest tracker ID first, matching the newest-first date sort.
+		return func(a, b model.CareerApplication) bool { return a.Number > b.Number }
 	case sortDate:
 		return func(a, b model.CareerApplication) bool { return dashboardDate(a) > dashboardDate(b) }
 	case sortCompany:
@@ -1907,7 +1911,7 @@ func (m PipelineModel) renderHelp() string {
 		keyStyle.Render("t") + descStyle.Render(i18n.Current.HelpLanguage) +
 		keyStyle.Render("q") + descStyle.Render(i18n.Current.HelpQuit)
 
-	sortInfo := descStyle.Render("Sort: ") + keyStyle.Render(m.sortMode)
+	sortInfo := descStyle.Render("Sort: ") + keyStyle.Render(i18n.Current.SortModeLabel(m.sortMode))
 	right := sortInfo + descStyle.Render("  ") + brand
 	if lipgloss.Width(keys)+lipgloss.Width(right)+2 > m.width {
 		right = sortInfo
