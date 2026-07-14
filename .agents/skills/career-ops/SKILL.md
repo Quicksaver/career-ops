@@ -244,6 +244,11 @@ bounded tracker patches, or exact-fingerprint seen records before raw
 re-verification. Unresolved findings stay user-facing. Keep the
 current turn active while the runner executes and apply the same
 quiet-monitoring and stop semantics.
+Duplicate resolution preserves lifecycle order as `Applied > Rejected >
+Evaluated`. When an `Applied`-or-later losing row owns the report/CV artifacts
+that were used, the resolver promotes and renames those artifacts into the
+canonical keeper ID, archives the superseded keeper artifacts, and records both
+identities in the duplicate ledger.
 Resolve Codex model and reasoning independently with this precedence:
 `go-runner.mjs` arguments, `users/{ACTIVE_USER}/config/profile.yml` under
 `codex.model` / `codex.reasoning_effort`, then Codex global defaults. The runner

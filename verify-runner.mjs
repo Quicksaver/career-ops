@@ -248,7 +248,7 @@ The raw verifier intentionally reports broad possible problems. Your job is to d
 - patch_tracker: only for a bounded, evidence-backed correction to company, Via, canonical status, score, or report link. It is supported for noncanonical_status, bold_status, dated_status, broken_report_link, invalid_score, bold_score, missing_via_value, and confidential_company_placeholder. Supply only fields that must change; use null for every untouched field.
 - manual_review: when the finding is real but no supported deterministic action is safe, evidence conflicts, or a user decision is required. Use classification needs_human_review and needs_human_review=true.
 
-Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
+Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions. The resolver preserves the most advanced lifecycle status with Rejected ranked between Applied and Evaluated; when an Applied-or-later duplicate owns the used report/CV artifacts, their content is promoted into the canonical keeper filenames. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
 
 Return finding_id, finding_code, and finding_level verbatim. Set all unused resolution objects to null. Your final response must contain only the JSON required by the supplied output schema.`;
 }
@@ -373,7 +373,8 @@ function decisionsStillPresent(originalFindings, review, currentVerification) {
 
 function aggregateActions(target, result) {
   for (const key of [
-    'duplicate_groups', 'tracker_rows_removed', 'reports_archived', 'artifacts_archived',
+    'duplicate_groups', 'tracker_rows_removed', 'reports_archived', 'reports_promoted',
+    'artifacts_archived', 'artifacts_promoted',
     'seen_recorded', 'tracker_rows_restored', 'tracker_rows_patched', 'orphans_archived',
   ]) target[key] = (target[key] || 0) + (result?.[key] || 0);
   for (const key of ['ledger', 'backup', 'review_ledger', 'action_ledger']) {

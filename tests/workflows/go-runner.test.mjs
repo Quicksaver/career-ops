@@ -11,6 +11,15 @@ try {
   const queue = await import(pathToFileURL(join(ROOT, 'lib/pipeline-queue.mjs')).href);
   const codexConfig = await import(pathToFileURL(join(ROOT, 'lib/codex-config.mjs')).href);
   const parallelConfig = await import(pathToFileURL(join(ROOT, 'lib/parallel-config.mjs')).href);
+  const duplicateLifecycle = await import(pathToFileURL(join(ROOT, 'lib/duplicate-lifecycle.mjs')).href);
+  if (duplicateLifecycle.duplicateStatusRank('Applied') > duplicateLifecycle.duplicateStatusRank('Rejected') &&
+      duplicateLifecycle.duplicateStatusRank('Rejected') > duplicateLifecycle.duplicateStatusRank('Evaluated') &&
+      duplicateLifecycle.statusUsesGeneratedArtifacts('Applied') &&
+      !duplicateLifecycle.statusUsesGeneratedArtifacts('Rejected')) {
+    pass('duplicate lifecycle ranks Applied above Rejected above Evaluated and promotes Applied-or-later artifacts');
+  } else {
+    fail('duplicate lifecycle ordering or artifact threshold is wrong');
+  }
   const fixture = [
     '# Pipeline', '', '## Pending',
     '- [ ] https://example.com/a | Acme | AI Engineer',
@@ -81,16 +90,19 @@ try {
     '# Applications Tracker', '',
     '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |',
     '|---|------|---------|------|-------|--------|-----|--------|-------|',
-    '| 1 | 2026-01-01 | Acme | Engineer | 4.0/5 | Evaluated | — | [1](../reports/001-acme-2026-01-01.md) | first |',
-    '| 2 | 2026-01-02 | Acme | Engineer | 3.5/5 | Applied | — | [2](../reports/002-acme-2026-01-02.md) | second |',
+    '| 1 | 2026-01-01 | Acme | Engineer | 4.0/5 | Evaluated | [PDF](../output/001-acme-2026-01-01.pdf) | [1](../reports/001-acme-2026-01-01.md) | first |',
+    '| 2 | 2026-01-02 | Acme | Engineer | 3.5/5 | Applied | [PDF](../output/002-acme-2026-01-02.pdf) | [2](../reports/002-acme-2026-01-02.md) | second |',
   ].join('\n') + '\n');
-  const reportBody = role => [
-    `# Evaluation: Acme — ${role}`, '', '## Machine Summary', '```yaml', `role: ${role}`, '```', '',
+  const reportBody = (role, artifact) => [
+    `# Evaluation: Acme — ${role}`, '', `Artifact source: ${artifact}`, '',
+    '## Machine Summary', '```yaml', `role: ${role}`, '```', '',
   ].join('\n');
-  writeFileSync(join(warningRoot, 'reports/001-acme-2026-01-01.md'), reportBody('Engineer'));
-  writeFileSync(join(warningRoot, 'reports/002-acme-2026-01-02.md'), reportBody('Engineer'));
-  writeFileSync(join(warningRoot, 'output/002-acme-2026-01-02.html'), '<html></html>\n');
-  writeFileSync(join(warningRoot, 'output/002-acme-2026-01-02.pdf'), 'fixture pdf\n');
+  writeFileSync(join(warningRoot, 'reports/001-acme-2026-01-01.md'), reportBody('Engineer', 'unused keeper'));
+  writeFileSync(join(warningRoot, 'reports/002-acme-2026-01-02.md'), reportBody('Engineer', 'used application'));
+  writeFileSync(join(warningRoot, 'output/001-acme-2026-01-01.html'), '<html>unused keeper</html>\n');
+  writeFileSync(join(warningRoot, 'output/001-acme-2026-01-01.pdf'), 'unused keeper pdf\n');
+  writeFileSync(join(warningRoot, 'output/002-acme-2026-01-02.html'), '<html>used application</html>\n');
+  writeFileSync(join(warningRoot, 'output/002-acme-2026-01-02.pdf'), 'used application pdf\n');
 
   const verification = JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'verify-pipeline.mjs'), '--user', 'test', '--json',
@@ -195,7 +207,13 @@ try {
   }));
   const repairedTracker = readFileSync(join(warningRoot, 'data/applications.md'), 'utf-8');
   const reportArchiveDirs = readdirSync(join(warningRoot, 'reports/duplicates'));
-  const archivedReport = join(warningRoot, 'reports/duplicates', reportArchiveDirs[0], '002-acme-2026-01-02.md');
+  const archiveStamp = reportArchiveDirs[0];
+  const archivedReport = join(warningRoot, 'reports/duplicates', archiveStamp, '001-acme-2026-01-01.md');
+  const activeReport = join(warningRoot, 'reports/001-acme-2026-01-01.md');
+  const activePdf = join(warningRoot, 'output/001-acme-2026-01-01.pdf');
+  const activeHtml = join(warningRoot, 'output/001-acme-2026-01-01.html');
+  const archivedPdf = join(warningRoot, 'output/duplicates', archiveStamp, '001-acme-2026-01-01.pdf');
+  const resolutionLedger = readFileSync(join(warningRoot, 'data/duplicate-resolutions.jsonl'), 'utf-8');
   const repairedVerification = JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'verify-pipeline.mjs'), '--user', 'test', '--json',
   ], {
@@ -203,13 +221,27 @@ try {
     env: { ...process.env, CAREER_OPS_USERS_DIR: warningUsers },
     encoding: 'utf-8',
   }));
-  if (repair.tracker_rows_removed === 1 && repair.reports_archived === 1 &&
-      !repairedTracker.includes('| 2 |') && repairedTracker.includes('| Applied |') &&
-      existsSync(archivedReport) && readFileSync(archivedReport, 'utf-8').includes('duplicate_of: reports/001-acme') &&
-      repairedVerification.counts.errors === 0 && repairedVerification.warnings.length === 0) {
-    pass('confirmed duplicates are deterministically merged, archived, logged, and reverified');
+  const resolutionChecks = {
+    trackerRows: repair.tracker_rows_removed === 1,
+    reportCounts: repair.reports_archived === 1 && repair.reports_promoted === 1,
+    artifactCounts: repair.artifacts_archived === 2 && repair.artifacts_promoted === 2,
+    losingRowRemoved: !repairedTracker.includes('| 2 |'),
+    statusPreserved: repairedTracker.includes('| Applied |'),
+    pdfLinkCanonical: repairedTracker.includes('[PDF](../output/001-acme-2026-01-01.pdf)'),
+    oldReportArchived: existsSync(archivedReport) && readFileSync(archivedReport, 'utf-8').includes('superseded_by_used_duplicate'),
+    usedReportPromoted: readFileSync(activeReport, 'utf-8').includes('Artifact source: used application'),
+    usedPdfPromoted: readFileSync(activePdf, 'utf-8').includes('used application pdf'),
+    usedHtmlPromoted: readFileSync(activeHtml, 'utf-8').includes('used application'),
+    oldPdfArchived: existsSync(archivedPdf),
+    sourceReportRenamed: !existsSync(join(warningRoot, 'reports/002-acme-2026-01-02.md')),
+    sourcePdfRenamed: !existsSync(join(warningRoot, 'output/002-acme-2026-01-02.pdf')),
+    promotionLogged: resolutionLedger.includes('promote_used_duplicate_artifacts'),
+    verifierClean: repairedVerification.counts.errors === 0 && repairedVerification.warnings.length === 0,
+  };
+  if (Object.values(resolutionChecks).every(Boolean)) {
+    pass('confirmed duplicates preserve lifecycle and promote used report/CV artifacts into the canonical identity');
   } else {
-    fail(`duplicate resolution wrong: repair=${JSON.stringify(repair)} verify=${JSON.stringify(repairedVerification)}`);
+    fail(`duplicate resolution wrong: checks=${JSON.stringify(resolutionChecks)} tracker=${JSON.stringify(repairedTracker)} repair=${JSON.stringify(repair)} verify=${JSON.stringify(repairedVerification)}`);
   }
 
   const forbiddenVerificationPath = join(warningTmp, 'forbidden-verification.json');
