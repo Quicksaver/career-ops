@@ -546,13 +546,21 @@ try {
     "      };",
     "    });",
     "  }",
+    "  if (process.env.FAKE_CODEX_MANUAL_REVIEW) {",
+    "    findings = input.findings.map(finding => ({",
+    "      finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
+    "      classification: 'needs_human_review', disposition: 'manual_review', severity: 'medium', needs_human_review: true,",
+    "      rationale: 'Fixture requires a user decision.', evidence: [],",
+    "      duplicate_resolution: null, orphan_resolution: null, tracker_patch: null,",
+    "    }));",
+    "  }",
     "  if (process.env.FAKE_CODEX_INVALID_ONCE && !fs.existsSync(process.env.FAKE_CODEX_INVALID_ONCE)) {",
     "    fs.writeFileSync(process.env.FAKE_CODEX_INVALID_ONCE, 'invalid emitted\\n');",
     "    findings = findings.map(finding => ({ ...finding, classification: 'actionable', disposition: 'patch_tracker', tracker_patch: null }));",
     "  }",
     "  setTimeout(() => {",
     "    fs.appendFileSync(process.env.FAKE_CODEX_CALLS, '1\\n');",
-    "    fs.writeFileSync(output, JSON.stringify({ status: 'completed', needs_human_review: false, findings }));",
+    "    fs.writeFileSync(output, JSON.stringify({ status: 'completed', needs_human_review: findings.some(finding => finding.needs_human_review), findings }));",
     "    fs.appendFileSync(process.env.FAKE_CODEX_CONCURRENCY, JSON.stringify({ event: 'end', pid: process.pid, at: Date.now() }) + '\\n');",
     "  }, Number(process.env.FAKE_CODEX_DELAY || 150));",
     "});",
@@ -770,6 +778,42 @@ try {
     pass('verify runner prints the run ID before work and ends with a compact human summary');
   } else {
     fail(`verify runner human summary contract wrong: status=${humanRun.status} stdout=${humanRun.stdout} stderr=${humanRun.stderr}`);
+  }
+
+  const manualReport = '027-manual-review-2026-01-04.md';
+  writeFileSync(join(reportsDir, manualReport), [
+    '# Evaluation: Manual Review — Engineer', '',
+    '**URL:** https://example.com/jobs/27', '',
+    '## Machine Summary', '```yaml', 'company: Manual Review',
+    'role: Engineer', 'score: 3.0', '```', '',
+  ].join('\n'));
+  writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| 27 | 2026-01-04 | Manual Review | Engineer | **3.0/5** | Evaluated | — | [27](../reports/${manualReport}) | manual fixture |\n`);
+  const manualJsonProcess = spawnSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '1',
+    '--parallel', '1', '--quiet', '--json',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_MANUAL_REVIEW: '1' },
+    encoding: 'utf-8',
+  });
+  const manualJson = JSON.parse(manualJsonProcess.stdout);
+  const manualRun = spawnSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '1',
+    '--parallel', '1', '--quiet',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_MANUAL_REVIEW: '1' },
+    encoding: 'utf-8',
+  });
+  const manualLines = manualRun.stdout.trim().split(/\r?\n/);
+  if (manualJsonProcess.status === 0 && manualJson.status === 'partial' &&
+      !Object.hasOwn(manualJson, 'humanReviewRecap') &&
+      manualRun.status === 0 && manualRun.stdout.includes('[verify] summary: partial') &&
+      manualRun.stdout.includes('[verify] human review required (1):') &&
+      manualLines.at(-1) === '[verify] human review, job #27, bold_score → needs_human_review') {
+    pass('non-JSON verification repeats human-review items in a compact final recap');
+  } else {
+    fail(`verify human-review recap wrong: status=${manualRun.status} stdout=${manualRun.stdout}`);
   }
 
   const interruptedRows = [];

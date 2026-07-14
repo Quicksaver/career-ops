@@ -1104,6 +1104,11 @@ What this customizes:
   data, and both revalidate prompt output against deterministic verifier
   evidence. Unsupported, conflicting, ambiguous, or high-severity findings use
   `manual_review` and keep reviewed verification `partial`.
+- Keeps manual-review decisions visible in direct human runs: after the normal
+  compact summary (and any operational error), every still-active manual item is
+  repeated as `human review, job(s) #..., {finding code} → needs_human_review`.
+  This recap is non-enumerable runner state used only by the human renderer, so
+  `--json` retains its existing machine contract and stdout purity.
 - Adds an idempotent `pipeline.md` to `batch-input.tsv` synchronizer with stable
   IDs so the resumable batch runner cannot silently miss newly scanned jobs.
 - Adds JSON output to `check-liveness.mjs` plus a deterministic pipeline wrapper

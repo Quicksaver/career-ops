@@ -134,18 +134,45 @@ function log(message) {
   stream.write(`[verify] ${message}\n`);
 }
 
+function formatJobIds(jobIds) {
+  return jobIds.length === 0
+    ? 'job n/a'
+    : `${jobIds.length === 1 ? 'job' : 'jobs'} ${jobIds.map(id => `#${id}`).join('/')}`;
+}
+
 function logReviewResults(chunk, review, positions, total) {
   const findings = new Map(chunk.map(finding => [
     `${finding.level}:${finding.id}`, finding,
   ]));
   review.findings.forEach((decision, index) => {
     const finding = findings.get(`${decision.finding_level}:${decision.finding_id}`);
-    const jobIds = findingJobIds(finding);
-    const jobs = jobIds.length === 0
-      ? 'job n/a'
-      : `${jobIds.length === 1 ? 'job' : 'jobs'} ${jobIds.map(id => `#${id}`).join('/')}`;
+    const jobs = formatJobIds(findingJobIds(finding));
     log(`reviewed ${positions[index] + 1}/${total}, ${jobs}, ${decision.finding_code} → ${decision.classification}`);
   });
+}
+
+function humanReviewItems(findings, decisions) {
+  const findingsByKey = new Map(findings.map(finding => [
+    `${finding.level}:${finding.id}`, finding,
+  ]));
+  return decisions
+    .filter(decision => decision.disposition === 'manual_review' ||
+      decision.classification === 'needs_human_review' || decision.needs_human_review)
+    .map(decision => {
+      const finding = findingsByKey.get(`${decision.finding_level}:${decision.finding_id}`);
+      return {
+        key: `${decision.finding_level}:${decision.finding_id}`,
+        job_ids: findingJobIds(finding),
+        finding_code: decision.finding_code,
+        classification: decision.classification,
+      };
+    });
+}
+
+function mergeHumanReviewItems(summary, findings, decisions) {
+  const merged = new Map(summary.humanReviewRecap.map(item => [item.key, item]));
+  for (const item of humanReviewItems(findings, decisions)) merged.set(item.key, item);
+  summary.humanReviewRecap = [...merged.values()];
 }
 
 function processAlive(pid) {
@@ -615,6 +642,10 @@ async function main() {
     parallel: parallelSettings.parallel,
     parallel_source: parallelSettings.source,
   };
+  // Used only by the human renderer. Keep the machine JSON contract unchanged.
+  Object.defineProperty(summary, 'humanReviewRecap', {
+    value: [], writable: true, enumerable: false,
+  });
   try {
     const reviewSchema = JSON.parse(readFileSync(reviewSchemaPath, 'utf-8'));
     assertOpenAIStructuredOutputSchema(reviewSchema, reviewSchemaPath);
@@ -628,6 +659,7 @@ async function main() {
       const pass = pendingApply.pass;
       summary.passes = pass;
       summary.reviews.push(...pendingApply.review.findings);
+      mergeHumanReviewItems(summary, pendingApply.expected, pendingApply.review.findings);
       summary.review_resilience.checkpoints_reused++;
       summary.review_resilience.mechanical_normalizations += pendingApply.normalizations.length;
       log(`resuming validated apply checkpoint for pass ${pass} (${pendingApply.review.findings.length} decision(s), ${pendingApply.normalizations.length} normalization(s))`);
@@ -672,6 +704,9 @@ async function main() {
         const currentFindings = new Map(verificationFindings(verification).map(item => [
           `${item.level}:${item.id}`, item,
         ]));
+        mergeHumanReviewItems(
+          summary, [...currentFindings.values()], completedPass.review?.findings || [],
+        );
         for (const decision of (completedPass.review?.findings || [])
           .filter(item => item.disposition === 'manual_review')) {
           const finding = currentFindings.get(`${decision.finding_level}:${decision.finding_id}`);
@@ -716,6 +751,7 @@ async function main() {
       const review = { status: 'completed', needs_human_review: needsReview, findings: decisions };
       validateReviewDecisions(active, review);
       validateDuplicateConsistency(verification, review);
+      mergeHumanReviewItems(summary, active, decisions);
       const reviewPath = join(runDir, `review.pass-${String(pass).padStart(2, '0')}.json`);
       writeFileSync(reviewPath, `${JSON.stringify(review, null, 2)}\n`, 'utf-8');
       summary.reviews.push(...decisions);
@@ -761,6 +797,8 @@ async function main() {
 
     const ledger = readReviewLedger(reviewLedgerPath);
     const finalPartition = partitionReviewedFindings(verification, ledger);
+    const finalKeys = new Set(finalPartition.active.map(item => `${item.level}:${item.id}`));
+    summary.humanReviewRecap = summary.humanReviewRecap.filter(item => finalKeys.has(item.key));
     summary.final_verification = verification;
     summary.seen_findings = finalPartition.seen.map(item => ({
       finding_level: item.finding.level,
@@ -852,10 +890,14 @@ function printHumanSummary(result) {
   // A normal run prints this near startup so an interrupted process remains
   // resumable. Quiet mode suppresses that live line, so retain it here.
   if (quiet) console.log(`[verify] logs: ${result.logs}`);
-  if (result.status === 'partial' && unresolved > 0) {
-    console.log(`[verify] human review required for ${unresolved} finding(s)`);
-  }
   if (result.error) console.log(`[verify] error: ${result.error}`);
+  const humanReview = result.humanReviewRecap || [];
+  if (humanReview.length > 0) {
+    console.log(`[verify] human review required (${humanReview.length}):`);
+    for (const item of humanReview) {
+      console.log(`[verify] human review, ${formatJobIds(item.job_ids)}, ${item.finding_code} → ${item.classification}`);
+    }
+  }
 }
 
 if (jsonOutput) console.log(JSON.stringify(summary));
