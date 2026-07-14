@@ -25,6 +25,7 @@ import {
 } from './lib/openai-output-schema.mjs';
 import {
   buildReviewLanes,
+  findingJobIds,
   partitionReviewedFindings,
   readReviewLedger,
   verificationFindings,
@@ -112,23 +113,17 @@ function log(message) {
   if (!quiet) process.stderr.write(`[verify] ${message}\n`);
 }
 
-function compactLogValue(value) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim();
-}
-
 function logReviewResults(chunk, review, positions, total) {
   const findings = new Map(chunk.map(finding => [
     `${finding.level}:${finding.id}`, finding,
   ]));
   review.findings.forEach((decision, index) => {
     const finding = findings.get(`${decision.finding_level}:${decision.finding_id}`);
-    log(`reviewed ${positions[index] + 1}/${total} ${decision.finding_level} ${decision.finding_code} ${decision.finding_id}`);
-    if (finding?.message) log(`  issue: ${compactLogValue(finding.message)}`);
-    log(`  decision: ${decision.disposition} (classification=${decision.classification}, severity=${decision.severity}, human_review=${decision.needs_human_review ? 'yes' : 'no'}; pending apply)`);
-    log(`  rationale: ${compactLogValue(decision.rationale)}`);
-    for (const evidence of decision.evidence || []) {
-      log(`  evidence: ${compactLogValue(evidence.path)} — ${compactLogValue(evidence.observation)}`);
-    }
+    const jobIds = findingJobIds(finding);
+    const jobs = jobIds.length === 0
+      ? 'job n/a'
+      : `${jobIds.length === 1 ? 'job' : 'jobs'} ${jobIds.map(id => `#${id}`).join('/')}`;
+    log(`reviewed ${positions[index] + 1}/${total}, ${jobs}, ${decision.finding_code} → ${decision.classification}`);
   });
 }
 

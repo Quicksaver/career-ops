@@ -140,6 +140,19 @@ try {
   } else {
     fail(`dependency-safe review lanes wrong: ${JSON.stringify(dependencyLanes)}`);
   }
+  const jobIdFixtures = [
+    reviewLib.findingJobIds(relatedFindings[0]),
+    reviewLib.findingJobIds(relatedFindings[1]),
+    reviewLib.findingJobIds(relatedFindings[2]),
+    reviewLib.findingJobIds({
+      details: { tracker_num: 207, report: '[206](reports/206-example.md)' },
+    }),
+  ];
+  if (JSON.stringify(jobIdFixtures) === JSON.stringify([[1, 2], [1, 2], [2], [207]])) {
+    pass('review progress job IDs prefer tracker IDs and fall back to report IDs');
+  } else {
+    fail(`review progress job IDs wrong: ${JSON.stringify(jobIdFixtures)}`);
+  }
 
   const rawWarning = {
     id: 'possible-duplicate-tracker:1:2',
@@ -323,12 +336,14 @@ try {
     fail(`verify runner lifecycle wrong: first=${JSON.stringify(firstRun)} second=${JSON.stringify(secondRun)} calls=${calls}`);
   }
   if (firstProcess.stderr.includes('2 dependency-safe lane(s), up to 2 concurrent reviewer(s)') &&
-      firstProcess.stderr.includes('reviewed 1/6 warning bold_score bold-score:1') &&
-      firstProcess.stderr.includes('decision: mark_seen (classification=false_positive, severity=low, human_review=no; pending apply)') &&
-      firstProcess.stderr.includes('rationale: Fixture reviewer confirmed an unchanged formatting warning.')) {
-    pass('verify runner streams each finding issue, decision, and rationale after every review chunk');
+      firstProcess.stderr.includes('reviewed 1/6, job #1, bold_score → false_positive') &&
+      !firstProcess.stderr.includes('  issue:') &&
+      !firstProcess.stderr.includes('  decision:') &&
+      !firstProcess.stderr.includes('  rationale:') &&
+      !firstProcess.stderr.includes('  evidence:')) {
+    pass('verify runner streams one concise line per finding after every review chunk');
   } else {
-    fail(`verify runner omitted per-finding progress: ${firstProcess.stderr}`);
+    fail(`verify runner per-finding progress was missing or verbose: ${firstProcess.stderr}`);
   }
 
   const interruptedRows = [];

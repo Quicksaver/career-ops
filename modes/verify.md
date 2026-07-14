@@ -25,7 +25,7 @@ The prompt reviewer is read-only and cannot mutate files. `apply-verification-re
 
 Review calls contain at most five findings. Reviewer concurrency resolves as explicit `--parallel N`, then the active user's `batch.parallel`, then `1`; the same resolved model and reasoning effort are passed to every reviewer. Findings with overlapping tracker/report/orphan identities stay in the same dependency lane and are reviewed sequentially with prior decisions as binding context, while independent lanes run concurrently. Reviewers are read-only and use distinct input, output, and log files. All repairs and ledger writes remain serialized in the parent after every lane completes and aggregate consistency passes.
 
-After each call completes, the runner writes every finding's issue, classification, disposition, severity, human-review flag, rationale, and cited evidence to stderr. Decisions are explicitly labelled `pending apply` until aggregate consistency checks pass and the deterministic mutation phase runs. Stdout remains reserved for the single final JSON summary; `--quiet` suppresses the live progress while retaining phase logs.
+After each call completes, the runner writes one compact stderr line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred; report IDs are used for report-only and orphan findings. Full decisions, rationale, evidence, and action details remain in the run artifacts and final JSON summary instead of flooding the terminal. Stdout remains reserved for the single final JSON summary; `--quiet` suppresses live progress while retaining phase logs.
 
 ## Completion
 

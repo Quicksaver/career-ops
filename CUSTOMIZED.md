@@ -1066,10 +1066,12 @@ What this customizes:
 - Streams bounded operational progress to stderr while preserving stdout as the
   single final JSON object: zero-token target/provider start and completion,
   handoff task activity, LinkedIn search prompts, queue deltas, batch job
-  start/completion, and each reviewed verification finding's issue, pending
-  decision, classification, severity, rationale, and cited evidence after its
-  five-finding review call completes. `--quiet` retains the previous
-  phase-log-only behavior.
+  start/completion, and one short line per reviewed finding after its
+  five-finding call completes: `reviewed X/Y, job(s) #{related IDs},
+  {issue code} → {classification}`. Tracker IDs are preferred, with report IDs
+  used for report-only and orphan findings. Full rationale, evidence, and action
+  details stay in run artifacts and the final JSON summary. `--quiet` retains
+  the phase-log-only behavior.
 - Registers the runner, helpers, shared library, tests, and JSON schema in the
   updater-managed system layer so updates do not leave a partial coordinator.
 - Resolves Codex model and reasoning independently as runner argument, active
