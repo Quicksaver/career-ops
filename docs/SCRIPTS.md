@@ -101,7 +101,7 @@ npm run verify -- --user <username>
 npm run verify:raw -- --user <username> --json
 ```
 
-`verify-runner.mjs` reviews each finding, applies supported deterministic actions, records accepted findings in `users/{USER}/data/verification-reviews.jsonl`, and reverifies for up to three passes. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
+`verify-runner.mjs` reviews findings in calls of at most five, applies supported deterministic actions, records accepted findings in `users/{USER}/data/verification-reviews.jsonl`, and reverifies for up to three passes. After each review call, stderr shows every finding's issue, decision, classification, severity, rationale, and evidence; decisions remain labelled `pending apply` until deterministic application succeeds. Stdout remains one final JSON object, and `--quiet` suppresses terminal progress. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
 
 The raw command preserves the low-level contract: exit `0` with zero errors and exit `1` when errors exist; warnings alone remain exit `0`.
 

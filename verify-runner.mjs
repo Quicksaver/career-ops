@@ -105,6 +105,26 @@ function log(message) {
   if (!quiet) process.stderr.write(`[verify] ${message}\n`);
 }
 
+function compactLogValue(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function logReviewResults(chunk, review, offset, total) {
+  const findings = new Map(chunk.map(finding => [
+    `${finding.level}:${finding.id}`, finding,
+  ]));
+  review.findings.forEach((decision, index) => {
+    const finding = findings.get(`${decision.finding_level}:${decision.finding_id}`);
+    log(`reviewed ${offset + index + 1}/${total} ${decision.finding_level} ${decision.finding_code} ${decision.finding_id}`);
+    if (finding?.message) log(`  issue: ${compactLogValue(finding.message)}`);
+    log(`  decision: ${decision.disposition} (classification=${decision.classification}, severity=${decision.severity}, human_review=${decision.needs_human_review ? 'yes' : 'no'}; pending apply)`);
+    log(`  rationale: ${compactLogValue(decision.rationale)}`);
+    for (const evidence of decision.evidence || []) {
+      log(`  evidence: ${compactLogValue(evidence.path)} — ${compactLogValue(evidence.observation)}`);
+    }
+  });
+}
+
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -372,6 +392,7 @@ async function main() {
       for (let offset = 0; offset < active.length; offset += REVIEW_CHUNK_SIZE) {
         const chunk = active.slice(offset, offset + REVIEW_CHUNK_SIZE);
         const suffix = `${String(pass).padStart(2, '0')}-${String(Math.floor(offset / REVIEW_CHUNK_SIZE) + 1).padStart(3, '0')}`;
+        log(`review-agent-${suffix} assigned findings ${offset + 1}-${offset + chunk.length} of ${active.length}`);
         const inputPath = join(runDir, `review-input.${suffix}.json`);
         const outputPath = join(runDir, `review-output.${suffix}.json`);
         writeFileSync(inputPath, `${JSON.stringify({
@@ -392,6 +413,7 @@ async function main() {
         if (!existsSync(outputPath)) throw new Error(`review agent ${suffix} did not write its JSON contract`);
         const result = JSON.parse(readFileSync(outputPath, 'utf-8'));
         validateReview(chunk, result);
+        logReviewResults(chunk, result, offset, active.length);
         decisions.push(...result.findings);
         needsReview ||= result.needs_human_review;
       }

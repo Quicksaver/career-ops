@@ -21,6 +21,10 @@ Every active finding must receive exactly one disposition:
 
 The prompt reviewer is read-only and cannot mutate files. `apply-verification-review.mjs` and `resolve-verify-warnings.mjs` are the only mutation boundaries. Every action is written to a user-scoped append-only ledger and backed up before destructive movement or tracker rewriting.
 
+## Live progress
+
+Review calls contain at most five findings. After each call completes, the runner writes every finding's issue, classification, disposition, severity, human-review flag, rationale, and cited evidence to stderr. Decisions are explicitly labelled `pending apply` until aggregate consistency checks pass and the deterministic mutation phase runs. Stdout remains reserved for the single final JSON summary; `--quiet` suppresses the live progress while retaining phase logs.
+
 ## Completion
 
 The runner loops through review, action, and raw re-verification for up to three passes by default. It returns:

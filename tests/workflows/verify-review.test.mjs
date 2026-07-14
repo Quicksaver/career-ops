@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { delimiter, join } from 'path';
@@ -238,9 +238,11 @@ try {
     PATH: `${fakeBin}${delimiter}${process.env.PATH}`,
     FAKE_CODEX_CALLS: callCount,
   };
-  const firstRun = JSON.parse(execFileSync(process.execPath, [
-    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet',
-  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' }));
+  const firstProcess = spawnSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' });
+  if (firstProcess.status !== 0) throw new Error(`first verify runner failed: ${firstProcess.stderr}`);
+  const firstRun = JSON.parse(firstProcess.stdout);
   const secondRun = JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet',
   ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' }));
@@ -250,6 +252,14 @@ try {
     pass('standalone verify runner reviews at most five findings per call, records seen state, and suppresses unchanged findings');
   } else {
     fail(`verify runner lifecycle wrong: first=${JSON.stringify(firstRun)} second=${JSON.stringify(secondRun)} calls=${calls}`);
+  }
+  if (firstProcess.stderr.includes('assigned findings 1-5 of 6') &&
+      firstProcess.stderr.includes('reviewed 1/6 warning bold_score bold-score:1') &&
+      firstProcess.stderr.includes('decision: mark_seen (classification=false_positive, severity=low, human_review=no; pending apply)') &&
+      firstProcess.stderr.includes('rationale: Fixture reviewer confirmed an unchanged formatting warning.')) {
+    pass('verify runner streams each finding issue, decision, and rationale after every review chunk');
+  } else {
+    fail(`verify runner omitted per-finding progress: ${firstProcess.stderr}`);
   }
 } catch (error) {
   fail(`reviewed verification tests crashed: ${error.stack || error.message}`);

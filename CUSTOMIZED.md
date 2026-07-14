@@ -1063,8 +1063,11 @@ What this customizes:
   authenticated-login requirements report blocked.
 - Streams bounded operational progress to stderr while preserving stdout as the
   single final JSON object: zero-token target/provider start and completion,
-  handoff task activity, LinkedIn search prompts, queue deltas, and batch job
-  start/completion. `--quiet` retains the previous phase-log-only behavior.
+  handoff task activity, LinkedIn search prompts, queue deltas, batch job
+  start/completion, and each reviewed verification finding's issue, pending
+  decision, classification, severity, rationale, and cited evidence after its
+  five-finding review call completes. `--quiet` retains the previous
+  phase-log-only behavior.
 - Registers the runner, helpers, shared library, tests, and JSON schema in the
   updater-managed system layer so updates do not leave a partial coordinator.
 - Resolves Codex model and reasoning independently as runner argument, active
