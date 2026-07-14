@@ -145,6 +145,7 @@ const SYSTEM_PATHS = [
   'find.mjs',
   'verify-pipeline.mjs',
   'verify-runner.mjs',
+  'cleanup-runs.mjs',
   'apply-verification-review.mjs',
   'reconcile-pipeline.mjs',
   'dedup-tracker.mjs',

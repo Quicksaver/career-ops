@@ -430,6 +430,12 @@ try {
   } else {
     fail('go runner does not forward resolved parallelism to reviewed verification');
   }
+  if (runner.includes('cleanupExpiredRuns') && runner.includes('ignoreActivePids: [process.pid]') &&
+      runner.includes('compactCompletedRun') && runner.includes("summary.status === 'completed'")) {
+    pass('go runner cleans expired runs at startup and compacts only completed runs');
+  } else {
+    fail('go runner retention and completed-run compaction are not fully wired');
+  }
   if (batchRunner.includes('model_reasoning_effort=') && batchRunner.includes('--reasoning-effort')) {
     pass('batch runner passes reasoning effort to each Codex worker');
   } else {

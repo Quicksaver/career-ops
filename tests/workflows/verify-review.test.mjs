@@ -384,11 +384,12 @@ try {
     args.includes('-c') && args[args.indexOf('-c') + 1] === 'model_reasoning_effort="low"');
   const phaseLogsUnique = new Set(firstRun.phases.map(phase => phase.log)).size === firstRun.phases.length &&
     firstRun.phases.every(phase => phase.status === 'completed');
+  const completedRunFiles = readdirSync(firstRun.logs);
   if (firstRun.status === 'completed' && firstRun.counts.raw_warnings === 6 && firstRun.counts.seen === 6 &&
       firstRun.parallel === 2 && firstRun.parallel_source === 'profile' && inheritedCodexSettings &&
-      phaseLogsUnique && overlapped &&
+      phaseLogsUnique && overlapped && completedRunFiles.length === 1 && completedRunFiles[0] === 'summary.json' &&
       secondRun.status === 'completed' && secondRun.passes === 0 && calls === 2) {
-    pass('standalone verify runner runs dependency-safe five-finding review lanes concurrently and suppresses unchanged findings');
+    pass('standalone verify runner runs concurrent review lanes, suppresses seen findings, and compacts completed artifacts');
   } else {
     fail(`verify runner lifecycle wrong: first=${JSON.stringify(firstRun)} second=${JSON.stringify(secondRun)} calls=${calls}`);
   }

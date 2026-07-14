@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "go": "node go-runner.mjs",
+    "cleanup:runs": "node cleanup-runs.mjs",
     "doctor": "node doctor.mjs",
     "or": "node openrouter-runner.mjs",
     "or:scan": "node openrouter-runner.mjs scan",

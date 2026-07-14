@@ -9,6 +9,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | Command | Script | Purpose |
 |---------|--------|---------|
 | `npm run go -- --user {USER}` | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator with streamed human output (`--json` for machines) |
+| `npm run cleanup:runs -- --user {USER}` | `cleanup-runs.mjs` | Delete timestamped verify/go run directories older than 10 days |
 | `node resolve-parallel.mjs --profile users/{USER}/config/profile.yml --json` | `resolve-parallel.mjs` | Resolve argument/profile/default batch parallelism |
 | `npm run doctor` | `doctor.mjs` | Validate setup prerequisites |
 | `npm run verify -- --user {USER}` | `verify-runner.mjs` | Review every integrity finding, apply bounded actions, remember accepted exceptions, and reverify |
@@ -107,6 +108,28 @@ run `verify-pipeline.mjs` again. Verified false positives, legitimate exceptions
 and informational findings are stored by exact payload fingerprint under the
 active user, so unchanged findings do not resurface while changed evidence does.
 
+At startup, `go-runner.mjs` applies the same 10-day run-artifact cleanup exposed
+by `npm run cleanup:runs`. A fully completed go run is immediately compacted to
+one `summary.json` file. Failed, interrupted, partial, and blocked runs retain
+their detailed artifacts until the 10-day cleanup removes the whole run
+directory.
+
+---
+
+## cleanup:runs
+
+Deletes timestamped run directories strictly older than 10 days from both
+`users/{USER}/data/verify-runs/` and `users/{USER}/data/go-runs/`:
+
+```bash
+npm run cleanup:runs -- --user <username>
+npm run cleanup:runs -- --user <username> --json
+```
+
+Cleanup is applied immediately; there is no dry-run mode. It is skipped while
+another go or verify runner is active for the same user. Non-timestamped
+directories are ignored.
+
 ---
 
 ## verify
@@ -124,7 +147,7 @@ npm run verify:raw -- --user <username> --json
 
 At startup, the runner prints `run-id: <RUN_ID>` and the matching `logs:` directory before the first verification phase. Copy that ID into `--resume-run` if the process is interrupted. If terminal output is unavailable, the ID is also the directory name under `users/<username>/data/verify-runs/`; `basename "$(ls -1dt users/<username>/data/verify-runs/*/ | head -1)"` returns the newest one.
 
-`verify-runner.mjs` reviews findings in calls of at most five. Independent dependency lanes run concurrently according to `--parallel`/`batch.parallel`; overlapping tracker, report, and orphan identities remain in one sequential lane so prior decisions stay binding. Every reviewer is read-only with separate input/output/log files. Only the parent applies supported deterministic actions or writes ledgers, serially, after all lanes and aggregate consistency checks succeed. After each review call, human mode emits one compact stdout line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details stay in run artifacts. The terminal tail is a compact count summary and, on failure, only the actual error. With `--json`, stdout is the complete machine result and progress—including the early run ID—moves to stderr. `--quiet` suppresses terminal progress; the final human summary still prints the logs directory. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
+`verify-runner.mjs` reviews findings in calls of at most five. Independent dependency lanes run concurrently according to `--parallel`/`batch.parallel`; overlapping tracker, report, and orphan identities remain in one sequential lane so prior decisions stay binding. Every reviewer is read-only with separate input/output/log files. Only the parent applies supported deterministic actions or writes ledgers, serially, after all lanes and aggregate consistency checks succeed. After each review call, human mode emits one compact stdout line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details remain available when a run does not complete. A completed run is immediately compacted to `summary.json`; failed, interrupted, or partial runs keep their detailed artifacts. The terminal tail is a compact count summary and, on failure, only the actual error. With `--json`, stdout is the complete machine result and progress—including the early run ID—moves to stderr. `--quiet` suppresses terminal progress; the final human summary still prints the run directory. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
 
 Semantic validation aggregates every invalid item in a five-finding response and retries only that chunk, supplying the full error list to the reviewer. `--review-retries N` defaults to `2` and accepts `0` through `5`. For orphan archives, the model chooses the classification/disposition while the runner mechanically derives the exact report path from the raw finding and sets `tracker_tsv` to `null`; the model cannot redirect the mutation to another file. A validated chunk is written as an atomic checkpoint, but actions remain pass-atomic and begin only after all lanes and cross-chunk consistency checks pass.
 

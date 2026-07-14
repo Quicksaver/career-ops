@@ -20,6 +20,12 @@ import {
 import { pendingCount } from './lib/pipeline-queue.mjs';
 import { codexReasoningConfigArg, resolveCodexSettings } from './lib/codex-config.mjs';
 import { resolveParallel } from './lib/parallel-config.mjs';
+import {
+  cleanupExpiredRuns,
+  compactCompletedRun,
+  compactPhaseRecords,
+  RUN_RETENTION_DAYS,
+} from './lib/run-artifacts.mjs';
 
 const HELP = `career-ops deterministic go runner
 
@@ -362,10 +368,24 @@ async function main() {
     pipeline: null, verification: null, verification_review: null,
     warning_triage: null, duplicate_resolution: null,
     needs_human_review: false, phases, logs: runDir, error: null, user_action: null,
-    codex: null, parallel: null, parallel_source: null,
+    codex: null, parallel: null, parallel_source: null, cleanup: null,
   };
 
   try {
+    acquireLock();
+    summary.cleanup = cleanupExpiredRuns({
+      userRoot: context.userRoot,
+      ignoreActivePids: [process.pid],
+    });
+    if (summary.cleanup.status === 'skipped') {
+      const owners = summary.cleanup.active_runners
+        .map(item => `${item.lock} PID ${item.pid}`)
+        .join(', ');
+      log(`cleanup-runs skipped: active runner (${owners})`);
+    } else {
+      log(`cleanup-runs deleted ${summary.cleanup.deleted_runs} run(s) older than ${RUN_RETENTION_DAYS} days; freed ${summary.cleanup.deleted_human}`);
+    }
+
     const doctor = parseJsonOutput(
       await runCommand('doctor', process.execPath, [systemPath('doctor.mjs'), '--user', context.userId, '--json']),
       'doctor',
@@ -394,7 +414,6 @@ async function main() {
     summary.parallel = parallelSettings.parallel;
     summary.parallel_source = parallelSettings.source;
 
-    acquireLock();
     summary.baseline_pending = readPendingCount();
 
     const beforeScan = readPendingCount();
@@ -557,8 +576,20 @@ async function main() {
     summary.final_pending = readPendingCount();
     return summary;
   } finally {
-    if (!interruptedSignal) releaseLock();
     summary.finished_at = new Date().toISOString();
+    if (summary.status === 'completed') {
+      try {
+        summary.compaction = compactCompletedRun({
+          runDir,
+          summary: compactGoSummary(summary),
+        });
+        log(`compacted completed run; removed ${summary.compaction.deleted_files} artifact(s), freed ${summary.compaction.deleted_human}`);
+      } catch (error) {
+        summary.compaction = { status: 'failed', error: error.message };
+        log(`completed-run compaction failed: ${error.message}`);
+      }
+    }
+    if (!interruptedSignal) releaseLock();
   }
 }
 
@@ -568,6 +599,54 @@ if (interruptedSignal && activeProcessGroup) {
   terminateActiveChild('SIGKILL');
   releaseLock();
 }
+
+function compactGoSummary(summary) {
+  const compactSection = (section, fields) => {
+    if (!section) return null;
+    return Object.fromEntries(fields
+      .filter(field => section[field] !== undefined)
+      .map(field => [field, section[field]]));
+  };
+  return {
+    schema_version: 1,
+    runner: 'go',
+    artifact_state: 'compacted',
+    status: summary.status,
+    user: summary.user,
+    run_id: summary.run_id,
+    started_at: summary.started_at,
+    finished_at: summary.finished_at,
+    baseline_pending: summary.baseline_pending,
+    final_pending: summary.final_pending,
+    scan: compactSection(summary.scan, ['status', 'added_pending', 'reason']),
+    handoff: compactSection(summary.handoff, [
+      'status', 'processed_items', 'observed_added_pending', 'added', 'duplicates',
+      'expired', 'requires_user_action', 'reason',
+    ]),
+    linkedin: compactSection(summary.linkedin, ['status', 'added_pending', 'reason']),
+    liveness: compactSection(summary.liveness, [
+      'status', 'checked', 'active', 'expired', 'uncertain', 'local', 'unsupported', 'moved',
+    ]),
+    batch_sync: compactSection(summary.batch_sync, ['status', 'pending', 'existing', 'added', 'dry_run']),
+    pipeline: compactSection(summary.pipeline, ['status', 'processed', 'reason']),
+    verification: summary.verification_review ? {
+      status: summary.verification_review.status,
+      passes: summary.verification_review.passes,
+      counts: summary.verification_review.counts,
+      actions: summary.verification_review.actions,
+      review_resilience: summary.verification_review.review_resilience,
+    } : null,
+    needs_human_review: summary.needs_human_review,
+    codex: summary.codex,
+    parallel: summary.parallel,
+    parallel_source: summary.parallel_source,
+    cleanup: compactSection(summary.cleanup, [
+      'status', 'retention_days', 'cutoff', 'deleted_runs', 'deleted_bytes', 'deleted_human',
+    ]),
+    phases: compactPhaseRecords(summary.phases),
+  };
+}
+
 function reviewedCount(review) {
   return review?.reviews?.length || 0;
 }

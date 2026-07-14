@@ -1094,6 +1094,15 @@ What this customizes:
   Internal orchestrators pass `--json` explicitly when parsing child results.
   Doctor and the batch runner retain their existing compact human output and
   persisted state artifacts.
+- Adds user-scoped run-artifact retention through
+  `npm run cleanup:runs -- --user {USER}`. It deletes timestamped directories
+  under both `data/verify-runs/` and `data/go-runs/` once they are strictly
+  older than 10 days, and refuses cleanup while another go or verify runner is
+  active for that user. The go runner applies the same cleanup at startup.
+- Compacts only terminal `completed` go and reviewed-verification runs to a
+  single `summary.json`. Failed, interrupted, partial, and blocked runs keep
+  their full diagnostic and resume artifacts until the fixed 10-day cleanup
+  removes the entire run directory.
 - Prints the reviewed verifier's run ID and artifact directory immediately after
   acquiring its per-user lock, before the first phase starts. Interrupted runs
   therefore expose the exact value accepted by `--resume-run`; JSON mode sends

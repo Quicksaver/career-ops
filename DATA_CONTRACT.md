@@ -49,6 +49,8 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/reply-candidates.json` | Candidate matches produced from application replies |
 | `users/{USER}/data/verification-reviews.jsonl` | Append-only exact-fingerprint seen decisions for reviewed verification findings |
 | `users/{USER}/data/verification-actions.jsonl` | Append-only audit ledger for reviewed verification repairs and archive/restore actions |
+| `users/{USER}/data/verify-runs/*` | Reviewed-verification run artifacts; completed runs compact to `summary.json`, all runs expire after 10 days |
+| `users/{USER}/data/go-runs/*` | Go coordinator run artifacts; completed runs compact to `summary.json`, all runs expire after 10 days |
 | `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |
 | `users/{USER}/plugins.local/` | User/private plugins (never auto-updated) |
 | `users/{USER}/plugins.lock` | Integrity pins and recorded consent for enabled plugins (generated; never auto-updated) |
@@ -73,6 +75,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/scan-auth.md` | Authenticated portal scanner instructions |
 | `modes/go.md` | Sourcing-loop shorthand instructions |
 | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator |
+| `cleanup-runs.mjs` | Deletes per-user verify/go run directories older than 10 days |
 | `modes/verify.md` | Prompt-reviewed integrity workflow instructions |
 | `verify-runner.mjs` | Standalone review/action/reverify coordinator used by `go` |
 | `apply-verification-review.mjs` | Applies bounded tracker/orphan actions and exact-fingerprint seen records |

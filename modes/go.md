@@ -39,6 +39,10 @@ output is a compact human summary plus the actual error when one occurred. Pass
 `--json` when a machine consumer needs the complete result; stdout then contains
 exactly one JSON object and live progress moves to stderr. Pass `--quiet` to
 retain log-only phase output. The `--parallel` option is optional.
+At startup, the runner deletes timestamped verify/go run directories older than
+10 days for the active user. When the go run reaches `completed`, its run
+directory is immediately compacted to `summary.json`. Any other terminal state
+retains detailed artifacts until the 10-day cleanup removes the directory.
 Parallelism resolves in this order:
 
 1. `--parallel N` on `go-runner.mjs`

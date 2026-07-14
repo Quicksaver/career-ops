@@ -155,6 +155,7 @@ const scripts = [
   { name: 'cv-sync-check.mjs', expectExit: 1, allowFail: true }, // fails without cv.md (normal in repo)
   { name: 'verify-pipeline.mjs', expectExit: 0 },
   { name: 'verify-runner.mjs --help', expectExit: 0 },
+  { name: 'cleanup-runs.mjs --help', expectExit: 0 },
   { name: 'apply-verification-review.mjs --help', expectExit: 0 },
   // --dry-run: these scripts resolve ROOT from import.meta.url and write
   // data/applications.md (or data/pipeline.md) in place. On a provisioned working
@@ -1054,6 +1055,7 @@ const systemFiles = [
   'modes/heuristics/recruiter-side.md',
   'templates/states.yml', 'templates/cv-template.html',
   'lib/user-context.mjs', 'openai-eval.mjs', 'jd-skill-gap.mjs', 'paste-reply.mjs',
+  'cleanup-runs.mjs', 'lib/run-artifacts.mjs',
   '.claude/skills/career-ops/SKILL.md',
   '.opencode/skills/career-ops/SKILL.md',
   '.qwen/skills/career-ops/SKILL.md',

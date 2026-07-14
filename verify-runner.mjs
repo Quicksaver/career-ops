@@ -21,6 +21,7 @@ import {
 import { codexReasoningConfigArg, resolveCodexSettings } from './lib/codex-config.mjs';
 import { resolveParallel } from './lib/parallel-config.mjs';
 import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.mjs';
+import { compactCompletedRun, compactPhaseRecords } from './lib/run-artifacts.mjs';
 import {
   buildReviewLanes,
   findingJobIds,
@@ -626,11 +627,46 @@ async function main() {
     return summary;
   } finally {
     summary.finished_at = new Date().toISOString();
+    if (summary.status === 'completed') {
+      try {
+        summary.compaction = compactCompletedRun({
+          runDir,
+          summary: compactVerifySummary(summary),
+        });
+        log(`compacted completed run; removed ${summary.compaction.deleted_files} artifact(s), freed ${summary.compaction.deleted_human}`);
+      } catch (error) {
+        summary.compaction = { status: 'failed', error: error.message };
+        log(`completed-run compaction failed: ${error.message}`);
+      }
+    }
     releaseLock();
   }
 }
 
 const summary = await main();
+
+function compactVerifySummary(result) {
+  return {
+    schema_version: 1,
+    runner: 'verify',
+    artifact_state: 'compacted',
+    status: result.status,
+    user: result.user,
+    run_id: result.run_id,
+    resumed_from: result.resumed_from,
+    started_at: result.started_at,
+    finished_at: result.finished_at,
+    passes: result.passes,
+    counts: result.counts,
+    actions: result.actions,
+    needs_human_review: result.needs_human_review,
+    review_resilience: result.review_resilience,
+    codex: result.codex,
+    parallel: result.parallel,
+    parallel_source: result.parallel_source,
+    phases: compactPhaseRecords(result.phases),
+  };
+}
 
 function actionCount(actions) {
   return [
