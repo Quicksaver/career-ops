@@ -267,12 +267,14 @@ The raw verifier intentionally reports broad possible problems. Your job is to d
 
 - mark_seen: only for false_positive, legitimate_exception, or informational findings that need no action. The exact finding fingerprint will be recorded so an unchanged finding does not resurface in reviewed verification; changed evidence will resurface automatically.
 - resolve_duplicate: only for possible_duplicate_tracker or duplicate_reports_same_role when strong evidence proves the candidates are the same posting. Same company/title alone is insufficient. Partition every deterministic candidate exactly in duplicate_resolution. For tracker duplicates, select the most advanced lifecycle row as keeper using Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed; use canonical identity evidence only to break equal-status ties.
+  - For possible_duplicate_tracker, populate only keeper_tracker_num and duplicate_tracker_nums. Set keeper_report_file to null and duplicate_report_files to [].
+  - For duplicate_reports_same_role, populate only keeper_report_file and duplicate_report_files. Set keeper_tracker_num to null and duplicate_tracker_nums to [].
 - restore_orphan: only for a true orphan_report whose valid evaluation should remain tracked. Cite and return the existing user-root-relative batch/tracker-additions/merged/*.tsv that matches the report.
 - archive_orphan: only for a true orphan_report that is redundant, obsolete, or should not remain an active evaluation. The report and matching outputs will be backed up and archived.
 - patch_tracker: only for a bounded, evidence-backed correction to company, Via, canonical status, score, or report link. It is supported for noncanonical_status, bold_status, dated_status, broken_report_link, invalid_score, bold_score, missing_via_value, and confidential_company_placeholder. Supply only fields that must change; use null for every untouched field.
 - manual_review: when the finding is real but no supported deterministic action is safe, evidence conflicts, or a user decision is required. Use classification needs_human_review and needs_human_review=true.
 
-Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions. The resolver deterministically enforces lifecycle-first keeper selection, with Rejected ranked between Responded and Applied, so the kept row retains its original report/CV artifacts without renaming. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
+Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions, but do not copy tracker fields into a report finding or report fields into a tracker finding. The resolver deterministically enforces lifecycle-first keeper selection, with Rejected ranked between Responded and Applied, so the kept row retains its original report/CV artifacts without renaming. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
 
 Return finding_id, finding_code, and finding_level verbatim. Set all unused resolution objects to null. Your final response must contain only the JSON required by the supplied output schema.`;
 }
@@ -381,8 +383,14 @@ function readValidatedCheckpoint(path, signature, chunk) {
     const checkpoint = JSON.parse(readFileSync(path, 'utf-8'));
     if (checkpoint.schema_version !== 1 || checkpoint.user !== context.userId ||
         checkpoint.signature !== signature || !checkpoint.review) return null;
-    validateReviewDecisions(chunk, checkpoint.review);
-    return checkpoint;
+    const normalized = normalizeReviewDecisions(chunk, checkpoint.review);
+    validateReviewDecisions(chunk, normalized.review);
+    return {
+      ...checkpoint,
+      review: normalized.review,
+      originalReview: checkpoint.review,
+      normalizations: normalized.normalizations,
+    };
   } catch (error) {
     log(`ignored invalid review checkpoint ${path.split('/').pop()}: ${validationErrors(error).join('; ')}`);
     return null;
@@ -391,6 +399,9 @@ function readValidatedCheckpoint(path, signature, chunk) {
 
 async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, codex }) {
   const decisions = [];
+  // Old checkpoints retain their original decision chain for signature matching,
+  // while aggregate validation and deterministic actions receive normalized data.
+  const signatureDecisions = [];
   const metrics = { checkpoints_reused: 0, review_retries: 0, mechanical_normalizations: 0 };
   for (let offset = 0; offset < lane.length; offset += REVIEW_CHUNK_SIZE) {
     const items = lane.slice(offset, offset + REVIEW_CHUNK_SIZE);
@@ -403,15 +414,20 @@ async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, code
     const signature = reviewChunkSignature({
       user: context.userId,
       findings: chunk,
-      priorDecisions: decisions,
+      priorDecisions: signatureDecisions,
     });
     const checkpointPath = join(runDir, `review-checkpoint.${suffix}.json`);
     const checkpoint = readValidatedCheckpoint(checkpointPath, signature, chunk);
     if (checkpoint) {
       metrics.checkpoints_reused++;
+      metrics.mechanical_normalizations += checkpoint.normalizations.length;
       log(`review-agent-${suffix} reused validated checkpoint`);
+      if (checkpoint.normalizations.length > 0) {
+        log(`review-agent-${suffix} normalized ${checkpoint.normalizations.length} deterministic field(s) from checkpoint`);
+      }
       logReviewResults(chunk, checkpoint.review, positions, activeCount);
       decisions.push(...checkpoint.review.findings);
+      signatureDecisions.push(...checkpoint.originalReview.findings);
       continue;
     }
 
@@ -453,7 +469,7 @@ async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, code
             normalizations: normalized.normalizations,
             review: completed,
           });
-          log(`review-agent-${suffix} normalized ${normalized.normalizations.length} derived orphan field(s)`);
+          log(`review-agent-${suffix} normalized ${normalized.normalizations.length} deterministic field(s)`);
         }
         validateReviewDecisions(chunk, completed);
         metrics.mechanical_normalizations += normalized.normalizations.length;
@@ -480,6 +496,7 @@ async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, code
     });
     logReviewResults(chunk, completed, positions, activeCount);
     decisions.push(...completed.findings);
+    signatureDecisions.push(...completed.findings);
   }
   return { decisions, metrics };
 }

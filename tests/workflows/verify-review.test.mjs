@@ -190,6 +190,53 @@ try {
   } else {
     fail(`dependency-safe review lanes wrong: ${JSON.stringify(dependencyLanes)}`);
   }
+
+  const combinedDuplicateResolution = {
+    keeper_tracker_num: 1,
+    duplicate_tracker_nums: [2],
+    keeper_report_file: 'users/test/reports/001-one.md',
+    duplicate_report_files: ['users/test/reports/002-two.md'],
+  };
+  const combinedDuplicateReview = {
+    status: 'completed', needs_human_review: false,
+    findings: relatedFindings.slice(0, 2).map(finding => decision(finding, {
+      classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium',
+      duplicate_resolution: combinedDuplicateResolution,
+    })),
+  };
+  try {
+    reviewLib.validateReviewDecisions(relatedFindings.slice(0, 2), combinedDuplicateReview);
+    fail('review validation accepted tracker and report fields copied into both duplicate findings');
+  } catch (error) {
+    if (error.validationErrors?.length >= 2 &&
+        error.message.includes('tracker duplicate resolution cannot include report files') &&
+        error.message.includes('report duplicate resolution cannot include tracker rows')) {
+      pass('review validation rejects cross-type fields on paired duplicate findings');
+    } else {
+      fail(`paired duplicate validation returned the wrong diagnostics: ${error.message}`);
+    }
+  }
+  const normalizedDuplicateReview = reviewLib.normalizeReviewDecisions(
+    relatedFindings.slice(0, 2), combinedDuplicateReview,
+  );
+  try {
+    reviewLib.validateReviewDecisions(relatedFindings.slice(0, 2), normalizedDuplicateReview.review);
+    const [trackerDecision, reportDecision] = normalizedDuplicateReview.review.findings;
+    if (normalizedDuplicateReview.normalizations.length === 2 &&
+        trackerDecision.duplicate_resolution.keeper_report_file === null &&
+        trackerDecision.duplicate_resolution.duplicate_report_files.length === 0 &&
+        reportDecision.duplicate_resolution.keeper_tracker_num === null &&
+        reportDecision.duplicate_resolution.duplicate_tracker_nums.length === 0 &&
+        reportDecision.duplicate_resolution.keeper_report_file === 'reports/001-one.md' &&
+        reportDecision.duplicate_resolution.duplicate_report_files[0] === 'reports/002-two.md') {
+      pass('paired duplicate decisions are mechanically split into tracker-only and report-only plans');
+    } else {
+      fail(`paired duplicate normalization wrong: ${JSON.stringify(normalizedDuplicateReview)}`);
+    }
+  } catch (error) {
+    fail(`normalized paired duplicate decisions did not validate: ${error.message}`);
+  }
+
   const jobIdFixtures = [
     reviewLib.findingJobIds(relatedFindings[0]),
     reviewLib.findingJobIds(relatedFindings[1]),
@@ -339,6 +386,32 @@ try {
     "    rationale: 'Fixture reviewer confirmed an unchanged formatting warning.', evidence: [],",
     "    duplicate_resolution: null, orphan_resolution: null, tracker_patch: null,",
     "  }));",
+    "  if (process.env.FAKE_CODEX_COMBINED_DUPLICATES) {",
+    "    findings = input.findings.map(finding => {",
+    "      if (!['possible_duplicate_tracker', 'duplicate_reports_same_role'].includes(finding.code)) return {",
+    "        finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
+    "        classification: 'false_positive', disposition: 'mark_seen', severity: 'low', needs_human_review: false,",
+    "        rationale: 'Fixture reviewer accepted an unrelated finding.', evidence: [],",
+    "        duplicate_resolution: null, orphan_resolution: null, tracker_patch: null,",
+    "      };",
+    "      const trackerNums = finding.code === 'possible_duplicate_tracker'",
+    "        ? finding.details.tracker_nums",
+    "        : finding.details.files.map(file => Number(file.split('/').pop().match(/^([0-9]+)/)[1]));",
+    "      const reportFiles = finding.code === 'duplicate_reports_same_role'",
+    "        ? finding.details.files",
+    "        : finding.details.entries.map(entry => entry.report.match(/\\]\\(([^)]+)\\)/)[1]).map(file => `reports/${file.split('/').pop()}`);",
+    "      return {",
+    "        finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
+    "        classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium', needs_human_review: false,",
+    "        rationale: 'Fixture reports identify the same canonical posting.', evidence: [{ path: 'fixture', observation: 'Same posting ID.' }],",
+    "        duplicate_resolution: {",
+    "          keeper_tracker_num: trackerNums[0], duplicate_tracker_nums: trackerNums.slice(1),",
+    "          keeper_report_file: `users/test/${reportFiles[0]}`, duplicate_report_files: reportFiles.slice(1).map(file => `users/test/${file}`),",
+    "        },",
+    "        orphan_resolution: null, tracker_patch: null,",
+    "      };",
+    "    });",
+    "  }",
     "  if (process.env.FAKE_CODEX_INVALID_ONCE && !fs.existsSync(process.env.FAKE_CODEX_INVALID_ONCE)) {",
     "    fs.writeFileSync(process.env.FAKE_CODEX_INVALID_ONCE, 'invalid emitted\\n');",
     "    findings = findings.map(finding => ({ ...finding, classification: 'actionable', disposition: 'patch_tracker', tracker_patch: null }));",
@@ -482,6 +555,33 @@ try {
     pass('resume-run reuses only validated matching chunk checkpoints');
   } else {
     fail(`review checkpoint resume wrong: failed=${JSON.stringify(failedCheckpointRun)} checkpoints=${JSON.stringify(checkpointFiles)} resumed=${JSON.stringify(resumedCheckpointRun)}`);
+  }
+
+  for (const num of [60, 61]) {
+    const reportFile = `${String(num).padStart(3, '0')}-paired-duplicate-2026-01-06.md`;
+    writeFileSync(join(reportsDir, reportFile), [
+      '# Evaluation: Paired Duplicate — Backend Engineer', '',
+      '**URL:** https://example.com/jobs/shared-posting', '',
+      '## Machine Summary', '```yaml', 'company: Paired Duplicate',
+      'role: Backend Engineer', 'score: 3.0', '```', '',
+    ].join('\n'));
+    writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| ${num} | 2026-01-06 | Paired Duplicate | Backend Engineer | 3.0/5 | SKIP | — | [${num}](../reports/${reportFile}) | duplicate fixture |\n`);
+  }
+  const normalizedDuplicateRun = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '0', '--quiet', '--json',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_COMBINED_DUPLICATES: '1' },
+    encoding: 'utf-8',
+  }));
+  if (normalizedDuplicateRun.status === 'completed' &&
+      normalizedDuplicateRun.actions.tracker_rows_removed === 1 &&
+      normalizedDuplicateRun.actions.reports_archived === 1 &&
+      normalizedDuplicateRun.review_resilience.mechanical_normalizations >= 2) {
+    pass('combined tracker/report reviewer output is normalized before duplicate resolution');
+  } else {
+    fail(`combined duplicate runner normalization wrong: ${JSON.stringify(normalizedDuplicateRun)}`);
   }
 
   const humanRun = spawnSync(process.execPath, [

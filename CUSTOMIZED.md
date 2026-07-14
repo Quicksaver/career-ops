@@ -1052,6 +1052,16 @@ What this customizes:
   the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot
   omit the required object or redirect an archive to another path. Restore
   metadata remains constrained to a matching preserved tracker-addition TSV.
+- Makes duplicate action metadata type-specific before checkpointing. Tracker
+  duplicate findings retain only `keeper_tracker_num` and
+  `duplicate_tracker_nums`; report duplicate findings retain only
+  `keeper_report_file` and `duplicate_report_files`. Redundant cross-type fields
+  are mechanically cleared, report paths are canonicalized to the exact
+  `reports/...` candidates emitted by the verifier, exact warning candidates
+  are semantically revalidated, and paired tracker/report plans must still
+  agree on canonical identity. This prevents a valid duplicate judgment from
+  failing late because a reviewer copied the combined identity or user-root
+  paths into both warning types.
 - Aggregates all semantic contract errors in a five-finding reviewer response
   and retries only that failed chunk, passing the complete validation feedback
   and previous response back for correction. `--review-retries N` defaults to
@@ -1064,8 +1074,11 @@ What this customizes:
   duplicate-consistency check succeed. A fresh invocation ignores prior run
   artifacts; `--resume-run RUN_ID` explicitly reuses only checkpoints whose
   signature matches the active user, exact findings, and prior lane decisions.
-  Raw/invalid reviewer outputs are never resumable decisions. Retry, checkpoint,
-  and normalization counts are exposed under `review_resilience`.
+  Matching checkpoints are normalized and semantically revalidated under the
+  current contract when loaded, while their original decision chain remains
+  available solely for matching later checkpoints from the same historical
+  run. Raw/invalid reviewer outputs are never resumable decisions. Retry,
+  checkpoint, and normalization counts are exposed under `review_resilience`.
 - Keeps the prompt reviewer read-only. Only
   `resolve-verify-warnings.mjs` and `apply-verification-review.mjs` may mutate
   data, and both revalidate prompt output against deterministic verifier
