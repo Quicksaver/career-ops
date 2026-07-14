@@ -515,6 +515,7 @@ async function main() {
     }
 
     const verifyArgs = [systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli];
+    verifyArgs.push('--parallel', String(parallelSettings.parallel));
     if (codexSettings.model) verifyArgs.push('--codex-model', codexSettings.model);
     if (codexSettings.reasoningEffort) verifyArgs.push('--codex-reasoning-effort', codexSettings.reasoningEffort);
     if (quiet) verifyArgs.push('--quiet');

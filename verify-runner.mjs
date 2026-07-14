@@ -18,11 +18,13 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { codexReasoningConfigArg, resolveCodexSettings } from './lib/codex-config.mjs';
+import { resolveParallel } from './lib/parallel-config.mjs';
 import {
   assertOpenAIStructuredOutputSchema,
   assertUniqueArrayValues,
 } from './lib/openai-output-schema.mjs';
 import {
+  buildReviewLanes,
   partitionReviewedFindings,
   readReviewLedger,
   verificationFindings,
@@ -37,6 +39,8 @@ Options:
   --codex-model NAME    Codex model override
   --codex-reasoning-effort LEVEL
                         minimal|low|medium|high|xhigh
+  --parallel N          Concurrent read-only reviewers
+                        (profile batch.parallel, then 1)
   --max-passes N        Maximum review/action/reverify passes (default: 3)
   --quiet               Suppress phase progress on stderr
   --json                Reserved; stdout is always one JSON object
@@ -78,9 +82,10 @@ function optionValue(name, fallback = null) {
 const agentCli = optionValue('--agent-cli', 'codex');
 const codexModel = optionValue('--codex-model');
 const codexReasoningEffort = optionValue('--codex-reasoning-effort');
+const parallelOverride = optionValue('--parallel');
 const maxPasses = Number.parseInt(optionValue('--max-passes', '3'), 10);
 const quiet = rawArgs.includes('--quiet');
-const valueOptions = new Set(['--agent-cli', '--codex-model', '--codex-reasoning-effort', '--max-passes']);
+const valueOptions = new Set(['--agent-cli', '--codex-model', '--codex-reasoning-effort', '--parallel', '--max-passes']);
 const flagOptions = new Set(['--json', '--quiet']);
 for (let index = 0; index < rawArgs.length; index++) {
   const arg = rawArgs[index];
@@ -99,7 +104,9 @@ const reviewLedgerPath = userPath(context, 'data/verification-reviews.jsonl');
 const reviewSchemaPath = systemPath('schemas/verify-review-output.schema.json');
 const REVIEW_CHUNK_SIZE = 5;
 const phases = [];
+const activeChildren = new Set();
 let lockOwned = false;
+let forwardingSignal = false;
 
 function log(message) {
   if (!quiet) process.stderr.write(`[verify] ${message}\n`);
@@ -109,13 +116,13 @@ function compactLogValue(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function logReviewResults(chunk, review, offset, total) {
+function logReviewResults(chunk, review, positions, total) {
   const findings = new Map(chunk.map(finding => [
     `${finding.level}:${finding.id}`, finding,
   ]));
   review.findings.forEach((decision, index) => {
     const finding = findings.get(`${decision.finding_level}:${decision.finding_id}`);
-    log(`reviewed ${offset + index + 1}/${total} ${decision.finding_level} ${decision.finding_code} ${decision.finding_id}`);
+    log(`reviewed ${positions[index] + 1}/${total} ${decision.finding_level} ${decision.finding_code} ${decision.finding_id}`);
     if (finding?.message) log(`  issue: ${compactLogValue(finding.message)}`);
     log(`  decision: ${decision.disposition} (classification=${decision.classification}, severity=${decision.severity}, human_review=${decision.needs_human_review ? 'yes' : 'no'}; pending apply)`);
     log(`  rationale: ${compactLogValue(decision.rationale)}`);
@@ -151,35 +158,65 @@ function releaseLock() {
     lockOwned = false;
   }
 }
-process.on('exit', releaseLock);
+
+function stopActiveChildren(signal = 'SIGTERM') {
+  for (const child of activeChildren) {
+    try { child.kill(signal); } catch { /* child already stopped */ }
+  }
+}
+
+function forwardSignal(signal) {
+  if (forwardingSignal) return;
+  forwardingSignal = true;
+  stopActiveChildren(signal);
+  releaseLock();
+  process.removeAllListeners(signal);
+  process.kill(process.pid, signal);
+}
+
+process.on('SIGINT', () => forwardSignal('SIGINT'));
+process.on('SIGTERM', () => forwardSignal('SIGTERM'));
+process.on('exit', () => {
+  stopActiveChildren();
+  releaseLock();
+});
 
 async function runCommand(name, command, args, options = {}) {
-  const logPath = join(runDir, `${String(phases.length + 1).padStart(2, '0')}-${name}.log`);
+  const phase = {
+    name, status: 'running', exit_code: null, signal: null,
+    started_at: new Date().toISOString(), finished_at: null, log: null,
+  };
+  phases.push(phase);
+  const logPath = join(runDir, `${String(phases.length).padStart(2, '0')}-${name}.log`);
+  phase.log = logPath;
   mkdirSync(runDir, { recursive: true });
   const stream = createWriteStream(logPath, { flags: 'a' });
   const stdout = [];
   const stderr = [];
-  const started = new Date().toISOString();
   log(`${name} started`);
   const child = spawn(command, args, {
     cwd: context.projectRoot,
     env: { ...process.env, CAREER_OPS_USER: context.userId },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  activeChildren.add(child);
   child.stdout.on('data', chunk => { stream.write(chunk); stdout.push(chunk.toString()); });
   child.stderr.on('data', chunk => { stream.write(chunk); stderr.push(chunk.toString()); });
   child.stdin.end(options.stdin || '');
   let spawnError = null;
   child.once('error', error => { spawnError = error; });
-  const result = await new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal })));
+  const result = await new Promise(resolve => child.once('close', (code, signal) => {
+    activeChildren.delete(child);
+    resolve({ code, signal });
+  }));
   await new Promise((resolveStream, reject) => {
     stream.once('error', reject);
     stream.end(resolveStream);
   });
   const accepted = (options.accept || [0]).includes(result.code);
-  phases.push({
-    name, status: accepted ? 'completed' : 'failed', exit_code: result.code, signal: result.signal,
-    started_at: started, finished_at: new Date().toISOString(), log: logPath,
+  Object.assign(phase, {
+    status: accepted ? 'completed' : 'failed', exit_code: result.code, signal: result.signal,
+    finished_at: new Date().toISOString(),
   });
   log(`${name} ${accepted ? 'completed' : 'failed'}`);
   if (!accepted) {
@@ -355,6 +392,42 @@ async function rawVerification(name) {
   ], { accept: [0, 1] }), name);
 }
 
+async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, codex }) {
+  const decisions = [];
+  for (let offset = 0; offset < lane.length; offset += REVIEW_CHUNK_SIZE) {
+    const items = lane.slice(offset, offset + REVIEW_CHUNK_SIZE);
+    const chunk = items.map(item => item.finding);
+    const positions = items.map(item => item.index);
+    const batchNumber = Math.floor(offset / REVIEW_CHUNK_SIZE) + 1;
+    const suffix = `${String(pass).padStart(2, '0')}-l${String(laneNumber).padStart(2, '0')}-b${String(batchNumber).padStart(3, '0')}`;
+    const findingLabels = positions.map(index => index + 1).join(',');
+    log(`review-agent-${suffix} assigned findings ${findingLabels} of ${activeCount} (lane ${laneNumber}/${laneCount})`);
+    const inputPath = join(runDir, `review-input.${suffix}.json`);
+    const outputPath = join(runDir, `review-output.${suffix}.json`);
+    writeFileSync(inputPath, `${JSON.stringify({
+      schema_version: 1,
+      user: context.userId,
+      prior_decisions: decisions,
+      findings: chunk,
+    }, null, 2)}\n`, 'utf-8');
+    const args = [
+      'exec', '--sandbox', 'read-only', '--ephemeral', '-C', context.projectRoot,
+      '--output-schema', reviewSchemaPath,
+      '--output-last-message', outputPath,
+    ];
+    if (codex.model) args.push('--model', codex.model);
+    if (codex.reasoningEffort) args.push('-c', codexReasoningConfigArg(codex.reasoningEffort));
+    args.push('-');
+    await runCommand(`review-agent-${suffix}`, agentCli, args, { stdin: reviewPrompt(inputPath) });
+    if (!existsSync(outputPath)) throw new Error(`review agent ${suffix} did not write its JSON contract`);
+    const result = JSON.parse(readFileSync(outputPath, 'utf-8'));
+    validateReview(chunk, result);
+    logReviewResults(chunk, result, positions, activeCount);
+    decisions.push(...result.findings);
+  }
+  return decisions;
+}
+
 async function main() {
   mkdirSync(runDir, { recursive: true });
   acquireLock();
@@ -362,6 +435,10 @@ async function main() {
     profilePath: userPath(context, 'config/profile.yml'),
     modelOverride: codexModel,
     reasoningEffortOverride: codexReasoningEffort,
+  });
+  const parallelSettings = resolveParallel({
+    profilePath: userPath(context, 'config/profile.yml'),
+    override: parallelOverride,
   });
   const summary = {
     status: 'running', user: context.userId, run_id: runId,
@@ -373,6 +450,8 @@ async function main() {
       model: codex.model, reasoning_effort: codex.reasoningEffort,
       model_source: codex.modelSource, reasoning_effort_source: codex.reasoningEffortSource,
     },
+    parallel: parallelSettings.parallel,
+    parallel_source: parallelSettings.source,
   };
   try {
     const reviewSchema = JSON.parse(readFileSync(reviewSchemaPath, 'utf-8'));
@@ -387,36 +466,26 @@ async function main() {
       const active = partition.active.filter(finding => !reviewedThisRun.has(finding.fingerprint));
       if (active.length === 0) break;
       summary.passes = pass;
-      const decisions = [];
-      let needsReview = false;
-      for (let offset = 0; offset < active.length; offset += REVIEW_CHUNK_SIZE) {
-        const chunk = active.slice(offset, offset + REVIEW_CHUNK_SIZE);
-        const suffix = `${String(pass).padStart(2, '0')}-${String(Math.floor(offset / REVIEW_CHUNK_SIZE) + 1).padStart(3, '0')}`;
-        log(`review-agent-${suffix} assigned findings ${offset + 1}-${offset + chunk.length} of ${active.length}`);
-        const inputPath = join(runDir, `review-input.${suffix}.json`);
-        const outputPath = join(runDir, `review-output.${suffix}.json`);
-        writeFileSync(inputPath, `${JSON.stringify({
-          schema_version: 1,
-          user: context.userId,
-          prior_decisions: decisions,
-          findings: chunk,
-        }, null, 2)}\n`, 'utf-8');
-        const args = [
-          'exec', '--sandbox', 'read-only', '--ephemeral', '-C', context.projectRoot,
-          '--output-schema', reviewSchemaPath,
-          '--output-last-message', outputPath,
-        ];
-        if (codex.model) args.push('--model', codex.model);
-        if (codex.reasoningEffort) args.push('-c', codexReasoningConfigArg(codex.reasoningEffort));
-        args.push('-');
-        await runCommand(`review-agent-${suffix}`, agentCli, args, { stdin: reviewPrompt(inputPath) });
-        if (!existsSync(outputPath)) throw new Error(`review agent ${suffix} did not write its JSON contract`);
-        const result = JSON.parse(readFileSync(outputPath, 'utf-8'));
-        validateReview(chunk, result);
-        logReviewResults(chunk, result, offset, active.length);
-        decisions.push(...result.findings);
-        needsReview ||= result.needs_human_review;
+      const lanes = buildReviewLanes(active, parallelSettings.parallel);
+      log(`review pass ${pass}: ${active.length} active finding(s), ${lanes.length} dependency-safe lane(s), up to ${parallelSettings.parallel} concurrent reviewer(s)`);
+      const laneResults = await Promise.allSettled(lanes.map((lane, index) => reviewLane({
+        lane,
+        laneNumber: index + 1,
+        laneCount: lanes.length,
+        pass,
+        activeCount: active.length,
+        codex,
+      })));
+      const failedLane = laneResults.find(result => result.status === 'rejected');
+      if (failedLane) throw failedLane.reason;
+      const decisionsByKey = new Map();
+      for (const laneResult of laneResults) {
+        for (const decision of laneResult.value) {
+          decisionsByKey.set(`${decision.finding_level}:${decision.finding_id}`, decision);
+        }
       }
+      const decisions = active.map(finding => decisionsByKey.get(`${finding.level}:${finding.id}`));
+      const needsReview = decisions.some(decision => decision?.needs_human_review);
       const review = { status: 'completed', needs_human_review: needsReview, findings: decisions };
       validateReview(active, review);
       validateDuplicateConsistency(verification, review);

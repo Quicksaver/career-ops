@@ -404,6 +404,11 @@ try {
   } else {
     fail('go runner does not forward both Codex settings to every Codex call');
   }
+  if (runner.includes("verifyArgs.push('--parallel', String(parallelSettings.parallel))")) {
+    pass('go runner forwards resolved parallelism to reviewed verification');
+  } else {
+    fail('go runner does not forward resolved parallelism to reviewed verification');
+  }
   if (batchRunner.includes('model_reasoning_effort=') && batchRunner.includes('--reasoning-effort')) {
     pass('batch runner passes reasoning effort to each Codex worker');
   } else {

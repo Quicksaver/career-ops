@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { delimiter, join } from 'path';
@@ -105,6 +105,42 @@ try {
     }
   }
 
+  const relatedFindings = [
+    {
+      level: 'warning', id: 'possible-duplicate-tracker:1:2', code: 'possible_duplicate_tracker',
+      details: {
+        tracker_nums: [1, 2],
+        entries: [
+          { tracker_num: 1, report: '[1](../reports/001-one.md)' },
+          { tracker_num: 2, report: '[2](../reports/002-two.md)' },
+        ],
+      },
+    },
+    {
+      level: 'warning', id: 'duplicate-reports:001-one.md:002-two.md', code: 'duplicate_reports_same_role',
+      details: { files: ['reports/001-one.md', 'reports/002-two.md'] },
+    },
+    {
+      level: 'warning', id: 'orphan-report:002-two.md', code: 'orphan_report',
+      details: { report_num: 2, file: 'reports/002-two.md' },
+    },
+    {
+      level: 'warning', id: 'bold-score:99', code: 'bold_score',
+      details: { tracker_num: 99, score: '**3.0/5**' },
+    },
+  ];
+  const dependencyLanes = reviewLib.buildReviewLanes(relatedFindings, 2);
+  const laneFor = findingId => dependencyLanes.findIndex(lane =>
+    lane.some(item => item.finding.id === findingId));
+  if (dependencyLanes.length === 2 &&
+      laneFor(relatedFindings[0].id) === laneFor(relatedFindings[1].id) &&
+      laneFor(relatedFindings[1].id) === laneFor(relatedFindings[2].id) &&
+      laneFor(relatedFindings[3].id) !== laneFor(relatedFindings[0].id)) {
+    pass('parallel review lanes serialize overlapping tracker/report/orphan identities');
+  } else {
+    fail(`dependency-safe review lanes wrong: ${JSON.stringify(dependencyLanes)}`);
+  }
+
   const rawWarning = {
     id: 'possible-duplicate-tracker:1:2',
     code: 'possible_duplicate_tracker',
@@ -207,9 +243,16 @@ try {
     ].join('\n'));
   }
   writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n${chunkRows.join('\n')}\n`);
+  mkdirSync(join(userRoot, 'config'), { recursive: true });
+  writeFileSync(join(userRoot, 'config/profile.yml'), [
+    'batch:', '  parallel: 2',
+    'codex:', '  model: profile-review-model', '  reasoning_effort: low', '',
+  ].join('\n'));
   const fakeBin = join(tmp, 'bin');
   const fakeCodex = join(fakeBin, 'codex');
   const callCount = join(tmp, 'codex-calls.txt');
+  const concurrencyLog = join(tmp, 'codex-concurrency.jsonl');
+  const argvLog = join(tmp, 'codex-argv.jsonl');
   mkdirSync(fakeBin, { recursive: true });
   writeFileSync(fakeCodex, [
     '#!/usr/bin/env node',
@@ -222,14 +265,19 @@ try {
     "  const inputPath = stdin.match(/^FINDINGS_JSON=(.+)$/m)[1].trim();",
     "  const input = JSON.parse(fs.readFileSync(inputPath, 'utf8'));",
     "  if (input.findings.length > 5) { console.error('review chunk exceeded 5 findings'); process.exit(2); return; }",
+    "  fs.appendFileSync(process.env.FAKE_CODEX_ARGV, JSON.stringify(args) + '\\n');",
+    "  fs.appendFileSync(process.env.FAKE_CODEX_CONCURRENCY, JSON.stringify({ event: 'start', pid: process.pid, at: Date.now() }) + '\\n');",
     "  const findings = input.findings.map(finding => ({",
     "    finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
     "    classification: 'false_positive', disposition: 'mark_seen', severity: 'low', needs_human_review: false,",
     "    rationale: 'Fixture reviewer confirmed an unchanged formatting warning.', evidence: [],",
     "    duplicate_resolution: null, orphan_resolution: null, tracker_patch: null,",
     "  }));",
-    "  fs.appendFileSync(process.env.FAKE_CODEX_CALLS, '1\\n');",
-    "  fs.writeFileSync(output, JSON.stringify({ status: 'completed', needs_human_review: false, findings }));",
+    "  setTimeout(() => {",
+    "    fs.appendFileSync(process.env.FAKE_CODEX_CALLS, '1\\n');",
+    "    fs.writeFileSync(output, JSON.stringify({ status: 'completed', needs_human_review: false, findings }));",
+    "    fs.appendFileSync(process.env.FAKE_CODEX_CONCURRENCY, JSON.stringify({ event: 'end', pid: process.pid, at: Date.now() }) + '\\n');",
+    "  }, Number(process.env.FAKE_CODEX_DELAY || 150));",
     "});",
   ].join('\n') + '\n');
   execFileSync('chmod', ['+x', fakeCodex]);
@@ -237,6 +285,8 @@ try {
     ...env,
     PATH: `${fakeBin}${delimiter}${process.env.PATH}`,
     FAKE_CODEX_CALLS: callCount,
+    FAKE_CODEX_CONCURRENCY: concurrencyLog,
+    FAKE_CODEX_ARGV: argvLog,
   };
   const firstProcess = spawnSync(process.execPath, [
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
@@ -247,19 +297,91 @@ try {
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet',
   ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' }));
   const calls = readFileSync(callCount, 'utf-8').trim().split(/\r?\n/).filter(Boolean).length;
+  const concurrencyEvents = readFileSync(concurrencyLog, 'utf-8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
+  const intervals = new Map();
+  for (const event of concurrencyEvents) {
+    const interval = intervals.get(event.pid) || {};
+    interval[event.event] = event.at;
+    intervals.set(event.pid, interval);
+  }
+  const completedIntervals = [...intervals.values()].filter(interval => interval.start && interval.end);
+  const overlapped = completedIntervals.length === 2 &&
+    Math.max(...completedIntervals.map(interval => interval.start)) <
+      Math.min(...completedIntervals.map(interval => interval.end));
+  const reviewerArgv = readFileSync(argvLog, 'utf-8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
+  const inheritedCodexSettings = reviewerArgv.length === 2 && reviewerArgv.every(args =>
+    args.includes('--model') && args[args.indexOf('--model') + 1] === 'profile-review-model' &&
+    args.includes('-c') && args[args.indexOf('-c') + 1] === 'model_reasoning_effort="low"');
+  const phaseLogsUnique = new Set(firstRun.phases.map(phase => phase.log)).size === firstRun.phases.length &&
+    firstRun.phases.every(phase => phase.status === 'completed');
   if (firstRun.status === 'completed' && firstRun.counts.raw_warnings === 6 && firstRun.counts.seen === 6 &&
+      firstRun.parallel === 2 && firstRun.parallel_source === 'profile' && inheritedCodexSettings &&
+      phaseLogsUnique && overlapped &&
       secondRun.status === 'completed' && secondRun.passes === 0 && calls === 2) {
-    pass('standalone verify runner reviews at most five findings per call, records seen state, and suppresses unchanged findings');
+    pass('standalone verify runner runs dependency-safe five-finding review lanes concurrently and suppresses unchanged findings');
   } else {
     fail(`verify runner lifecycle wrong: first=${JSON.stringify(firstRun)} second=${JSON.stringify(secondRun)} calls=${calls}`);
   }
-  if (firstProcess.stderr.includes('assigned findings 1-5 of 6') &&
+  if (firstProcess.stderr.includes('2 dependency-safe lane(s), up to 2 concurrent reviewer(s)') &&
       firstProcess.stderr.includes('reviewed 1/6 warning bold_score bold-score:1') &&
       firstProcess.stderr.includes('decision: mark_seen (classification=false_positive, severity=low, human_review=no; pending apply)') &&
       firstProcess.stderr.includes('rationale: Fixture reviewer confirmed an unchanged formatting warning.')) {
     pass('verify runner streams each finding issue, decision, and rationale after every review chunk');
   } else {
     fail(`verify runner omitted per-finding progress: ${firstProcess.stderr}`);
+  }
+
+  const interruptedRows = [];
+  for (let num = 30; num < 32; num++) {
+    const padded = String(num).padStart(3, '0');
+    const reportFile = `${padded}-interrupt-company-${num}-2026-01-05.md`;
+    interruptedRows.push(`| ${num} | 2026-01-05 | Interrupt Company ${num} | Engineer ${num} | **3.0/5** | Evaluated | — | [${num}](../reports/${reportFile}) | interrupt fixture |`);
+    writeFileSync(join(reportsDir, reportFile), [
+      `# Evaluation: Interrupt Company ${num} — Engineer ${num}`, '',
+      `**URL:** https://example.com/jobs/${num}`, '',
+      '## Machine Summary', '```yaml', `company: Interrupt Company ${num}`,
+      `role: Engineer ${num}`, 'score: 3.0', '```', '',
+    ].join('\n'));
+  }
+  writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n${interruptedRows.join('\n')}\n`);
+  const startsBeforeInterrupt = readFileSync(concurrencyLog, 'utf-8').split(/\r?\n/)
+    .filter(Boolean).map(JSON.parse).filter(event => event.event === 'start').length;
+  const interruptedRunner = spawn(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_DELAY: '10000' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  interruptedRunner.stdout.resume();
+  interruptedRunner.stderr.resume();
+  let interruptReviewerPids = [];
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (existsSync(concurrencyLog)) {
+      const starts = readFileSync(concurrencyLog, 'utf-8').split(/\r?\n/)
+        .filter(Boolean).map(JSON.parse).filter(event => event.event === 'start');
+      interruptReviewerPids = starts.slice(startsBeforeInterrupt).map(event => event.pid);
+      if (interruptReviewerPids.length >= 2) break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  const interruptedExitPromise = new Promise(resolve =>
+    interruptedRunner.once('exit', (code, signal) => resolve({ code, signal })));
+  interruptedRunner.kill('SIGINT');
+  const interruptedExit = await Promise.race([
+    interruptedExitPromise,
+    new Promise(resolve => setTimeout(() => resolve({ timeout: true }), 3000)),
+  ]);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const reviewerStillAlive = interruptReviewerPids.some(pid => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  });
+  if (interruptReviewerPids.length === 2 && !interruptedExit.timeout &&
+      interruptedExit.signal === 'SIGINT' && !reviewerStillAlive &&
+      !existsSync(join(dataDir, 'verify-runner.pid'))) {
+    pass('interrupting parallel review stops every reviewer and releases the user lock');
+  } else {
+    fail(`parallel review interrupt cleanup wrong: pids=${JSON.stringify(interruptReviewerPids)} exit=${JSON.stringify(interruptedExit)} alive=${reviewerStillAlive}`);
   }
 } catch (error) {
   fail(`reviewed verification tests crashed: ${error.stack || error.message}`);

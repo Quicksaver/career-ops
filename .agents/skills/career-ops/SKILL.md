@@ -252,6 +252,8 @@ worker, and all Codex batch workers.
 
 Parallelism resolves independently as `--parallel N`, then `batch.parallel`
 in `users/{ACTIVE_USER}/config/profile.yml`, then the system default `1`.
-`--parallel` is optional on both the go runner and direct batch runner.
+`--parallel` is optional on the go runner, direct batch runner, and reviewed
+verification runner. Verification uses that value only for dependency-safe
+read-only review lanes; deterministic repairs and ledger writes stay serialized.
 
 Execute the instructions from the loaded mode file.

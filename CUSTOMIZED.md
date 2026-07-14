@@ -1011,9 +1011,11 @@ What this customizes:
 - Uses schema-constrained Codex invocations for the browser/WebSearch handoff
   phase and a standalone read-only verification reviewer. Handoff additions are
   cross-checked against persisted pending counts. Verification review is
-  deterministically chunked at 5 findings per one-off call, carries prior
-  chunk decisions forward as binding context, and validates the aggregate
-  contract and overlapping duplicate keepers before any repair is considered.
+  deterministically chunked at 5 findings per one-off call. Independent
+  dependency lanes run concurrently using the shared parallel setting, while
+  overlapping tracker/report/orphan identities remain sequential and carry
+  prior lane decisions forward as binding context. The parent validates the
+  aggregate contract and overlapping duplicate keepers before any repair is considered.
   After duplicate repair it runs an intermediate raw check and applies only
   decisions whose exact finding fingerprint still exists, preventing a stale
   patch from overwriting state changed by the duplicate resolver.
@@ -1076,7 +1078,9 @@ What this customizes:
   worker.
 - Resolves parallelism independently as runner argument, active-user
   `batch.parallel`, then `1`, records `parallel` and `parallel_source`, and passes
-  the resolved value explicitly to the batch runner.
+  the resolved value explicitly to the batch and reviewed-verification runners.
+  Verification uses it only for isolated read-only review lanes; deterministic
+  repair and ledger mutation remain serialized in the parent.
 
 Future merge notes:
 
@@ -1090,10 +1094,12 @@ Future merge notes:
   company/role, or finding ID alone; changed evidence must resurface. Keep the
   seen ledger user-owned and append-only, and keep raw verifier output
   unsuppressed.
-- Preserve review chunking, prior-decision context, aggregate duplicate-keeper
-  consistency, severity-based `manual_review`, and the completed-versus-partial
-  final status contract; finding volume must not make a single unconstrained
-  prompt or silently downgrade review requirements.
+- Preserve five-finding review chunks, dependency-safe lane partitioning,
+  per-lane prior-decision context, isolated reviewer artifacts, aggregate
+  duplicate-keeper consistency, serialized mutations, severity-based
+  `manual_review`, and the completed-versus-partial final status contract;
+  finding volume must not make a single unconstrained prompt or silently
+  downgrade review requirements.
 - Preserve stable batch IDs and append-only synchronization because
   `batch-state.tsv` references those IDs across retries and resumes.
 - Preserve the stderr/stdout boundary for live progress so shell and API callers

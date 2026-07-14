@@ -76,11 +76,12 @@ Each setting resolves independently as command argument, then
 `codex.reasoning_effort`, then the global Codex configuration. Global fallback
 is implemented by omitting the corresponding CLI override.
 
-Batch parallelism resolves as an explicit `--parallel N` override, then
+Batch and verification-review parallelism resolve as an explicit `--parallel N` override, then
 `batch.parallel` in `users/{USER}/config/profile.yml`, then the system default
 of `1`. The resolved value and its source are included as `parallel` and
 `parallel_source` in the final JSON summary. The same hierarchy applies when
-`batch/batch-runner.sh` is invoked directly.
+`batch/batch-runner.sh` or `verify-runner.mjs` is invoked directly. The go runner
+passes its resolved parallel value to both stages.
 
 The final phase invokes `verify-runner.mjs`, the same reviewed lifecycle exposed
 by `npm run verify`. Its schema-constrained Codex reviewer reads every new error
@@ -98,10 +99,11 @@ Reviewed health check for pipeline data integrity. The raw checker still validat
 
 ```bash
 npm run verify -- --user <username>
+npm run verify -- --user <username> --parallel 4
 npm run verify:raw -- --user <username> --json
 ```
 
-`verify-runner.mjs` reviews findings in calls of at most five, applies supported deterministic actions, records accepted findings in `users/{USER}/data/verification-reviews.jsonl`, and reverifies for up to three passes. After each review call, stderr shows every finding's issue, decision, classification, severity, rationale, and evidence; decisions remain labelled `pending apply` until deterministic application succeeds. Stdout remains one final JSON object, and `--quiet` suppresses terminal progress. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
+`verify-runner.mjs` reviews findings in calls of at most five. Independent dependency lanes run concurrently according to `--parallel`/`batch.parallel`; overlapping tracker, report, and orphan identities remain in one sequential lane so prior decisions stay binding. Every reviewer is read-only with separate input/output/log files. Only the parent applies supported deterministic actions or writes ledgers, serially, after all lanes and aggregate consistency checks succeed. After each review call, stderr shows every finding's issue, decision, classification, severity, rationale, and evidence; decisions remain labelled `pending apply` until deterministic application succeeds. Stdout remains one final JSON object, and `--quiet` suppresses terminal progress. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
 
 The raw command preserves the low-level contract: exit `0` with zero errors and exit `1` when errors exist; warnings alone remain exit `0`.
 

@@ -106,7 +106,7 @@ spend_tier: standard
 #   model: gpt-5.3-codex
 #   reasoning_effort: high  # minimal | low | medium | high | xhigh
 
-# Optional default for go-runner and direct batch-runner executions.
+# Optional default for go-runner, direct batch-runner, and reviewed verification.
 # An explicit --parallel argument wins. Valid range: 1-32.
 # batch:
 #   parallel: 1
