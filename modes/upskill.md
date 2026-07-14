@@ -18,7 +18,7 @@ Pattern credit: [MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/a
 ## Step 1 — Run the Aggregator
 
 ```bash
-node upskill.mjs
+node upskill.mjs --user {USER} --json
 ```
 
 Parse the JSON output:
@@ -35,7 +35,7 @@ Tiers are fixed, explainable thresholds over the share of low-fit (score < 4.0) 
 
 If the script returns `error` (missing tracker or fewer than 5 scored reports), show the message and exit gracefully.
 
-`--summary` prints a human table; `--min-reports N` lowers the threshold for small trackers.
+Omit `--json` to print the human table; `--summary` remains a compatibility alias. `--min-reports N` lowers the threshold for small trackers.
 
 ## Step 2 — LLM Synthesis Pass (optional, skippable)
 

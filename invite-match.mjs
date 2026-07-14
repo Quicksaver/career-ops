@@ -14,9 +14,10 @@
  * is worse than showing a short ranked list, so ambiguous input always
  * returns all plausible candidates rather than picking one.
  *
- * Run: node invite-match.mjs < invite.txt          (JSON to stdout)
+ * Run: node invite-match.mjs < invite.txt          (human-readable matches)
  *      node invite-match.mjs --file invite.txt
- *      echo "..." | node invite-match.mjs --summary
+ *      echo "..." | node invite-match.mjs
+ *      echo "..." | node invite-match.mjs --json   (machine-readable result)
  *      node invite-match.mjs --self-test
  *
  * Issue #1495 — github.com/santifer/career-ops
@@ -46,7 +47,7 @@ const APPS_FILE = userContext.userRoot ? userPath(userContext, 'data/application
 
 // --- CLI args ---
 const args = userContext.args;
-const summaryMode = args.includes('--summary');
+const jsonMode = args.includes('--json');
 const selfTestMode = args.includes('--self-test');
 const fileIdx = args.indexOf('--file');
 // Treat a following recognized flag (e.g. `--file --summary`) the same as a
@@ -467,10 +468,7 @@ if (IS_MAIN) {
 
     const result = analyzeInvite(text);
 
-    if (summaryMode) {
-      printSummary(result);
-    } else {
-      console.log(JSON.stringify(result, null, 2));
-    }
+    if (jsonMode) console.log(JSON.stringify(result, null, 2));
+    else printSummary(result);
   }
 }

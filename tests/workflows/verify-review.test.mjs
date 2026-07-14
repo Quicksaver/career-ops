@@ -359,12 +359,12 @@ try {
     FAKE_CODEX_ARGV: argvLog,
   };
   const firstProcess = spawnSync(process.execPath, [
-    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--json',
   ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' });
   if (firstProcess.status !== 0) throw new Error(`first verify runner failed: ${firstProcess.stderr}`);
   const firstRun = JSON.parse(firstProcess.stdout);
   const secondRun = JSON.parse(execFileSync(process.execPath, [
-    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet',
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet', '--json',
   ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' }));
   const calls = readFileSync(callCount, 'utf-8').trim().split(/\r?\n/).filter(Boolean).length;
   const concurrencyEvents = readFileSync(concurrencyLog, 'utf-8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
@@ -398,7 +398,7 @@ try {
       !firstProcess.stderr.includes('  decision:') &&
       !firstProcess.stderr.includes('  rationale:') &&
       !firstProcess.stderr.includes('  evidence:')) {
-    pass('verify runner streams one concise line per finding after every review chunk');
+    pass('verify runner keeps machine stdout pure while streaming concise review progress to stderr');
   } else {
     fail(`verify runner per-finding progress was missing or verbose: ${firstProcess.stderr}`);
   }
@@ -414,7 +414,7 @@ try {
   const invalidOnce = join(tmp, 'invalid-once.marker');
   const retryRun = JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
-    '--parallel', '1', '--review-retries', '1', '--quiet',
+    '--parallel', '1', '--review-retries', '1', '--quiet', '--json',
   ], {
     cwd: ROOT,
     env: { ...runnerEnv, FAKE_CODEX_INVALID_ONCE: invalidOnce },
@@ -442,7 +442,7 @@ try {
   writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n${checkpointRows.join('\n')}\n`);
   const checkpointFailure = spawnSync(process.execPath, [
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
-    '--parallel', '1', '--review-retries', '0', '--quiet',
+    '--parallel', '1', '--review-retries', '0', '--quiet', '--json',
   ], {
     cwd: ROOT,
     env: { ...runnerEnv, FAKE_CODEX_FAIL_FINDING: 'bold-score:45' },
@@ -451,10 +451,26 @@ try {
   const failedCheckpointRun = JSON.parse(checkpointFailure.stdout);
   const checkpointFiles = readdirSync(failedCheckpointRun.logs)
     .filter(name => name.startsWith('review-checkpoint.'));
+  const humanFailure = spawnSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '0', '--quiet',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_FAIL_FINDING: 'bold-score:45' },
+    encoding: 'utf-8',
+  });
+  if (humanFailure.status === 1 && humanFailure.stdout.includes('[verify] summary: failed') &&
+      humanFailure.stdout.includes('[verify] error:') &&
+      !humanFailure.stdout.includes('"initial_verification"') &&
+      humanFailure.stdout.length < 8000) {
+    pass('verify runner failure output is compact and exposes only the actual operational error');
+  } else {
+    fail(`verify runner human failure contract wrong: status=${humanFailure.status} stdout=${humanFailure.stdout}`);
+  }
   const resumedCheckpointRun = JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
     '--parallel', '1', '--review-retries', '0', '--resume-run', failedCheckpointRun.run_id,
-    '--quiet',
+    '--quiet', '--json',
   ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' }));
   if (checkpointFailure.status === 1 && failedCheckpointRun.status === 'failed' &&
       checkpointFiles.length === 1 && resumedCheckpointRun.status === 'completed' &&
@@ -463,6 +479,18 @@ try {
     pass('resume-run reuses only validated matching chunk checkpoints');
   } else {
     fail(`review checkpoint resume wrong: failed=${JSON.stringify(failedCheckpointRun)} checkpoints=${JSON.stringify(checkpointFiles)} resumed=${JSON.stringify(resumedCheckpointRun)}`);
+  }
+
+  const humanRun = spawnSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet',
+  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' });
+  if (humanRun.status === 0 && humanRun.stdout.includes('[verify] summary: completed') &&
+      humanRun.stdout.includes('[verify] reviewed ') &&
+      !humanRun.stdout.includes('"initial_verification"') &&
+      !humanRun.stdout.trimStart().startsWith('{')) {
+    pass('verify runner defaults to a compact human summary instead of the full JSON payload');
+  } else {
+    fail(`verify runner human summary contract wrong: status=${humanRun.status} stdout=${humanRun.stdout} stderr=${humanRun.stderr}`);
   }
 
   const interruptedRows = [];

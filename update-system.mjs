@@ -652,10 +652,37 @@ function curlGet(url, extraArgs = []) {
   });
 }
 
-async function check() {
+function printCheckResult(result, jsonOutput) {
+  if (jsonOutput) {
+    console.log(JSON.stringify(result));
+    return;
+  }
+  switch (result.status) {
+    case 'update-available':
+      console.log(`career-ops update available: v${result.local} → v${result.remote}`);
+      if (result.changelog) console.log(result.changelog);
+      break;
+    case 'up-to-date':
+      console.log(`career-ops is up to date (v${result.local}).`);
+      break;
+    case 'dismissed':
+      console.log('career-ops update checks are dismissed.');
+      break;
+    case 'offline':
+      console.log(`Could not check for updates while offline (local v${result.local}).`);
+      break;
+    case 'no-remote-version':
+      console.log(`Could not determine the remote career-ops version (local v${result.local}).`);
+      break;
+    default:
+      console.log(`Update check: ${result.status}`);
+  }
+}
+
+async function check(jsonOutput = false) {
   // Respect dismiss flag
   if (existsSync(join(ROOT, '.update-dismissed'))) {
-    console.log(JSON.stringify({ status: 'dismissed' }));
+    printCheckResult({ status: 'dismissed' }, jsonOutput);
     return;
   }
 
@@ -704,7 +731,7 @@ async function check() {
     // right conservative behaviour (no version = can't determine status).
     const bothNetworkFailed = rawVersion === null && releaseRaw === null;
     const status = bothNetworkFailed ? 'offline' : 'no-remote-version';
-    console.log(JSON.stringify({ status, local }));
+    printCheckResult({ status, local }, jsonOutput);
     return;
   }
 
@@ -718,16 +745,16 @@ async function check() {
   }
 
   if (compareVersions(local, remote) >= 0) {
-    console.log(JSON.stringify({ status: 'up-to-date', local, remote }));
+    printCheckResult({ status: 'up-to-date', local, remote }, jsonOutput);
     return;
   }
 
-  console.log(JSON.stringify({
+  printCheckResult({
     status: 'update-available',
     local,
     remote,
     changelog: changelog.slice(0, 500),
-  }));
+  }, jsonOutput);
 }
 
 // ── APPLY ───────────────────────────────────────────────────────
@@ -1102,15 +1129,16 @@ function dismiss() {
 // live update check.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const cmd = process.argv[2] || 'check';
+  const jsonOutput = process.argv.slice(3).includes('--json');
 
   try {
     switch (cmd) {
-      case 'check': await check(); break;
+      case 'check': await check(jsonOutput); break;
       case 'apply': await apply(); break;
       case 'rollback': rollback(); break;
       case 'dismiss': dismiss(); break;
       default:
-        console.log('Usage: node update-system.mjs [check|apply|rollback|dismiss]');
+        console.log('Usage: node update-system.mjs [check [--json]|apply|rollback|dismiss]');
         process.exit(1);
     }
   } catch (err) {

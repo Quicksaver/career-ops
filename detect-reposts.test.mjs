@@ -826,7 +826,7 @@ try {
 }
 
 // Test --window flag
-const windowOut = execFileSync('node', [scriptPath, '--window', '30'], {
+const windowOut = execFileSync('node', [scriptPath, '--window', '30', '--json'], {
   encoding: 'utf-8', timeout: 10000,
   cwd: dirname(scriptPath),
 });
@@ -841,19 +841,22 @@ const summaryOut = execFileSync('node', [scriptPath, '--summary'], {
 });
 ok('--summary produces human-readable output', summaryOut.includes('Repost Detector'));
 
-// Test no args (default JSON output)
+// Test no args (default human output)
 const defaultOut = execFileSync('node', [scriptPath], {
   encoding: 'utf-8', timeout: 10000,
   cwd: dirname(scriptPath),
 });
-const defaultJson = JSON.parse(defaultOut);
-ok('default produces valid JSON', typeof defaultJson === 'object');
-ok('default has metadata', 'metadata' in defaultJson);
-ok('default has clusters array', 'clusters' in defaultJson && Array.isArray(defaultJson.clusters));
-eq('default windowDays = 90', defaultJson.metadata.windowDays, 90);
+ok('default produces human-readable output', defaultOut.includes('Repost Detector'));
+
+const defaultJson = JSON.parse(execFileSync('node', [scriptPath, '--json'], {
+  encoding: 'utf-8', timeout: 10000, cwd: dirname(scriptPath),
+}));
+ok('--json has metadata', 'metadata' in defaultJson);
+ok('--json has clusters array', 'clusters' in defaultJson && Array.isArray(defaultJson.clusters));
+eq('--json default windowDays = 90', defaultJson.metadata.windowDays, 90);
 
 // Test --window with non-numeric value (falls back to default)
-const badWindowOut = execFileSync('node', [scriptPath, '--window', 'abc'], {
+const badWindowOut = execFileSync('node', [scriptPath, '--window', 'abc', '--json'], {
   encoding: 'utf-8', timeout: 10000,
   cwd: dirname(scriptPath),
 });
@@ -861,7 +864,7 @@ const badWindowJson = JSON.parse(badWindowOut);
 eq('--window abc falls back to 90', badWindowJson.metadata.windowDays, 90);
 
 // Test --window with no value (falls back to default)
-const noWindowOut = execFileSync('node', [scriptPath, '--window'], {
+const noWindowOut = execFileSync('node', [scriptPath, '--window', '--json'], {
   encoding: 'utf-8', timeout: 10000,
   cwd: dirname(scriptPath),
 });

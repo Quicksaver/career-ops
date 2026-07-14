@@ -13,8 +13,8 @@
  * status (`skipped_expired`, `skipped_invalid_url`, `skipped_blocked_host`)
  * describe dead postings, not reposts, and are skipped.
  *
- * Run: node detect-reposts.mjs             (JSON to stdout)
- *      node detect-reposts.mjs --summary   (human-readable table)
+ * Run: node detect-reposts.mjs             (human-readable table)
+ *      node detect-reposts.mjs --json      (machine-readable result)
  *      node detect-reposts.mjs --window 60 (override 90-day window)
  *      node detect-reposts.mjs --self-test
  *
@@ -33,7 +33,7 @@ const DEFAULT_WINDOW_DAYS = 90;
 
 // --- CLI args ---
 const args = process.argv.slice(2);
-const summaryMode = args.includes('--summary');
+const jsonMode = args.includes('--json');
 const selfTestMode = args.includes('--self-test');
 const windowIdx = args.indexOf('--window');
 const windowDays = windowIdx !== -1 && args[windowIdx + 1] !== undefined
@@ -334,9 +334,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const rows = loadScanHistory();
   const clusters = detectReposts(rows, windowDays);
 
-  if (summaryMode) {
-    printSummary(clusters);
-  } else {
+  if (jsonMode) {
     console.log(JSON.stringify({
       metadata: {
         windowDays,
@@ -345,5 +343,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       },
       clusters,
     }, null, 2));
-  }
+  } else printSummary(clusters);
 }

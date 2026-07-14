@@ -29,7 +29,7 @@ Exit gracefully.
 Execute:
 
 ```bash
-node analyze-patterns.mjs --user {USER}
+node analyze-patterns.mjs --user {USER} --json
 ```
 
 Parse the JSON output. It contains:

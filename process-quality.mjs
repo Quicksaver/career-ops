@@ -16,8 +16,8 @@
  * This is a company/process-level signal only — never tied to a named
  * individual recruiter. See issue #1466.
  *
- * Run: node process-quality.mjs --user <username>             (JSON to stdout)
- *      node process-quality.mjs --user <username> --summary   (human-readable table)
+ * Run: node process-quality.mjs --user <username>             (human-readable table)
+ *      node process-quality.mjs --user <username> --json      (machine-readable result)
  *      node process-quality.mjs --user <username> --min-threshold 2  (min total interviews per company to report)
  *      node process-quality.mjs --file path/to/active-interviews.md  (override the data path; test isolation)
  *      node process-quality.mjs --self-test
@@ -39,7 +39,6 @@ const FRICTION_TAG = /\[process-friction(?::\s*([^\]]+))?\]/i;
 const rawArgs = process.argv.slice(2);
 const selfTestMode = rawArgs.includes('--self-test');
 const args = rawArgs;
-const summaryMode = args.includes('--summary');
 const fileIdx = args.indexOf('--file');
 const minThresholdIdx = args.indexOf('--min-threshold');
 const rawMinThreshold = minThresholdIdx !== -1 && args[minThresholdIdx + 1] !== undefined
@@ -312,7 +311,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     printUserContextErrorAndExit(err);
   }
   const cliArgs = userContext?.args ?? rawArgs;
-  const cliSummaryMode = cliArgs.includes('--summary');
+  const cliJsonMode = cliArgs.includes('--json');
   const cliMinThresholdIdx = cliArgs.indexOf('--min-threshold');
   const cliRawMinThreshold = cliMinThresholdIdx !== -1 && cliArgs[cliMinThresholdIdx + 1] !== undefined
     ? parseInt(cliArgs[cliMinThresholdIdx + 1], 10)
@@ -326,9 +325,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const rows = loadActiveInterviews(activeInterviewsPath);
   const signals = aggregateProcessQuality(rows, cliMinThreshold);
 
-  if (cliSummaryMode) {
-    printSummary(signals);
-  } else {
+  if (cliJsonMode) {
     console.log(JSON.stringify({
       metadata: {
         minThreshold: cliMinThreshold,
@@ -337,5 +334,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       },
       signals,
     }, null, 2));
-  }
+  } else printSummary(signals);
 }

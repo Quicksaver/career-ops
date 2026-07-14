@@ -20,8 +20,8 @@
  * without report/tracker row), sample sizes, and staleness are reported loudly,
  * never dropped silently.
  *
- * Run: node salary-gap.mjs             (JSON)
- *      node salary-gap.mjs --summary   (human-readable)
+ * Run: node salary-gap.mjs             (human-readable)
+ *      node salary-gap.mjs --json      (machine-readable)
  *      node salary-gap.mjs --self-test
  */
 
@@ -49,7 +49,7 @@ const args = userContext.args;
 const OBS_PATH = userContext.userRoot ? userPath(userContext, 'data/salary-observations.tsv') : '';
 const REPORTS_DIR = userContext.userRoot ? userPath(userContext, 'reports') : '';
 const PROFILE_PATH = userContext.userRoot ? userPath(userContext, 'config/profile.yml') : '';
-const summaryMode = args.includes('--summary');
+const jsonMode = args.includes('--json');
 const selfTestMode = args.includes('--self-test');
 
 const TRUST = {
@@ -635,11 +635,8 @@ function main() {
   const { apps, observations } = collectSources();
   const result = fold(observations, apps, loadProfileDesired());
 
-  if (summaryMode) {
-    printSummary(result);
-  } else {
-    console.log(JSON.stringify(result, null, 2));
-  }
+  if (jsonMode) console.log(JSON.stringify(result, null, 2));
+  else printSummary(result);
 }
 
 if (IS_MAIN) {

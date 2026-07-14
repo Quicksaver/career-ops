@@ -23,7 +23,7 @@
  *
  * Usage:
  *   node jd-skill-gap.mjs --user <username> users/<username>/jds/acme.md
- *   node jd-skill-gap.mjs --user <username> users/<username>/jds/acme.md --summary
+ *   node jd-skill-gap.mjs --user <username> users/<username>/jds/acme.md --json
  *   node jd-skill-gap.mjs --self-test
  */
 
@@ -220,7 +220,7 @@ export { extractJdSkills, skillMentionedInText, classifySkillGaps };
 // ── CLI ──────────────────────────────────────────────────────────────
 
 const args = userContext.args;
-const summaryMode = args.includes('--summary');
+const jsonOutput = args.includes('--json');
 const selfTestMode = args.includes('--self-test');
 const jdPathArg = args.find(a => !a.startsWith('--'));
 
@@ -334,7 +334,7 @@ if (selfTestMode) {
   runSelfTest();
 } else {
   if (!jdPathArg || !existsSync(jdPathArg)) {
-    console.error('Usage: node jd-skill-gap.mjs --user <username> <jd-file> [--summary]');
+    console.error('Usage: node jd-skill-gap.mjs --user <username> <jd-file> [--json]');
     console.error('       node jd-skill-gap.mjs --self-test');
     process.exit(1);
   }
@@ -348,7 +348,7 @@ if (selfTestMode) {
   const jdSkills = extractJdSkills(jdText);
   const result = classifySkillGaps(jdSkills, cvText);
 
-  if (summaryMode) {
+  if (!jsonOutput) {
     console.log(`\nJD Skill-Gap Check`);
     console.log('─'.repeat(40));
     console.log(`JD skills found: ${jdSkills.length}`);

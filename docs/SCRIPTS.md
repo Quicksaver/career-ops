@@ -8,7 +8,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 
 | Command | Script | Purpose |
 |---------|--------|---------|
-| `npm run go -- --user {USER}` | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator with JSON output |
+| `npm run go -- --user {USER}` | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator with streamed human output (`--json` for machines) |
 | `node resolve-parallel.mjs --profile users/{USER}/config/profile.yml --json` | `resolve-parallel.mjs` | Resolve argument/profile/default batch parallelism |
 | `npm run doctor` | `doctor.mjs` | Validate setup prerequisites |
 | `npm run verify -- --user {USER}` | `verify-runner.mjs` | Review every integrity finding, apply bounded actions, remember accepted exceptions, and reverify |
@@ -42,6 +42,22 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run paste-reply -- --user {USER}` | `paste-reply.mjs` | Manual/no-Gmail input into the active user's reply-watch pipeline |
 | `node jd-skill-gap.mjs --user {USER} <jd-file>` | `jd-skill-gap.mjs` | Zero-LLM JD requirements check against the active user's CV |
 | `npm run openai:tailor` | `openai-tailor.mjs` | Tailor a CV via any OpenAI-compatible endpoint (headless companion to `openai-eval.mjs`) |
+
+---
+
+## CLI output contract
+
+Public commands default to operator-friendly output: progress is streamed to
+stdout as work happens, then only a compact summary of information not already
+shown is printed. On failure, the tail contains the actual error rather than a
+copy of the complete run state. Full structured payloads are opt-in with
+`--json`; in that mode stdout contains only JSON and any live progress uses
+stderr, so callers can parse stdout deterministically. Internal orchestration
+always passes `--json` when it consumes a child command's result.
+
+`doctor.mjs` and `batch/batch-runner.sh` already follow the human-output side of
+this contract. The batch runner persists its machine state in user-scoped batch
+artifacts rather than dumping it at process exit.
 
 ---
 
@@ -79,7 +95,7 @@ is implemented by omitting the corresponding CLI override.
 Batch and verification-review parallelism resolve as an explicit `--parallel N` override, then
 `batch.parallel` in `users/{USER}/config/profile.yml`, then the system default
 of `1`. The resolved value and its source are included as `parallel` and
-`parallel_source` in the final JSON summary. The same hierarchy applies when
+`parallel_source` in the `--json` result. The same hierarchy applies when
 `batch/batch-runner.sh` or `verify-runner.mjs` is invoked directly. The go runner
 passes its resolved parallel value to both stages.
 
@@ -102,14 +118,15 @@ npm run verify -- --user <username>
 npm run verify -- --user <username> --parallel 4
 npm run verify -- --user <username> --review-retries 2
 npm run verify -- --user <username> --resume-run <run-id>
+npm run verify -- --user <username> --json
 npm run verify:raw -- --user <username> --json
 ```
 
-`verify-runner.mjs` reviews findings in calls of at most five. Independent dependency lanes run concurrently according to `--parallel`/`batch.parallel`; overlapping tracker, report, and orphan identities remain in one sequential lane so prior decisions stay binding. Every reviewer is read-only with separate input/output/log files. Only the parent applies supported deterministic actions or writes ledgers, serially, after all lanes and aggregate consistency checks succeed. After each review call, stderr emits one compact line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details stay in run artifacts and the final JSON object; `--quiet` suppresses terminal progress. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
+`verify-runner.mjs` reviews findings in calls of at most five. Independent dependency lanes run concurrently according to `--parallel`/`batch.parallel`; overlapping tracker, report, and orphan identities remain in one sequential lane so prior decisions stay binding. Every reviewer is read-only with separate input/output/log files. Only the parent applies supported deterministic actions or writes ledgers, serially, after all lanes and aggregate consistency checks succeed. After each review call, human mode emits one compact stdout line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details stay in run artifacts. The terminal tail is a compact count summary and, on failure, only the actual error. With `--json`, stdout is the complete machine result and progress moves to stderr. `--quiet` suppresses terminal progress. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
 
 Semantic validation aggregates every invalid item in a five-finding response and retries only that chunk, supplying the full error list to the reviewer. `--review-retries N` defaults to `2` and accepts `0` through `5`. For orphan archives, the model chooses the classification/disposition while the runner mechanically derives the exact report path from the raw finding and sets `tracker_tsv` to `null`; the model cannot redirect the mutation to another file. A validated chunk is written as an atomic checkpoint, but actions remain pass-atomic and begin only after all lanes and cross-chunk consistency checks pass.
 
-A normal invocation always performs a fresh review and ignores old run artifacts. `--resume-run RUN_ID` is an explicit recovery option for an interrupted run: it reuses only validated checkpoints whose signature exactly matches the active user, chunk findings, and prior lane decisions. Raw output, invalid responses, and mismatched checkpoints are rerun. The final JSON records semantic retry limit/usage, reused checkpoints, and mechanical normalizations under `review_resilience`.
+A normal invocation always performs a fresh review and ignores old run artifacts. `--resume-run RUN_ID` is an explicit recovery option for an interrupted run: it reuses only validated checkpoints whose signature exactly matches the active user, chunk findings, and prior lane decisions. Raw output, invalid responses, and mismatched checkpoints are rerun. The `--json` result records semantic retry limit/usage, reused checkpoints, and mechanical normalizations under `review_resilience`.
 
 Confirmed tracker duplicates preserve lifecycle order as `Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed`. The deterministic resolver makes the most advanced row the keeper; reviewer-selected canonical identity is only the equal-status tiebreaker. The keeper retains its original tracker ID, report, PDF, HTML, and links without renaming. Losing rows contribute their notes, then their reports/output artifacts are backed up and archived. `data/duplicate-resolutions.jsonl` records the reviewer-selected keeper, effective lifecycle keeper, override flag, rationale, evidence, and backup root.
 
@@ -253,7 +270,7 @@ Analyzes application outcomes, scores, archetypes, blockers, remote policy, comp
 
 ```bash
 npm run patterns -- --user <username>
-npm run patterns -- --user <username> --summary
+npm run patterns -- --user <username> --json
 npm run patterns -- --user <username> --min-threshold 3
 node analyze-patterns.mjs --self-test
 ```
@@ -268,14 +285,14 @@ Aggregates skill gaps across every tracked report or analyzes one target JD. It 
 
 ```bash
 npm run upskill -- --user <username>
-npm run upskill -- --user <username> --summary
+npm run upskill -- --user <username> --json
 npm run upskill -- --user <username> --min-reports 3
 node upskill.mjs --user <username> --url-text path/to/jd.md
 node upskill.mjs --user <username> https://company.example/jobs/123
 node upskill.mjs --self-test
 ```
 
-**Exit codes:** `0` analysis succeeded (including graceful `{error}` JSON for insufficient data), `1` self-test failure.
+**Exit codes:** `0` analysis succeeded (including a graceful insufficient-data result), `1` self-test failure.
 
 ---
 
@@ -284,8 +301,8 @@ node upskill.mjs --self-test
 Folds compensation observations into per-application desired/advertised/actual values and gap aggregates. Sources: `reports/*.md` Machine Summary `advertised_comp` (advertised, source `jd` — historical reports backfill automatically), `data/salary-observations.tsv` (desired/actual, append-only), and `config/profile.yml` `compensation.target_range` (desired default). Fold precedence: highest trust tier wins, then latest date (`actual`: contract > offer-letter > recruiter-verbal > user). Aggregates group by (company, role) and per currency — no FX conversion. Unparseable amounts, orphaned tracker numbers, sample sizes, and staleness are always reported.
 
 ```bash
-node salary-gap.mjs             # JSON
-node salary-gap.mjs --summary   # table + data-quality section
+node salary-gap.mjs             # table + data-quality section
+node salary-gap.mjs --json      # machine-readable result
 node salary-gap.mjs --self-test
 ```
 
@@ -308,8 +325,8 @@ Funnel calibration vs market benchmarks + stage velocity. Three payloads, decrea
 Statistical honesty is enforced in code: right-censored counts printed next to every median ("n still waiting, excluded"), same-day catch-up hops excluded and counted, no comparative multiplier claims below n=20 applied, above-range output carries a selection-bias note, every benchmark mention carries its year + "directional". Coverage, orphaned tracker numbers, unparseable lines, and unknown sources are always reported.
 
 ```bash
-node funnel-velocity.mjs             # JSON
-node funnel-velocity.mjs --summary   # human-readable
+node funnel-velocity.mjs             # human-readable
+node funnel-velocity.mjs --json      # machine-readable result
 node funnel-velocity.mjs --self-test
 node funnel-velocity.mjs --benchmarks path/to/benchmarks.yml
 ```
@@ -332,8 +349,8 @@ Logs "received a skills assessment" as a structured per-application event (eSkil
 
 ```bash
 node assessment-log.mjs --user <username> add --company Acme --report 042 --platform eSkill --subject "MS Office" --threshold 70 --score 92 --stale "references Adobe Acrobat 9 (2008-era)"
-node assessment-log.mjs --user <username>             # JSON
-node assessment-log.mjs --user <username> --summary   # per-event + per-platform table
+node assessment-log.mjs --user <username>             # per-event + per-platform table
+node assessment-log.mjs --user <username> --json      # machine-readable result
 node assessment-log.mjs --self-test
 ```
 
@@ -349,13 +366,14 @@ Log line format (TSV, one per line, `#`-prefixed lines are comments; for `report
 
 ## update:check
 
-Checks whether a newer version of career-ops is available upstream. Outputs JSON to stdout:
+Checks whether a newer version of career-ops is available upstream. Human-readable output is the default; pass `--json` for the complete machine result:
 
 ```bash
 npm run update:check
+node update-system.mjs check --json
 ```
 
-Possible JSON responses:
+Possible machine statuses:
 
 | `status` | Meaning |
 |----------|---------|
@@ -570,11 +588,11 @@ If no `Subject:`/`From:` header lines are found, the whole file is treated as th
 
 ## stats.mjs
 
-Aggregates lifetime pipeline stats into one JSON report. Stats include tracker, scanner, portals, follow-ups and runs. Reads from `users/{USER}/data/applications.md`, `users/{USER}/data/scan-history.tsv`, `users/{USER}/portals.yml`, `users/{USER}/data/follow-ups.md`, and `users/{USER}/data/scan-runs.tsv`. If a file doesn't exist yet, the section turns into null.
+Aggregates lifetime pipeline stats. Stats include tracker, scanner, portals, follow-ups and runs. Reads from `users/{USER}/data/applications.md`, `users/{USER}/data/scan-history.tsv`, `users/{USER}/portals.yml`, `users/{USER}/data/follow-ups.md`, and `users/{USER}/data/scan-runs.tsv`. If a file doesn't exist yet, the section turns into null.
 
 ```bash
-node stats.mjs --user <username> --summary  # returns human-readable table
-node stats.mjs --user <username>            # returns JSON
+node stats.mjs --user <username>            # human-readable table
+node stats.mjs --user <username> --json     # machine-readable result
 ```
 On a fresh clone, with no data yet, the JSON format is as follows:
 

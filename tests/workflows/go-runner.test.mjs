@@ -451,13 +451,15 @@ try {
       runner.includes('progress: scanAuthProgressLine') && runner.includes('progress: handoffProgressLine') &&
       runner.includes('progress: true') &&
       runner.includes('--quiet')) {
-    pass('go runner streams bounded live progress to stderr with a quiet opt-out');
+    pass('go runner streams bounded live progress with a quiet opt-out');
   } else {
     fail('go runner live progress forwarding is not fully wired');
   }
   if (runner.includes("child.once('close'") && runner.includes('stream.end(resolve)') &&
       verifyRunner.includes("child.once('close'") && verifyRunner.includes('stream.end(resolveStream)') &&
-      batchRunner.includes('--defer-verification')) {
+      batchRunner.includes('--defer-verification') &&
+      runner.includes("systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli, '--json'") &&
+      runner.includes("systemPath('pipeline-liveness.mjs'), '--user', context.userId, '--json'")) {
     pass('go and verify runners drain phase logs before consuming structured results');
   } else {
     fail('go runner can still truncate or obscure structured verifier failures');

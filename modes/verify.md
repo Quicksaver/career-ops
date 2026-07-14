@@ -31,7 +31,7 @@ An invalid review retries only its five-finding chunk, with every semantic valid
 
 Interrupted runs are ignored by a normal fresh invocation. An operator may explicitly continue one with `--resume-run RUN_ID`; only validated checkpoints whose user, findings, and prior-decision context exactly match their stored signature are reused. Raw reviewer output is never a resumable checkpoint. Use a fresh run when reviewer decisions should be discarded and recomputed.
 
-After each call completes, the runner writes one compact stderr line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred; report IDs are used for report-only and orphan findings. Full decisions, rationale, evidence, and action details remain in the run artifacts and final JSON summary instead of flooding the terminal. Stdout remains reserved for the single final JSON summary; `--quiet` suppresses live progress while retaining phase logs.
+After each call completes, the runner writes one compact stdout line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred; report IDs are used for report-only and orphan findings. Full decisions, rationale, evidence, and action details remain in the run artifacts instead of flooding the terminal. The default final output is only a compact summary plus the actual failure text, when present. Pass `--json` for a complete machine-readable result; in that mode stdout contains only JSON and progress moves to stderr. `--quiet` suppresses live progress while retaining phase logs.
 
 ## Completion
 

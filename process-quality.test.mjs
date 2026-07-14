@@ -301,11 +301,11 @@ try {
 }
 
 const defaultOut = runUserCli([]);
-const defaultJson = JSON.parse(defaultOut);
-ok('default produces valid JSON', typeof defaultJson === 'object');
-ok('default has metadata', 'metadata' in defaultJson);
-ok('default has signals array', 'signals' in defaultJson && Array.isArray(defaultJson.signals));
-eq('default minThreshold = 1', defaultJson.metadata.minThreshold, 1);
+ok('default produces human-readable output', defaultOut.includes('Process Quality Signal'));
+const defaultJson = JSON.parse(runUserCli(['--json']));
+ok('--json has metadata', 'metadata' in defaultJson);
+ok('--json has signals array', 'signals' in defaultJson && Array.isArray(defaultJson.signals));
+eq('--json default minThreshold = 1', defaultJson.metadata.minThreshold, 1);
 
 // Missing-file CLI behavior, isolated via --file pointing at a path that
 // deliberately does not exist inside a fresh temp dir. This must NOT depend
@@ -315,7 +315,7 @@ eq('default minThreshold = 1', defaultJson.metadata.minThreshold, 1);
 const missingFileTmpDir = mkdtempSync(join(tmpdir(), 'process-quality-missing-'));
 const missingFilePath = join(missingFileTmpDir, 'does-not-exist.md');
 try {
-  const missingOut = execFileSync('node', [scriptPath, '--file', missingFilePath], {
+  const missingOut = execFileSync('node', [scriptPath, '--file', missingFilePath, '--json'], {
     encoding: 'utf-8', timeout: 10000,
     cwd: dirname(scriptPath),
   });
@@ -336,7 +336,7 @@ try {
   writeFileSync(fixturePath, table([
     '| FixtureCo | Role | Prescreen | 2026-07-01 | Someone | Scheduled | [process-friction: fixture reason] |',
   ]));
-  const fixtureOut = execFileSync('node', [scriptPath, '--file', fixturePath], {
+  const fixtureOut = execFileSync('node', [scriptPath, '--file', fixturePath, '--json'], {
     encoding: 'utf-8', timeout: 10000,
     cwd: dirname(scriptPath),
   });
@@ -348,11 +348,11 @@ try {
   rmSync(fixtureTmpDir, { recursive: true, force: true });
 }
 
-const thresholdOut = runUserCli(['--min-threshold', '3']);
+const thresholdOut = runUserCli(['--min-threshold', '3', '--json']);
 const thresholdJson = JSON.parse(thresholdOut);
 eq('--min-threshold sets minThreshold in metadata', thresholdJson.metadata.minThreshold, 3);
 
-const badThresholdOut = runUserCli(['--min-threshold', 'abc']);
+const badThresholdOut = runUserCli(['--min-threshold', 'abc', '--json']);
 const badThresholdJson = JSON.parse(badThresholdOut);
 eq('--min-threshold abc falls back to 1', badThresholdJson.metadata.minThreshold, 1);
 

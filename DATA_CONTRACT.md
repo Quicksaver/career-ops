@@ -78,7 +78,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `apply-verification-review.mjs` | Applies bounded tracker/orphan actions and exact-fingerprint seen records |
 | `resolve-parallel.mjs` | Resolves batch parallelism from argument, user profile, or system default |
 | `resolve-verify-warnings.mjs` | Validates and applies model-confirmed duplicate-only warning resolutions |
-| `pipeline-liveness.mjs` | Machine-readable pending-queue liveness preflight |
+| `pipeline-liveness.mjs` | Pending-queue liveness preflight; human output by default, machine result with `--json` |
 | `sync-pipeline-batch.mjs` | Stable pipeline-to-batch queue synchronizer |
 | `modes/batch.md` | Batch processing instructions |
 | `modes/apply.md` | Application assistant instructions |

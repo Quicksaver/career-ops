@@ -32,11 +32,13 @@ error and warning read-only, applies only schema-constrained duplicate/orphan
 actions or bounded tracker patches, records exact-fingerprint accepted findings
 as seen, and runs the raw verifier again. Unresolved findings set
 `needs_human_review`. Detailed phase logs go to
-`users/{USER}/data/go-runs/`. Live progress goes to stderr: the current
+`users/{USER}/data/go-runs/`. Live progress goes to stdout: the current
 zero-token provider/target, handoff task, authenticated search prompt, queue
-additions, and batch job are visible while the run is active. Stdout still
-contains exactly one JSON summary, so machine consumers remain stable. Pass
-`--quiet` to retain log-only phase output. The `--parallel` option is optional.
+additions, and batch job are visible while the run is active. The default final
+output is a compact human summary plus the actual error when one occurred. Pass
+`--json` when a machine consumer needs the complete result; stdout then contains
+exactly one JSON object and live progress moves to stderr. Pass `--quiet` to
+retain log-only phase output. The `--parallel` option is optional.
 Parallelism resolves in this order:
 
 1. `--parallel N` on `go-runner.mjs`

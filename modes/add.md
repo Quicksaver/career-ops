@@ -56,7 +56,7 @@ If no source was given, ask the user for one.
    `/tmp/add-<slug>.json`, then run:
 
    ```bash
-   node add-entry.mjs --user {USER} /tmp/add-<slug>.json
+   node add-entry.mjs --user {USER} /tmp/add-<slug>.json --json
    ```
 
    (Add `--dry-run` first if the user wants to see the file-level change without

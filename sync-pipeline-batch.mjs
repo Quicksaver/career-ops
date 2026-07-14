@@ -85,10 +85,17 @@ const duplicateInputUrls = [...byUrl.entries()]
   .map(([url, ids]) => ({ url, ids }));
 
 if (stateConflicts.length) {
-  console.log(JSON.stringify({
+  const failure = {
     status: 'failed', user: context.userId, error: 'batch input/state ID conflicts detected',
     state_conflicts: stateConflicts, dry_run: dryRun,
-  }));
+  };
+  if (json) console.log(JSON.stringify(failure));
+  else {
+    console.error(`Batch sync failed: ${failure.error}`);
+    for (const conflict of stateConflicts) {
+      console.error(`  #${conflict.id}: state ${conflict.state_url} conflicts with input ${conflict.input_url}`);
+    }
+  }
   process.exit(1);
 }
 

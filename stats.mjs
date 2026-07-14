@@ -2,13 +2,14 @@
 /**
  * stats.mjs — Lifetime pipeline stats aggregator (zero-token). #1604
  *
- * One JSON contract for "how is my pipeline doing, lifetime": tracker roll-up,
+ * One data contract for "how is my pipeline doing, lifetime": tracker roll-up,
  * cumulative funnel, lifetime scanner totals from scan-history.tsv, portal
  * coverage from portals.yml, and follow-up compliance. Reads durable data
  * files only — no LLM cost anywhere.
  *
- * Run: node stats.mjs             (JSON to stdout)
- *      node stats.mjs --summary   (human-readable table)
+ * Run: node stats.mjs             (human-readable table)
+ *      node stats.mjs --json      (machine-readable result)
+ *      node stats.mjs --summary   (deprecated human-readable alias)
  *
  * Sections degrade to null when their source file is missing, and
  * `metadata.sources` says which files were found — a fresh clone with zero
@@ -445,6 +446,6 @@ function printSummary(stats) {
 
 if (IS_MAIN) {
   const stats = computeAllStats();
-  if (process.argv.includes('--summary')) printSummary(stats);
-  else console.log(JSON.stringify(stats, null, 2));
+  if (process.argv.includes('--json')) console.log(JSON.stringify(stats, null, 2));
+  else printSummary(stats);
 }

@@ -21,8 +21,9 @@
  * Run: node assessment-log.mjs --user <id> add --company <name> [--report <num>] \
  *        --platform <vendor> --subject <topic> [--threshold <pct>] \
  *        [--score <pct>] [--stale "<observed staleness note>"]
- *      node assessment-log.mjs --user <id>             (JSON)
- *      node assessment-log.mjs --user <id> --summary   (human-readable)
+ *      node assessment-log.mjs --user <id>             (human-readable)
+ *      node assessment-log.mjs --user <id> --json      (machine-readable)
+ *      node assessment-log.mjs --user <id> --summary   (deprecated human-readable alias)
  *      node assessment-log.mjs --self-test
  */
 
@@ -129,7 +130,7 @@ export function buildRow(fields, today) {
   ].join('\t');
 }
 
-function addEntry(args, logPath) {
+function addEntry(args, logPath, jsonOutput = false) {
   const fields = {};
   for (let i = 0; i < args.length; i++) {
     const m = args[i].match(/^--(company|report|platform|subject|threshold|score|stale)$/);
@@ -154,7 +155,9 @@ function addEntry(args, logPath) {
     prefix = HEADER_COMMENT + '\n';
   }
   appendFileSync(logPath, prefix + row + '\n');
-  console.log(JSON.stringify({ added: true, row: row.split('\t') }, null, 2));
+  const result = { added: true, row: row.split('\t') };
+  if (jsonOutput) console.log(JSON.stringify(result, null, 2));
+  else console.log(`assessment-log: added ${fields.company} — ${fields.platform} / ${fields.subject}`);
 }
 
 // --- Self-test (in-memory fixtures, no file writes) ---
@@ -281,17 +284,14 @@ function main() {
   }
   const args = userContext.args;
   const logPath = userPath(userContext, 'data/assessments.tsv');
-  if (args[0] === 'add') { addEntry(args.slice(1), logPath); return; }
+  if (args[0] === 'add') { addEntry(args.slice(1), logPath, args.includes('--json')); return; }
 
   const content = existsSync(logPath) ? readFileSync(logPath, 'utf-8') : '';
   const { rows, malformed } = parseAssessments(content);
   const result = summarize(rows, malformed);
 
-  if (args.includes('--summary')) {
-    printSummary(result, userContext.userId);
-  } else {
-    console.log(JSON.stringify(result, null, 2));
-  }
+  if (args.includes('--json')) console.log(JSON.stringify(result, null, 2));
+  else printSummary(result, userContext.userId);
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

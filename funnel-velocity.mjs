@@ -28,8 +28,9 @@
  * Benchmarks lookup order: --benchmarks <path> > config/benchmarks.yml (user
  * layer, survives updates) > templates/benchmarks.yml (shipped default).
  *
- * Run: node funnel-velocity.mjs             (JSON)
- *      node funnel-velocity.mjs --summary   (human-readable)
+ * Run: node funnel-velocity.mjs             (human-readable)
+ *      node funnel-velocity.mjs --json      (machine-readable)
+ *      node funnel-velocity.mjs --summary   (deprecated human-readable alias)
  *      node funnel-velocity.mjs --self-test
  *      node funnel-velocity.mjs --benchmarks path/to/benchmarks.yml
  */
@@ -60,7 +61,7 @@ try {
   printUserContextErrorAndExit(err);
 }
 const args = userContext.args;
-const summaryMode = args.includes('--summary');
+const jsonOutput = args.includes('--json');
 const selfTestMode = args.includes('--self-test');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -661,14 +662,14 @@ function main() {
   const todayStr = new Date().toISOString().slice(0, 10);
 
   if (!trackerContent) {
-    if (summaryMode) console.log(`No tracker found at ${trackerPath} — nothing to calibrate yet.`);
-    else console.log(JSON.stringify({ calibration: null, waiting: null, velocity: null, dataQuality: { trackerRows: 0, note: `no tracker at ${trackerPath}` } }, null, 2));
+    if (jsonOutput) console.log(JSON.stringify({ calibration: null, waiting: null, velocity: null, dataQuality: { trackerRows: 0, note: `no tracker at ${trackerPath}` } }, null, 2));
+    else console.log(`No tracker found at ${trackerPath} — nothing to calibrate yet.`);
     return;
   }
 
   const result = analyze({ trackerContent, logContent, benchmarks, states, todayStr });
-  if (summaryMode) console.log(renderSummary(result, todayStr));
-  else console.log(JSON.stringify({ ...result, generatedAt: todayStr }, null, 2));
+  if (jsonOutput) console.log(JSON.stringify({ ...result, generatedAt: todayStr }, null, 2));
+  else console.log(renderSummary(result, todayStr));
 }
 
 if (IS_MAIN) {

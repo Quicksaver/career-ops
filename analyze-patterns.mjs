@@ -6,8 +6,8 @@
  * (archetype, seniority, remote, gaps, scores), classifies outcomes,
  * and outputs structured JSON with actionable patterns.
  *
- * Run: node analyze-patterns.mjs --user <id>          (JSON to stdout)
- *      node analyze-patterns.mjs --user <id> --summary (human-readable table)
+ * Run: node analyze-patterns.mjs --user <id>          (human-readable table)
+ *      node analyze-patterns.mjs --user <id> --json   (machine-readable result)
  *      node analyze-patterns.mjs --user <id> --min-threshold 3
  *      node analyze-patterns.mjs --user <id> --min-vendor-n 8   (per-vendor sample floor)
  *      node analyze-patterns.mjs --self-test
@@ -58,7 +58,7 @@ try {
 
 const args = userContext.args;
 const APPS_FILE = userContext.userRoot ? userPath(userContext, 'data/applications.md') : '';
-const summaryMode = args.includes('--summary');
+const jsonMode = args.includes('--json');
 const minThresholdIdx = args.indexOf('--min-threshold');
 const MIN_THRESHOLD = minThresholdIdx !== -1 && args[minThresholdIdx + 1] !== undefined
   ? (Number.isNaN(parseInt(args[minThresholdIdx + 1])) ? 5 : parseInt(args[minThresholdIdx + 1]))
@@ -1053,10 +1053,7 @@ if (args.includes('--self-test')) {
 
 const result = analyze();
 
-if (summaryMode) {
-  printSummary(result);
-} else {
-  console.log(JSON.stringify(result, null, 2));
-}
+if (jsonMode) console.log(JSON.stringify(result, null, 2));
+else printSummary(result);
 
 if (result.error) process.exit(1);

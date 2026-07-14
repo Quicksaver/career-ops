@@ -5,7 +5,7 @@
  * Reads the tracker + every linked evaluation report, extracts skill tokens
  * from each report's gaps (Machine Summary hard_stops/soft_gaps + Gap table),
  * removes anything already present in cv.md / config/profile.yml, and emits a
- * weighted, tiered gap map as JSON for the `upskill` mode to narrate.
+ * weighted, tiered gap map for the `upskill` mode to narrate.
  *
  * Weighting: each report contributes (5.0 − score) per skill it names — a
  * 2.1/5 report says more about your gaps than a 4.5/5 one. A skill is counted
@@ -16,8 +16,9 @@
  * (score < 4.0) reports naming the gap — NOT quantiles, which are noise at
  * the 5–20 report sample sizes this tool sees.
  *
- * Run: node upskill.mjs            (JSON to stdout)
- *      node upskill.mjs --summary  (human-readable table)
+ * Run: node upskill.mjs            (human-readable table)
+ *      node upskill.mjs --json     (machine-readable result)
+ *      node upskill.mjs --summary  (deprecated human-readable alias)
  *      node upskill.mjs --min-reports 3
  *      node upskill.mjs --self-test
  */
@@ -41,6 +42,7 @@ try {
   printUserContextErrorAndExit(err);
 }
 const args = userContext.args;
+const jsonOutput = args.includes('--json');
 const APPS_FILE = userContext.userRoot ? userPath(userContext, 'data/applications.md') : '';
 const CV_FILE = userContext.userRoot ? userPath(userContext, 'cv.md') : '';
 const PROFILE_FILE = userContext.userRoot ? userPath(userContext, 'config/profile.yml') : '';
@@ -605,13 +607,22 @@ if (urlTextIdx !== -1 || directUrl) {
       }
     });
 
-    console.log(JSON.stringify({
+    const targetedResult = {
       mode: 'targeted',
       source: inputSource,
       gaps: gapList.map(skill => ({ skill })),
       excludedAsKnown: excludedAsKnown.map(skill => ({ skill })),
       knownSkills: Array.from(knownSkillsSet).sort()
-    }, null, 2));
+    };
+
+    if (jsonOutput) {
+      console.log(JSON.stringify(targetedResult, null, 2));
+    } else {
+      console.log('TARGETED UPSKILL GAP CHECK');
+      console.log(`Source: ${inputSource}`);
+      console.log(`New gaps: ${gapList.length ? gapList.join(', ') : 'none'}`);
+      console.log(`Already supported: ${excludedAsKnown.length ? excludedAsKnown.join(', ') : 'none'}`);
+    }
 
     process.exit(0);
   })();
@@ -625,9 +636,6 @@ if (urlTextIdx !== -1 || directUrl) {
   })();
 
   const result = analyze(MIN_REPORTS);
-  if (args.includes('--summary')) {
-    printSummary(result);
-  } else {
-    console.log(JSON.stringify(result, null, 2));
-  }
+  if (jsonOutput) console.log(JSON.stringify(result, null, 2));
+  else printSummary(result);
 }

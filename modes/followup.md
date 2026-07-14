@@ -19,7 +19,7 @@ Track follow-up cadence for active applications. Flag overdue follow-ups, extrac
 Execute:
 
 ```bash
-node followup-cadence.mjs --user {USER}
+node followup-cadence.mjs --user {USER} --json
 ```
 
 Parse the JSON output. It contains:

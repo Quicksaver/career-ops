@@ -5,8 +5,8 @@
  * Parses applications.md + follow-ups.md, calculates follow-up cadence
  * for active applications, extracts contacts, and flags overdue entries.
  *
- * Run: node followup-cadence.mjs --user <id>             (JSON to stdout)
- *      node followup-cadence.mjs --user <id> --summary   (human-readable dashboard)
+ * Run: node followup-cadence.mjs --user <id>             (human-readable dashboard)
+ *      node followup-cadence.mjs --user <id> --json      (machine-readable result)
  *      node followup-cadence.mjs --user <id> --overdue-only
  *      node followup-cadence.mjs --user <id> --applied-days 10
  */
@@ -43,7 +43,7 @@ function getRuntimeContext() {
 
 // --- CLI args ---
 const args = process.argv.slice(2);
-const summaryMode = args.includes('--summary');
+const jsonMode = args.includes('--json');
 const overdueOnly = args.includes('--overdue-only');
 const appliedDaysIdx = args.indexOf('--applied-days');
 const appliedDaysOverride = appliedDaysIdx !== -1 ? parseInt(args[appliedDaysIdx + 1], 10) : null;
@@ -485,11 +485,8 @@ function printSummary(result) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const result = analyze();
 
-  if (summaryMode) {
-    printSummary(result);
-  } else {
-    console.log(JSON.stringify(result, null, 2));
-  }
+  if (jsonMode) console.log(JSON.stringify(result, null, 2));
+  else printSummary(result);
 
   if (result.error) process.exit(1);
 }

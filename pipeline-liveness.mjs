@@ -29,23 +29,46 @@ try {
 const args = context.args;
 const dryRun = args.includes('--dry-run');
 const noFallback = args.includes('--no-fallback');
+const jsonOutput = args.includes('--json');
 const throttleArg = args.find((arg) => arg === '--throttle' || arg.startsWith('--throttle='));
 if (args.includes('-h') || args.includes('--help')) {
-  console.log('Usage: node pipeline-liveness.mjs --user <id> [--throttle[=ms]] [--no-fallback] [--dry-run]');
-  console.log('Checks HTTP(S) Pending rows, moves confirmed expired rows to Processed, and prints JSON.');
+  console.log('Usage: node pipeline-liveness.mjs --user <id> [--throttle[=ms]] [--no-fallback] [--dry-run] [--json]');
+  console.log('Checks HTTP(S) Pending rows and moves confirmed expired rows to Processed.');
   process.exit(0);
 }
-const allowed = new Set(['--dry-run', '--no-fallback', '--throttle']);
+const allowed = new Set(['--dry-run', '--no-fallback', '--throttle', '--json']);
 const unknown = args.filter((arg) => !allowed.has(arg) && !arg.startsWith('--throttle='));
 if (unknown.length) {
   console.error(`Unknown option: ${unknown[0]}`);
   process.exit(1);
 }
 
+function finish(result, exitCode = 0) {
+  const lines = [];
+  if (jsonOutput) {
+    lines.push(JSON.stringify(result));
+  } else if (result.status === 'failed') {
+    lines.push(`[pipeline-liveness] failed: ${result.error || 'unknown failure'}`);
+    if (result.stderr) lines.push(`[pipeline-liveness] detail: ${result.stderr}`);
+  } else {
+    for (const item of result.results || []) {
+      const reason = item.reason ? ` — ${item.reason}` : '';
+      lines.push(`[pipeline-liveness] ${item.result}: ${item.url}${reason}`);
+    }
+    lines.push(`[pipeline-liveness] summary: checked ${result.checked || 0}, active ${result.active || 0}, expired ${result.expired || 0}, uncertain ${result.uncertain || 0}, moved ${result.moved || 0}${result.dry_run ? ' (dry run)' : ''}`);
+    for (const warning of result.tracker_warnings || []) {
+      lines.push(`[pipeline-liveness] tracker warning: ${warning.company} — ${warning.role}: ${warning.message}`);
+    }
+  }
+  // This helper may emit a large machine payload. A synchronous fd write keeps
+  // `--json` lossless even though this function terminates the process.
+  writeFileSync(1, `${lines.join('\n')}\n`);
+  process.exit(exitCode);
+}
+
 const pipelinePath = userPath(context, 'data/pipeline.md');
 if (!existsSync(pipelinePath)) {
-  console.log(JSON.stringify({ status: 'completed', checked: 0, active: 0, expired: 0, uncertain: 0, local: 0, moved: 0 }));
-  process.exit(0);
+  finish({ status: 'completed', checked: 0, active: 0, expired: 0, uncertain: 0, local: 0, moved: 0, results: [], dry_run: dryRun });
 }
 
 const original = readFileSync(pipelinePath, 'utf-8');
@@ -55,11 +78,10 @@ const local = pendingRows.filter((row) => row.url.startsWith('local:')).length;
 const unsupported = pendingRows.length - webUrls.length - local;
 
 if (webUrls.length === 0) {
-  console.log(JSON.stringify({
+  finish({
     status: 'completed', checked: 0, active: 0, expired: 0, uncertain: unsupported,
     local, unsupported, moved: 0, results: [], dry_run: dryRun,
-  }));
-  process.exit(unsupported ? 2 : 0);
+  }, unsupported ? 2 : 0);
 }
 
 const tempDir = mkdtempSync(join(tmpdir(), 'career-ops-liveness-'));
@@ -80,16 +102,14 @@ let payload;
 try {
   payload = JSON.parse((checked.stdout || '').trim());
 } catch {
-  console.log(JSON.stringify({
+  finish({
     status: 'failed',
     error: `Liveness checker returned invalid JSON (exit ${checked.status ?? 'signal'})`,
     stderr: (checked.stderr || '').trim().slice(-1000),
-  }));
-  process.exit(1);
+  }, 1);
 }
 if (payload.status !== 'completed' || !Array.isArray(payload.results)) {
-  console.log(JSON.stringify(payload));
-  process.exit(1);
+  finish(payload, 1);
 }
 
 const expiredUrls = new Set(payload.results.filter((item) => item.result === 'expired').map((item) => item.url));
@@ -139,5 +159,4 @@ const result = {
   results: payload.results,
   dry_run: dryRun,
 };
-console.log(JSON.stringify(result));
-process.exit(result.uncertain ? 2 : 0);
+finish(result, result.uncertain ? 2 : 0);

@@ -46,8 +46,8 @@ Options:
   --max-passes N        Maximum review/action/reverify passes (default: 3)
   --review-retries N    Semantic retries per five-finding chunk (default: 2)
   --resume-run RUN_ID   Reuse only validated checkpoints from an interrupted run
-  --quiet               Suppress phase progress on stderr
-  --json                Reserved; stdout is always one JSON object
+  --quiet               Suppress live phase progress
+  --json                Emit the complete machine-readable result on stdout
   -h, --help            Show this help
 
 The raw verify-pipeline findings remain unchanged. Reviewed false positives and
@@ -91,6 +91,7 @@ const maxPasses = Number.parseInt(optionValue('--max-passes', '3'), 10);
 const reviewRetries = Number.parseInt(optionValue('--review-retries', '2'), 10);
 const resumeRun = optionValue('--resume-run');
 const quiet = rawArgs.includes('--quiet');
+const jsonOutput = rawArgs.includes('--json');
 const valueOptions = new Set([
   '--agent-cli', '--codex-model', '--codex-reasoning-effort', '--parallel',
   '--max-passes', '--review-retries', '--resume-run',
@@ -126,7 +127,9 @@ let lockOwned = false;
 let forwardingSignal = false;
 
 function log(message) {
-  if (!quiet) process.stderr.write(`[verify] ${message}\n`);
+  if (quiet) return;
+  const stream = jsonOutput ? process.stderr : process.stdout;
+  stream.write(`[verify] ${message}\n`);
 }
 
 function logReviewResults(chunk, review, positions, total) {
@@ -626,5 +629,32 @@ async function main() {
 }
 
 const summary = await main();
-console.log(JSON.stringify(summary));
+
+function actionCount(actions) {
+  return [
+    'duplicate_groups', 'tracker_rows_removed', 'reports_archived', 'artifacts_archived',
+    'tracker_rows_restored', 'tracker_rows_patched', 'orphans_archived',
+  ].reduce((total, key) => total + (Number(actions?.[key]) || 0), 0);
+}
+
+function printHumanSummary(result) {
+  const initial = result.initial_verification?.counts || {};
+  const final = result.counts || {};
+  const reviewed = result.reviews?.length || 0;
+  const unresolved = result.unresolved_findings?.length ??
+    ((initial.errors || 0) + (initial.warnings || 0));
+  console.log(`[verify] summary: ${result.status}`);
+  console.log(`[verify] reviewed ${reviewed}, seen ${final.seen || 0}, repaired ${actionCount(result.actions)}, unresolved ${unresolved}`);
+  if (result.review_resilience) {
+    console.log(`[verify] retries ${result.review_resilience.retries_used || 0}, checkpoints reused ${result.review_resilience.checkpoints_reused || 0}, normalized ${result.review_resilience.mechanical_normalizations || 0}`);
+  }
+  console.log(`[verify] logs: ${result.logs}`);
+  if (result.status === 'partial' && unresolved > 0) {
+    console.log(`[verify] human review required for ${unresolved} finding(s)`);
+  }
+  if (result.error) console.log(`[verify] error: ${result.error}`);
+}
+
+if (jsonOutput) console.log(JSON.stringify(summary));
+else printHumanSummary(summary);
 process.exitCode = summary.status === 'failed' ? 1 : 0;

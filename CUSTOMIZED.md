@@ -1084,18 +1084,23 @@ What this customizes:
   drift.
 - Serializes concurrent `go` and reviewed-verification runs with per-user PID
   locks, owns child process
-  groups for stop handling, writes phase logs under the user root, and emits one
-  final JSON summary. A run is complete only when the pending queue is empty and
+  groups for stop handling, and writes phase logs under the user root. A run is complete only when the pending queue is empty and
   no finding requires human review; otherwise it reports partial, while setup or
   authenticated-login requirements report blocked.
-- Streams bounded operational progress to stderr while preserving stdout as the
-  single final JSON object: zero-token target/provider start and completion,
+- Establishes a consistent public CLI output contract. Manual invocations stream
+  bounded operational progress to stdout and finish with only a compact summary
+  plus the actual failure text. `--json` opts into the complete machine result,
+  keeps stdout as a single parseable JSON object, and routes progress to stderr.
+  Internal orchestrators pass `--json` explicitly when parsing child results.
+  Doctor and the batch runner retain their existing compact human output and
+  persisted state artifacts.
+- Streams zero-token target/provider start and completion,
   handoff task activity, LinkedIn search prompts, queue deltas, batch job
   start/completion, and one short line per reviewed finding after its
   five-finding call completes: `reviewed X/Y, job(s) #{related IDs},
   {issue code} → {classification}`. Tracker IDs are preferred, with report IDs
   used for report-only and orphan findings. Full rationale, evidence, and action
-  details stay in run artifacts and the final JSON summary. `--quiet` retains
+  details stay in run artifacts and the opt-in JSON result. `--quiet` retains
   the phase-log-only behavior.
 - Registers the runner, helpers, shared library, tests, and JSON schema in the
   updater-managed system layer so updates do not leave a partial coordinator.
@@ -1138,9 +1143,10 @@ Future merge notes:
   `--resume-run`, with user/finding/prior-decision signature validation.
 - Preserve stable batch IDs and append-only synchronization because
   `batch-state.tsv` references those IDs across retries and resumes.
-- Preserve the stderr/stdout boundary for live progress so shell and API callers
-  can continue parsing the single stdout JSON object; keep `--quiet` available
-  for unattended callers that want log-only phase details.
+- Preserve human-streaming output as the default and require `--json` for machine
+  consumers. In JSON mode, keep stdout to one lossless JSON object and progress
+  on stderr; keep `--quiet` available for unattended callers that want log-only
+  phase details.
 - Keep `verify-pipeline.mjs --json` finding IDs, codes, and evidence stable
   enough for schema-constrained review, exact fingerprints, and deterministic
   action validation. If a raw finding payload intentionally changes, expect its

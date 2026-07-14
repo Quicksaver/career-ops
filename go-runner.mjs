@@ -35,13 +35,13 @@ Options:
   --throttle[=MS]       Throttle bulk liveness browser checks
   --no-fallback         Disable headed liveness fallback
   --skip-linkedin       Skip authenticated LinkedIn scan explicitly
-  --quiet               Suppress live phase progress on stderr
-  --json                Reserved; final output is always one JSON object
+  --quiet               Suppress live phase progress
+  --json                Emit the complete machine-readable result on stdout
   -h, --help            Show this help
 
-The runner writes detailed phase logs under users/<id>/data/go-runs/, emits
-live phase progress to stderr, and emits exactly one machine-readable JSON
-summary to stdout.`;
+The runner writes detailed phase logs under users/<id>/data/go-runs/. Human
+invocations stream progress and end with a compact summary. --json reserves
+stdout for one machine-readable result and sends progress to stderr.`;
 
 let context;
 try {
@@ -91,6 +91,7 @@ const throttle = rawArgs.find((arg) => arg === '--throttle' || arg.startsWith('-
 const noFallback = rawArgs.includes('--no-fallback');
 const skipLinkedIn = rawArgs.includes('--skip-linkedin');
 const quiet = rawArgs.includes('--quiet');
+const jsonOutput = rawArgs.includes('--json');
 const valueOptions = new Set([
   '--parallel', '--agent-cli', '--batch-cli', '--codex-model', '--codex-reasoning-effort',
 ]);
@@ -132,7 +133,9 @@ let terminating = false;
 let interruptedSignal = null;
 
 function log(message) {
-  process.stderr.write(`[go] ${message}\n`);
+  if (quiet) return;
+  const stream = jsonOutput ? process.stderr : process.stdout;
+  stream.write(`[go] ${message}\n`);
 }
 
 function readPendingCount() {
@@ -198,7 +201,8 @@ function createProgressForwarder(name, predicate) {
     const normalized = line.endsWith('\r') ? line.slice(0, -1) : line;
     if (!normalized.trim()) return;
     if (predicate !== true && !predicate(normalized)) return;
-    process.stderr.write(`[go:${name}] ${normalized}\n`);
+    const stream = jsonOutput ? process.stderr : process.stdout;
+    stream.write(`[go:${name}] ${normalized}\n`);
   }
 
   return {
@@ -474,7 +478,7 @@ async function main() {
     } else {
       await runCommand('cv-sync-check', process.execPath, [systemPath('cv-sync-check.mjs'), '--user', context.userId]);
 
-      const livenessArgs = [systemPath('pipeline-liveness.mjs'), '--user', context.userId];
+      const livenessArgs = [systemPath('pipeline-liveness.mjs'), '--user', context.userId, '--json'];
       if (throttle) livenessArgs.push(throttle);
       if (noFallback) livenessArgs.push('--no-fallback');
       summary.liveness = parseJsonOutput(
@@ -514,7 +518,7 @@ async function main() {
       };
     }
 
-    const verifyArgs = [systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli];
+    const verifyArgs = [systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli, '--json'];
     verifyArgs.push('--parallel', String(parallelSettings.parallel));
     if (codexSettings.model) verifyArgs.push('--codex-model', codexSettings.model);
     if (codexSettings.reasoningEffort) verifyArgs.push('--codex-reasoning-effort', codexSettings.reasoningEffort);
@@ -564,5 +568,30 @@ if (interruptedSignal && activeProcessGroup) {
   terminateActiveChild('SIGKILL');
   releaseLock();
 }
-console.log(JSON.stringify(result));
-process.exit(interruptedSignal ? 130 : result.status === 'completed' ? 0 : result.status === 'partial' ? 2 : result.status === 'blocked' ? 3 : 1);
+function reviewedCount(review) {
+  return review?.reviews?.length || 0;
+}
+
+function repairedCount(review) {
+  const actions = review?.actions || {};
+  return [
+    'duplicate_groups', 'tracker_rows_removed', 'reports_archived', 'artifacts_archived',
+    'tracker_rows_restored', 'tracker_rows_patched', 'orphans_archived',
+  ].reduce((total, key) => total + (Number(actions[key]) || 0), 0);
+}
+
+function printHumanSummary(summary) {
+  console.log(`[go] summary: ${summary.status}`);
+  console.log(`[go] queue ${summary.baseline_pending ?? 0} → ${summary.final_pending ?? 'unknown'} pending; processed ${summary.pipeline?.processed || 0}`);
+  console.log(`[go] discovered: scan ${summary.scan?.added_pending || 0}, handoff ${summary.handoff?.observed_added_pending || 0}, LinkedIn ${summary.linkedin?.added_pending || 0}`);
+  if (summary.verification_review) {
+    console.log(`[go] verification: reviewed ${reviewedCount(summary.verification_review)}, repaired ${repairedCount(summary.verification_review)}, unresolved ${summary.verification_review.unresolved_findings?.length || 0}`);
+  }
+  console.log(`[go] logs: ${summary.logs}`);
+  if (summary.user_action) console.log(`[go] action required: ${summary.user_action}`);
+  if (summary.error) console.log(`[go] error: ${summary.error}`);
+}
+
+if (jsonOutput) console.log(JSON.stringify(result));
+else printHumanSummary(result);
+process.exitCode = interruptedSignal ? 130 : result.status === 'completed' ? 0 : result.status === 'partial' ? 2 : result.status === 'blocked' ? 3 : 1;

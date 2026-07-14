@@ -10,8 +10,8 @@
  * blocks the agent produced.
  *
  * Usage:
- *   node add-entry.mjs --user <username> <payload.json> [--dry-run]
- *   node add-entry.mjs --user <username> --stdin [--dry-run]        (read payload JSON from stdin)
+ *   node add-entry.mjs --user <username> <payload.json> [--dry-run] [--json]
+ *   node add-entry.mjs --user <username> --stdin [--dry-run] [--json] (read payload JSON from stdin)
  *
  * Payload shape (both keys optional, at least one required):
  *   {
@@ -26,7 +26,8 @@
  *     }
  *   }
  *
- * Output: a JSON result to stdout, e.g.
+ * Human-readable output is the default. Pass `--json` for a machine-readable
+ * result on stdout, e.g.
  *   { "dryRun": false,
  *     "cv": { "status": "added", "section": "Projects" },
  *     "articleDigest": { "status": "duplicate" } }
@@ -200,13 +201,14 @@ async function main() {
   }
   const args = userContext.args;
   const dryRun = args.includes('--dry-run');
+  const jsonOutput = args.includes('--json');
   const useStdin = args.includes('--stdin');
   const fileArg = args.find(a => !a.startsWith('--'));
   const cvFile = process.env.CAREER_OPS_CV || userPath(userContext, 'cv.md');
   const articleDigestFile = process.env.CAREER_OPS_ARTICLE_DIGEST || userPath(userContext, 'article-digest.md');
 
   if (!useStdin && !fileArg) {
-    console.error('Usage: node add-entry.mjs --user <username> <payload.json> [--dry-run]  (or --stdin)');
+    console.error('Usage: node add-entry.mjs --user <username> <payload.json> [--dry-run] [--json]  (or --stdin)');
     process.exit(1);
   }
 
@@ -249,7 +251,14 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify({ dryRun, ...out.result }, null, 2));
+  const result = { dryRun, ...out.result };
+  if (jsonOutput) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`add-entry: ${dryRun ? 'dry run completed' : 'completed'}`);
+    if (result.cv) console.log(`  cv.md: ${result.cv.status}${result.cv.section ? ` (${result.cv.section})` : ''}`);
+    if (result.articleDigest) console.log(`  article-digest.md: ${result.articleDigest.status}`);
+  }
 }
 
 // Only run main() when invoked directly, not when imported by tests.

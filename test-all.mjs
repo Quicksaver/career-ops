@@ -4417,12 +4417,12 @@ try {
   const cadence = await import(pathToFileURL(join(ROOT, 'followup-cadence.mjs')).href);
 
   // CLI regression: the import.meta.url guard must still let the module run as a CLI.
-  // Data-independent — default mode emits the result as JSON: a `metadata` object when
+  // Data-independent — --json emits a `metadata` object when
   // the tracker has applications, or an `{error}` object (exit 1) when it is empty.
   // Empty output would mean the guard wrongly suppressed main().
   let cliOut = '';
   try {
-    cliOut = execFileSync(NODE, [join(ROOT, 'followup-cadence.mjs')], { cwd: ROOT, encoding: 'utf-8', timeout: 30000, env: TEST_USER_ENV });
+    cliOut = execFileSync(NODE, [join(ROOT, 'followup-cadence.mjs'), '--json'], { cwd: ROOT, encoding: 'utf-8', timeout: 30000, env: TEST_USER_ENV });
   } catch (cliErr) {
     cliOut = `${cliErr.stdout || ''}`; // exit 1 on an empty tracker is expected; keep stdout
   }
@@ -4703,7 +4703,7 @@ try {
     if (!readFileSync(cvPath, 'utf-8').includes('CliProj') && !existsSync(adPath)) pass('add-entry CLI --dry-run writes nothing');
     else fail('add-entry CLI --dry-run should not write');
 
-    const realOut = JSON.parse(execFileSync(NODE, [join(ROOT, 'add-entry.mjs'), payloadPath], { env, encoding: 'utf-8' }));
+    const realOut = JSON.parse(execFileSync(NODE, [join(ROOT, 'add-entry.mjs'), payloadPath, '--json'], { env, encoding: 'utf-8' }));
     if (realOut.cv.status === 'added' && realOut.articleDigest.status === 'created' &&
         readFileSync(cvPath, 'utf-8').includes('- **CliProj**') && readFileSync(adPath, 'utf-8').includes('## CliProj')) {
       pass('add-entry CLI real run writes cv.md + creates article-digest.md');
@@ -4711,7 +4711,7 @@ try {
       fail(`add-entry CLI real run => ${JSON.stringify(realOut)}`);
     }
 
-    const rerun = JSON.parse(execFileSync(NODE, [join(ROOT, 'add-entry.mjs'), payloadPath], { env, encoding: 'utf-8' }));
+    const rerun = JSON.parse(execFileSync(NODE, [join(ROOT, 'add-entry.mjs'), payloadPath, '--json'], { env, encoding: 'utf-8' }));
     if (rerun.cv.status === 'duplicate' && rerun.articleDigest.status === 'duplicate') pass('add-entry CLI re-run is idempotent');
     else fail(`add-entry CLI re-run => ${JSON.stringify(rerun)}`);
   } finally {

@@ -116,11 +116,11 @@ try {
   // with no user data (exactly the CI environment).
   const emptyUsers = join(tmpdir(), `career-ops-stats-empty-${process.pid}`);
   const cliEnv = { ...process.env, CAREER_OPS_USERS_DIR: emptyUsers };
-  const cliOut = run(NODE, [join(ROOT, 'stats.mjs'), '--user', 'test'], { env: cliEnv });
+  const cliOut = run(NODE, [join(ROOT, 'stats.mjs'), '--user', 'test', '--json'], { env: cliEnv });
   const parsed = JSON.parse(cliOut);
   if (parsed && parsed.metadata && 'tracker' in parsed && 'scan' in parsed && 'portals' in parsed
       && 'followups' in parsed && 'funnel' in parsed && 'runs' in parsed) {
-    pass('stats.mjs CLI emits the full JSON contract (sections null when sources missing)');
+    pass('stats.mjs --json emits the full machine contract (sections null when sources missing)');
   } else {
     fail(`stats.mjs CLI missing sections: ${parsed ? Object.keys(parsed).join(',') : cliOut}`);
   }
