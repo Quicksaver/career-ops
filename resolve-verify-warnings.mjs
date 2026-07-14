@@ -5,11 +5,10 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  realpathSync,
   renameSync,
   rmSync,
 } from 'fs';
-import { basename, dirname, extname, join, relative, sep } from 'path';
+import { basename, dirname, extname, join } from 'path';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -25,10 +24,7 @@ import {
   writeFileAtomic,
 } from './tracker-utils.mjs';
 import { normalizeReportLink } from './tracker-links.mjs';
-import {
-  mostAdvancedDuplicateRow,
-  statusUsesGeneratedArtifacts,
-} from './lib/duplicate-lifecycle.mjs';
+import { mostAdvancedDuplicateRow } from './lib/duplicate-lifecycle.mjs';
 
 const HELP = `Apply validated duplicate resolutions from reviewed verification.
 
@@ -89,14 +85,6 @@ function reportNumber(file) {
 
 function appendNote(base, additions) {
   return cell([base, ...additions].filter(Boolean).join(' | '));
-}
-
-function promotedPdfCell(sourceCell, keeperStem, appsPath, outputRoot, sourcePdfExists) {
-  const source = String(sourceCell || '');
-  const match = source.match(/^\[([^\]]+)\]\(([^)]+\.pdf)\)$/i);
-  if (!match && !sourcePdfExists) return source;
-  const target = relative(dirname(appsPath), join(outputRoot, `${keeperStem}.pdf`)).split(sep).join('/');
-  return `[${match?.[1] || 'PDF'}](${target})`;
 }
 
 async function main() {
@@ -169,16 +157,14 @@ async function main() {
   if (duplicateDecisions.length === 0) {
     return {
       status: 'completed', duplicate_groups: 0, tracker_rows_removed: 0,
-      reports_archived: 0, reports_promoted: 0,
-      artifacts_archived: 0, artifacts_promoted: 0, ledger: null,
+      reports_archived: 0, artifacts_archived: 0, ledger: null,
     };
   }
 
   const appsPath = canonicalizeTrackerPath(userPath(context, 'data/applications.md'));
   if (!existsSync(appsPath)) throw new Error('applications.md is missing');
   const reportsRoot = userPath(context, 'reports');
-  const outputRootPath = userPath(context, 'output');
-  const outputRoot = existsSync(outputRootPath) ? realpathSync(outputRootPath) : outputRootPath;
+  const outputRoot = userPath(context, 'output');
   const originalTracker = readFileSync(appsPath, 'utf-8');
   const lines = originalTracker.split('\n');
   const colmap = resolveColumns(lines);
@@ -196,10 +182,54 @@ async function main() {
     }
   }
 
+  // Lifecycle is the canonical identity rule. The reviewer-selected keeper is
+  // retained only as the tie-breaker when candidates have the same status rank.
+  // Otherwise the most advanced row, with Rejected above Applied, becomes the
+  // keeper together with its existing report/PDF identity.
+  for (const plan of trackerPlans) {
+    const reviewerKeeper = plan.resolution.keeper_tracker_num;
+    const candidateNums = [reviewerKeeper, ...plan.resolution.duplicate_tracker_nums];
+    const candidateRows = candidateNums.map(num => trackerRows.get(num));
+    const lifecycleKeeper = mostAdvancedDuplicateRow(candidateRows, reviewerKeeper);
+    plan.reviewerKeeperTrackerNum = reviewerKeeper;
+    plan.lifecycleSource = lifecycleKeeper;
+    plan.resolution = {
+      ...plan.resolution,
+      keeper_tracker_num: lifecycleKeeper.num,
+      duplicate_tracker_nums: candidateNums.filter(num => num !== lifecycleKeeper.num),
+    };
+
+    const trackerReportNames = candidateRows.map(row => reportTarget(row.report)).filter(Boolean);
+    if (new Set(trackerReportNames).size < 2) continue;
+    const explicitOverlap = reportPlans.find(reportPlan => {
+      const files = new Set([
+        reportPlan.resolution.keeper_report_file,
+        ...reportPlan.resolution.duplicate_report_files,
+      ].map(file => file && basename(file)).filter(Boolean));
+      return trackerReportNames.every(name => files.has(name));
+    });
+    if (!explicitOverlap) continue;
+    const lifecycleKeeperName = reportTarget(lifecycleKeeper.report);
+    const reportCandidates = [
+      explicitOverlap.resolution.keeper_report_file,
+      ...explicitOverlap.resolution.duplicate_report_files,
+    ];
+    const lifecycleKeeperFile = reportCandidates.find(file => basename(file) === lifecycleKeeperName);
+    if (!lifecycleKeeperFile) {
+      throw new Error(`${plan.warning.id}: lifecycle keeper #${lifecycleKeeper.num} report is absent from the overlapping report resolution`);
+    }
+    explicitOverlap.reviewerKeeperReportFile = explicitOverlap.resolution.keeper_report_file;
+    explicitOverlap.resolution = {
+      ...explicitOverlap.resolution,
+      keeper_report_file: lifecycleKeeperFile,
+      duplicate_report_files: reportCandidates.filter(file => file !== lifecycleKeeperFile),
+    };
+  }
+
   // A confirmed duplicate tracker row can carry its own report even when the
   // report-title heuristic did not emit a separate duplicate-report warning.
   // Archive that losing report as a deterministic consequence of removing the
-  // row, using the model-selected tracker keeper as the canonical identity.
+  // row, using the lifecycle-selected tracker keeper as the canonical identity.
   const explicitlyResolvedReports = new Set(reportPlans.flatMap(plan => [
     plan.resolution.keeper_report_file,
     ...plan.resolution.duplicate_report_files,
@@ -216,12 +246,12 @@ async function main() {
         .filter(Boolean),
     ]);
     const explicitOverlap = reportPlans.find(reportPlan =>
-      [reportPlan.resolution.keeper_report_file, ...reportPlan.resolution.duplicate_report_files]
-        .map(file => file?.split('/').pop())
-        .filter(Boolean)
-        .some(name => trackerReportNames.has(name)));
+      [...trackerReportNames].every(name => new Set([
+        reportPlan.resolution.keeper_report_file,
+        ...reportPlan.resolution.duplicate_report_files,
+      ].map(file => file && basename(file)).filter(Boolean)).has(name)));
     if (explicitOverlap && basename(explicitOverlap.resolution.keeper_report_file) !== keeperName) {
-      throw new Error(`${plan.warning.id}: report keeper must match model-selected tracker keeper #${keeperRow.num}`);
+      throw new Error(`${plan.warning.id}: report keeper must match lifecycle-selected tracker keeper #${keeperRow.num}`);
     }
     const duplicates = plan.resolution.duplicate_tracker_nums
       .map(num => reportTarget(trackerRows.get(num).report))
@@ -243,44 +273,6 @@ async function main() {
     });
   }
 
-  const artifactPromotions = [];
-  for (const plan of trackerPlans) {
-    const keeperRow = trackerRows.get(plan.resolution.keeper_tracker_num);
-    const candidateRows = [
-      keeperRow,
-      ...plan.resolution.duplicate_tracker_nums.map(num => trackerRows.get(num)),
-    ];
-    const lifecycleSource = mostAdvancedDuplicateRow(candidateRows, keeperRow.num);
-    plan.lifecycleSource = lifecycleSource;
-    if (!lifecycleSource || lifecycleSource.num === keeperRow.num ||
-        !statusUsesGeneratedArtifacts(lifecycleSource.status)) continue;
-    const keeperFile = reportTarget(keeperRow.report);
-    const sourceFile = reportTarget(lifecycleSource.report);
-    if (!keeperFile || !sourceFile || keeperFile === sourceFile) continue;
-    const reportPlan = reportPlans.find(candidate =>
-      basename(candidate.resolution.keeper_report_file) === keeperFile &&
-      candidate.resolution.duplicate_report_files.some(file => basename(file) === sourceFile));
-    if (!reportPlan) {
-      throw new Error(`${plan.warning.id}: used tracker #${lifecycleSource.num} report cannot be promoted into keeper #${keeperRow.num}`);
-    }
-    const keeperStem = keeperFile.slice(0, -extname(keeperFile).length);
-    const sourceStem = sourceFile.slice(0, -extname(sourceFile).length);
-    const promotion = {
-      warning_id: plan.warning.id,
-      keeper_tracker_num: keeperRow.num,
-      source_tracker_num: lifecycleSource.num,
-      preserved_status: lifecycleSource.status,
-      keeper_report_file: `reports/${keeperFile}`,
-      source_report_file: `reports/${sourceFile}`,
-      keeper_stem: keeperStem,
-      source_stem: sourceStem,
-      source_pdf_exists: existsSync(join(outputRoot, `${sourceStem}.pdf`)),
-    };
-    artifactPromotions.push(promotion);
-    reportPlan.promotions = [...(reportPlan.promotions || []), promotion];
-    plan.artifactPromotion = promotion;
-  }
-
   for (const plan of reportPlans) {
     for (const file of [plan.resolution.keeper_report_file, ...plan.resolution.duplicate_report_files]) {
       if (!existsSync(join(context.userRoot, file))) throw new Error(`${plan.warning.id}: ${file} no longer exists`);
@@ -295,9 +287,7 @@ async function main() {
   const moved = [];
   let trackerRowsRemoved = 0;
   let reportsArchived = 0;
-  let reportsPromoted = 0;
   let artifactsArchived = 0;
-  let artifactsPromoted = 0;
 
   try {
     mkdirSync(backupRoot, { recursive: true });
@@ -310,15 +300,6 @@ async function main() {
       const bestStatus = plan.lifecycleSource.status;
       const parts = lines[keeper.index].split('|').map(value => value.trim());
       parts[colmap.status] = bestStatus;
-      if (colmap.pdf != null && plan.artifactPromotion?.source_pdf_exists) {
-        parts[colmap.pdf] = promotedPdfCell(
-          plan.lifecycleSource.pdf,
-          plan.artifactPromotion.keeper_stem,
-          appsPath,
-          outputRoot,
-          true,
-        );
-      }
       const mergedNotes = duplicates.flatMap(row => {
         const marker = `Deduplicated tracker #${row.num} into #${keeper.num} (${stamp.slice(0, 10)})`;
         return row.notes ? [marker, `#${row.num} notes: ${row.notes}`] : [marker];
@@ -335,7 +316,6 @@ async function main() {
       if (!keeperNum) throw new Error(`${plan.warning.id}: keeper report has no numeric prefix`);
       for (const duplicateRelative of plan.resolution.duplicate_report_files) {
         const duplicateFile = basename(duplicateRelative);
-        const promotion = (plan.promotions || []).find(item => basename(item.source_report_file) === duplicateFile);
         for (let index = 0; index < lines.length; index++) {
           if (removeIndices.has(index)) continue;
           const row = parseTrackerRow(lines[index], colmap);
@@ -350,50 +330,6 @@ async function main() {
             parts[colmap.notes] = appendNote(parts[colmap.notes], [`Report ${duplicateFile} deduplicated into ${keeperFile}`]);
           }
           lines[index] = rebuildRow(parts);
-        }
-
-        if (promotion) {
-          const keeperReport = join(reportsRoot, keeperFile);
-          const sourceReport = join(reportsRoot, duplicateFile);
-          const backupReportDir = join(backupRoot, 'reports');
-          mkdirSync(backupReportDir, { recursive: true });
-          const backupKeeperReport = join(backupReportDir, keeperFile);
-          const backupSourceReport = join(backupReportDir, duplicateFile);
-          copyFileSync(keeperReport, backupKeeperReport);
-          copyFileSync(sourceReport, backupSourceReport);
-          mkdirSync(reportArchiveRoot, { recursive: true });
-          const archivedKeeperReport = join(reportArchiveRoot, keeperFile);
-          renameSync(keeperReport, archivedKeeperReport);
-          moved.push({ from: keeperReport, to: archivedKeeperReport, backup: backupKeeperReport });
-          const marker = `<!-- career-ops superseded_by_used_duplicate: reports/${keeperFile}; source_report: reports/${duplicateFile}; warning_id: ${plan.warning.id}; resolved_at: ${new Date().toISOString()} -->\n`;
-          writeFileAtomic(archivedKeeperReport, marker + readFileSync(archivedKeeperReport, 'utf-8'));
-          renameSync(sourceReport, keeperReport);
-          moved.push({ from: sourceReport, to: keeperReport, backup: backupSourceReport });
-          reportsArchived++;
-          reportsPromoted++;
-
-          for (const extension of ['.html', '.pdf']) {
-            const sourceArtifact = join(outputRoot, `${promotion.source_stem}${extension}`);
-            if (!existsSync(sourceArtifact)) continue;
-            const keeperArtifact = join(outputRoot, `${promotion.keeper_stem}${extension}`);
-            const backupOutputDir = join(backupRoot, 'output');
-            mkdirSync(backupOutputDir, { recursive: true });
-            const backupSourceArtifact = join(backupOutputDir, basename(sourceArtifact));
-            copyFileSync(sourceArtifact, backupSourceArtifact);
-            if (existsSync(keeperArtifact)) {
-              const backupKeeperArtifact = join(backupOutputDir, basename(keeperArtifact));
-              copyFileSync(keeperArtifact, backupKeeperArtifact);
-              mkdirSync(outputArchiveRoot, { recursive: true });
-              const archivedKeeperArtifact = join(outputArchiveRoot, basename(keeperArtifact));
-              renameSync(keeperArtifact, archivedKeeperArtifact);
-              moved.push({ from: keeperArtifact, to: archivedKeeperArtifact, backup: backupKeeperArtifact });
-              artifactsArchived++;
-            }
-            renameSync(sourceArtifact, keeperArtifact);
-            moved.push({ from: sourceArtifact, to: keeperArtifact, backup: backupSourceArtifact });
-            artifactsPromoted++;
-          }
-          continue;
         }
 
         const sourceReport = join(reportsRoot, duplicateFile);
@@ -437,24 +373,14 @@ async function main() {
         action: 'tracker_dedup',
         warning_id: plan.warning.id,
         warning_code: plan.warning.code,
+        reviewer_keeper_tracker_num: plan.reviewerKeeperTrackerNum,
         keeper_tracker_num: plan.resolution.keeper_tracker_num,
         duplicate_tracker_nums: plan.resolution.duplicate_tracker_nums,
         lifecycle_source_tracker_num: plan.lifecycleSource.num,
         lifecycle_status_preserved: plan.lifecycleSource.status,
-        used_artifacts_promoted: Boolean(plan.artifactPromotion),
+        lifecycle_keeper_overrode_review: plan.reviewerKeeperTrackerNum !== plan.resolution.keeper_tracker_num,
         rationale: plan.decision.rationale,
         evidence: plan.decision.evidence,
-        backup_root: backupRoot,
-      })),
-      ...artifactPromotions.map(promotion => JSON.stringify({
-        resolved_at: resolvedAt,
-        action: 'promote_used_duplicate_artifacts',
-        warning_id: promotion.warning_id,
-        keeper_tracker_num: promotion.keeper_tracker_num,
-        source_tracker_num: promotion.source_tracker_num,
-        preserved_status: promotion.preserved_status,
-        keeper_report_file: promotion.keeper_report_file,
-        source_report_file: promotion.source_report_file,
         backup_root: backupRoot,
       })),
       ...reportPlans.map(plan => JSON.stringify({
@@ -463,6 +389,7 @@ async function main() {
         derived_from_tracker_resolution: Boolean(plan.derived),
         warning_id: plan.warning.id,
         warning_code: plan.warning.code,
+        reviewer_keeper_report_file: plan.reviewerKeeperReportFile || plan.resolution.keeper_report_file,
         keeper_report_file: plan.resolution.keeper_report_file,
         duplicate_report_files: plan.resolution.duplicate_report_files,
         rationale: plan.decision.rationale,
@@ -478,9 +405,7 @@ async function main() {
       duplicate_groups: duplicateDecisions.length,
       tracker_rows_removed: trackerRowsRemoved,
       reports_archived: reportsArchived,
-      reports_promoted: reportsPromoted,
       artifacts_archived: artifactsArchived,
-      artifacts_promoted: artifactsPromoted,
       ledger: ledgerPath,
       backup: backupRoot,
     };

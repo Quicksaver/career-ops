@@ -1036,12 +1036,11 @@ What this customizes:
   tracker history, archives losing reports/output artifacts, backs up state,
   and records `data/duplicate-resolutions.jsonl`.
 - Preserves duplicate lifecycle order as `Hired > Offer > Interview > Responded
-  > Applied > Rejected > Evaluated > Skip/Closed`. Canonical tracker identity
-  remains distinct from artifact provenance: when an `Applied`-or-later losing
-  row owns the report/CV that was actually used, its report plus existing
-  HTML/PDF are backed up and renamed into the keeper ID, while the superseded
-  keeper artifacts are archived. The ledger records both IDs so a valid used CV
-  never gets replaced by an unused duplicate or regenerated unnecessarily.
+  > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row becomes
+  the keeper together with its existing tracker ID, report, HTML, PDF, and
+  links; reviewer-selected canonical identity breaks equal-status ties only.
+  Losing notes are merged and losing artifacts are backed up and archived. The
+  ledger records the reviewer keeper, effective lifecycle keeper, and override.
 - Adds deterministic orphan handling: restore a valid lost tracker row only
   from its matching preserved `batch/tracker-additions/merged/*.tsv`, or back up
   and archive a confirmed redundant/obsolete orphan report and matching output
@@ -1099,10 +1098,10 @@ Future merge notes:
   types must validate against raw verifier evidence, remain user-scoped,
   acquire the appropriate lock, back up affected artifacts, append an audit
   record, and be followed by raw re-verification.
-- Preserve duplicate lifecycle and artifact provenance independently: Rejected
-  stays between Applied and Evaluated, and Applied-or-later report/CV artifacts
-  must be promoted into the canonical keeper identity before the losing row is
-  removed. Keep promotion backup, archive, rollback, and ledger coverage.
+- Preserve lifecycle-first duplicate identity: Rejected stays between Responded
+  and Applied, the most advanced row and its original artifacts remain active,
+  and reviewer-selected identity is only an equal-status tiebreaker. Keep
+  losing-artifact backup/archive, rollback, and keeper-override ledger coverage.
 - Preserve exact-payload seen fingerprints. Never weaken them to warning code,
   company/role, or finding ID alone; changed evidence must resurface. Keep the
   seen ledger user-owned and append-only, and keep raw verifier output

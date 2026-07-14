@@ -12,13 +12,21 @@ try {
   const codexConfig = await import(pathToFileURL(join(ROOT, 'lib/codex-config.mjs')).href);
   const parallelConfig = await import(pathToFileURL(join(ROOT, 'lib/parallel-config.mjs')).href);
   const duplicateLifecycle = await import(pathToFileURL(join(ROOT, 'lib/duplicate-lifecycle.mjs')).href);
-  if (duplicateLifecycle.duplicateStatusRank('Applied') > duplicateLifecycle.duplicateStatusRank('Rejected') &&
-      duplicateLifecycle.duplicateStatusRank('Rejected') > duplicateLifecycle.duplicateStatusRank('Evaluated') &&
-      duplicateLifecycle.statusUsesGeneratedArtifacts('Applied') &&
-      !duplicateLifecycle.statusUsesGeneratedArtifacts('Rejected')) {
-    pass('duplicate lifecycle ranks Applied above Rejected above Evaluated and promotes Applied-or-later artifacts');
+  const rejectedKeeper = duplicateLifecycle.mostAdvancedDuplicateRow([
+    { num: 1, status: 'Applied' },
+    { num: 2, status: 'Rejected' },
+  ], 1);
+  const equalStatusKeeper = duplicateLifecycle.mostAdvancedDuplicateRow([
+    { num: 1, status: 'Applied' },
+    { num: 2, status: 'Applied' },
+  ], 1);
+  if (duplicateLifecycle.duplicateStatusRank('Responded') > duplicateLifecycle.duplicateStatusRank('Rejected') &&
+      duplicateLifecycle.duplicateStatusRank('Rejected') > duplicateLifecycle.duplicateStatusRank('Applied') &&
+      duplicateLifecycle.duplicateStatusRank('Applied') > duplicateLifecycle.duplicateStatusRank('Evaluated') &&
+      rejectedKeeper.num === 2 && equalStatusKeeper.num === 1) {
+    pass('duplicate lifecycle ranks Responded above Rejected above Applied above Evaluated');
   } else {
-    fail('duplicate lifecycle ordering or artifact threshold is wrong');
+    fail('duplicate lifecycle ordering is wrong');
   }
   const fixture = [
     '# Pipeline', '', '## Pending',
@@ -175,28 +183,6 @@ try {
   const triagePath = join(warningTmp, 'triage.json');
   writeFileSync(verificationPath, JSON.stringify(verification));
   writeFileSync(triagePath, JSON.stringify(triage));
-  const conflictingTriage = JSON.parse(JSON.stringify(triage));
-  const conflictingReport = conflictingTriage.warnings.find(item => item.warning_code === 'duplicate_reports_same_role');
-  conflictingReport.duplicate_resolution.keeper_report_file = 'reports/002-acme-2026-01-02.md';
-  conflictingReport.duplicate_resolution.duplicate_report_files = ['reports/001-acme-2026-01-01.md'];
-  const conflictingTriagePath = join(warningTmp, 'triage-conflicting-keeper.json');
-  writeFileSync(conflictingTriagePath, JSON.stringify(conflictingTriage));
-  let conflictingKeeperRejected = false;
-  try {
-    execFileSync(process.execPath, [
-      join(ROOT, 'resolve-verify-warnings.mjs'), '--user', 'test',
-      '--verification', verificationPath, '--triage', conflictingTriagePath, '--json',
-    ], {
-      cwd: ROOT,
-      env: { ...process.env, CAREER_OPS_USERS_DIR: warningUsers },
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    });
-  } catch (error) {
-    conflictingKeeperRejected = String(error.stderr || '').includes('report keeper must match');
-  }
-  if (conflictingKeeperRejected) pass('report keeper cannot contradict the model-selected tracker keeper');
-  else fail('duplicate resolver accepted conflicting tracker/report keepers');
   const repair = JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'resolve-verify-warnings.mjs'), '--user', 'test',
     '--verification', verificationPath, '--triage', triagePath, '--json',
@@ -209,9 +195,9 @@ try {
   const reportArchiveDirs = readdirSync(join(warningRoot, 'reports/duplicates'));
   const archiveStamp = reportArchiveDirs[0];
   const archivedReport = join(warningRoot, 'reports/duplicates', archiveStamp, '001-acme-2026-01-01.md');
-  const activeReport = join(warningRoot, 'reports/001-acme-2026-01-01.md');
-  const activePdf = join(warningRoot, 'output/001-acme-2026-01-01.pdf');
-  const activeHtml = join(warningRoot, 'output/001-acme-2026-01-01.html');
+  const activeReport = join(warningRoot, 'reports/002-acme-2026-01-02.md');
+  const activePdf = join(warningRoot, 'output/002-acme-2026-01-02.pdf');
+  const activeHtml = join(warningRoot, 'output/002-acme-2026-01-02.html');
   const archivedPdf = join(warningRoot, 'output/duplicates', archiveStamp, '001-acme-2026-01-01.pdf');
   const resolutionLedger = readFileSync(join(warningRoot, 'data/duplicate-resolutions.jsonl'), 'utf-8');
   const repairedVerification = JSON.parse(execFileSync(process.execPath, [
@@ -223,23 +209,26 @@ try {
   }));
   const resolutionChecks = {
     trackerRows: repair.tracker_rows_removed === 1,
-    reportCounts: repair.reports_archived === 1 && repair.reports_promoted === 1,
-    artifactCounts: repair.artifacts_archived === 2 && repair.artifacts_promoted === 2,
-    losingRowRemoved: !repairedTracker.includes('| 2 |'),
+    reportCounts: repair.reports_archived === 1,
+    artifactCounts: repair.artifacts_archived === 2,
+    losingRowRemoved: !repairedTracker.includes('| 1 |'),
+    lifecycleRowKept: repairedTracker.includes('| 2 |'),
     statusPreserved: repairedTracker.includes('| Applied |'),
-    pdfLinkCanonical: repairedTracker.includes('[PDF](../output/001-acme-2026-01-01.pdf)'),
-    oldReportArchived: existsSync(archivedReport) && readFileSync(archivedReport, 'utf-8').includes('superseded_by_used_duplicate'),
-    usedReportPromoted: readFileSync(activeReport, 'utf-8').includes('Artifact source: used application'),
-    usedPdfPromoted: readFileSync(activePdf, 'utf-8').includes('used application pdf'),
-    usedHtmlPromoted: readFileSync(activeHtml, 'utf-8').includes('used application'),
+    originalPdfLinkKept: repairedTracker.includes('[PDF](../output/002-acme-2026-01-02.pdf)'),
+    oldReportArchived: existsSync(archivedReport) && readFileSync(archivedReport, 'utf-8').includes('duplicate_of: reports/002-acme'),
+    usedReportKept: readFileSync(activeReport, 'utf-8').includes('Artifact source: used application'),
+    usedPdfKept: readFileSync(activePdf, 'utf-8').includes('used application pdf'),
+    usedHtmlKept: readFileSync(activeHtml, 'utf-8').includes('used application'),
     oldPdfArchived: existsSync(archivedPdf),
-    sourceReportRenamed: !existsSync(join(warningRoot, 'reports/002-acme-2026-01-02.md')),
-    sourcePdfRenamed: !existsSync(join(warningRoot, 'output/002-acme-2026-01-02.pdf')),
-    promotionLogged: resolutionLedger.includes('promote_used_duplicate_artifacts'),
+    oldReportRemoved: !existsSync(join(warningRoot, 'reports/001-acme-2026-01-01.md')),
+    oldPdfRemoved: !existsSync(join(warningRoot, 'output/001-acme-2026-01-01.pdf')),
+    lifecycleOverrideLogged: resolutionLedger.includes('"reviewer_keeper_tracker_num":1') &&
+      resolutionLedger.includes('"keeper_tracker_num":2') &&
+      resolutionLedger.includes('"lifecycle_keeper_overrode_review":true'),
     verifierClean: repairedVerification.counts.errors === 0 && repairedVerification.warnings.length === 0,
   };
   if (Object.values(resolutionChecks).every(Boolean)) {
-    pass('confirmed duplicates preserve lifecycle and promote used report/CV artifacts into the canonical identity');
+    pass('confirmed duplicates keep the most advanced row and its original report/CV artifacts');
   } else {
     fail(`duplicate resolution wrong: checks=${JSON.stringify(resolutionChecks)} tracker=${JSON.stringify(repairedTracker)} repair=${JSON.stringify(repair)} verify=${JSON.stringify(repairedVerification)}`);
   }

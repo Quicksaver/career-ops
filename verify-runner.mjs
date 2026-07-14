@@ -242,13 +242,13 @@ or report identity for an overlapping finding.
 The raw verifier intentionally reports broad possible problems. Your job is to decide each finding from concrete artifact evidence and choose exactly one disposition:
 
 - mark_seen: only for false_positive, legitimate_exception, or informational findings that need no action. The exact finding fingerprint will be recorded so an unchanged finding does not resurface in reviewed verification; changed evidence will resurface automatically.
-- resolve_duplicate: only for possible_duplicate_tracker or duplicate_reports_same_role when strong evidence proves the candidates are the same posting. Same company/title alone is insufficient. Partition every deterministic candidate exactly in duplicate_resolution.
+- resolve_duplicate: only for possible_duplicate_tracker or duplicate_reports_same_role when strong evidence proves the candidates are the same posting. Same company/title alone is insufficient. Partition every deterministic candidate exactly in duplicate_resolution. For tracker duplicates, select the most advanced lifecycle row as keeper using Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed; use canonical identity evidence only to break equal-status ties.
 - restore_orphan: only for a true orphan_report whose valid evaluation should remain tracked. Cite and return the existing user-root-relative batch/tracker-additions/merged/*.tsv that matches the report.
 - archive_orphan: only for a true orphan_report that is redundant, obsolete, or should not remain an active evaluation. The report and matching outputs will be backed up and archived.
 - patch_tracker: only for a bounded, evidence-backed correction to company, Via, canonical status, score, or report link. It is supported for noncanonical_status, bold_status, dated_status, broken_report_link, invalid_score, bold_score, missing_via_value, and confidential_company_placeholder. Supply only fields that must change; use null for every untouched field.
 - manual_review: when the finding is real but no supported deterministic action is safe, evidence conflicts, or a user decision is required. Use classification needs_human_review and needs_human_review=true.
 
-Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions. The resolver preserves the most advanced lifecycle status with Rejected ranked between Applied and Evaluated; when an Applied-or-later duplicate owns the used report/CV artifacts, their content is promoted into the canonical keeper filenames. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
+Errors are reviewed just like warnings. Never mark a real unresolved integrity error as seen. Any high-severity finding must use manual_review. A confirmed action must cite the exact files that prove it. For overlapping tracker/report/orphan findings, keep the same canonical tracker/report identity across decisions. The resolver deterministically enforces lifecycle-first keeper selection, with Rejected ranked between Responded and Applied, so the kept row retains its original report/CV artifacts without renaming. If resolve_duplicate will archive an orphan report, classify the orphan as confirmed_orphan/archive_orphan too; the applier treats an already-archived file as resolved.
 
 Return finding_id, finding_code, and finding_level verbatim. Set all unused resolution objects to null. Your final response must contain only the JSON required by the supplied output schema.`;
 }
@@ -373,8 +373,7 @@ function decisionsStillPresent(originalFindings, review, currentVerification) {
 
 function aggregateActions(target, result) {
   for (const key of [
-    'duplicate_groups', 'tracker_rows_removed', 'reports_archived', 'reports_promoted',
-    'artifacts_archived', 'artifacts_promoted',
+    'duplicate_groups', 'tracker_rows_removed', 'reports_archived', 'artifacts_archived',
     'seen_recorded', 'tracker_rows_restored', 'tracker_rows_patched', 'orphans_archived',
   ]) target[key] = (target[key] || 0) + (result?.[key] || 0);
   for (const key of ['ledger', 'backup', 'review_ledger', 'action_ledger']) {

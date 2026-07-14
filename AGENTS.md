@@ -462,10 +462,11 @@ bounded tracker patches, and exact-fingerprint accepted findings are retained
 in a user-scoped seen ledger before raw re-verification. Unresolved findings set
 `needs_human_review`.
 
-Duplicate resolution preserves lifecycle order as `Applied > Rejected >
-Evaluated`. If an `Applied`-or-later losing row owns the report/CV artifacts
-that were used, promote and rename those artifacts into the canonical keeper
-ID; archive the superseded keeper artifacts and record both identities.
+Duplicate resolution preserves lifecycle order as `Hired > Offer > Interview >
+Responded > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row
+becomes the keeper together with its existing report/CV artifacts;
+reviewer-selected identity breaks equal-status ties only. Back up and archive
+the losing row's artifacts and record any keeper override.
 
 `go-runner.mjs` resolves Codex model and reasoning independently in this order:
 `--codex-model` / `--codex-reasoning-effort`, then `codex.model` /
