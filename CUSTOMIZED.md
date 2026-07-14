@@ -944,7 +944,7 @@ What this customizes:
 - Keeps the active agent turn open until `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch` reaches completion, requires user action, receives an explicit stop, encounters confirmed destructive risk, or exhausts safe recovery.
 - Treats background and detached processes as work owned by the current turn. Agents poll process output and persisted state at least every 60 seconds, keep routine polls silent, and limit normal user-visible liveness updates to at most once every 10 minutes.
 - Uses stdout/stderr, logs, artifacts, PID/session state, lock ownership, worker liveness, and persisted counters as progress evidence. Proven ownerless locks and stale `processing` entries are recovered before resuming with the same active user and parallelism.
-- Finishes long-running work by confirming worker exit, reconciling pipeline state, merging tracker additions, running `node verify-pipeline.mjs --user {USER}`, and reporting completed, skipped, failed, and remaining counts.
+- Finishes long-running work by confirming worker exit, reconciling pipeline state, merging tracker additions, running `node verify-runner.mjs --user {USER}`, and reporting completed, skipped, failed, seen, repaired, unresolved, and remaining counts.
 - Keeps `go`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serial in the root agent. `modes/scan.md` now expresses this as affirmative root-agent execution instead of recommending a background scan subagent.
 - Uses one subagent per surviving URL when a direct pipeline has three or more pending URLs. The root agent coordinates the fan-out, reconciliation, tracker merge, and final verification.
 - Requires every delegated pipeline prompt to carry `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, an atomically reserved report number, and the loaded shared/profile/custom/pipeline instructions. The prompt states that all user-layer relative paths resolve inside `USER_ROOT`.
@@ -972,16 +972,21 @@ Files:
 - `scan-auth/linkedin.mjs`
 - `resolve-parallel.mjs`
 - `resolve-verify-warnings.mjs`
+- `verify-runner.mjs`
+- `apply-verification-review.mjs`
 - `check-liveness.mjs`
 - `pipeline-liveness.mjs`
 - `sync-pipeline-batch.mjs`
 - `verify-pipeline.mjs`
 - `batch/batch-runner.sh`
 - `lib/codex-config.mjs`
+- `lib/verification-review.mjs`
 - `lib/parallel-config.mjs`
 - `lib/pipeline-queue.mjs`
 - `schemas/go-handoff-output.schema.json`
-- `schemas/go-warning-triage-output.schema.json`
+- `schemas/verify-review-output.schema.json`
+- `modes/verify.md`
+- `tests/workflows/verify-review.test.mjs`
 - `tests/workflows/go-runner.test.mjs`
 - `package.json`
 - `update-system.mjs`
@@ -1004,27 +1009,57 @@ What this customizes:
   tracker merge, reconciliation, and verification deterministic and directly
   script-driven.
 - Uses schema-constrained Codex invocations for the browser/WebSearch handoff
-  phase and read-only final warning triage. Handoff additions are cross-checked
-  against persisted pending counts. Warning triage is deterministically chunked
-  at 50 findings per one-off call and its aggregate contract is validated before
-  any repair is considered.
-- Adds structured verifier warning IDs/evidence. Only confirmed duplicate
-  tracker/report groups can produce a repair plan; a deterministic resolver
-  validates the exact candidates, merges tracker history, archives marked
-  duplicate reports/output artifacts, records a user-layer audit ledger, and
-  re-verifies. Repairs are backed up under the user root and recorded in
-  `data/duplicate-resolutions.jsonl`. Every non-duplication finding remains a
-  user warning; high-impact or ambiguous findings can set
-  `needs_human_review`, which keeps the final run status partial.
+  phase and a standalone read-only verification reviewer. Handoff additions are
+  cross-checked against persisted pending counts. Verification review is
+  deterministically chunked at 5 findings per one-off call, carries prior
+  chunk decisions forward as binding context, and validates the aggregate
+  contract and overlapping duplicate keepers before any repair is considered.
+  After duplicate repair it runs an intermediate raw check and applies only
+  decisions whose exact finding fingerprint still exists, preventing a stale
+  patch from overwriting state changed by the duplicate resolver.
+- Preserves `verify-pipeline.mjs` as the broad raw detector: every error and
+  warning is still emitted. `verify-runner.mjs` filters only findings whose
+  level, stable ID, and complete canonical payload SHA-256 match a prior
+  `mark_seen` record, then reviews every remaining finding, applies supported
+  deterministic decisions, and runs the raw verifier again for up to three
+  passes.
+- Stores verified false positives, legitimate exceptions, and informational
+  findings in the append-only user ledger
+  `data/verification-reviews.jsonl`. An exact unchanged finding no longer
+  resurfaces in reviewed verification, while any changed message/details payload
+  gets a new fingerprint and is reviewed again. Raw verification never hides
+  these findings.
+- Resolves confirmed duplicate tracker/report groups through the existing
+  duplicate resolver, which validates exact candidate partitions, merges
+  tracker history, archives losing reports/output artifacts, backs up state,
+  and records `data/duplicate-resolutions.jsonl`.
+- Adds deterministic orphan handling: restore a valid lost tracker row only
+  from its matching preserved `batch/tracker-additions/merged/*.tsv`, or back up
+  and archive a confirmed redundant/obsolete orphan report and matching output
+  artifacts. Bounded tracker patches cover only uniquely identified company,
+  Via, canonical status, score, and report-link findings. These actions are
+  recorded in `data/verification-actions.jsonl` with timestamped backups.
+- Keeps the prompt reviewer read-only. Only
+  `resolve-verify-warnings.mjs` and `apply-verification-review.mjs` may mutate
+  data, and both revalidate prompt output against deterministic verifier
+  evidence. Unsupported, conflicting, ambiguous, or high-severity findings use
+  `manual_review` and keep reviewed verification `partial`.
 - Adds an idempotent `pipeline.md` to `batch-input.tsv` synchronizer with stable
   IDs so the resumable batch runner cannot silently miss newly scanned jobs.
 - Adds JSON output to `check-liveness.mjs` plus a deterministic pipeline wrapper
   that moves only confirmed-expired rows and uses `set-status.mjs` for any
   matching tracker row.
-- Serializes concurrent `go` runs with a per-user PID lock, owns child process
+- Exposes the complete review/action/reverify lifecycle independently as
+  `/career-ops verify`, `npm run verify -- --user {USER}`, and
+  `node verify-runner.mjs --user {USER}`. `npm run verify:raw` remains the
+  unreviewed detector. The `go` coordinator delegates its final integrity phase
+  to the same reviewed runner, so standalone and end-to-end behavior cannot
+  drift.
+- Serializes concurrent `go` and reviewed-verification runs with per-user PID
+  locks, owns child process
   groups for stop handling, writes phase logs under the user root, and emits one
   final JSON summary. A run is complete only when the pending queue is empty and
-  no warning requires human review; otherwise it reports partial, while setup or
+  no finding requires human review; otherwise it reports partial, while setup or
   authenticated-login requirements report blocked.
 - Streams bounded operational progress to stderr while preserving stdout as the
   single final JSON object: zero-token target/provider start and completion,
@@ -1034,7 +1069,8 @@ What this customizes:
   updater-managed system layer so updates do not leave a partial coordinator.
 - Resolves Codex model and reasoning independently as runner argument, active
   user `profile.yml`, then global Codex default, and forwards resolved
-  non-global values to handoff, warning triage, and every batch Codex worker.
+  non-global values to handoff, reviewed verification, and every batch Codex
+  worker.
 - Resolves parallelism independently as runner argument, active-user
   `batch.parallel`, then `1`, records `parallel` and `parallel_source`, and passes
   the resolved value explicitly to the batch runner.
@@ -1043,18 +1079,27 @@ Future merge notes:
 
 - Preserve the strict handoff output schema and observed-state cross-check; do
   not make agent prose a control signal.
-- Preserve the duplicate-only mutation boundary: orphan reports, submission
-  risks, and other warning classifications must never become automatic actions.
-- Preserve warning chunking, severity/impact-based `needs_human_review`, and the
-  completed-versus-partial final status contract; warning volume must not make a
-  single unconstrained prompt or silently downgrade review requirements.
+- Preserve the read-only prompt/deterministic mutation boundary. New action
+  types must validate against raw verifier evidence, remain user-scoped,
+  acquire the appropriate lock, back up affected artifacts, append an audit
+  record, and be followed by raw re-verification.
+- Preserve exact-payload seen fingerprints. Never weaken them to warning code,
+  company/role, or finding ID alone; changed evidence must resurface. Keep the
+  seen ledger user-owned and append-only, and keep raw verifier output
+  unsuppressed.
+- Preserve review chunking, prior-decision context, aggregate duplicate-keeper
+  consistency, severity-based `manual_review`, and the completed-versus-partial
+  final status contract; finding volume must not make a single unconstrained
+  prompt or silently downgrade review requirements.
 - Preserve stable batch IDs and append-only synchronization because
   `batch-state.tsv` references those IDs across retries and resumes.
 - Preserve the stderr/stdout boundary for live progress so shell and API callers
   can continue parsing the single stdout JSON object; keep `--quiet` available
   for unattended callers that want log-only phase details.
 - Keep `verify-pipeline.mjs --json` finding IDs, codes, and evidence stable
-  enough for schema-constrained triage and deterministic candidate validation.
+  enough for schema-constrained review, exact fingerprints, and deterministic
+  action validation. If a raw finding payload intentionally changes, expect its
+  old seen record not to match and let it resurface for review.
 
 ## Local Maintenance Skill
 

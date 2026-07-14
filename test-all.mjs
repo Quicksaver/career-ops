@@ -154,6 +154,8 @@ console.log('\n2. Script execution (graceful on empty data)');
 const scripts = [
   { name: 'cv-sync-check.mjs', expectExit: 1, allowFail: true }, // fails without cv.md (normal in repo)
   { name: 'verify-pipeline.mjs', expectExit: 0 },
+  { name: 'verify-runner.mjs --help', expectExit: 0 },
+  { name: 'apply-verification-review.mjs --help', expectExit: 0 },
   // --dry-run: these scripts resolve ROOT from import.meta.url and write
   // data/applications.md (or data/pipeline.md) in place. On a provisioned working
   // copy with a real tracker present, running them without --dry-run mutates user
@@ -1047,7 +1049,7 @@ const systemFiles = [
   'CLAUDE.md', 'CODEX.md', 'OPENCODE.md', 'VERSION', 'DATA_CONTRACT.md', 'docs/CODEX.md',
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
-  'modes/scan-handoff.md', 'modes/scan-auth.md', 'modes/go.md',
+  'modes/scan-handoff.md', 'modes/scan-auth.md', 'modes/go.md', 'modes/verify.md',
   'scan-auth.mjs', 'scan-auth/linkedin.mjs',
   'modes/heuristics/recruiter-side.md',
   'templates/states.yml', 'templates/cv-template.html',
@@ -1719,7 +1721,7 @@ console.log('\n8. Mode file integrity');
 
 const expectedModes = [
   '_shared.md', '_profile.template.md', 'oferta.md', 'pdf.md', 'scan.md',
-  'scan-handoff.md', 'scan-auth.md', 'go.md', 'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
+  'scan-handoff.md', 'scan-auth.md', 'go.md', 'verify.md', 'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
   'ofertas.md', 'pipeline.md', 'project.md', 'tracker.md', 'training.md',
   'interview.md', 'latex.md', 'latex-tex.md', 'email.md', 'add.md', 'titles.md',
   'regional/eu-swe.md',
@@ -1785,6 +1787,15 @@ for (const skillPath of ['.claude/skills/career-ops/SKILL.md', '.agents/skills/c
     fail(`${skillPath} does not expose /career-ops go in routing and discovery`);
   }
   if (
+    skill.includes('/career-ops verify') &&
+    skill.includes('| `verify` | `verify` |') &&
+    /Standalone modes[\s\S]*Applies to:[^\n]*`verify`/.test(skill)
+  ) {
+    pass(`${skillPath} exposes /career-ops verify in routing, discovery, and standalone loading`);
+  } else {
+    fail(`${skillPath} does not fully expose /career-ops verify`);
+  }
+  if (
     skill.includes('email') &&
     skill.includes('| `email` | `email` |') &&
     skill.includes('/career-ops email') &&
@@ -1807,6 +1818,20 @@ if (
   pass('go mode coordinates scan, conditional handoff, LinkedIn scan, and conditional pipeline');
 } else {
   fail('go mode is missing required sourcing-loop coordination rules');
+}
+
+const verifyMode = readFile('modes/verify.md');
+if (
+  verifyMode.includes('node verify-runner.mjs --user {USER}') &&
+  verifyMode.includes('verification-reviews.jsonl') &&
+  verifyMode.includes('Changed evidence resurfaces automatically') &&
+  verifyMode.includes('restore_orphan') &&
+  verifyMode.includes('archive_orphan') &&
+  verifyMode.includes('manual_review')
+) {
+  pass('verify mode documents reviewed findings, bounded actions, seen fingerprints, and re-verification');
+} else {
+  fail('verify mode is missing the reviewed-verification lifecycle contract');
 }
 
 const emailMode = readFile('modes/email.md');

@@ -378,24 +378,29 @@ try {
   rmSync(batchTmp, { recursive: true, force: true });
 
   const runner = readFileSync(join(ROOT, 'go-runner.mjs'), 'utf-8');
+  const verifyRunner = readFileSync(join(ROOT, 'verify-runner.mjs'), 'utf-8');
   const batchRunner = readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8');
   const schema = JSON.parse(readFileSync(join(ROOT, 'schemas/go-handoff-output.schema.json'), 'utf-8'));
-  const warningSchema = JSON.parse(readFileSync(join(ROOT, 'schemas/go-warning-triage-output.schema.json'), 'utf-8'));
+  const reviewSchema = JSON.parse(readFileSync(join(ROOT, 'schemas/verify-review-output.schema.json'), 'utf-8'));
   if (runner.includes('--output-schema') && runner.includes('--output-last-message') && schema.additionalProperties === false) {
     pass('handoff agent uses a strict schema-constrained final response');
   } else {
     fail('handoff agent JSON contract is not strict or not wired into go-runner');
   }
-  if (runner.includes('warning-triage-agent') && runner.includes('resolve-duplicate-warnings') &&
-      runner.includes('verify-pipeline-post-triage') && warningSchema.additionalProperties === false) {
-    pass('go runner performs schema-constrained warning triage, duplicate repair, and re-verification');
+  if (runner.includes("systemPath('verify-runner.mjs')") && runner.includes('verification_review') &&
+      verifyRunner.includes('review-agent-') && verifyRunner.includes('resolve-verify-warnings.mjs') &&
+      verifyRunner.includes('apply-verification-review.mjs') && verifyRunner.includes('verify-pipeline-post-duplicates-') &&
+      verifyRunner.includes('verify-pipeline-post-review-') && verifyRunner.includes('decisionsStillPresent') &&
+      verifyRunner.includes('prior_decisions: decisions') && verifyRunner.includes('validateDuplicateConsistency') &&
+      reviewSchema.additionalProperties === false) {
+    pass('go runner delegates final integrity handling to schema-constrained reviewed verification');
   } else {
-    fail('go runner warning-triage final step is not fully wired');
+    fail('go runner reviewed-verification final step is not fully wired');
   }
   if (runner.includes('--codex-model') && runner.includes('--codex-reasoning-effort') &&
       runner.includes("batchArgs.push('--model'") && runner.includes("batchArgs.push('--reasoning-effort'") &&
-      runner.includes("triageArgs.push('--model'") && runner.includes("triageArgs.push('-c'")) {
-    pass('go runner forwards resolved Codex model and reasoning to handoff, warning triage, and batch calls');
+      runner.includes("verifyArgs.push('--codex-model'") && runner.includes("verifyArgs.push('--codex-reasoning-effort'")) {
+    pass('go runner forwards resolved Codex model and reasoning to handoff, reviewed verification, and batch calls');
   } else {
     fail('go runner does not forward both Codex settings to every Codex call');
   }
@@ -425,9 +430,9 @@ try {
     fail('go runner live progress forwarding is not fully wired');
   }
   if (runner.includes("child.once('close'") && runner.includes('stream.end(resolve)') &&
-      runner.includes('captureFailure: [1]') && runner.includes('verificationFailure(') &&
+      verifyRunner.includes("child.once('close'") && verifyRunner.includes('stream.end(resolveStream)') &&
       batchRunner.includes('--defer-verification')) {
-    pass('go runner drains phase logs and preserves structured verifier failures');
+    pass('go and verify runners drain phase logs before consuming structured results');
   } else {
     fail('go runner can still truncate or obscure structured verifier failures');
   }

@@ -37,6 +37,7 @@ After resolving the active user, remove the explicit user token or `--user` flag
 
 When running scripts, pass the active user explicitly:
 - `node scan.mjs --user {USER}`
+- `node verify-runner.mjs --user {USER}`
 - `node verify-pipeline.mjs --user {USER}`
 - `node merge-tracker.mjs --user {USER}`
 - `batch/batch-runner.sh --user {USER}`
@@ -51,7 +52,7 @@ Run the per-user binary without `--path`; it infers the user folder from its own
 
 ## Long-Running Command Quiet Mode
 
-When the user asks you to run `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
+When the user asks you to run `go`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
 
 - Keep the current agent turn active until the workflow completes and final reconciliation and verification succeed, or until user action, an explicit stop, a confirmed destructive risk, or exhausted safe recovery provides the terminal outcome.
 - Treat background and detached processes as actively supervised work owned by the current turn. Send the final response after the terminal outcome.
@@ -60,7 +61,7 @@ When the user asks you to run `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeli
 - When the runner exits early or state stalls, inspect the evidence, clear proven ownerless locks, recover stale `processing` entries, resume with the same user and parallelism, and continue monitoring.
 - Reserve user-visible updates for completion, required user action, suspected hangs, concrete warnings, material recovery, explicit status requests, and at most one normal liveness update every 10 minutes.
 - Treat a status request as an intermediate update, then return to silent monitoring.
-- Complete the run by confirming all workers have exited, reconciling pipeline state, merging tracker additions, running `node verify-pipeline.mjs --user {USER}`, and reporting completed, skipped, failed, and remaining counts.
+- Complete the run by confirming all workers have exited, reconciling pipeline state, merging tracker additions, running `node verify-runner.mjs --user {USER}`, and reporting completed, skipped, failed, seen, repaired, unresolved, and remaining counts.
 
 ## Source-of-Truth Boundary (CRITICAL)
 
@@ -373,6 +374,7 @@ These are two separate axes:
 | Asks about application status | `tracker` |
 | Fills out application form | `apply` |
 | Wants the full sourcing loop | `go` |
+| Wants pipeline integrity reviewed, fixed, or acknowledged | `verify` |
 | Searches for new offers | `scan` |
 | Processes saved Agent/WebSearch scan handoff | `scan-handoff` |
 | Searches authenticated portals | `scan-auth` |
@@ -452,18 +454,19 @@ For a complete deterministic sourcing cycle under Codex, run
 for scan, authenticated scan, liveness, queue synchronization, batch merge,
 reconciliation, and verification. It invokes schema-constrained one-off Codex
 workers for `scan-handoff`, where browser/WebSearch judgment remains necessary,
-and final warning triage when deterministic verification reports warnings.
-Batch evaluation keeps its existing one-worker-per-job JSON contract. Warning
-triage is read-only; only confirmed duplicate tracker/report groups can be
-changed, through `resolve-verify-warnings.mjs`, followed by deterministic
-re-verification. All other findings remain user warnings and may set
-`needs_human_review` according to their severity or impact.
+and delegates final integrity handling to `verify-runner.mjs`. Batch evaluation
+keeps its existing one-worker-per-job JSON contract. Reviewed verification is
+also available independently as `/career-ops verify`: its prompt reviewer is
+read-only, deterministic resolvers apply confirmed duplicate/orphan actions or
+bounded tracker patches, and exact-fingerprint accepted findings are retained
+in a user-scoped seen ledger before raw re-verification. Unresolved findings set
+`needs_human_review`.
 
 `go-runner.mjs` resolves Codex model and reasoning independently in this order:
 `--codex-model` / `--codex-reasoning-effort`, then `codex.model` /
 `codex.reasoning_effort` in `users/{USER}/config/profile.yml`, then Codex global
-defaults. It passes resolved argument/profile values to scan-handoff, warning
-triage, and every Codex batch worker.
+defaults. It passes resolved argument/profile values to scan-handoff, reviewed
+verification, and every Codex batch worker.
 
 `--parallel` is optional for `go-runner.mjs` and `batch/batch-runner.sh`.
 Resolve it as the explicit argument, then `batch.parallel` in

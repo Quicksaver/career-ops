@@ -1,45 +1,57 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["status", "needs_human_review", "warnings"],
+  "required": ["status", "needs_human_review", "findings"],
   "properties": {
-    "status": {
-      "type": "string",
-      "enum": ["completed"]
-    },
+    "status": { "type": "string", "enum": ["completed"] },
     "needs_human_review": { "type": "boolean" },
-    "warnings": {
+    "findings": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "warning_id",
-          "warning_code",
+          "finding_id",
+          "finding_code",
+          "finding_level",
           "classification",
+          "disposition",
           "severity",
           "needs_human_review",
           "rationale",
           "evidence",
-          "duplicate_resolution"
+          "duplicate_resolution",
+          "orphan_resolution",
+          "tracker_patch"
         ],
         "properties": {
-          "warning_id": { "type": "string", "minLength": 1 },
-          "warning_code": { "type": "string", "minLength": 1 },
+          "finding_id": { "type": "string", "minLength": 1 },
+          "finding_code": { "type": "string", "minLength": 1 },
+          "finding_level": { "type": "string", "enum": ["error", "warning"] },
           "classification": {
             "type": "string",
             "enum": [
-              "informational",
+              "false_positive",
               "legitimate_exception",
+              "informational",
+              "confirmed_duplicate",
+              "confirmed_orphan",
               "actionable",
-              "needs_human_review",
-              "confirmed_duplicate"
+              "needs_human_review"
             ]
           },
-          "severity": {
+          "disposition": {
             "type": "string",
-            "enum": ["low", "medium", "high"]
+            "enum": [
+              "mark_seen",
+              "resolve_duplicate",
+              "restore_orphan",
+              "archive_orphan",
+              "patch_tracker",
+              "manual_review"
+            ]
           },
+          "severity": { "type": "string", "enum": ["low", "medium", "high"] },
           "needs_human_review": { "type": "boolean" },
           "rationale": { "type": "string", "minLength": 1 },
           "evidence": {
@@ -67,15 +79,35 @@
               "keeper_tracker_num": { "type": ["integer", "null"], "minimum": 1 },
               "duplicate_tracker_nums": {
                 "type": "array",
-                "uniqueItems": true,
                 "items": { "type": "integer", "minimum": 1 }
               },
               "keeper_report_file": { "type": ["string", "null"] },
               "duplicate_report_files": {
                 "type": "array",
-                "uniqueItems": true,
                 "items": { "type": "string", "minLength": 1 }
               }
+            }
+          },
+          "orphan_resolution": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["report_file", "tracker_tsv"],
+            "properties": {
+              "report_file": { "type": "string", "minLength": 1 },
+              "tracker_tsv": { "type": ["string", "null"] }
+            }
+          },
+          "tracker_patch": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["tracker_num", "company", "via", "status", "score", "report"],
+            "properties": {
+              "tracker_num": { "type": "integer", "minimum": 1 },
+              "company": { "type": ["string", "null"] },
+              "via": { "type": ["string", "null"] },
+              "status": { "type": ["string", "null"] },
+              "score": { "type": ["string", "null"] },
+              "report": { "type": ["string", "null"] }
             }
           }
         }

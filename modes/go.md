@@ -26,12 +26,12 @@ Prefer the executable coordinator for end-to-end runs:
 
 The runner owns phase gating, per-user locking, pending counters, JSON-validated
 handoff-agent output, bulk liveness, pipeline-to-batch synchronization, batch
-supervision, reconciliation, final verification, and read-only prompt-based
-warning triage. When verification has warnings, the triage worker reviews each
-one. Only confirmed duplicate tracker/report groups may be repaired, through a
-constrained deterministic resolver followed by verification again. Orphans,
-submission risks, and every other warning remain user warnings and may set
-`needs_human_review` based on severity or impact. Detailed phase logs go to
+supervision, reconciliation, and the same reviewed verification lifecycle used
+by `/career-ops verify`. The final `verify-runner.mjs` phase reviews every new
+error and warning read-only, applies only schema-constrained duplicate/orphan
+actions or bounded tracker patches, records exact-fingerprint accepted findings
+as seen, and runs the raw verifier again. Unresolved findings set
+`needs_human_review`. Detailed phase logs go to
 `users/{USER}/data/go-runs/`. Live progress goes to stderr: the current
 zero-token provider/target, handoff task, authenticated search prompt, queue
 additions, and batch job are visible while the run is active. Stdout still
@@ -51,7 +51,7 @@ Codex model settings resolve independently with this precedence:
 2. `codex.model` / `codex.reasoning_effort` in `users/{USER}/config/profile.yml`
 3. Codex global configuration (the runner omits that CLI override)
 
-The resolved non-global values are passed to the scan-handoff and warning-triage
+The resolved non-global values are passed to the scan-handoff and verification-review
 `codex exec` calls and every batch-worker `codex exec` call.
 
 ## Preconditions
@@ -146,7 +146,7 @@ Scan: completed, N new pending, E provider/company errors
 Handoff: skipped|completed, N new pending, E errors
 LinkedIn: completed|needs login|skipped, N new pending, E errors
 Pipeline: skipped|completed, processed N pending jobs
-Warning triage: skipped|completed, W user warnings, D duplicate groups resolved, human review yes|no
+Verification: completed|partial, S seen, R repaired, U unresolved, human review yes|no
 ```
 
 If a catastrophic issue stopped the sequence, state which phase stopped, the exact blocking reason, and the command the user should run next.

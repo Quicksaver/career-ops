@@ -4,7 +4,7 @@ description: AI job search command center -- evaluate offers, generate CVs, scan
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | scan | scan-handoff | scan-auth | deep | pdf | latex | latex-tex | cover | email | add | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | offer-prep | titles | upskill | followup | update]"
+argument-hint: "[go | verify | scan | scan-handoff | scan-auth | deep | pdf | latex | latex-tex | cover | email | add | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | offer-prep | titles | upskill | followup | update]"
 license: MIT
 ---
 
@@ -62,7 +62,7 @@ After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 
 ## Long-Running Command Quiet Mode
 
-For `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
+For `go`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
 
 - Keep the current agent turn active until the workflow completes and final reconciliation and verification succeed, or until user action, an explicit stop, a confirmed destructive risk, or exhausted safe recovery provides the terminal outcome.
 - Treat background and detached processes as actively supervised work owned by the current turn. Send the final response after the terminal outcome.
@@ -71,7 +71,7 @@ For `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervis
 - When the runner exits early or state stalls, inspect the evidence, clear proven ownerless locks, recover stale `processing` entries, resume with the same active user and parallelism, and continue monitoring.
 - Reserve user-visible updates for completion, required user action, suspected hangs, concrete warnings, material recovery, explicit status requests, and at most one normal liveness update every 10 minutes.
 - Treat a status request as an intermediate update, then return to silent monitoring.
-- Complete the run by confirming all workers have exited, reconciling pipeline state, merging tracker additions, running `node verify-pipeline.mjs --user {ACTIVE_USER}`, and reporting completed, skipped, failed, and remaining counts.
+- Complete the run by confirming all workers have exited, reconciling pipeline state, merging tracker additions, running `node verify-runner.mjs --user {ACTIVE_USER}`, and reporting completed, skipped, failed, seen, repaired, unresolved, and remaining counts.
 ## Mode Routing
 
 Determine the mode from `$mode`:
@@ -102,6 +102,7 @@ Determine the mode from `$mode`:
 | `pipeline` | `pipeline` |
 | `apply` | `apply` |
 | `go` | `go` |
+| `verify` | `verify` |
 | `scan` | `scan` |
 | `scan-handoff` | `scan-handoff` |
 | `scan-auth` | `scan-auth` |
@@ -145,6 +146,7 @@ Concrete equivalents for Codex prompt-driven sessions:
 ```text
 /career-ops {JD}           ↔ "Evaluate this JD with career-ops auto-pipeline: {JD or URL}"
 /career-ops go             ↔ "Run the career-ops go mode for <username>."
+/career-ops verify         ↔ "Run reviewed career-ops verification for <username>."
 /career-ops scan           ↔ "Run the career-ops scan mode and summarize new matches."
 /career-ops pipeline       ↔ "Run the career-ops pipeline mode for <username>."
 /career-ops pdf            ↔ "Run the career-ops pdf mode for the latest evaluated role."
@@ -182,6 +184,7 @@ Available commands:
   /career-ops agent-inbox → Queue/drain requests for the next session (users/{ACTIVE_USER}/data/agent-inbox.md)
   /career-ops apply     → Live application assistant (reads form + generates answers)
   /career-ops go        → Run scan, conditional handoff, LinkedIn scan, and conditional pipeline
+  /career-ops verify    → Review every integrity finding, apply safe fixes, remember verified exceptions, and reverify
   /career-ops scan      → Scan portals and discover new offers
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
   /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
@@ -221,7 +224,7 @@ For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.m
 
 Read `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`, plus any user-layer files the mode names from `users/{ACTIVE_USER}/`.
 
-Applies to: `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`
+Applies to: `tracker`, `agent-inbox`, `verify`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`
 
 ### Execution ownership for long-running modes
 
@@ -233,17 +236,18 @@ Run one `batch/batch-runner.sh` invocation at a time directly from the root agen
 
 For a full `go` invocation, prefer `./go-runner.mjs --user {ACTIVE_USER}`. It is
 the deterministic root-owned coordinator and invokes schema-constrained agent
-work for scan handoff and read-only final warning triage; batch evaluation
-continues to use one contract-validated worker per job. Only model-confirmed
-duplicate tracker/report warnings may be repaired, by the deterministic
-duplicate resolver followed by re-verification. Every other warning stays
-user-facing and can require human review based on severity or impact. Keep the
+work for scan handoff; batch evaluation continues to use one contract-validated
+worker per job. Its final phase invokes `verify-runner.mjs`, the same reviewed
+verification lifecycle exposed by the standalone `verify` mode. The reviewer
+is read-only; deterministic resolvers apply confirmed duplicate/orphan repairs,
+bounded tracker patches, or exact-fingerprint seen records before raw
+re-verification. Unresolved findings stay user-facing. Keep the
 current turn active while the runner executes and apply the same
 quiet-monitoring and stop semantics.
 Resolve Codex model and reasoning independently with this precedence:
 `go-runner.mjs` arguments, `users/{ACTIVE_USER}/config/profile.yml` under
 `codex.model` / `codex.reasoning_effort`, then Codex global defaults. The runner
-must pass resolved non-global values to the handoff worker, warning-triage
+must pass resolved non-global values to the handoff worker, verification-review
 worker, and all Codex batch workers.
 
 Parallelism resolves independently as `--parallel N`, then `batch.parallel`

@@ -11,8 +11,10 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run go -- --user {USER}` | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator with JSON output |
 | `node resolve-parallel.mjs --profile users/{USER}/config/profile.yml --json` | `resolve-parallel.mjs` | Resolve argument/profile/default batch parallelism |
 | `npm run doctor` | `doctor.mjs` | Validate setup prerequisites |
-| `npm run verify` | `verify-pipeline.mjs` | Check pipeline data integrity |
+| `npm run verify -- --user {USER}` | `verify-runner.mjs` | Review every integrity finding, apply bounded actions, remember accepted exceptions, and reverify |
+| `npm run verify:raw -- --user {USER}` | `verify-pipeline.mjs` | Emit every raw deterministic integrity finding without review suppression |
 | `node resolve-verify-warnings.mjs` | `resolve-verify-warnings.mjs` | Apply schema-validated duplicate-only warning resolutions |
+| `node apply-verification-review.mjs` | `apply-verification-review.mjs` | Apply schema-validated seen, orphan, and bounded tracker decisions |
 | `npm run normalize` | `normalize-statuses.mjs` | Fix non-canonical statuses |
 | `npm run dedup` | `dedup-tracker.mjs` | Remove duplicate tracker entries |
 | `npm run merge` | `merge-tracker.mjs` | Merge batch TSVs into applications.md |
@@ -80,28 +82,28 @@ of `1`. The resolved value and its source are included as `parallel` and
 `parallel_source` in the final JSON summary. The same hierarchy applies when
 `batch/batch-runner.sh` is invoked directly.
 
-After deterministic verification, `go-runner.mjs` invokes one read-only,
-schema-constrained Codex warning-triage worker only when warnings exist. The
-worker classifies every warning and may confirm duplicate tracker entries or
-same-role duplicate reports. `resolve-verify-warnings.mjs` validates those
-candidate sets, merges/archives only the confirmed duplicates, records an
-append-only `data/duplicate-resolutions.jsonl` audit entry, and reruns
-verification. Orphan reports, submission risks, Via issues, formatting issues,
-and all other warning types are never auto-remediated; they remain in the final
-JSON with `needs_human_review` determined from severity and impact.
+The final phase invokes `verify-runner.mjs`, the same reviewed lifecycle exposed
+by `npm run verify`. Its schema-constrained Codex reviewer reads every new error
+and warning without mutation. Deterministic scripts then apply only confirmed
+duplicate/orphan actions or bounded tracker patches, append action ledgers, and
+run `verify-pipeline.mjs` again. Verified false positives, legitimate exceptions,
+and informational findings are stored by exact payload fingerprint under the
+active user, so unchanged findings do not resurface while changed evidence does.
 
 ---
 
 ## verify
 
-Health check for pipeline data integrity. Validates twelve areas: canonical statuses, duplicate company+role pairs, report links, score format, row structure, pending tracker-addition TSVs, bold scores, stale report reservations, same-role duplicate reports, orphan reports, Via/channel consistency, and unique tracker numbers. Ambiguous duplicate/report/channel findings remain warning-level because legitimate re-evaluations and distinct submissions can look alike.
+Reviewed health check for pipeline data integrity. The raw checker still validates twelve areas and emits every possible finding: canonical statuses, duplicate company+role pairs, report links, score format, row structure, pending tracker-addition TSVs, bold scores, stale report reservations, same-role duplicate reports, orphan reports, Via/channel consistency, and unique tracker numbers.
 
 ```bash
 npm run verify -- --user <username>
-npm run verify -- --user <username> --json   # structured finding IDs, codes, and evidence
+npm run verify:raw -- --user <username> --json
 ```
 
-**Exit codes:** `0` pipeline clean (zero errors), `1` errors found. Warnings (e.g. possible duplicates) do not cause a non-zero exit.
+`verify-runner.mjs` reviews each finding, applies supported deterministic actions, records accepted findings in `users/{USER}/data/verification-reviews.jsonl`, and reverifies for up to three passes. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
+
+The raw command preserves the low-level contract: exit `0` with zero errors and exit `1` when errors exist; warnings alone remain exit `0`.
 
 ---
 

@@ -47,6 +47,8 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/assessments.tsv` | Append-only skills-assessment log: `{date}\t{company}\t{report#\|-}\t{platform}\t{subject}\t{threshold%\|-}\t{score%\|-}\t{stale_note}`. Appended by `node assessment-log.mjs --user {USER} add`; never edited in place |
 | `users/{USER}/data/active-interviews.md` | Active interview process notes |
 | `users/{USER}/data/reply-candidates.json` | Candidate matches produced from application replies |
+| `users/{USER}/data/verification-reviews.jsonl` | Append-only exact-fingerprint seen decisions for reviewed verification findings |
+| `users/{USER}/data/verification-actions.jsonl` | Append-only audit ledger for reviewed verification repairs and archive/restore actions |
 | `users/{USER}/batch/*` | Batch input, state, logs, and tracker additions |
 | `users/{USER}/plugins.local/` | User/private plugins (never auto-updated) |
 | `users/{USER}/plugins.lock` | Integrity pins and recorded consent for enabled plugins (generated; never auto-updated) |
@@ -71,6 +73,9 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/scan-auth.md` | Authenticated portal scanner instructions |
 | `modes/go.md` | Sourcing-loop shorthand instructions |
 | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator |
+| `modes/verify.md` | Prompt-reviewed integrity workflow instructions |
+| `verify-runner.mjs` | Standalone review/action/reverify coordinator used by `go` |
+| `apply-verification-review.mjs` | Applies bounded tracker/orphan actions and exact-fingerprint seen records |
 | `resolve-parallel.mjs` | Resolves batch parallelism from argument, user profile, or system default |
 | `resolve-verify-warnings.mjs` | Validates and applies model-confirmed duplicate-only warning resolutions |
 | `pipeline-liveness.mjs` | Machine-readable pending-queue liveness preflight |

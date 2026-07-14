@@ -25,13 +25,14 @@ import {
 } from './tracker-utils.mjs';
 import { normalizeReportLink } from './tracker-links.mjs';
 
-const HELP = `Apply validated duplicate resolutions from go warning triage.
+const HELP = `Apply validated duplicate resolutions from reviewed verification.
 
 Usage: node resolve-verify-warnings.mjs --user <id> \\
   --verification <verify.json> --triage <triage.json> [--json]
 
 Only confirmed possible_duplicate_tracker and duplicate_reports_same_role
-decisions can mutate data. Every other warning remains user-facing.`;
+decisions can mutate data. Every other finding remains owned by the reviewed
+verification coordinator.`;
 
 let context;
 try {
