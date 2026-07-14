@@ -1094,6 +1094,10 @@ What this customizes:
   Internal orchestrators pass `--json` explicitly when parsing child results.
   Doctor and the batch runner retain their existing compact human output and
   persisted state artifacts.
+- Prints the reviewed verifier's run ID and artifact directory immediately after
+  acquiring its per-user lock, before the first phase starts. Interrupted runs
+  therefore expose the exact value accepted by `--resume-run`; JSON mode sends
+  these early lines to stderr so stdout remains parseable.
 - Streams zero-token target/provider start and completion,
   handoff task activity, LinkedIn search prompts, queue deltas, batch job
   start/completion, and one short line per reviewed finding after its

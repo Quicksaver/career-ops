@@ -393,6 +393,8 @@ try {
     fail(`verify runner lifecycle wrong: first=${JSON.stringify(firstRun)} second=${JSON.stringify(secondRun)} calls=${calls}`);
   }
   if (firstProcess.stderr.includes('2 dependency-safe lane(s), up to 2 concurrent reviewer(s)') &&
+      firstProcess.stderr.includes(`[verify] run-id: ${firstRun.run_id}`) &&
+      firstProcess.stderr.includes(`[verify] logs: ${firstRun.logs}`) &&
       firstProcess.stderr.includes('reviewed 1/6, job #1, bold_score → false_positive') &&
       !firstProcess.stderr.includes('  issue:') &&
       !firstProcess.stderr.includes('  decision:') &&
@@ -482,13 +484,16 @@ try {
   }
 
   const humanRun = spawnSync(process.execPath, [
-    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--quiet',
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
   ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' });
+  const runIdPosition = humanRun.stdout.indexOf('[verify] run-id:');
+  const firstPhasePosition = humanRun.stdout.indexOf('[verify] verify-pipeline-initial started');
   if (humanRun.status === 0 && humanRun.stdout.includes('[verify] summary: completed') &&
       humanRun.stdout.includes('[verify] reviewed ') &&
+      runIdPosition >= 0 && firstPhasePosition > runIdPosition &&
       !humanRun.stdout.includes('"initial_verification"') &&
       !humanRun.stdout.trimStart().startsWith('{')) {
-    pass('verify runner defaults to a compact human summary instead of the full JSON payload');
+    pass('verify runner prints the run ID before work and ends with a compact human summary');
   } else {
     fail(`verify runner human summary contract wrong: status=${humanRun.status} stdout=${humanRun.stdout} stderr=${humanRun.stderr}`);
   }

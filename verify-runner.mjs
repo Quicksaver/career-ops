@@ -486,6 +486,8 @@ async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, code
 async function main() {
   mkdirSync(runDir, { recursive: true });
   acquireLock();
+  log(`run-id: ${runId}${resumeRun ? ' (resuming)' : ''}`);
+  log(`logs: ${runDir}`);
   const codex = resolveCodexSettings({
     profilePath: userPath(context, 'config/profile.yml'),
     modelOverride: codexModel,
@@ -648,7 +650,9 @@ function printHumanSummary(result) {
   if (result.review_resilience) {
     console.log(`[verify] retries ${result.review_resilience.retries_used || 0}, checkpoints reused ${result.review_resilience.checkpoints_reused || 0}, normalized ${result.review_resilience.mechanical_normalizations || 0}`);
   }
-  console.log(`[verify] logs: ${result.logs}`);
+  // A normal run prints this near startup so an interrupted process remains
+  // resumable. Quiet mode suppresses that live line, so retain it here.
+  if (quiet) console.log(`[verify] logs: ${result.logs}`);
   if (result.status === 'partial' && unresolved > 0) {
     console.log(`[verify] human review required for ${unresolved} finding(s)`);
   }
