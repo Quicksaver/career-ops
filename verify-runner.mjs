@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -19,15 +20,15 @@ import {
 } from './lib/user-context.mjs';
 import { codexReasoningConfigArg, resolveCodexSettings } from './lib/codex-config.mjs';
 import { resolveParallel } from './lib/parallel-config.mjs';
-import {
-  assertOpenAIStructuredOutputSchema,
-  assertUniqueArrayValues,
-} from './lib/openai-output-schema.mjs';
+import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.mjs';
 import {
   buildReviewLanes,
   findingJobIds,
+  normalizeReviewDecisions,
   partitionReviewedFindings,
   readReviewLedger,
+  reviewChunkSignature,
+  validateReviewDecisions,
   verificationFindings,
 } from './lib/verification-review.mjs';
 
@@ -43,6 +44,8 @@ Options:
   --parallel N          Concurrent read-only reviewers
                         (profile batch.parallel, then 1)
   --max-passes N        Maximum review/action/reverify passes (default: 3)
+  --review-retries N    Semantic retries per five-finding chunk (default: 2)
+  --resume-run RUN_ID   Reuse only validated checkpoints from an interrupted run
   --quiet               Suppress phase progress on stderr
   --json                Reserved; stdout is always one JSON object
   -h, --help            Show this help
@@ -85,8 +88,13 @@ const codexModel = optionValue('--codex-model');
 const codexReasoningEffort = optionValue('--codex-reasoning-effort');
 const parallelOverride = optionValue('--parallel');
 const maxPasses = Number.parseInt(optionValue('--max-passes', '3'), 10);
+const reviewRetries = Number.parseInt(optionValue('--review-retries', '2'), 10);
+const resumeRun = optionValue('--resume-run');
 const quiet = rawArgs.includes('--quiet');
-const valueOptions = new Set(['--agent-cli', '--codex-model', '--codex-reasoning-effort', '--parallel', '--max-passes']);
+const valueOptions = new Set([
+  '--agent-cli', '--codex-model', '--codex-reasoning-effort', '--parallel',
+  '--max-passes', '--review-retries', '--resume-run',
+]);
 const flagOptions = new Set(['--json', '--quiet']);
 for (let index = 0; index < rawArgs.length; index++) {
   const arg = rawArgs[index];
@@ -96,15 +104,23 @@ for (let index = 0; index < rawArgs.length; index++) {
 }
 if (agentCli !== 'codex') throw new Error('Reviewed verification currently requires --agent-cli codex');
 if (!Number.isInteger(maxPasses) || maxPasses < 1 || maxPasses > 10) throw new Error('--max-passes must be an integer from 1 to 10');
+if (!Number.isInteger(reviewRetries) || reviewRetries < 0 || reviewRetries > 5) {
+  throw new Error('--review-retries must be an integer from 0 to 5');
+}
+if (resumeRun && !/^[A-Za-z0-9._-]+$/.test(resumeRun)) throw new Error('--resume-run is not a valid run ID');
 
 const startedAt = new Date().toISOString();
-const runId = startedAt.replace(/[:.]/g, '-');
+const runId = resumeRun || startedAt.replace(/[:.]/g, '-');
 const runDir = userPath(context, `data/verify-runs/${runId}`);
+if (resumeRun && !existsSync(runDir)) throw new Error(`Cannot resume missing verify run ${resumeRun}`);
 const lockPath = userPath(context, 'data/verify-runner.pid');
 const reviewLedgerPath = userPath(context, 'data/verification-reviews.jsonl');
 const reviewSchemaPath = systemPath('schemas/verify-review-output.schema.json');
 const REVIEW_CHUNK_SIZE = 5;
 const phases = [];
+const phaseOffset = resumeRun
+  ? readdirSync(runDir).filter(name => /^\d+-.*\.log$/.test(name)).length
+  : 0;
 const activeChildren = new Set();
 let lockOwned = false;
 let forwardingSignal = false;
@@ -182,7 +198,7 @@ async function runCommand(name, command, args, options = {}) {
     started_at: new Date().toISOString(), finished_at: null, log: null,
   };
   phases.push(phase);
-  const logPath = join(runDir, `${String(phases.length).padStart(2, '0')}-${name}.log`);
+  const logPath = join(runDir, `${String(phaseOffset + phases.length).padStart(2, '0')}-${name}.log`);
   phase.log = logPath;
   mkdirSync(runDir, { recursive: true });
   const stream = createWriteStream(logPath, { flags: 'a' });
@@ -239,6 +255,10 @@ FINDINGS_JSON may include prior_decisions from earlier chunks in this pass. Trea
 those decisions as binding context: do not select a different canonical tracker
 or report identity for an overlapping finding.
 
+If FINDINGS_JSON includes validation_feedback, correct every listed contract
+error while preserving evidence-backed judgments. Return all five findings
+again; do not omit findings that were already valid in the previous attempt.
+
 The raw verifier intentionally reports broad possible problems. Your job is to decide each finding from concrete artifact evidence and choose exactly one disposition:
 
 - mark_seen: only for false_positive, legitimate_exception, or informational findings that need no action. The exact finding fingerprint will be recorded so an unchanged finding does not resurface in reviewed verification; changed evidence will resurface automatically.
@@ -253,57 +273,6 @@ Errors are reviewed just like warnings. Never mark a real unresolved integrity e
 Return finding_id, finding_code, and finding_level verbatim. Set all unused resolution objects to null. Your final response must contain only the JSON required by the supplied output schema.`;
 }
 
-function validateReview(expectedFindings, review) {
-  if (!review || review.status !== 'completed' || !Array.isArray(review.findings)) throw new Error('review returned an invalid top-level contract');
-  const expected = new Map(expectedFindings.map(finding => [`${finding.level}:${finding.id}`, finding]));
-  const seen = new Set();
-  for (const decision of review.findings) {
-    const key = `${decision.finding_level}:${decision.finding_id}`;
-    if (seen.has(key)) throw new Error(`review repeated ${key}`);
-    seen.add(key);
-    const finding = expected.get(key);
-    if (!finding) throw new Error(`review returned unknown finding ${key}`);
-    if (decision.finding_code !== finding.code) throw new Error(`${key}: finding_code changed`);
-    const markSeen = ['false_positive', 'legitimate_exception', 'informational'].includes(decision.classification);
-    if (decision.disposition === 'mark_seen' && (!markSeen || decision.needs_human_review)) throw new Error(`${key}: invalid mark_seen decision`);
-    if (markSeen && decision.disposition !== 'mark_seen') throw new Error(`${key}: non-action classification must mark_seen`);
-    if (decision.disposition === 'resolve_duplicate') {
-      if (decision.classification !== 'confirmed_duplicate' || !decision.duplicate_resolution ||
-          !['possible_duplicate_tracker', 'duplicate_reports_same_role'].includes(finding.code)) {
-        throw new Error(`${key}: invalid duplicate resolution`);
-      }
-      const trackerNums = decision.duplicate_resolution.duplicate_tracker_nums;
-      const reportFiles = decision.duplicate_resolution.duplicate_report_files;
-      assertUniqueArrayValues(trackerNums, `${key}: duplicate_tracker_nums`);
-      assertUniqueArrayValues(reportFiles, `${key}: duplicate_report_files`);
-    } else if (decision.duplicate_resolution !== null) throw new Error(`${key}: unused duplicate_resolution must be null`);
-    if (['restore_orphan', 'archive_orphan'].includes(decision.disposition)) {
-      if (decision.classification !== 'confirmed_orphan' || finding.code !== 'orphan_report' || !decision.orphan_resolution) {
-        throw new Error(`${key}: invalid orphan resolution`);
-      }
-    } else if (decision.orphan_resolution !== null) throw new Error(`${key}: unused orphan_resolution must be null`);
-    if (decision.disposition === 'patch_tracker') {
-      if (decision.classification !== 'actionable' || !decision.tracker_patch) throw new Error(`${key}: invalid tracker patch`);
-      if (Object.entries(decision.tracker_patch).filter(([field, value]) => field !== 'tracker_num' && value !== null).length === 0) {
-        throw new Error(`${key}: tracker patch changes no field`);
-      }
-    } else if (decision.tracker_patch !== null) throw new Error(`${key}: unused tracker_patch must be null`);
-    if (decision.disposition === 'manual_review' && (decision.classification !== 'needs_human_review' || !decision.needs_human_review)) {
-      throw new Error(`${key}: manual_review requires needs_human_review`);
-    }
-    if (decision.disposition !== 'manual_review' && decision.needs_human_review) {
-      throw new Error(`${key}: only manual_review may require human review`);
-    }
-    if (decision.severity === 'high' && decision.disposition !== 'manual_review') throw new Error(`${key}: high severity requires manual_review`);
-  }
-  if (seen.size !== expected.size) {
-    const missing = [...expected.keys()].filter(key => !seen.has(key));
-    throw new Error(`review omitted findings: ${missing.join(', ')}`);
-  }
-  const observed = review.findings.some(item => item.needs_human_review);
-  if (review.needs_human_review !== observed) throw new Error('review needs_human_review does not match decisions');
-}
-
 function validateDuplicateConsistency(verification, review) {
   const findings = verificationFindings(verification);
   const findingsByKey = new Map(findings.map(item => [`${item.level}:${item.id}`, item]));
@@ -311,6 +280,7 @@ function validateDuplicateConsistency(verification, review) {
     `${item.finding_level}:${item.finding_id}`, item,
   ]));
   const reportFindings = findings.filter(item => item.code === 'duplicate_reports_same_role');
+  const errors = [];
 
   for (const decision of review.findings.filter(item =>
     item.finding_code === 'possible_duplicate_tracker' && item.disposition === 'resolve_duplicate')) {
@@ -327,15 +297,17 @@ function validateDuplicateConsistency(verification, review) {
     if (!overlapping) continue;
     const reportDecision = decisionsByKey.get(`${overlapping.level}:${overlapping.id}`);
     if (!reportDecision || reportDecision.disposition !== 'resolve_duplicate') {
-      throw new Error(`${decision.finding_id} conflicts with non-duplicate report decision ${overlapping.id}`);
+      errors.push(`${decision.finding_id} conflicts with non-duplicate report decision ${overlapping.id}`);
+      continue;
     }
     const keeperEntry = entries.find(entry => entry.tracker_num === decision.duplicate_resolution.keeper_tracker_num);
     const expectedKeeper = String(keeperEntry?.report || '').match(/\]\(([^)]+)\)/)?.[1]?.split('/').pop();
     const selectedKeeper = reportDecision.duplicate_resolution?.keeper_report_file?.split('/').pop();
     if (expectedKeeper && selectedKeeper !== expectedKeeper) {
-      throw new Error(`${overlapping.id}: report keeper must match tracker keeper #${decision.duplicate_resolution.keeper_tracker_num}`);
+      errors.push(`${overlapping.id}: report keeper must match tracker keeper #${decision.duplicate_resolution.keeper_tracker_num}`);
     }
   }
+  if (errors.length > 0) throw new Error(`duplicate consistency validation failed:\n- ${errors.join('\n- ')}`);
 }
 
 function duplicateTriage(review) {
@@ -387,8 +359,35 @@ async function rawVerification(name) {
   ], { accept: [0, 1] }), name);
 }
 
+function writeJsonAtomic(path, value) {
+  const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+  renameSync(temporary, path);
+}
+
+function validationErrors(error) {
+  return Array.isArray(error?.validationErrors) && error.validationErrors.length > 0
+    ? error.validationErrors
+    : [error?.message || String(error)];
+}
+
+function readValidatedCheckpoint(path, signature, chunk) {
+  if (!resumeRun || !existsSync(path)) return null;
+  try {
+    const checkpoint = JSON.parse(readFileSync(path, 'utf-8'));
+    if (checkpoint.schema_version !== 1 || checkpoint.user !== context.userId ||
+        checkpoint.signature !== signature || !checkpoint.review) return null;
+    validateReviewDecisions(chunk, checkpoint.review);
+    return checkpoint;
+  } catch (error) {
+    log(`ignored invalid review checkpoint ${path.split('/').pop()}: ${validationErrors(error).join('; ')}`);
+    return null;
+  }
+}
+
 async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, codex }) {
   const decisions = [];
+  const metrics = { checkpoints_reused: 0, review_retries: 0, mechanical_normalizations: 0 };
   for (let offset = 0; offset < lane.length; offset += REVIEW_CHUNK_SIZE) {
     const items = lane.slice(offset, offset + REVIEW_CHUNK_SIZE);
     const chunk = items.map(item => item.finding);
@@ -397,30 +396,88 @@ async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, code
     const suffix = `${String(pass).padStart(2, '0')}-l${String(laneNumber).padStart(2, '0')}-b${String(batchNumber).padStart(3, '0')}`;
     const findingLabels = positions.map(index => index + 1).join(',');
     log(`review-agent-${suffix} assigned findings ${findingLabels} of ${activeCount} (lane ${laneNumber}/${laneCount})`);
-    const inputPath = join(runDir, `review-input.${suffix}.json`);
-    const outputPath = join(runDir, `review-output.${suffix}.json`);
-    writeFileSync(inputPath, `${JSON.stringify({
+    const signature = reviewChunkSignature({
+      user: context.userId,
+      findings: chunk,
+      priorDecisions: decisions,
+    });
+    const checkpointPath = join(runDir, `review-checkpoint.${suffix}.json`);
+    const checkpoint = readValidatedCheckpoint(checkpointPath, signature, chunk);
+    if (checkpoint) {
+      metrics.checkpoints_reused++;
+      log(`review-agent-${suffix} reused validated checkpoint`);
+      logReviewResults(chunk, checkpoint.review, positions, activeCount);
+      decisions.push(...checkpoint.review.findings);
+      continue;
+    }
+
+    let feedback = null;
+    let completed = null;
+    for (let attempt = 0; attempt <= reviewRetries; attempt++) {
+      const attemptLabel = attempt === 0 ? '' : `.retry-${String(attempt).padStart(2, '0')}`;
+      const inputPath = join(runDir, `review-input.${suffix}${attemptLabel}.json`);
+      const outputPath = join(runDir, `review-output.${suffix}${attemptLabel}.json`);
+      writeJsonAtomic(inputPath, {
+        schema_version: 1,
+        user: context.userId,
+        prior_decisions: decisions,
+        findings: chunk,
+        ...(feedback ? { validation_feedback: feedback } : {}),
+      });
+      rmSync(outputPath, { force: true });
+      const args = [
+        'exec', '--sandbox', 'read-only', '--ephemeral', '-C', context.projectRoot,
+        '--output-schema', reviewSchemaPath,
+        '--output-last-message', outputPath,
+      ];
+      if (codex.model) args.push('--model', codex.model);
+      if (codex.reasoningEffort) args.push('-c', codexReasoningConfigArg(codex.reasoningEffort));
+      args.push('-');
+      const phaseName = `review-agent-${suffix}${attempt === 0 ? '' : `-retry-${String(attempt).padStart(2, '0')}`}`;
+      await runCommand(phaseName, agentCli, args, { stdin: reviewPrompt(inputPath) });
+      if (!existsSync(outputPath)) throw new Error(`review agent ${suffix} did not write its JSON contract`);
+
+      let rawReview = null;
+      try {
+        rawReview = JSON.parse(readFileSync(outputPath, 'utf-8'));
+        const normalized = normalizeReviewDecisions(chunk, rawReview);
+        completed = normalized.review;
+        if (normalized.normalizations.length > 0) {
+          writeJsonAtomic(join(runDir, `review-normalized.${suffix}${attemptLabel}.json`), {
+            schema_version: 1,
+            source_output: outputPath.split('/').pop(),
+            normalizations: normalized.normalizations,
+            review: completed,
+          });
+          log(`review-agent-${suffix} normalized ${normalized.normalizations.length} derived orphan field(s)`);
+        }
+        validateReviewDecisions(chunk, completed);
+        metrics.mechanical_normalizations += normalized.normalizations.length;
+      } catch (error) {
+        const errors = validationErrors(error);
+        if (attempt >= reviewRetries) {
+          throw new Error(`review-agent-${suffix} invalid after ${attempt + 1} attempt(s):\n- ${errors.join('\n- ')}`);
+        }
+        metrics.review_retries++;
+        log(`review-agent-${suffix} returned ${errors.length} contract error(s); retrying chunk (${attempt + 1}/${reviewRetries})`);
+        feedback = { errors, previous_review: rawReview };
+        completed = null;
+        continue;
+      }
+      break;
+    }
+    writeJsonAtomic(checkpointPath, {
       schema_version: 1,
       user: context.userId,
-      prior_decisions: decisions,
-      findings: chunk,
-    }, null, 2)}\n`, 'utf-8');
-    const args = [
-      'exec', '--sandbox', 'read-only', '--ephemeral', '-C', context.projectRoot,
-      '--output-schema', reviewSchemaPath,
-      '--output-last-message', outputPath,
-    ];
-    if (codex.model) args.push('--model', codex.model);
-    if (codex.reasoningEffort) args.push('-c', codexReasoningConfigArg(codex.reasoningEffort));
-    args.push('-');
-    await runCommand(`review-agent-${suffix}`, agentCli, args, { stdin: reviewPrompt(inputPath) });
-    if (!existsSync(outputPath)) throw new Error(`review agent ${suffix} did not write its JSON contract`);
-    const result = JSON.parse(readFileSync(outputPath, 'utf-8'));
-    validateReview(chunk, result);
-    logReviewResults(chunk, result, positions, activeCount);
-    decisions.push(...result.findings);
+      run_id: runId,
+      signature,
+      validated_at: new Date().toISOString(),
+      review: completed,
+    });
+    logReviewResults(chunk, completed, positions, activeCount);
+    decisions.push(...completed.findings);
   }
-  return decisions;
+  return { decisions, metrics };
 }
 
 async function main() {
@@ -437,10 +494,17 @@ async function main() {
   });
   const summary = {
     status: 'running', user: context.userId, run_id: runId,
+    resumed_from: resumeRun,
     started_at: startedAt, finished_at: null, passes: 0,
     initial_verification: null, final_verification: null,
     counts: null, reviews: [], actions: {}, needs_human_review: false,
     unresolved_findings: [], seen_findings: [], phases, logs: runDir, error: null,
+    review_resilience: {
+      semantic_retry_limit: reviewRetries,
+      retries_used: 0,
+      checkpoints_reused: 0,
+      mechanical_normalizations: 0,
+    },
     codex: {
       model: codex.model, reasoning_effort: codex.reasoningEffort,
       model_source: codex.modelSource, reasoning_effort_source: codex.reasoningEffortSource,
@@ -471,18 +535,23 @@ async function main() {
         activeCount: active.length,
         codex,
       })));
+      for (const laneResult of laneResults.filter(result => result.status === 'fulfilled')) {
+        summary.review_resilience.retries_used += laneResult.value.metrics.review_retries;
+        summary.review_resilience.checkpoints_reused += laneResult.value.metrics.checkpoints_reused;
+        summary.review_resilience.mechanical_normalizations += laneResult.value.metrics.mechanical_normalizations;
+      }
       const failedLane = laneResults.find(result => result.status === 'rejected');
       if (failedLane) throw failedLane.reason;
       const decisionsByKey = new Map();
       for (const laneResult of laneResults) {
-        for (const decision of laneResult.value) {
+        for (const decision of laneResult.value.decisions) {
           decisionsByKey.set(`${decision.finding_level}:${decision.finding_id}`, decision);
         }
       }
       const decisions = active.map(finding => decisionsByKey.get(`${finding.level}:${finding.id}`));
       const needsReview = decisions.some(decision => decision?.needs_human_review);
       const review = { status: 'completed', needs_human_review: needsReview, findings: decisions };
-      validateReview(active, review);
+      validateReviewDecisions(active, review);
       validateDuplicateConsistency(verification, review);
       const reviewPath = join(runDir, `review.pass-${String(pass).padStart(2, '0')}.json`);
       writeFileSync(reviewPath, `${JSON.stringify(review, null, 2)}\n`, 'utf-8');

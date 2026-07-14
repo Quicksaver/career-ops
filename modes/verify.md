@@ -21,9 +21,15 @@ Every active finding must receive exactly one disposition:
 
 The prompt reviewer is read-only and cannot mutate files. `apply-verification-review.mjs` and `resolve-verify-warnings.mjs` are the only mutation boundaries. Every action is written to a user-scoped append-only ledger and backed up before destructive movement or tracker rewriting.
 
+The reviewer decides whether an orphan is valid, redundant, or ambiguous, but it does not author trusted filesystem metadata. For `archive_orphan`, the runner derives the exact report path from the raw verifier finding and fixes `tracker_tsv` to `null`. Restore paths remain evidence-backed and must match a preserved tracker-addition TSV. Semantic validation reports all invalid decisions in the chunk together instead of stopping at the first item.
+
 ## Live progress
 
 Review calls contain at most five findings. Reviewer concurrency resolves as explicit `--parallel N`, then the active user's `batch.parallel`, then `1`; the same resolved model and reasoning effort are passed to every reviewer. Findings with overlapping tracker/report/orphan identities stay in the same dependency lane and are reviewed sequentially with prior decisions as binding context, while independent lanes run concurrently. Reviewers are read-only and use distinct input, output, and log files. All repairs and ledger writes remain serialized in the parent after every lane completes and aggregate consistency passes.
+
+An invalid review retries only its five-finding chunk, with every semantic validation error supplied as correction feedback. The default is two retries and can be changed with `--review-retries N`. A chunk receives an atomic validated checkpoint only after its complete response passes normalization and semantic validation. No reviewed action is applied from a partially completed or failed pass.
+
+Interrupted runs are ignored by a normal fresh invocation. An operator may explicitly continue one with `--resume-run RUN_ID`; only validated checkpoints whose user, findings, and prior-decision context exactly match their stored signature are reused. Raw reviewer output is never a resumable checkpoint. Use a fresh run when reviewer decisions should be discarded and recomputed.
 
 After each call completes, the runner writes one compact stderr line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred; report IDs are used for report-only and orphan findings. Full decisions, rationale, evidence, and action details remain in the run artifacts and final JSON summary instead of flooding the terminal. Stdout remains reserved for the single final JSON summary; `--quiet` suppresses live progress while retaining phase logs.
 
@@ -35,4 +41,4 @@ The runner loops through review, action, and raw re-verification for up to three
 - `partial` when reviewed findings still require human action;
 - `failed` only for an operational, schema, validation, or mutation failure.
 
-Report raw error/warning counts, previously seen counts, decisions made this run, deterministic actions applied, unresolved findings, backup/ledger paths, and final status. Do not describe a warning-only raw verifier result as a failed reviewed verification when every warning has a valid seen record.
+Report raw error/warning counts, previously seen counts, decisions made this run, deterministic actions applied, unresolved findings, backup/ledger paths, review retry/checkpoint/normalization counts under `review_resilience`, and final status. Do not describe a warning-only raw verifier result as a failed reviewed verification when every warning has a valid seen record.

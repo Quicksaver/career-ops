@@ -481,6 +481,13 @@ Resolve it as the explicit argument, then `batch.parallel` in
 passes the resolved value explicitly to its batch and verification invocations.
 Verification parallelizes only dependency-safe read-only review lanes; related
 findings remain sequential, and all repairs and ledger writes stay serialized.
+Each review call contains at most five findings. Aggregate all semantic errors
+from an invalid response and retry only that chunk (two retries by default via
+`--review-retries`). Derive orphan archive paths from raw verifier evidence
+rather than trusting model-authored paths. Write checkpoints only for fully
+validated chunks, apply nothing until the entire pass validates, and reuse
+checkpoints only when the operator explicitly supplies `--resume-run RUN_ID`
+and the user/finding/prior-decision signature matches.
 
 **Parallel fan-outs — reserve report numbers first.** When orchestrating N parallel evaluators (headless workers, subagents, or multiple agent windows), reserve the report-number range before spawning: `node reserve-report-num.mjs --count N` prints e.g. `042-049`; hand each worker its own number. Each slot claim is individually atomic; the contiguous range is an ergonomic allocation, not an all-or-nothing transaction — on collision the partially claimed slots are released and the reservation restarts past the collision. Release with `node reserve-report-num.mjs --release 042-049` when done (stale sentinels are GC'd after 4h, so reserve right before spawning; collision restarts leave permanent — harmless — gaps in the sequence). Never let parallel workers compute `max+1` themselves — that is the #749 race.
 

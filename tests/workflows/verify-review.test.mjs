@@ -105,6 +105,56 @@ try {
     }
   }
 
+  const archiveFindings = [636, 677, 705, 709, 712].map(num => ({
+    level: 'warning',
+    id: `orphan-report:${num}-bairesdev-2026-06-03.md`,
+    code: 'orphan_report',
+    details: { report_num: num, file: `reports/${num}-bairesdev-2026-06-03.md` },
+  }));
+  const incompleteArchiveReview = {
+    status: 'completed', needs_human_review: false,
+    findings: archiveFindings.map(finding => decision(finding, {
+      classification: 'confirmed_orphan', disposition: 'archive_orphan',
+      orphan_resolution: null,
+    })),
+  };
+  const normalizedArchiveReview = reviewLib.normalizeReviewDecisions(
+    archiveFindings, incompleteArchiveReview,
+  );
+  try {
+    reviewLib.validateReviewDecisions(archiveFindings, normalizedArchiveReview.review);
+    const canonical = normalizedArchiveReview.review.findings.every((item, index) =>
+      item.orphan_resolution?.report_file === archiveFindings[index].details.file &&
+      item.orphan_resolution?.tracker_tsv === null);
+    if (canonical && normalizedArchiveReview.normalizations.length === 5) {
+      pass('archive_orphan report metadata is derived deterministically for every finding in a chunk');
+    } else {
+      fail(`archive_orphan normalization wrong: ${JSON.stringify(normalizedArchiveReview)}`);
+    }
+  } catch (error) {
+    fail(`normalized archive_orphan decisions did not validate: ${error.message}`);
+  }
+
+  const aggregateInvalidReview = {
+    status: 'completed', needs_human_review: false,
+    findings: archiveFindings.slice(0, 2).map(finding => decision(finding, {
+      classification: 'confirmed_orphan', disposition: 'restore_orphan',
+      orphan_resolution: null,
+    })),
+  };
+  try {
+    reviewLib.validateReviewDecisions(archiveFindings.slice(0, 2), aggregateInvalidReview);
+    fail('review validation accepted multiple malformed orphan decisions');
+  } catch (error) {
+    if (error.validationErrors?.length === 2 &&
+        error.message.includes(archiveFindings[0].id) &&
+        error.message.includes(archiveFindings[1].id)) {
+      pass('review validation reports every malformed decision in the five-finding chunk');
+    } else {
+      fail(`review validation did not aggregate malformed decisions: ${error.message}`);
+    }
+  }
+
   const relatedFindings = [
     {
       level: 'warning', id: 'possible-duplicate-tracker:1:2', code: 'possible_duplicate_tracker',
@@ -280,12 +330,19 @@ try {
     "  if (input.findings.length > 5) { console.error('review chunk exceeded 5 findings'); process.exit(2); return; }",
     "  fs.appendFileSync(process.env.FAKE_CODEX_ARGV, JSON.stringify(args) + '\\n');",
     "  fs.appendFileSync(process.env.FAKE_CODEX_CONCURRENCY, JSON.stringify({ event: 'start', pid: process.pid, at: Date.now() }) + '\\n');",
-    "  const findings = input.findings.map(finding => ({",
+    "  if (process.env.FAKE_CODEX_FAIL_FINDING && input.findings.some(finding => finding.id.includes(process.env.FAKE_CODEX_FAIL_FINDING))) {",
+    "    console.error('fixture reviewer failure'); process.exit(3); return;",
+    "  }",
+    "  let findings = input.findings.map(finding => ({",
     "    finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
     "    classification: 'false_positive', disposition: 'mark_seen', severity: 'low', needs_human_review: false,",
     "    rationale: 'Fixture reviewer confirmed an unchanged formatting warning.', evidence: [],",
     "    duplicate_resolution: null, orphan_resolution: null, tracker_patch: null,",
     "  }));",
+    "  if (process.env.FAKE_CODEX_INVALID_ONCE && !fs.existsSync(process.env.FAKE_CODEX_INVALID_ONCE)) {",
+    "    fs.writeFileSync(process.env.FAKE_CODEX_INVALID_ONCE, 'invalid emitted\\n');",
+    "    findings = findings.map(finding => ({ ...finding, classification: 'actionable', disposition: 'patch_tracker', tracker_patch: null }));",
+    "  }",
     "  setTimeout(() => {",
     "    fs.appendFileSync(process.env.FAKE_CODEX_CALLS, '1\\n');",
     "    fs.writeFileSync(output, JSON.stringify({ status: 'completed', needs_human_review: false, findings }));",
@@ -344,6 +401,68 @@ try {
     pass('verify runner streams one concise line per finding after every review chunk');
   } else {
     fail(`verify runner per-finding progress was missing or verbose: ${firstProcess.stderr}`);
+  }
+
+  const retryReport = '026-retry-company-2026-01-04.md';
+  writeFileSync(join(reportsDir, retryReport), [
+    '# Evaluation: Retry Company — Engineer', '',
+    '**URL:** https://example.com/jobs/26', '',
+    '## Machine Summary', '```yaml', 'company: Retry Company',
+    'role: Engineer', 'score: 3.0', '```', '',
+  ].join('\n'));
+  writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| 26 | 2026-01-04 | Retry Company | Engineer | **3.0/5** | Evaluated | — | [26](../reports/${retryReport}) | retry fixture |\n`);
+  const invalidOnce = join(tmp, 'invalid-once.marker');
+  const retryRun = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '1', '--quiet',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_INVALID_ONCE: invalidOnce },
+    encoding: 'utf-8',
+  }));
+  if (retryRun.status === 'completed' && retryRun.review_resilience.retries_used === 1 &&
+      retryRun.review_resilience.semantic_retry_limit === 1 &&
+      retryRun.phases.some(phase => phase.name.includes('-retry-01'))) {
+    pass('invalid five-finding review contracts retry only their current chunk');
+  } else {
+    fail(`review semantic retry wrong: ${JSON.stringify(retryRun)}`);
+  }
+
+  const checkpointRows = [];
+  for (let num = 40; num < 46; num++) {
+    const reportFile = `${num}-checkpoint-company-${num}-2026-01-04.md`;
+    checkpointRows.push(`| ${num} | 2026-01-04 | Checkpoint Company ${num} | Engineer ${num} | **3.0/5** | Evaluated | — | [${num}](../reports/${reportFile}) | checkpoint fixture |`);
+    writeFileSync(join(reportsDir, reportFile), [
+      `# Evaluation: Checkpoint Company ${num} — Engineer ${num}`, '',
+      `**URL:** https://example.com/jobs/${num}`, '',
+      '## Machine Summary', '```yaml', `company: Checkpoint Company ${num}`,
+      `role: Engineer ${num}`, 'score: 3.0', '```', '',
+    ].join('\n'));
+  }
+  writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n${checkpointRows.join('\n')}\n`);
+  const checkpointFailure = spawnSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '0', '--quiet',
+  ], {
+    cwd: ROOT,
+    env: { ...runnerEnv, FAKE_CODEX_FAIL_FINDING: 'bold-score:45' },
+    encoding: 'utf-8',
+  });
+  const failedCheckpointRun = JSON.parse(checkpointFailure.stdout);
+  const checkpointFiles = readdirSync(failedCheckpointRun.logs)
+    .filter(name => name.startsWith('review-checkpoint.'));
+  const resumedCheckpointRun = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '0', '--resume-run', failedCheckpointRun.run_id,
+    '--quiet',
+  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' }));
+  if (checkpointFailure.status === 1 && failedCheckpointRun.status === 'failed' &&
+      checkpointFiles.length === 1 && resumedCheckpointRun.status === 'completed' &&
+      resumedCheckpointRun.resumed_from === failedCheckpointRun.run_id &&
+      resumedCheckpointRun.review_resilience.checkpoints_reused === 1) {
+    pass('resume-run reuses only validated matching chunk checkpoints');
+  } else {
+    fail(`review checkpoint resume wrong: failed=${JSON.stringify(failedCheckpointRun)} checkpoints=${JSON.stringify(checkpointFiles)} resumed=${JSON.stringify(resumedCheckpointRun)}`);
   }
 
   const interruptedRows = [];

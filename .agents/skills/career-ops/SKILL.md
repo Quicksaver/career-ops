@@ -262,4 +262,12 @@ in `users/{ACTIVE_USER}/config/profile.yml`, then the system default `1`.
 verification runner. Verification uses that value only for dependency-safe
 read-only review lanes; deterministic repairs and ledger writes stay serialized.
 
+Review calls contain at most five findings. Invalid responses report every
+semantic error and retry only that chunk (default two retries, configurable with
+`--review-retries`). Orphan archive paths are derived from raw verifier evidence,
+not trusted from reviewer output. Only fully validated chunks receive atomic
+checkpoints and no action is applied until the full pass validates. A normal run
+starts fresh; `--resume-run RUN_ID` explicitly reuses only matching validated
+checkpoints from an interrupted run.
+
 Execute the instructions from the loaded mode file.

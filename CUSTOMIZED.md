@@ -1047,6 +1047,25 @@ What this customizes:
   artifacts. Bounded tracker patches cover only uniquely identified company,
   Via, canonical status, score, and report-link findings. These actions are
   recorded in `data/verification-actions.jsonl` with timestamped backups.
+- Makes orphan action metadata deterministic after the reviewer chooses the
+  outcome. For `archive_orphan`, `verify-runner.mjs` derives `report_file` from
+  the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot
+  omit the required object or redirect an archive to another path. Restore
+  metadata remains constrained to a matching preserved tracker-addition TSV.
+- Aggregates all semantic contract errors in a five-finding reviewer response
+  and retries only that failed chunk, passing the complete validation feedback
+  and previous response back for correction. `--review-retries N` defaults to
+  two and is bounded to zero through five. A malformed item no longer discards
+  valid independent chunk work or hides later invalid items behind the first
+  error.
+- Writes an atomic checkpoint only after a complete chunk is normalized and
+  semantically validated. Actions remain pass-atomic: no duplicate, orphan,
+  tracker, or seen-ledger mutation starts until every lane and the aggregate
+  duplicate-consistency check succeed. A fresh invocation ignores prior run
+  artifacts; `--resume-run RUN_ID` explicitly reuses only checkpoints whose
+  signature matches the active user, exact findings, and prior lane decisions.
+  Raw/invalid reviewer outputs are never resumable decisions. Retry, checkpoint,
+  and normalization counts are exposed under `review_resilience`.
 - Keeps the prompt reviewer read-only. Only
   `resolve-verify-warnings.mjs` and `apply-verification-review.mjs` may mutate
   data, and both revalidate prompt output against deterministic verifier
@@ -1108,10 +1127,15 @@ Future merge notes:
   unsuppressed.
 - Preserve five-finding review chunks, dependency-safe lane partitioning,
   per-lane prior-decision context, isolated reviewer artifacts, aggregate
-  duplicate-keeper consistency, serialized mutations, severity-based
-  `manual_review`, and the completed-versus-partial final status contract;
-  finding volume must not make a single unconstrained prompt or silently
-  downgrade review requirements.
+  duplicate-keeper consistency, aggregated per-chunk semantic validation,
+  bounded retries, signature-checked validated checkpoints, serialized
+  pass-atomic mutations, severity-based `manual_review`, and the
+  completed-versus-partial final status contract; finding volume must not make
+  a single unconstrained prompt or silently downgrade review requirements.
+- Preserve deterministic action metadata. Reviewers may classify an orphan but
+  must not control archive paths; derive them from the verifier finding. Keep
+  normal runs fresh and checkpoint reuse explicitly opt-in through
+  `--resume-run`, with user/finding/prior-decision signature validation.
 - Preserve stable batch IDs and append-only synchronization because
   `batch-state.tsv` references those IDs across retries and resumes.
 - Preserve the stderr/stdout boundary for live progress so shell and API callers

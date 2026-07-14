@@ -100,10 +100,16 @@ Reviewed health check for pipeline data integrity. The raw checker still validat
 ```bash
 npm run verify -- --user <username>
 npm run verify -- --user <username> --parallel 4
+npm run verify -- --user <username> --review-retries 2
+npm run verify -- --user <username> --resume-run <run-id>
 npm run verify:raw -- --user <username> --json
 ```
 
 `verify-runner.mjs` reviews findings in calls of at most five. Independent dependency lanes run concurrently according to `--parallel`/`batch.parallel`; overlapping tracker, report, and orphan identities remain in one sequential lane so prior decisions stay binding. Every reviewer is read-only with separate input/output/log files. Only the parent applies supported deterministic actions or writes ledgers, serially, after all lanes and aggregate consistency checks succeed. After each review call, stderr emits one compact line per finding: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details stay in run artifacts and the final JSON object; `--quiet` suppresses terminal progress. Seen records match the finding level, stable ID, and full-payload SHA-256 fingerprint; changed findings therefore resurface automatically. It reports `completed` when all raw findings are resolved or seen, `partial` when human decisions remain, and `failed` for operational/schema/mutation failures.
+
+Semantic validation aggregates every invalid item in a five-finding response and retries only that chunk, supplying the full error list to the reviewer. `--review-retries N` defaults to `2` and accepts `0` through `5`. For orphan archives, the model chooses the classification/disposition while the runner mechanically derives the exact report path from the raw finding and sets `tracker_tsv` to `null`; the model cannot redirect the mutation to another file. A validated chunk is written as an atomic checkpoint, but actions remain pass-atomic and begin only after all lanes and cross-chunk consistency checks pass.
+
+A normal invocation always performs a fresh review and ignores old run artifacts. `--resume-run RUN_ID` is an explicit recovery option for an interrupted run: it reuses only validated checkpoints whose signature exactly matches the active user, chunk findings, and prior lane decisions. Raw output, invalid responses, and mismatched checkpoints are rerun. The final JSON records semantic retry limit/usage, reused checkpoints, and mechanical normalizations under `review_resilience`.
 
 Confirmed tracker duplicates preserve lifecycle order as `Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed`. The deterministic resolver makes the most advanced row the keeper; reviewer-selected canonical identity is only the equal-status tiebreaker. The keeper retains its original tracker ID, report, PDF, HTML, and links without renaming. Losing rows contribute their notes, then their reports/output artifacts are backed up and archived. `data/duplicate-resolutions.jsonl` records the reviewer-selected keeper, effective lifecycle keeper, override flag, rationale, evidence, and backup root.
 
