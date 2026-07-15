@@ -173,6 +173,60 @@ for (const line of lines) {
   });
 }
 
+const reportContentCache = new Map();
+function reportContent(name) {
+  if (!name) return null;
+  if (reportContentCache.has(name)) return reportContentCache.get(name);
+  try {
+    const value = readFileSync(join(REPORTS_DIR, basename(name)), 'utf-8');
+    reportContentCache.set(name, value);
+    return value;
+  } catch {
+    reportContentCache.set(name, null);
+    return null;
+  }
+}
+
+function linkedReportName(entry) {
+  const target = String(entry?.report || '').match(/\]\(([^)]+)\)/)?.[1];
+  return target ? basename(target) : null;
+}
+
+function canonicalPostingUrl(value) {
+  const raw = String(value || '').trim().replace(/&amp;/g, '&');
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    parsed.pathname = parsed.pathname
+      .replace(/\/(?:apply|application)\/?$/i, '')
+      .replace(/\/$/, '');
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/^utm_/i.test(key) || /^(?:source|gh_src|lever-source)$/i.test(key)) {
+        parsed.searchParams.delete(key);
+      }
+    }
+    parsed.searchParams.sort();
+    return parsed.toString().replace(/\?$/, '');
+  } catch {
+    return raw;
+  }
+}
+
+function extractPostingUrl(content) {
+  if (!content) return null;
+  const value = content.match(/^\*\*URL:\*\*\s*(.+)$/im)?.[1]?.trim();
+  if (!value) return null;
+  const markdownTarget = value.match(/\]\((https?:\/\/[^)]+)\)/i)?.[1];
+  const plainTarget = value.match(/https?:\/\/\S+/i)?.[0];
+  return canonicalPostingUrl(markdownTarget || plainTarget || value);
+}
+
+function postingUrlForEntry(entry) {
+  return extractPostingUrl(reportContent(linkedReportName(entry)));
+}
+
 if (!JSON_OUTPUT) {
   console.log(`\n📊 Checking ${entries.length} entries in applications.md${userContext.userId ? ` for user "${userContext.userId}"` : ''}\n`);
 }
@@ -212,29 +266,47 @@ for (const e of entries) {
   if (!companyRoleMap.has(key)) companyRoleMap.set(key, []);
   companyRoleMap.get(key).push(e);
 }
-for (const [key, group] of companyRoleMap) {
-  if (group.length > 1) {
-    const nums = group.map(e => e.num).sort((a, b) => a - b);
-    warn(
-      `Possible duplicates: ${group.map(e => `#${e.num}`).join(', ')} (${group[0].company} — ${group[0].role})`,
-      'possible_duplicate_tracker',
-      `possible-duplicate-tracker:${nums.join(':')}`,
-      {
-        tracker_nums: nums,
-        entries: group.map(e => ({
-          tracker_num: e.num,
-          date: e.date,
-          company: e.company,
-          role: e.role,
-          via: e.via,
-          score: e.score,
-          status: e.status,
-          report: e.report,
-          notes: e.notes,
-        })),
-      },
-    );
-    dupes++;
+function emitTrackerDuplicate(group, extraDetails = {}) {
+  const nums = group.map(e => e.num).sort((a, b) => a - b);
+  warn(
+    `Possible duplicates: ${group.map(e => `#${e.num}`).join(', ')} (${group[0].company} — ${group[0].role})`,
+    'possible_duplicate_tracker',
+    `possible-duplicate-tracker:${nums.join(':')}`,
+    {
+      tracker_nums: nums,
+      entries: group.map(e => ({
+        tracker_num: e.num,
+        date: e.date,
+        company: e.company,
+        role: e.role,
+        via: e.via,
+        score: e.score,
+        status: e.status,
+        report: e.report,
+        notes: e.notes,
+      })),
+      ...extraDetails,
+    },
+  );
+  dupes++;
+}
+for (const group of companyRoleMap.values()) {
+  if (group.length < 2) continue;
+  emitTrackerDuplicate(group);
+
+  // Preserve the broad company/title warning, but also expose exact canonical
+  // URL subgroups. The reviewer can safely resolve a proven subset while
+  // retaining distinct re-postings in the broad group as a seen exception.
+  const byUrl = new Map();
+  for (const entry of group) {
+    const url = postingUrlForEntry(entry);
+    if (!url) continue;
+    if (!byUrl.has(url)) byUrl.set(url, []);
+    byUrl.get(url).push(entry);
+  }
+  for (const [url, urlGroup] of byUrl) {
+    if (urlGroup.length < 2 || urlGroup.length === group.length) continue;
+    emitTrackerDuplicate(urlGroup, { match_basis: 'canonical_url', canonical_url: url });
   }
 }
 if (dupes === 0) ok('No exact duplicates found');
@@ -346,6 +418,7 @@ const normalizeKey = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 // skipped rather than grouped by company alone, which would false-positive
 // on two different roles at the same company.
 function extractRole(reportContent) {
+  if (!reportContent) return null;
   const fence = reportContent.match(/##\s*Machine Summary\s*\n+```(?:yaml|yml|json)?\s*\n([\s\S]*?)\n```/i);
   if (fence) {
     const m = fence[1].match(/^role:\s*["']?(.+?)["']?\s*$/m);
@@ -391,50 +464,59 @@ const reportsByRole = new Map();
 for (const name of reportFiles) {
   const companySlug = name.match(REPORT_FILE_RE)[2];
   let role = null;
-  try {
-    role = extractRole(readFileSync(join(REPORTS_DIR, name), 'utf-8'));
-  } catch {
-    // Unreadable report — the orphan check below still sees it.
-  }
+  role = extractRole(reportContent(name));
   if (!role) continue;
   const key = normalizeKey(companySlug) + '::' + normalizeKey(role);
   if (!reportsByRole.has(key)) reportsByRole.set(key, []);
   reportsByRole.get(key).push(name);
 }
+function emitReportDuplicate(group, extraDetails = {}) {
+  const sorted = [...group].sort();
+  warn(
+    `Duplicate reports for same company+role: ${group.join(', ')}`,
+    'duplicate_reports_same_role',
+    `duplicate-reports:${sorted.join(':')}`,
+    { files: sorted.map(name => `reports/${name}`), ...extraDetails },
+  );
+  dupReports++;
+}
 for (const group of reportsByRole.values()) {
-  if (group.length > 1) {
-    const sorted = [...group].sort();
-    warn(
-      `Duplicate reports for same company+role: ${group.join(', ')}`,
-      'duplicate_reports_same_role',
-      `duplicate-reports:${sorted.join(':')}`,
-      { files: sorted.map(name => `reports/${name}`) },
-    );
-    dupReports++;
+  if (group.length < 2) continue;
+  emitReportDuplicate(group);
+  const byUrl = new Map();
+  for (const name of group) {
+    const url = extractPostingUrl(reportContent(name));
+    if (!url) continue;
+    if (!byUrl.has(url)) byUrl.set(url, []);
+    byUrl.get(url).push(name);
+  }
+  for (const [url, urlGroup] of byUrl) {
+    if (urlGroup.length < 2 || urlGroup.length === group.length) continue;
+    emitReportDuplicate(urlGroup, { match_basis: 'canonical_url', canonical_url: url });
   }
 }
 if (dupReports === 0) ok('No duplicate reports for the same company+role');
 
 // --- Check 10: Orphan reports with no tracker row (#1425) ---
-// Every reports/NNN-*.md should be referenced by a tracker row — by the row's
-// own number, the [NNN] link text, or the NNN- prefix of the linked filename.
-// A report none of them reference is usually the loser of a tracker dedup.
-const referencedNums = new Set();
+// The linked filename is the durable ownership edge. Numeric-only matching is
+// insufficient: when two active reports accidentally share one prefix, a
+// tracker link to one of them must not make the other appear tracked too.
+// Exact link matching deliberately surfaces the unlinked collision member as
+// an orphan so reviewed verification can archive a true duplicate or restore
+// a distinct valid evaluation under a fresh number.
+const referencedReportFiles = new Set();
 for (const e of entries) {
-  referencedNums.add(e.num);
-  const linkText = e.report.match(/\[(\d+)\]/);
-  if (linkText) referencedNums.add(parseInt(linkText[1], 10));
   const linkTarget = e.report.match(/\]\(([^)]+)\)/);
   if (linkTarget) {
-    const m = linkTarget[1].split('/').pop().match(/^(\d+)-/);
-    if (m) referencedNums.add(parseInt(m[1], 10));
+    const name = linkTarget[1].split('/').pop();
+    if (REPORT_FILE_RE.test(name)) referencedReportFiles.add(name);
   }
 }
 
 let orphanReports = 0;
 for (const name of reportFiles) {
   const num = parseInt(name.match(REPORT_FILE_RE)[1], 10);
-  if (!referencedNums.has(num)) {
+  if (!referencedReportFiles.has(name)) {
     warn(`Orphan report — no tracker row references #${num}: reports/${name}`, 'orphan_report', `orphan-report:${name}`, { report_num: num, file: `reports/${name}` });
     orphanReports++;
   }

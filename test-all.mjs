@@ -4991,8 +4991,8 @@ try {
     const vpTracker = join(vpTmp, 'applications.md');
     const vpEnv = { ...process.env, CAREER_OPS_TRACKER: vpTracker, CAREER_OPS_REPORTS: vpReports };
 
-    const report = (company, role) =>
-      `# Evaluación: ${company} — ${role}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 4.2\n\`\`\`\n`;
+    const report = (company, role, url = '') =>
+      `# Evaluación: ${company} — ${role}\n\n${url ? `**URL:** ${url}\n\n` : ''}## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 4.2\n\`\`\`\n`;
 
     // #1 and #3 are the same role at Acme written by two concurrent workers;
     // #2 is a different Acme role (must NOT be flagged as duplicate);
@@ -5049,6 +5049,43 @@ try {
       fail('clean fixture did not pass duplicate/orphan report checks');
     }
 
+    // A broad company/title group can contain one exact duplicate URL subset
+    // and one genuinely distinct posting. Keep the broad warning, but emit a
+    // second exact candidate set that reviewed verification can safely resolve.
+    writeFileSync(join(vpReports, '005-subsetco-2026-01-07.md'), report(
+      'SubsetCo', 'Backend Systems Engineer',
+      'https://jobs.lever.co/subsetco/abc/apply?source=LinkedIn',
+    ));
+    writeFileSync(join(vpReports, '006-subsetco-2026-01-08.md'), report(
+      'SubsetCo', 'Backend Systems Engineer',
+      'https://www.jobs.lever.co/subsetco/abc?utm_source=feed',
+    ));
+    writeFileSync(join(vpReports, '007-subsetco-2026-01-09.md'), report(
+      'SubsetCo', 'Backend Systems Engineer',
+      'https://jobs.lever.co/subsetco/def',
+    ));
+    writeFileSync(vpTracker, readFileSync(vpTracker, 'utf-8') +
+      '| 5 | 2026-01-07 | SubsetCo | Backend Systems Engineer | 4.2/5 | Evaluated | ❌ | [5](reports/005-subsetco-2026-01-07.md) | same URL A |\n' +
+      '| 6 | 2026-01-08 | SubsetCo | Backend Systems Engineer | 4.2/5 | Evaluated | ❌ | [6](reports/006-subsetco-2026-01-08.md) | same URL B |\n' +
+      '| 7 | 2026-01-09 | SubsetCo | Backend Systems Engineer | 4.2/5 | Evaluated | ❌ | [7](reports/007-subsetco-2026-01-09.md) | distinct URL |\n');
+    const subgroupRun = spawnSync(NODE, ['verify-pipeline.mjs', '--json'], {
+      cwd: ROOT,
+      env: vpEnv,
+      encoding: 'utf-8',
+    });
+    const subgroupOutput = JSON.parse(subgroupRun.stdout);
+    const trackerSubset = subgroupOutput.warnings.find(item =>
+      item.id === 'possible-duplicate-tracker:5:6');
+    const reportSubset = subgroupOutput.warnings.find(item =>
+      item.id === 'duplicate-reports:005-subsetco-2026-01-07.md:006-subsetco-2026-01-08.md');
+    if (trackerSubset?.details?.match_basis === 'canonical_url' &&
+        reportSubset?.details?.match_basis === 'canonical_url' &&
+        subgroupOutput.warnings.some(item => item.id === 'possible-duplicate-tracker:5:6:7')) {
+      pass('mixed company/title groups expose exact canonical-URL duplicate subsets');
+    } else {
+      fail(`canonical URL duplicate subsets missing: ${subgroupRun.stdout}`);
+    }
+
     // Reusing one numeric report prefix across different slugs is a hard
     // identity collision even when company/role heuristics do not group them.
     writeFileSync(join(vpReports, '004-beta-2026-01-06.md'), report('Beta', 'Backend Engineer'));
@@ -5060,9 +5097,11 @@ try {
     });
     const collisionOutput = JSON.parse(collisionRun.stdout);
     const collision = collisionOutput.errors.find(item => item.code === 'duplicate_report_number');
+    const collisionOrphans = collisionOutput.warnings.filter(item =>
+      item.code === 'orphan_report' && /^orphan-report:004-(beta|gamma)-/.test(item.id));
     if (collisionRun.status === 1 && collision?.details?.report_num === 4 &&
-        collision.details.files.length === 2) {
-      pass('duplicate active report-number prefixes fail raw verification deterministically');
+        collision.details.files.length === 2 && collisionOrphans.length === 2) {
+      pass('duplicate active report-number prefixes fail and each unlinked file remains an exact orphan');
     } else {
       fail(`duplicate report-number collision was not a hard error: ${collisionRun.stdout}`);
     }

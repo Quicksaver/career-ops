@@ -162,6 +162,23 @@ try {
     fail(`normalized restore_orphan paths did not validate: ${error.message}`);
   }
 
+  const synthesizedRestoreReview = {
+    status: 'completed', needs_human_review: false,
+    findings: [decision(archiveFindings[0], {
+      classification: 'confirmed_orphan', disposition: 'restore_orphan',
+      orphan_resolution: {
+        report_file: archiveFindings[0].details.file,
+        tracker_tsv: null,
+      },
+    })],
+  };
+  try {
+    reviewLib.validateReviewDecisions([archiveFindings[0]], synthesizedRestoreReview);
+    pass('restore_orphan accepts report-derived reconstruction when no merged TSV survives');
+  } catch (error) {
+    fail(`report-derived restore_orphan was rejected: ${error.message}`);
+  }
+
   const aggregateInvalidReview = {
     status: 'completed', needs_human_review: false,
     findings: archiveFindings.slice(0, 2).map(finding => decision(finding, {
@@ -470,6 +487,43 @@ try {
     fail(`legacy escaped TSV restore wrong: ${JSON.stringify(legacyRestored)}`);
   }
 
+  writeFileSync(join(reportsDir, '001-collision-distinct-2026-01-05.md'), [
+    '# Evaluation: Collision Distinct — Platform Engineer', '',
+    '**Date:** 2026-01-05', '**URL:** https://example.com/jobs/collision-distinct', '',
+    '## Machine Summary', '```yaml', 'company: Collision Distinct',
+    'role: Platform Engineer', 'score: 2.6', 'final_decision: Skip', '```', '',
+  ].join('\n'));
+  writeFileSync(join(outputDir, '001-collision-distinct-2026-01-05.pdf'), 'fixture\n');
+  const collisionOrphanVerification = {
+    errors: [], warnings: [{
+      id: 'orphan-report:001-collision-distinct-2026-01-05.md', code: 'orphan_report',
+      message: 'Distinct report collided with occupied #1',
+      details: { report_num: 1, file: 'reports/001-collision-distinct-2026-01-05.md' },
+    }],
+  };
+  const collisionOrphanFinding = reviewLib.verificationFindings(collisionOrphanVerification)[0];
+  const collisionRestored = applyReview(collisionOrphanVerification, [decision(collisionOrphanFinding, {
+    classification: 'confirmed_orphan', disposition: 'restore_orphan',
+    rationale: 'The report is a distinct complete evaluation and needs a fresh identity.',
+    evidence: [{ path: 'reports/001-collision-distinct-2026-01-05.md', observation: 'Complete Machine Summary and distinct URL.' }],
+    orphan_resolution: {
+      report_file: 'reports/001-collision-distinct-2026-01-05.md', tracker_tsv: null,
+    },
+  })]);
+  const collisionTracker = readFileSync(trackerPath, 'utf-8');
+  const restoredCollisionReport = readdirSync(reportsDir)
+    .find(name => /-collision-distinct-2026-01-05\.md$/.test(name));
+  const restoredCollisionNum = Number.parseInt(restoredCollisionReport?.match(/^(\d+)-/)?.[1] || '', 10);
+  if (collisionRestored.tracker_rows_restored === 1 && collisionRestored.artifacts_archived === 0 &&
+      restoredCollisionNum > 12 && collisionTracker.includes(`| ${restoredCollisionNum} |`) &&
+      collisionTracker.includes('Collision Distinct') &&
+      existsSync(join(outputDir, restoredCollisionReport.replace(/\.md$/, '.pdf'))) &&
+      !existsSync(join(reportsDir, '001-collision-distinct-2026-01-05.md'))) {
+    pass('a distinct orphan with an occupied report number is reconstructed, renumbered, and keeps its PDF');
+  } else {
+    fail(`collision orphan reconstruction wrong: result=${JSON.stringify(collisionRestored)} report=${restoredCollisionReport} tracker=${collisionTracker}`);
+  }
+
   const archiveVerification = {
     errors: [],
     warnings: [{
@@ -511,6 +565,56 @@ try {
     pass('bounded tracker patch repairs an evidence-backed verifier finding');
   } else {
     fail(`tracker patch wrong: ${JSON.stringify(patched)}`);
+  }
+
+  const missingReportUser = 'missingreport';
+  const missingReportRoot = join(usersDir, missingReportUser);
+  mkdirSync(join(missingReportRoot, 'data'), { recursive: true });
+  mkdirSync(join(missingReportRoot, 'reports'), { recursive: true });
+  mkdirSync(join(missingReportRoot, 'output'), { recursive: true });
+  writeFileSync(join(missingReportRoot, 'data/applications.md'), [
+    '# Applications Tracker', '',
+    '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |',
+    '|---|------|---------|------|-------|--------|-----|--------|-------|',
+    '| 30 | 2026-01-01 | Missing Report Co | Engineer | 3.0/5 | Evaluated | ❌ | [30](../reports/030-missing-report-co-2026-01-01.md) | keeper |',
+    '| 31 | 2026-01-02 | Missing Report Co | Engineer | 3.0/5 | Evaluated | ❌ | [31](../reports/031-missing-report-co-2026-01-02.md) | losing row with broken link |',
+    '',
+  ].join('\n'));
+  writeFileSync(join(missingReportRoot, 'reports/030-missing-report-co-2026-01-01.md'), [
+    '# Evaluation: Missing Report Co — Engineer', '',
+    '**URL:** https://example.com/jobs/missing-report', '',
+  ].join('\n'));
+  const missingReportWarning = {
+    id: 'possible-duplicate-tracker:30:31', code: 'possible_duplicate_tracker',
+    message: 'Missing losing report fixture',
+    details: { tracker_nums: [30, 31] },
+  };
+  const missingReportVerificationPath = join(tmp, 'missing-report-verification.json');
+  const missingReportTriagePath = join(tmp, 'missing-report-triage.json');
+  writeFileSync(missingReportVerificationPath, JSON.stringify({ errors: [], warnings: [missingReportWarning] }));
+  writeFileSync(missingReportTriagePath, JSON.stringify({
+    warnings: [{
+      warning_id: missingReportWarning.id,
+      warning_code: missingReportWarning.code,
+      classification: 'confirmed_duplicate',
+      duplicate_resolution: {
+        keeper_tracker_num: 30,
+        duplicate_tracker_nums: [31],
+        keeper_report_file: null,
+        duplicate_report_files: [],
+      },
+    }],
+  }));
+  const missingReportResolved = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'resolve-verify-warnings.mjs'), '--user', missingReportUser,
+    '--verification', missingReportVerificationPath, '--triage', missingReportTriagePath, '--json',
+  ], { cwd: ROOT, env, encoding: 'utf-8' }));
+  const missingReportTracker = readFileSync(join(missingReportRoot, 'data/applications.md'), 'utf-8');
+  if (missingReportResolved.tracker_rows_removed === 1 && missingReportResolved.reports_archived === 0 &&
+      missingReportTracker.includes('| 30 |') && !missingReportTracker.includes('| 31 |')) {
+    pass('duplicate repair removes a losing tracker row even when its report link is already broken');
+  } else {
+    fail(`missing losing report blocked tracker repair: ${JSON.stringify(missingReportResolved)}`);
   }
 
   writeFileSync(trackerPath, readFileSync(trackerPath, 'utf-8').replace('| 4.0/5 |', '| **4.0/5** |'));
@@ -619,6 +723,24 @@ try {
     "      };",
     "    });",
     "  }",
+    "  if (process.env.FAKE_CODEX_PATCH_VIA) {",
+    "    findings = input.findings.map(finding => {",
+    "      if (finding.code !== 'missing_via_value') return {",
+    "        finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
+    "        classification: 'false_positive', disposition: 'mark_seen', severity: 'low', needs_human_review: false,",
+    "        rationale: 'Fixture reviewer accepted an unrelated finding.', evidence: [],",
+    "        duplicate_resolution: null, orphan_resolution: null, tracker_patch: null,",
+    "      };",
+    "      return {",
+    "        finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
+    "        classification: 'actionable', disposition: 'patch_tracker', severity: 'medium', needs_human_review: false,",
+    "        rationale: 'The report identifies the intermediary channel.',",
+    "        evidence: [{ path: 'reports/001-via-agency-2026-01-01.md', observation: 'Machine Summary via is Via Agency.' }],",
+    "        duplicate_resolution: null, orphan_resolution: null,",
+    "        tracker_patch: { tracker_num: finding.details.tracker_num, company: null, via: 'Via Agency', status: null, score: null, report: null },",
+    "      };",
+    "    });",
+    "  }",
     "  if (process.env.FAKE_CODEX_MANUAL_REVIEW) {",
     "    findings = input.findings.map(finding => ({",
     "      finding_id: finding.id, finding_code: finding.code, finding_level: finding.level,",
@@ -681,6 +803,44 @@ try {
   } else {
     fail(`verify runner lifecycle wrong: first=${JSON.stringify(firstRun)} second=${JSON.stringify(secondRun)} calls=${calls}`);
   }
+
+  const viaUser = 'viamigration';
+  const viaRoot = join(usersDir, viaUser);
+  mkdirSync(join(viaRoot, 'data'), { recursive: true });
+  mkdirSync(join(viaRoot, 'reports'), { recursive: true });
+  writeFileSync(join(viaRoot, 'data/applications.md'), [
+    '# Applications Tracker', '',
+    '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |',
+    '|---|------|---------|------|-------|--------|-----|--------|-------|',
+    '| 1 | 2026-01-01 | ? | Backend Engineer | 3.0/5 | Evaluated | ❌ | [1](../reports/001-via-agency-2026-01-01.md) | agency role |',
+    '',
+  ].join('\n'));
+  writeFileSync(join(viaRoot, 'reports/001-via-agency-2026-01-01.md'), [
+    '# Evaluation: Via Agency — Backend Engineer', '',
+    '**URL:** https://example.com/jobs/via-agency', '',
+    '## Machine Summary', '```yaml', 'company: "?"', 'company_confidential: true',
+    'via: Via Agency', 'role: Backend Engineer', 'score: 3.0', '```', '',
+  ].join('\n'));
+  const viaRunnerEnv = {
+    ...runnerEnv,
+    FAKE_CODEX_PATCH_VIA: '1',
+    FAKE_CODEX_CALLS: join(tmp, 'via-codex-calls.txt'),
+    FAKE_CODEX_CONCURRENCY: join(tmp, 'via-codex-concurrency.jsonl'),
+    FAKE_CODEX_ARGV: join(tmp, 'via-codex-argv.jsonl'),
+  };
+  const viaRun = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', viaUser, '--max-passes', '2',
+    '--parallel', '1', '--quiet', '--json',
+  ], { cwd: ROOT, env: viaRunnerEnv, encoding: 'utf-8' }));
+  const viaTracker = readFileSync(join(viaRoot, 'data/applications.md'), 'utf-8');
+  if (viaRun.status === 'completed' && viaRun.actions.via_schema_migrations === 1 &&
+      viaRun.actions.tracker_rows_patched === 1 && /\| Company \| Via \| Role \|/.test(viaTracker) &&
+      /\| \? \| Via Agency \| Backend Engineer \|/.test(viaTracker)) {
+    pass('reviewed verification migrates the Via schema before applying evidence-backed row patches');
+  } else {
+    fail(`Via schema migration workflow wrong: run=${JSON.stringify(viaRun)} tracker=${viaTracker}`);
+  }
+
   if (firstProcess.stderr.includes('2 dependency-safe lane(s), up to 2 concurrent reviewer(s)') &&
       firstProcess.stderr.includes(`[verify] run-id: ${firstRun.run_id}`) &&
       firstProcess.stderr.includes(`[verify] logs: ${firstRun.logs}`) &&
@@ -839,35 +999,21 @@ try {
     'role: Backend Engineer', 'score: 3.0', '```', '',
   ].join('\n'));
   const callsBeforeApplyResume = readFileSync(callCount, 'utf-8').trim().split(/\r?\n/).filter(Boolean).length;
-  const pendingApplyFailure = spawnSync(process.execPath, [
+  const reportDerivedRestoreRun = JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
     '--parallel', '1', '--review-retries', '0', '--quiet', '--json',
   ], {
     cwd: ROOT,
     env: { ...runnerEnv, FAKE_CODEX_RESTORE_ORPHAN: '1' },
     encoding: 'utf-8',
-  });
-  const pendingApplyRun = JSON.parse(pendingApplyFailure.stdout);
-  writeFileSync(join(mergedDir, '70.tsv'),
-    `070\t2026-01-07\tResume Orphan\tBackend Engineer\tEvaluated\t3.0/5\t—\t[070](reports/${resumeReportFile})\tresume fixture\n`);
-  const resumedApplyRun = JSON.parse(execFileSync(process.execPath, [
-    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
-    '--parallel', '1', '--review-retries', '0', '--resume-run', pendingApplyRun.run_id,
-    '--quiet', '--json',
-  ], {
-    cwd: ROOT,
-    env: { ...runnerEnv, FAKE_CODEX_RESTORE_ORPHAN: '1' },
-    encoding: 'utf-8',
   }));
   const callsAfterApplyResume = readFileSync(callCount, 'utf-8').trim().split(/\r?\n/).filter(Boolean).length;
-  if (pendingApplyFailure.status === 1 && pendingApplyRun.status === 'failed' &&
-      pendingApplyRun.error.includes('restore artifacts are missing') &&
-      resumedApplyRun.status === 'completed' && resumedApplyRun.actions.tracker_rows_restored === 1 &&
-      resumedApplyRun.review_resilience.checkpoints_reused === 1 &&
+  if (reportDerivedRestoreRun.status === 'completed' &&
+      reportDerivedRestoreRun.actions.tracker_rows_restored === 1 &&
       callsAfterApplyResume - callsBeforeApplyResume === 1) {
-    pass('resume continues a fingerprint-matched pending apply without repeating prompt review');
+    pass('verify applies a report-derived orphan restoration without requiring a historical TSV');
   } else {
-    fail(`pending apply resume wrong: failed=${JSON.stringify(pendingApplyRun)} resumed=${JSON.stringify(resumedApplyRun)} callDelta=${callsAfterApplyResume - callsBeforeApplyResume}`);
+    fail(`report-derived runner restoration wrong: run=${JSON.stringify(reportDerivedRestoreRun)} callDelta=${callsAfterApplyResume - callsBeforeApplyResume}`);
   }
 
   const humanRun = spawnSync(process.execPath, [

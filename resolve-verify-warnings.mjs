@@ -257,6 +257,11 @@ async function main() {
       .map(num => reportTarget(trackerRows.get(num).report))
       .filter(name => name && name !== keeperName)
       .map(name => `reports/${name}`)
+      // A duplicate tracker row can already have a broken report link. Removing
+      // that losing row still resolves the tracker duplicate; there is no file
+      // to archive, so do not manufacture a derived report plan that makes the
+      // entire otherwise-safe batch fail.
+      .filter(file => existsSync(join(context.userRoot, file)))
       .filter(file => !explicitlyResolvedReports.has(file) && !implicitlyResolvedReports.has(file));
     if (duplicates.length === 0) continue;
     for (const file of duplicates) implicitlyResolvedReports.add(file);

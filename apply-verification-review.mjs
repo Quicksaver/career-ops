@@ -5,10 +5,12 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
 } from 'fs';
 import { basename, dirname, extname, join, relative, resolve } from 'path';
+import yaml from 'js-yaml';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -121,6 +123,70 @@ function parseMergedTsv(path) {
   };
 }
 
+function cleanScalar(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/^['"]|['"]$/g, '');
+}
+
+function reportMetadata(reportPath) {
+  const content = readFileSync(reportPath, 'utf-8');
+  const summaryMatch = content.match(/##\s*Machine Summary\s*\n+```(?:yaml|yml|json)?\s*\n([\s\S]*?)\n```/i);
+  let summary = {};
+  if (summaryMatch) {
+    try {
+      const parsed = yaml.load(summaryMatch[1]);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) summary = parsed;
+    } catch {}
+  }
+  const title = content.split(/\r?\n/).find(line => /^#\s+/.test(line)) || '';
+  const titleBody = title.replace(/^#\s+(?:Evaluation|Evaluación|Offer Evaluation)\s*:\s*/i, '').trim();
+  const titleParts = titleBody.split(/\s+[\-–—]\s+/);
+  const header = label => content.match(new RegExp(`^\\*\\*${label}:\\*\\*\\s*(.+)$`, 'im'))?.[1]?.trim() || '';
+  const table = label => content.match(new RegExp(`^\\|\\s*${label}\\s*\\|\\s*([^|]+)\\|`, 'im'))?.[1]?.trim() || '';
+  const companyConfidential = summary.company_confidential === true;
+  const company = companyConfidential
+    ? '?'
+    : cleanScalar(summary.company) || table('Company') || titleParts[0]?.trim() || '';
+  const role = cleanScalar(summary.role) || table('Role') || titleParts.slice(1).join(' - ').trim();
+  const rawScore = cleanScalar(summary.score) || header('Score') || table('Score');
+  const scoreNumber = rawScore.match(/\d+(?:\.\d+)?/)?.[0] || '';
+  const score = scoreNumber ? `${scoreNumber}/5` : '';
+  const explicitStatus = header('Status') || table('Status');
+  const finalDecision = cleanScalar(summary.final_decision);
+  const statusSource = explicitStatus || finalDecision;
+  const normalizedStatus = String(statusSource).toLowerCase();
+  let status = 'Evaluated';
+  if (/\b(skip|discard|no aplicar|closed)\b/.test(normalizedStatus)) status = 'SKIP';
+  else if (/\breject/.test(normalizedStatus)) status = 'Rejected';
+  else if (/\brespond/.test(normalizedStatus)) status = 'Responded';
+  else if (/\binterview/.test(normalizedStatus)) status = 'Interview';
+  else if (/\boffer\b/.test(normalizedStatus)) status = 'Offer';
+  else if (/\b(?:hired|accepted)\b/.test(normalizedStatus)) status = 'Hired';
+  else if (/\bapplied\b/.test(normalizedStatus)) status = 'Applied';
+  const filenameDate = basename(reportPath).match(/-(\d{4}-\d{2}-\d{2})\.md$/)?.[1] || '';
+  const date = header('Date') || filenameDate;
+  const via = cleanScalar(summary.via);
+  const nextAction = cleanScalar(summary.next_action);
+  return {
+    content, company, role, score, status, date, via,
+    notes: nextAction || (finalDecision ? `Restored evaluation; decision: ${finalDecision}.` : 'Restored evaluation from verified report.'),
+  };
+}
+
+function nextAvailableNumber(trackerRows) {
+  let max = 0;
+  for (const num of trackerRows.keys()) max = Math.max(max, num);
+  const reportsRoot = userPath(context, 'reports');
+  if (existsSync(reportsRoot)) {
+    for (const name of readdirSync(reportsRoot)) {
+      const num = Number.parseInt(name.match(/^(\d+)-/)?.[1] || '', 10);
+      if (Number.isInteger(num)) max = Math.max(max, num);
+    }
+  }
+  return max + 1;
+}
+
 function trackerLine(entry, colmap) {
   const max = Math.max(...Object.values(colmap));
   const parts = Array(max + 2).fill('');
@@ -180,9 +246,6 @@ async function main() {
       const expectedReport = finding.details?.file;
       if (decision.orphan_resolution.report_file !== expectedReport) {
         throw new Error(`${finding.id}: orphan report path does not match deterministic verification`);
-      }
-      if (decision.disposition === 'restore_orphan' && !decision.orphan_resolution.tracker_tsv) {
-        throw new Error(`${finding.id}: restore_orphan requires tracker_tsv evidence`);
       }
       orphanActions.push({ finding, decision });
       continue;
@@ -312,19 +375,87 @@ async function main() {
 
     for (const item of orphanActions.filter(item => item.decision.disposition === 'restore_orphan')) {
       const { report_file: reportFile, tracker_tsv: trackerTsv } = item.decision.orphan_resolution;
-      const reportPath = safeUserPath(reportFile, /^reports\/[A-Za-z0-9._-]+\.md$/, 'orphan report');
-      const tsvPath = safeUserPath(trackerTsv, /^batch\/tracker-additions\/merged\/[A-Za-z0-9._-]+\.tsv$/, 'orphan tracker TSV');
-      if (!existsSync(reportPath) || !existsSync(tsvPath)) throw new Error(`${item.finding.id}: restore artifacts are missing`);
-      const entry = parseMergedTsv(tsvPath);
-      if (entry.num !== item.finding.details?.report_num || basename(reportPath).match(/^\d+/)?.[0] !== String(entry.num).padStart(3, '0')) {
-        throw new Error(`${item.finding.id}: TSV/report number mismatch`);
+      let reportPath = safeUserPath(reportFile, /^reports\/[A-Za-z0-9._-]+\.md$/, 'orphan report');
+      if (!existsSync(reportPath)) throw new Error(`${item.finding.id}: orphan report is missing`);
+      const originalNum = item.finding.details?.report_num;
+      if (!Number.isInteger(originalNum) || originalNum < 1) throw new Error(`${item.finding.id}: invalid report number evidence`);
+      const collision = trackerRows.has(originalNum);
+      const tsvPath = trackerTsv
+        ? safeUserPath(trackerTsv, /^batch\/tracker-additions\/merged\/[A-Za-z0-9._-]+\.tsv$/, 'orphan tracker TSV')
+        : null;
+      let entry = null;
+      if (tsvPath && existsSync(tsvPath) && !collision) {
+        entry = parseMergedTsv(tsvPath);
+        if (entry.num !== originalNum || basename(reportPath).match(/^\d+/)?.[0] !== String(entry.num).padStart(3, '0')) {
+          throw new Error(`${item.finding.id}: TSV/report number mismatch`);
+        }
+        const linked = entry.report.match(/\]\(([^)]+)\)/)?.[1];
+        if (!linked || basename(linked) !== basename(reportPath)) throw new Error(`${item.finding.id}: TSV does not reference the orphan report`);
+      } else {
+        const metadata = reportMetadata(reportPath);
+        const missing = ['date', 'company', 'role', 'score'].filter(field => !metadata[field]);
+        if (missing.length > 0) {
+          throw new Error(`${item.finding.id}: report cannot synthesize a tracker row; missing ${missing.join(', ')}`);
+        }
+        entry = {
+          num: collision ? nextAvailableNumber(trackerRows) : originalNum,
+          date: metadata.date,
+          company: metadata.company,
+          role: metadata.role,
+          status: metadata.status,
+          score: metadata.score,
+          pdf: '❌',
+          report: '',
+          notes: metadata.notes,
+          via: metadata.via,
+          location: '',
+        };
       }
-      const linked = entry.report.match(/\]\(([^)]+)\)/)?.[1];
-      if (!linked || basename(linked) !== basename(reportPath)) throw new Error(`${item.finding.id}: TSV does not reference the orphan report`);
       if (trackerRows.has(entry.num)) throw new Error(`${item.finding.id}: tracker number #${entry.num} is already used`);
+
+      const originalReportName = basename(reportPath);
+      const originalStem = originalReportName.slice(0, -extname(originalReportName).length);
+      if (entry.num !== originalNum) {
+        const prefix = String(entry.num).padStart(3, '0');
+        const renamedReportName = originalReportName.replace(/^\d+/, prefix);
+        const renamedReportPath = userPath(context, `reports/${renamedReportName}`);
+        if (existsSync(renamedReportPath)) throw new Error(`${item.finding.id}: allocated report target already exists`);
+        mkdirSync(backupRoot, { recursive: true });
+        const backupReportDir = join(backupRoot, 'reports');
+        mkdirSync(backupReportDir, { recursive: true });
+        const backupReport = join(backupReportDir, originalReportName);
+        copyFileSync(reportPath, backupReport);
+        renameSync(reportPath, renamedReportPath);
+        moved.push({ from: reportPath, to: renamedReportPath, backup: backupReport });
+        const renamedStem = renamedReportName.slice(0, -extname(renamedReportName).length);
+        const updated = readFileSync(renamedReportPath, 'utf-8')
+          .split(originalReportName).join(renamedReportName)
+          .split(originalStem).join(renamedStem);
+        writeFileAtomic(renamedReportPath, updated);
+        reportPath = renamedReportPath;
+        for (const extension of ['.html', '.pdf', '.tex']) {
+          const sourceArtifact = userPath(context, `output/${originalStem}${extension}`);
+          if (!existsSync(sourceArtifact)) continue;
+          const targetArtifact = userPath(context, `output/${renamedStem}${extension}`);
+          if (existsSync(targetArtifact)) throw new Error(`${item.finding.id}: allocated output target already exists`);
+          const backupOutputDir = join(backupRoot, 'output');
+          mkdirSync(backupOutputDir, { recursive: true });
+          const backupArtifact = join(backupOutputDir, basename(sourceArtifact));
+          copyFileSync(sourceArtifact, backupArtifact);
+          renameSync(sourceArtifact, targetArtifact);
+          moved.push({ from: sourceArtifact, to: targetArtifact, backup: backupArtifact });
+        }
+      }
+      const finalReportName = basename(reportPath);
+      const finalStem = finalReportName.slice(0, -extname(finalReportName).length);
+      entry.pdf = existsSync(userPath(context, `output/${finalStem}.pdf`)) ? '✅' : '❌';
+      entry.report = normalizeReportLink(
+        `[${String(entry.num).padStart(3, '0')}](reports/${finalReportName})`,
+        dirname(appsPath),
+        canonicalUserRoot,
+      );
       if (entry.company === '?' && !entry.via) throw new Error(`${item.finding.id}: confidential orphan has no Via evidence`);
       if (entry.via && colmap.via == null) throw new Error(`${item.finding.id}: tracker cannot store orphan Via evidence`);
-      entry.report = normalizeReportLink(entry.report, dirname(appsPath), canonicalUserRoot);
       const line = trackerLine(entry, colmap);
       insertTrackerLine(lines, line);
       trackerRows.set(entry.num, [{ ...entry, raw: line }]);
@@ -332,7 +463,8 @@ async function main() {
       actionRecords.push({
         schema_version: 1, resolved_at: reviewedAt, run_id: runId,
         action: 'restore_orphan', finding_id: item.finding.id,
-        report_file: reportFile, tracker_tsv: trackerTsv, tracker_num: entry.num,
+        report_file: reportFile, restored_report_file: `reports/${finalReportName}`,
+        tracker_tsv: trackerTsv, tracker_num: entry.num, renumbered: entry.num !== originalNum,
         rationale: item.decision.rationale, evidence: item.decision.evidence, backup_root: backupRoot,
       });
     }

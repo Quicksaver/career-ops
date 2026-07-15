@@ -1039,24 +1039,30 @@ What this customizes:
 - Preserves duplicate lifecycle order as `Hired > Offer > Interview > Responded
   > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row becomes
   the keeper together with its existing tracker ID, report, HTML, PDF, and
-  links; reviewer-selected canonical identity breaks equal-status ties only.
+  links. Equal-status copies proven to be the same canonical posting keep the
+  most recent complete evaluation, then the highest ID, without escalating a
+  safe identity tie to human review.
   Losing notes are merged and losing artifacts are backed up and archived. The
   ledger records the reviewer keeper, effective lifecycle keeper, and override.
-- Adds deterministic orphan handling: restore a valid lost tracker row only
-  from its matching preserved `batch/tracker-additions/merged/*.tsv`, or back up
-  and archive a confirmed redundant/obsolete orphan report and matching output
-  artifacts. Bounded tracker patches cover only uniquely identified company,
+- Adds deterministic orphan handling: restore a valid lost tracker row from a
+  matching preserved `batch/tracker-additions/merged/*.tsv` when available, or
+  reconstruct date/company/role/score/status/Via from a complete verified report
+  when the historical TSV no longer exists. An occupied report number receives
+  a fresh ID and its report plus matching HTML/PDF/TeX artifacts are renamed as
+  one backed-up transaction. Confirmed redundant/obsolete orphan reports and
+  matching output artifacts are archived. Bounded tracker patches cover company,
   Via, canonical status, score, and report-link findings. These actions are
   recorded in `data/verification-actions.jsonl` with timestamped backups.
 - Makes orphan action metadata deterministic after the reviewer chooses the
   outcome. For `archive_orphan`, `verify-runner.mjs` derives `report_file` from
   the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot
   omit the required object or redirect an archive to another path. Restore
-  report paths are fixed to verifier evidence and tracker TSV paths are
+  report paths are fixed to verifier evidence and optional tracker TSV paths are
   canonicalized from project-relative `users/{USER}/batch/...` output to the
   user-root-relative `batch/tracker-additions/merged/*.tsv` contract before
-  semantic validation. Restore metadata remains constrained to a matching
-  preserved tracker-addition TSV. The restore parser also accepts the two
+  semantic validation. A null TSV explicitly selects report-derived restoration;
+  the model never selects the resulting number or rename targets. The restore
+  parser also accepts the two
   historical merged artifacts whose separators were stored as literal `\t`
   text; current batch artifact validation continues to reject that malformed
   representation, so this compatibility path does not weaken new writes.
@@ -1082,10 +1088,24 @@ What this customizes:
   confirm the duplicate, the tracker-selected canonical identity mechanically
   determines the report keeper.
 - Treats active tracker links and report contents as current identity while
-  retaining batch completion logs as historical provenance only. The raw
-  verifier now emits a blocking `duplicate_report_number` error when multiple
-  active report files reuse one numeric prefix; reviewers must not infer
-  ownership through stale batch reservations.
+  retaining batch completion logs as historical provenance only. Orphan checks
+  use the exact linked report filename, so a tracker link cannot accidentally
+  claim every active file sharing its numeric prefix. A report-number collision
+  is resolved through those exact orphan findings: the linked file owns the old
+  identity, while each unlinked file is independently restored under a fresh ID
+  or archived. Prompt review remains required only when the evidence cannot
+  support either bounded disposition.
+- Keeps broad company/title duplicate warnings, and additionally emits exact
+  tracker/report subgroups when only a subset shares one canonical posting URL.
+  This lets prompt review resolve the proven subset and record the mixed broad
+  group as seen without merging distinct repostings.
+- Migrates a legacy tracker lacking the Via column before prompt review, then
+  reverifies so missing per-row Via values become bounded evidence-backed
+  patches rather than a schema-wide wave of human-review decisions.
+- Allows tracker duplicate repair to proceed when a losing row already points
+  at a missing report. Removing the duplicate row remains valid; the resolver
+  no longer manufactures an implicit archive plan for a file that does not
+  exist.
 - Aggregates all semantic contract errors in a five-finding reviewer response
   and retries only that failed chunk, passing the complete validation feedback
   and previous response back for correction. `--review-retries N` defaults to
