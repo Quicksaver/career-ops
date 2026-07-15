@@ -5054,15 +5054,15 @@ try {
     // second exact candidate set that reviewed verification can safely resolve.
     writeFileSync(join(vpReports, '005-subsetco-2026-01-07.md'), report(
       'SubsetCo', 'Backend Systems Engineer',
-      'https://jobs.lever.co/subsetco/abc/apply?source=LinkedIn',
+      'https://jackandjill.ai/jobs/engineer/backend-systems-engineer-at-subsetco-11111111-1111-4111-8111-111111111111?feed_run=48h%3A414&src=LinkedIn',
     ));
     writeFileSync(join(vpReports, '006-subsetco-2026-01-08.md'), report(
       'SubsetCo', 'Backend Systems Engineer',
-      'https://www.jobs.lever.co/subsetco/abc?utm_source=feed',
+      'https://www.jackandjill.ai/jobs/engineer/backend-engineer-at-subsetco-11111111-1111-4111-8111-111111111111?utm_source=feed',
     ));
     writeFileSync(join(vpReports, '007-subsetco-2026-01-09.md'), report(
       'SubsetCo', 'Backend Systems Engineer',
-      'https://jobs.lever.co/subsetco/def',
+      'https://jackandjill.ai/jobs/engineer/backend-systems-engineer-at-subsetco-22222222-2222-4222-8222-222222222222',
     ));
     writeFileSync(vpTracker, readFileSync(vpTracker, 'utf-8') +
       '| 5 | 2026-01-07 | SubsetCo | Backend Systems Engineer | 4.2/5 | Evaluated | ❌ | [5](reports/005-subsetco-2026-01-07.md) | same URL A |\n' +
@@ -5079,6 +5079,7 @@ try {
     const reportSubset = subgroupOutput.warnings.find(item =>
       item.id === 'duplicate-reports:005-subsetco-2026-01-07.md:006-subsetco-2026-01-08.md');
     if (trackerSubset?.details?.match_basis === 'canonical_url' &&
+        trackerSubset?.details?.canonical_url === 'https://jackandjill.ai/_posting/11111111-1111-4111-8111-111111111111' &&
         reportSubset?.details?.match_basis === 'canonical_url' &&
         subgroupOutput.warnings.some(item => item.id === 'possible-duplicate-tracker:5:6:7')) {
       pass('mixed company/title groups expose exact canonical-URL duplicate subsets');

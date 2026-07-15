@@ -202,8 +202,16 @@ function canonicalPostingUrl(value) {
     parsed.pathname = parsed.pathname
       .replace(/\/(?:apply|application)\/?$/i, '')
       .replace(/\/$/, '');
+    // Aggregators may rewrite the descriptive slug while retaining the stable
+    // posting UUID. On one host that UUID is a stronger identity than any
+    // surrounding category or title text.
+    const postingUuid = parsed.pathname.match(
+      /([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
+    )?.[1];
+    if (postingUuid) parsed.pathname = `/_posting/${postingUuid.toLowerCase()}`;
     for (const key of [...parsed.searchParams.keys()]) {
-      if (/^utm_/i.test(key) || /^(?:source|gh_src|lever-source)$/i.test(key)) {
+      if (/^utm_/i.test(key) ||
+          /^(?:source|src|feed_run|ref|referrer|trackingid|tracking_id|trk|li_fat_id|gh_src|lever-source)$/i.test(key)) {
         parsed.searchParams.delete(key);
       }
     }

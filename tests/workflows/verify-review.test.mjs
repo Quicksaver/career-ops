@@ -394,6 +394,95 @@ try {
     fail(`broad report superset incorrectly conflicted with tracker subset: ${error.message}`);
   }
 
+  const nestedDuplicateFindings = [
+    {
+      level: 'warning', id: 'possible-duplicate-tracker:1:2:3', code: 'possible_duplicate_tracker',
+      details: {
+        tracker_nums: [1, 2, 3],
+        entries: [
+          { tracker_num: 1, report: '[1](../reports/001-one.md)' },
+          { tracker_num: 2, report: '[2](../reports/002-two.md)' },
+          { tracker_num: 3, report: '[3](../reports/003-three.md)' },
+        ],
+      },
+    },
+    {
+      level: 'warning', id: 'duplicate-reports:001-one.md:002-two.md:003-three.md',
+      code: 'duplicate_reports_same_role',
+      details: { files: ['reports/001-one.md', 'reports/002-two.md', 'reports/003-three.md'] },
+    },
+    {
+      level: 'warning', id: 'possible-duplicate-tracker:2:3', code: 'possible_duplicate_tracker',
+      details: {
+        tracker_nums: [2, 3],
+        entries: [
+          { tracker_num: 2, report: '[2](../reports/002-two.md)' },
+          { tracker_num: 3, report: '[3](../reports/003-three.md)' },
+        ],
+      },
+    },
+    {
+      level: 'warning', id: 'duplicate-reports:002-two.md:003-three.md',
+      code: 'duplicate_reports_same_role',
+      details: { files: ['reports/002-two.md', 'reports/003-three.md'] },
+    },
+  ];
+  const nestedDuplicateReview = {
+    status: 'completed', needs_human_review: false,
+    findings: [
+      decision(nestedDuplicateFindings[0], {
+        classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium',
+        duplicate_resolution: {
+          keeper_tracker_num: 1, duplicate_tracker_nums: [2, 3],
+          keeper_report_file: null, duplicate_report_files: [],
+        },
+      }),
+      decision(nestedDuplicateFindings[1], {
+        classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium',
+        duplicate_resolution: {
+          keeper_tracker_num: null, duplicate_tracker_nums: [],
+          keeper_report_file: 'reports/001-one.md',
+          duplicate_report_files: ['reports/002-two.md', 'reports/003-three.md'],
+        },
+      }),
+      decision(nestedDuplicateFindings[2], {
+        classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium',
+        duplicate_resolution: {
+          keeper_tracker_num: 3, duplicate_tracker_nums: [2],
+          keeper_report_file: null, duplicate_report_files: [],
+        },
+      }),
+      decision(nestedDuplicateFindings[3], {
+        classification: 'informational', disposition: 'mark_seen',
+      }),
+    ],
+  };
+  try {
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: nestedDuplicateFindings }, nestedDuplicateReview,
+    );
+    const nestedReconciliation = reviewLib.reconcileDuplicateConsistency(
+      { errors: [], warnings: nestedDuplicateFindings }, nestedDuplicateReview,
+    );
+    reviewLib.validateReviewDecisions(nestedDuplicateFindings, nestedReconciliation.review);
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: nestedDuplicateFindings }, nestedReconciliation.review,
+    );
+    const [broadTracker, broadReport, subsetTracker, subsetReport] =
+      nestedReconciliation.review.findings;
+    if (nestedReconciliation.normalizations.length === 2 &&
+        broadTracker.disposition === 'resolve_duplicate' &&
+        broadReport.disposition === 'resolve_duplicate' &&
+        subsetTracker.classification === 'informational' && subsetTracker.disposition === 'mark_seen' &&
+        subsetReport.classification === 'informational' && subsetReport.disposition === 'mark_seen') {
+      pass('strict nested duplicate groups collapse into one maximal mutation and seen subsets');
+    } else {
+      fail(`nested duplicate reconciliation was incomplete: ${JSON.stringify(nestedReconciliation)}`);
+    }
+  } catch (error) {
+    fail(`nested duplicate groups did not reconcile safely: ${error.message}`);
+  }
+
   const jobIdFixtures = [
     reviewLib.findingJobIds(relatedFindings[0]),
     reviewLib.findingJobIds(relatedFindings[1]),

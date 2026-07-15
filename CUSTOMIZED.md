@@ -1099,6 +1099,14 @@ What this customizes:
   tracker/report subgroups when only a subset shares one canonical posting URL.
   This lets prompt review resolve the proven subset and record the mixed broad
   group as seen without merging distinct repostings.
+- Canonical posting identity removes standard source, referral, and feed
+  tracking parameters such as `src` and `feed_run`, and treats a stable terminal
+  posting UUID on one host as authoritative when its descriptive slug changes.
+  When historical evidence still produces a strict nested group covered by a
+  broader confirmed group, aggregate reconciliation keeps only the maximal mutation and
+  records both nested tracker/report findings as informational seen decisions.
+  This prevents overlapping resolver actions and guarantees that every keeper
+  belongs to the exact warning candidate set it partitions.
 - Migrates a legacy tracker lacking the Via column before prompt review, then
   reverifies so missing per-row Via values become bounded evidence-backed
   patches rather than a schema-wide wave of human-review decisions.
