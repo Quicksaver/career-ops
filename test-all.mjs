@@ -24,7 +24,7 @@
  */
 
 
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 import { readFileSync, existsSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, statSync, unlinkSync, realpathSync, symlinkSync } from 'fs';
 import { join, dirname, basename, delimiter } from 'path';
 import { tmpdir } from 'os';
@@ -5042,10 +5042,29 @@ try {
     const vpClean = run(NODE, ['verify-pipeline.mjs'], { env: vpEnv, stdio: ['pipe', 'pipe', 'pipe'] });
     if (vpClean !== null &&
         vpClean.includes('No duplicate reports for the same company+role') &&
-        vpClean.includes('No orphan reports')) {
+        vpClean.includes('No orphan reports') &&
+        vpClean.includes('No duplicate report numbers')) {
       pass('clean tracker+reports fixture passes both report checks');
     } else {
       fail('clean fixture did not pass duplicate/orphan report checks');
+    }
+
+    // Reusing one numeric report prefix across different slugs is a hard
+    // identity collision even when company/role heuristics do not group them.
+    writeFileSync(join(vpReports, '004-beta-2026-01-06.md'), report('Beta', 'Backend Engineer'));
+    writeFileSync(join(vpReports, '004-gamma-2026-01-06.md'), report('Gamma', 'Platform Engineer'));
+    const collisionRun = spawnSync(NODE, ['verify-pipeline.mjs', '--json'], {
+      cwd: ROOT,
+      env: vpEnv,
+      encoding: 'utf-8',
+    });
+    const collisionOutput = JSON.parse(collisionRun.stdout);
+    const collision = collisionOutput.errors.find(item => item.code === 'duplicate_report_number');
+    if (collisionRun.status === 1 && collision?.details?.report_num === 4 &&
+        collision.details.files.length === 2) {
+      pass('duplicate active report-number prefixes fail raw verification deterministically');
+    } else {
+      fail(`duplicate report-number collision was not a hard error: ${collisionRun.stdout}`);
     }
   } finally {
     rmSync(vpTmp, { recursive: true, force: true });

@@ -1073,6 +1073,19 @@ What this customizes:
   decision for that exact subset. This prevents a valid duplicate judgment from
   failing late because a reviewer copied the combined identity or user-root
   paths into both warning types.
+- Keeps each overlapping tracker/report/orphan dependency component contiguous
+  inside its review lane, so exact paired findings normally share one
+  five-finding prompt. Paired disposition or keeper conflicts retry only that
+  chunk with explicit consistency feedback. If bounded retries still disagree,
+  or either side is manual, the whole exact component becomes `manual_review`
+  rather than failing the run or applying half a resolution. When both sides
+  confirm the duplicate, the tracker-selected canonical identity mechanically
+  determines the report keeper.
+- Treats active tracker links and report contents as current identity while
+  retaining batch completion logs as historical provenance only. The raw
+  verifier now emits a blocking `duplicate_report_number` error when multiple
+  active report files reuse one numeric prefix; reviewers must not infer
+  ownership through stale batch reservations.
 - Aggregates all semantic contract errors in a five-finding reviewer response
   and retries only that failed chunk, passing the complete validation feedback
   and previous response back for correction. `--review-retries N` defaults to

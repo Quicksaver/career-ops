@@ -15,6 +15,7 @@
  * 10. Every report file has a tracker row referencing it (warning — see #1425)
  * 11. Via channel consistency (see #1596)
  * 12. No # value reused across 2+ tracker rows (error — see #1704)
+ * 13. No report number prefix is reused across active report files
  *
  * Run: node career-ops/verify-pipeline.mjs --user <id>
  */
@@ -361,6 +362,29 @@ function extractRole(reportContent) {
 const reportFiles = existsSync(REPORTS_DIR)
   ? readdirSync(REPORTS_DIR).filter(f => REPORT_FILE_RE.test(f))
   : [];
+
+// A numeric report prefix is the durable tracker/report/artifact identity. Two
+// active files with the same prefix make historical provenance and any external
+// `#N` reference ambiguous even when their company/title slugs differ.
+const reportsByNumber = new Map();
+for (const name of reportFiles) {
+  const num = parseInt(name.match(REPORT_FILE_RE)[1], 10);
+  if (!reportsByNumber.has(num)) reportsByNumber.set(num, []);
+  reportsByNumber.get(num).push(name);
+}
+let reportNumberCollisions = 0;
+for (const [num, group] of reportsByNumber) {
+  if (group.length < 2) continue;
+  const sorted = [...group].sort();
+  error(
+    `Report number #${num} is used by ${group.length} active files: ${sorted.join(', ')}`,
+    'duplicate_report_number',
+    `duplicate-report-number:${num}`,
+    { report_num: num, files: sorted.map(name => `reports/${name}`) },
+  );
+  reportNumberCollisions++;
+}
+if (reportNumberCollisions === 0) ok('No duplicate report numbers');
 
 let dupReports = 0;
 const reportsByRole = new Map();

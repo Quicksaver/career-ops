@@ -217,6 +217,19 @@ try {
   } else {
     fail(`dependency-safe review lanes wrong: ${JSON.stringify(dependencyLanes)}`);
   }
+  const interleavedFindings = [
+    relatedFindings[0], relatedFindings[3], relatedFindings[1], relatedFindings[2],
+  ];
+  const singleLane = reviewLib.buildReviewLanes(interleavedFindings, 1)[0];
+  const pairedPositions = singleLane
+    .map((item, index) => ({ id: item.finding.id, index }))
+    .filter(item => item.id !== relatedFindings[3].id)
+    .map(item => item.index);
+  if (Math.max(...pairedPositions) - Math.min(...pairedPositions) === pairedPositions.length - 1) {
+    pass('dependency components remain contiguous inside five-finding review lanes');
+  } else {
+    fail(`dependency component was interleaved in one lane: ${JSON.stringify(singleLane)}`);
+  }
 
   const combinedDuplicateResolution = {
     keeper_tracker_num: 1,
@@ -300,6 +313,53 @@ try {
     } else {
       fail(`exact duplicate conflict returned the wrong diagnostic: ${error.message}`);
     }
+  }
+  const mismatchedReportDecision = decision(relatedFindings[1], {
+    classification: 'confirmed_duplicate', disposition: 'resolve_duplicate', severity: 'medium',
+    duplicate_resolution: {
+      keeper_tracker_num: null, duplicate_tracker_nums: [],
+      keeper_report_file: 'reports/002-two.md',
+      duplicate_report_files: ['reports/001-one.md'],
+    },
+  });
+  const keeperReconciliation = reviewLib.reconcileDuplicateConsistency(
+    { errors: [], warnings: relatedFindings.slice(0, 2) },
+    { status: 'completed', needs_human_review: false, findings: [trackerDuplicateDecision, mismatchedReportDecision] },
+  );
+  try {
+    reviewLib.validateReviewDecisions(relatedFindings.slice(0, 2), keeperReconciliation.review);
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: relatedFindings.slice(0, 2) }, keeperReconciliation.review,
+    );
+    if (keeperReconciliation.normalizations.length === 1 &&
+        keeperReconciliation.review.findings[1].duplicate_resolution.keeper_report_file === 'reports/001-one.md') {
+      pass('report keeper is deterministically aligned with the tracker keeper');
+    } else {
+      fail(`keeper reconciliation was incomplete: ${JSON.stringify(keeperReconciliation)}`);
+    }
+  } catch (error) {
+    fail(`keeper reconciliation did not produce a valid review: ${error.message}`);
+  }
+  const dispositionReconciliation = reviewLib.reconcileDuplicateConsistency(
+    { errors: [], warnings: relatedFindings.slice(0, 2) },
+    {
+      status: 'completed', needs_human_review: false,
+      findings: [trackerDuplicateDecision, decision(relatedFindings[1], {})],
+    },
+  );
+  try {
+    reviewLib.validateReviewDecisions(relatedFindings.slice(0, 2), dispositionReconciliation.review);
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: relatedFindings.slice(0, 2) }, dispositionReconciliation.review,
+    );
+    if (dispositionReconciliation.review.needs_human_review &&
+        dispositionReconciliation.review.findings.every(item => item.disposition === 'manual_review')) {
+      pass('conflicting duplicate dispositions become one unresolved manual-review component');
+    } else {
+      fail(`disposition reconciliation was incomplete: ${JSON.stringify(dispositionReconciliation)}`);
+    }
+  } catch (error) {
+    fail(`disposition reconciliation did not produce a valid review: ${error.message}`);
   }
   const broadReportFinding = {
     level: 'warning',
@@ -526,6 +586,19 @@ try {
     "      };",
     "    });",
     "  }",
+    "  if (process.env.FAKE_CODEX_DUPLICATE_CONFLICT_ONCE &&",
+    "      input.findings.some(finding => finding.code === 'possible_duplicate_tracker') &&",
+    "      input.findings.some(finding => finding.code === 'duplicate_reports_same_role') &&",
+    "      !fs.existsSync(process.env.FAKE_CODEX_DUPLICATE_CONFLICT_ONCE)) {",
+    "    fs.writeFileSync(process.env.FAKE_CODEX_DUPLICATE_CONFLICT_ONCE, 'conflict emitted\\n');",
+    "    findings = findings.map(finding => {",
+    "      if (finding.finding_code !== 'duplicate_reports_same_role' || finding.disposition !== 'resolve_duplicate') return finding;",
+    "      const files = [finding.duplicate_resolution.keeper_report_file, ...finding.duplicate_resolution.duplicate_report_files];",
+    "      return { ...finding, duplicate_resolution: {",
+    "        ...finding.duplicate_resolution, keeper_report_file: files[files.length - 1], duplicate_report_files: files.slice(0, -1),",
+    "      } };",
+    "    });",
+    "  }",
     "  if (process.env.FAKE_CODEX_RESTORE_ORPHAN) {",
     "    findings = input.findings.map(finding => {",
     "      if (finding.code !== 'orphan_report') return {",
@@ -724,6 +797,38 @@ try {
     pass('combined tracker/report reviewer output is normalized before duplicate resolution');
   } else {
     fail(`combined duplicate runner normalization wrong: ${JSON.stringify(normalizedDuplicateRun)}`);
+  }
+
+  for (const num of [62, 63]) {
+    const reportFile = `${String(num).padStart(3, '0')}-paired-retry-2026-01-06.md`;
+    writeFileSync(join(reportsDir, reportFile), [
+      '# Evaluation: Paired Retry — Backend Engineer', '',
+      '**URL:** https://example.com/jobs/shared-retry-posting', '',
+      '## Machine Summary', '```yaml', 'company: Paired Retry',
+      'role: Backend Engineer', 'score: 3.0', '```', '',
+    ].join('\n'));
+    writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| ${num} | 2026-01-06 | Paired Retry | Backend Engineer | 3.0/5 | SKIP | — | [${num}](../reports/${reportFile}) | retry duplicate fixture |\n`);
+  }
+  const conflictOnce = join(tmp, 'duplicate-conflict-once.marker');
+  const duplicateConflictRetryRun = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2',
+    '--parallel', '1', '--review-retries', '1', '--quiet', '--json',
+  ], {
+    cwd: ROOT,
+    env: {
+      ...runnerEnv,
+      FAKE_CODEX_COMBINED_DUPLICATES: '1',
+      FAKE_CODEX_DUPLICATE_CONFLICT_ONCE: conflictOnce,
+    },
+    encoding: 'utf-8',
+  }));
+  if (duplicateConflictRetryRun.status === 'completed' &&
+      duplicateConflictRetryRun.actions.tracker_rows_removed === 1 &&
+      duplicateConflictRetryRun.review_resilience.retries_used === 1 &&
+      duplicateConflictRetryRun.phases.some(phase => phase.name.includes('-retry-01'))) {
+    pass('paired duplicate consistency conflicts retry only their five-finding chunk');
+  } else {
+    fail(`paired duplicate consistency retry wrong: ${JSON.stringify(duplicateConflictRetryRun)}`);
   }
 
   const resumeReportFile = '070-resume-orphan-2026-01-07.md';
