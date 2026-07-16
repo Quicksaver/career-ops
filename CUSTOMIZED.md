@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `8bb4d2b8c5b9a2fb0fdd5a38b0c475ed192040a5`
-- Fork ref: current `main` at `09d2a57d3297d380009f0a84ddbda0dafe73a600`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `170`
-- Diff-size baseline after merge, before this inventory refresh: `239 files changed, 21821 insertions(+), 3068 deletions(-)`
+- Upstream ref: `upstream/main` at `7d2c715454a8c12330fa03811f8746b868d81488`
+- Fork ref: current `main` at `7082b427a4460d8f11a92ddfecd5ec145af71de2`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `172`
+- Diff-size baseline after merge, before this inventory refresh: `260 files changed, 21896 insertions(+), 3135 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,18 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `8bb4d2b8c5b9a2fb0fdd5a38b0c475ed192040a5` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `7d2c715454a8c12330fa03811f8746b868d81488` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Portal health history and coverage decay: `scan.mjs` now appends per-target `reachable`, `empty`, `slug_gone`, or `network` observations and escalates only after the configured consecutive-failure threshold; `stats.mjs` exposes persistently dead configured portals. Conflict resolution moves `portal-health.tsv` from upstream's root `data/` default to `users/{USER}/data/`, keeps `--dry-run` write-free, and prints `verify-portals.mjs --file` commands against the active user's `portals.yml`.
+- Interview-round compensation continuity: `salary-gap.mjs` accepts append-only `stated` observations with optional round and interviewer fields and exposes `--stated-for <tracker#>` without folding those statements into salary-gap math. `modes/interview-prep.md`, `modes/interview/plan.md`, and `modes/interview/debrief.md` now carry prior statements between rounds; the fork preserves human-readable default output, requires `--user {USER}`, and routes the log through `users/{USER}/data/salary-observations.tsv`.
+- Oracle Recruiting Cloud scanning: `providers/oraclecloud.mjs`, its provider tests, and the example portal entry add zero-auth ORC discovery with pagination, location normalization, and provider-registry coverage. The provider remains stateless and runs through the fork's active-user scan configuration and pipeline/history paths.
+- Application integrity reminders: `modes/apply.md` now warns when the candidate has prior applications at the same company, recommends checking retained ATS profile history, and expands confirmed resume-truncation follow-up to other in-flight applications through the same detectable or user-confirmed vendor. All tracker/report lookups remain under `users/{USER}/` and the mode still never logs into an employer portal on the candidate's behalf.
+- Interview-process learning: coffee-chat notes can be cross-referenced against interview intel, named multi-panel rounds reuse the Panel Intel table, and `interview-redflag` adds a separate scope/compensation mismatch observation plus a copy-only blacklist suggestion at Reconsider level. The merge removes GitHub PR references from candidate-facing templates and rewrites all new session, JD, output, profile, and blacklist paths to the active user's layer.
+- Communication and evaluation guidance: `modes/email.md` adds a short confirmed-time no-show follow-up variant; `modes/oferta.md` adds a non-scoring benefits/employment terminology country-mismatch signal. Both remain draft/advisory behavior and do not broaden submission or application authority.
+- Localized pipeline extraction guidance: all 17 localized pipeline modes now mention the opt-in CLI extractor and silent browser fallback. The fork changes the new profile references from root `config/profile.yml` to `users/{USER}/config/profile.yml` so language-specific routing uses the same active-user switch as the default mode.
+- Documentation ledger updates: `SIGNATURES.md` adds two community signatures and the ledger bot confirmation copy is corrected. These changes are presentation-only and do not affect user data.
 - Cover-letter CLI controls: `generate-cover-letter.mjs` now accepts `--format letter|a4` and `--report NNN`, forwarding both plus the payload input path to the shared PDF renderer so cover letters can use the selected page size and join `data/pdf-index.tsv`. The conflict resolution keeps `--user <username>`, profile-selected cover templates, sanitized output inside `users/{USER}/output/`, and explicit-user help text.
 - Empty Projects suppression: `build-cv-html.mjs` and `build-cv-latex.mjs` remove the complete optional Projects section when the render payload has no projects, avoiding a bare section heading while preserving the fork's active-user output and template-containment rules.
 - Headless tailoring artifact identity: upstream `openai-tailor.mjs` added a role slug to its candidate-named PDF suggestion for same-company multi-role searches. In this fork the report number already provides the stable per-role identity, so the merge retires candidate/role-derived filenames in that path and emits the canonical `{REPORT_NUM}-{company-slug}-{date}.{html|pdf}` basename plus an explicit `generate-pdf.mjs --user {USER}` handoff. This brings the helper into line with the existing report/tracker/PDF identity contract rather than duplicating role identity in filenames.
