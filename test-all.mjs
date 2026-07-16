@@ -6158,8 +6158,9 @@ try {
 // ── MERGE-TRACKER RESERVED-NUMBER FIDELITY (#1733) ──────────────
 // Parallel workers may reserve numbers in order but finish out of order. A
 // free reserved number remains valid even when a later number has already
-// reached the tracker; merge-tracker must preserve it, and only renumber on a
-// real collision (with a visible warning).
+// reached the tracker. On a real collision this fork fails closed: the pending
+// TSV stays available for inspection instead of being renumbered away from its
+// report/artifact identity.
 console.log('\n🧪 Testing merge-tracker reserved-number fidelity (#1733)...');
 try {
   const reservedTmp = mkdtempSync(join(tmpdir(), 'career-ops-merge-reserved-'));
@@ -6196,11 +6197,12 @@ try {
     const afterCollision = readFileSync(reservedTracker, 'utf-8');
     const collisionOutput = `${collisionResult.stdout || ''}\n${collisionResult.stderr || ''}`;
     if (collisionResult.status === 0
-        && /^\| 11 \|[^\n]*\| CollisionCo \|/m.test(afterCollision)
-        && /#5[^\n]*(?:already|collision)[^\n]*#11/i.test(collisionOutput)) {
-      pass('merge-tracker renumbers only a real collision and warns with both IDs');
+        && !/\| CollisionCo \|/.test(afterCollision)
+        && existsSync(join(reservedAdditions, '005-collision.tsv'))
+        && /tracker number #5 is already used[^\n]*leaving 005-collision\.tsv unmerged/i.test(collisionOutput)) {
+      pass('merge-tracker leaves a real collision pending without report-ID drift');
     } else {
-      fail(`merge-tracker collision fallback was not loud and deterministic\n${collisionOutput}\n${afterCollision}`);
+      fail(`merge-tracker collision guard was not loud and deterministic\n${collisionOutput}\n${afterCollision}`);
     }
   } finally {
     rmSync(reservedTmp, { recursive: true, force: true });

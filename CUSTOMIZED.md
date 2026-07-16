@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `c553fb24e925baf0183e5f849111025b6c6284be`
-- Fork ref: current `main` at `23b9f18776d650571ddc6622626e6dca2bd6bc44`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `143`
-- Diff-size baseline after merge, before this inventory refresh: `225 files changed, 16378 insertions(+), 2900 deletions(-)`
+- Upstream ref: `upstream/main` at `723f727f739e56fe8ad147c124f01851d1649f4d`
+- Fork ref: current `main` at `1f7a17f52e549c129e74366835b92beda83417d6`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `168`
+- Diff-size baseline after merge, before this inventory refresh: `239 files changed, 21778 insertions(+), 3031 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,19 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.19 behavior and web v0.3.0 through `c553fb24e925baf0183e5f849111025b6c6284be` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `723f727f739e56fe8ad147c124f01851d1649f4d` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- v1.20.0 and CareerOps Manifesto baseline: `VERSION`, release metadata, `MANIFESTO.md`, `SIGNATURES.md`, the signature/guestbook/community workflows, README/onboarding links, and `manifesto.mjs` are adopted. `AGENTS.md` keeps the upstream once-only, non-blocking setup suggestion while retaining the fork's active-user onboarding contract.
+- Dashboard manifesto access: `dashboard/internal/ui/screens/pipeline.go` and the i18n catalog now expose the `m` shortcut, help label, and footer hyperlink. The conflict resolution composes that entry with the fork's inline tabs, active sort display, responsive one-line help fallback, and per-user dashboard behavior instead of restoring upstream's wider default footer layout.
+- Unified atomic report allocation: upstream replaced private evaluator `max+1` scans with exported reservation APIs in `reserve-report-num.mjs` and migrated Gemini, Ollama, OpenAI-compatible, and OpenRouter evaluators. The fork keeps the shared allocator logic, including tracker row/report-link occupancy, ownership tokens, shared tracker locking, safe ranges, and arbitrary-width IDs, while requiring `--user {USER}` for CLI use and passing each evaluator's `users/{USER}/reports/` and `users/{USER}/data/applications.md` paths into reserve and release calls.
+- Report/tracker collision policy remains fork-specific: upstream `merge-tracker.mjs` would renumber a colliding addition while leaving its report link unchanged; the merge deliberately keeps the fork's fail-closed behavior, leaves the TSV pending, and preserves report/tracker/artifact ID parity. The tracker-aware allocator should prevent ordinary collisions before this guard is reached.
+- Reverse ATS blacklist enforcement: `scan-ats-full.mjs` now uses the shared blacklist parser, skips normalized matches by default, supports annotated `--include-blacklisted` audits, and reports blacklist counts. The fork preserves active-user configuration before loading the blacklist, user-scoped cache/pipeline/history paths, JSON stdout discipline, and explicit `--user` docs/examples.
+- Targeted upskill fixes: `upskill.mjs` now uses canonical-to-canonical known-skill suppression and runs fetched JD text through the string-in/string-out `compactText(...)` helper. The fork keeps human output plus `--json`, requires the active user's real CV, and deliberately rejects the upstream system `cv-example.md` fallback so candidate evidence stays inside the source-of-truth boundary.
+- Zero-token liveness and scanner output: `liveness-api.mjs` adds Workday CXS resolution/classification to the API-first rung, and `scan.mjs` suppresses dotenv chatter in `--json` mode so stdout stays parseable. Both changes compose cleanly with per-user scanner state.
+- Matching and CV pagination fixes: `role-matcher.mjs` keeps a base title distinct from specialized-suffix siblings, and `templates/cv-template.html` avoids separating a role header/location line from its bullets at a page boundary. These are system-layer correctness fixes with no user-path conflict.
+- Environment and provider documentation: `.envrc` loads the Nix flake only when Nix is installed, the budget docs correct the evaluation-dimension count, and OpenAI-compatible provider docs include NVIDIA NIM. These changes do not alter candidate-data routing.
 - v1.19.0 release baseline: release metadata, changelog, README updates, and scaffolder package metadata are adopted through `c553fb24e925baf0183e5f849111025b6c6284be`.
 - Dashboard discard learning loop: the pipeline status picker now asks for a predicted, canonical, or custom reason when a row moves to `Discarded` or `SKIP`, writes the reason atomically with the status, and feeds aggregated `discard_reasons` into pattern recommendations. The fork composes this with its dated `Status changed to ...` contact notes, distinct `Closed` state, lazy report hydration, user-root path containment, and semicolon-delimited Notes history.
 - Truthful PDF tailoring gate: `jd-skill-gap.mjs` classifies JD requirements as named CV skills, resume-supported skills, or real gaps before drafting. Normal execution requires `--user <id>`, reads `users/{USER}/cv.md`, and uses user-scoped JD scratch files; no candidate claims are added automatically.
@@ -354,7 +363,7 @@ What this customizes:
 - In agent conversations, an explicit user in one career-ops command establishes the active user for later commands in that same conversation. If no user has ever been specified in the conversation, the agent must stop immediately and ask which user to use.
 - The script-level resolver validates user IDs, strips user flags before mode-specific argument handling, and supports `CAREER_OPS_USERS_DIR` for tests or alternate user roots.
 - Upstream helper scripts adopted in this merge have been adapted to the same resolver: report reservations use `users/{USER}/reports/`, reverse ATS scans use `users/{USER}/portals.yml` plus `users/{USER}/data/`, portal validation defaults to `users/{USER}/portals.yml`, deterministic CV/cover-letter/image outputs use `users/{USER}/output/`, assessment events use `users/{USER}/data/assessments.tsv`, and analytics/reply/status/tailoring commands read only the active user's tracker, reports, profile, and fact sources.
-- Report-number reservation scans all numeric report prefixes under `users/{USER}/reports/`, not only 3-digit prefixes. Keep this when users cross report 999; the printed value remains zero-padded to at least 3 digits for compatibility with existing artifact names.
+- Report-number reservation now uses upstream's shared tracker-aware allocator core. The fork-specific layer supplies `users/{USER}/reports/` and `users/{USER}/data/applications.md`, retains the explicit-user CLI, preserves test-only report-directory overrides, and blocks tracker collisions rather than renumbering away from report/artifact identity. IDs above 999 remain valid and are padded to at least three digits only for display compatibility.
 - `reconcile-pipeline.mjs` remains path-overridable for batch/user layouts: use `--state users/{USER}/batch/batch-state.tsv --pipeline users/{USER}/data/pipeline.md --reports users/{USER}/reports` when invoking it directly for a per-user batch cleanup. The script validates those paths stay inside the repository and rejects file/directory type mismatches before reading or writing.
 - The upstream SQLite tracker index is adapted to the same resolver: `node tracker.mjs sync --user {USER}` reads `users/{USER}/data/applications.md` and writes the derived `users/{USER}/data/applications.db`. The database is disposable derived state, not a replacement for the markdown source of truth.
 - Upstream tracker merge locking is preserved, but the lock key is derived from the active user's canonical `users/{USER}/data/applications.md` path. Report-link normalization also canonicalizes the user root so symlinked temp/user directories do not produce bogus relative links.
@@ -1382,7 +1391,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Conditional batch PDF generation for `Skip` decisions and profile hard stops. Score-threshold configuration is now upstream behavior through `auto_pdf_score_threshold`.
 - Per-user adaptation for upstream tracker report-link normalization and `merge-tracker.mjs --migrate`.
 - Per-user adaptation for upstream `merge-tracker.mjs` filesystem locking and atomic writes.
-- Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`.
+- Per-user adaptation for upstream `reserve-report-num.mjs`, `scan-ats-full.mjs`, `validate-portals.mjs`, and `generate-cover-letter.mjs`. The allocator's concurrency, tracker-occupancy, ownership-token, range-safety, and arbitrary-width behavior are now upstream baseline; preserve only active-user routing, fixture overrides, and the fork's fail-closed report/tracker ID-parity guard.
 - Per-user adaptation for upstream `assessment-log.mjs`, `cv-templates.mjs`, `img-to-pdf.mjs`, and template-aware `build-cv-latex.mjs`.
 - Per-user adaptation for upstream `verify-portals.mjs`, `reconcile-pipeline.mjs`, pipeline liveness sweeps, `doctor.mjs --strict`, and any new scan/batch helpers that read `portals.yml`, `data/`, or `batch/`.
 - User-scoped scan handoff artifacts at `users/{USER}/data/scan-handoff.json` plus the explicit `/career-ops scan-handoff` follow-up mode.
