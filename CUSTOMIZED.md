@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `6cdf44058963a1811f854495ef251d19b53c054e`
-- Fork ref: current `main` at `0bdea22f7cc7ddb6170c4ef780c4c1cb7f0c856c`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `174`
-- Diff-size baseline after merge, before this inventory refresh: `260 files changed, 21904 insertions(+), 3135 deletions(-)`
+- Upstream ref: `upstream/main` at `25d335a458103cc4259a0516da6babd87bdf36ed`
+- Fork ref: current `main` at `d95c2b967f4650ec9fd1879bac6622b6b02c39de`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `177`
+- Diff-size baseline after merge, before this inventory refresh: `260 files changed, 21923 insertions(+), 3136 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,11 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `6cdf44058963a1811f854495ef251d19b53c054e` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `25d335a458103cc4259a0516da6babd87bdf36ed` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- README wordmark and language navigation: all 15 localized READMEs replace the text heading with an adaptive light/dark SVG wordmark, add the standalone project logo asset, center the language selector, and move Spanish into the second position. `SIGNATURES.md` also gains one community signature. These are presentation-only changes and do not alter the fork's runtime, active-user routing, or candidate-data boundary.
 - Community review governance: `MAINTAINERS.md` names the first community Reviewer and defines the areas where that review can unblock merges, while `docs/REVIEWING.md` provides a short doctrine-led checklist covering the data contract, tests, scope, behavior changes, security, and contributor tone. This is documentation-only and does not alter the fork's runtime, user-data routing, or maintenance workflow.
 - Portal health history and coverage decay: `scan.mjs` now appends per-target `reachable`, `empty`, `slug_gone`, or `network` observations and escalates only after the configured consecutive-failure threshold; `stats.mjs` exposes persistently dead configured portals. Conflict resolution moves `portal-health.tsv` from upstream's root `data/` default to `users/{USER}/data/`, keeps `--dry-run` write-free, and prints `verify-portals.mjs --file` commands against the active user's `portals.yml`.
 - Interview-round compensation continuity: `salary-gap.mjs` accepts append-only `stated` observations with optional round and interviewer fields and exposes `--stated-for <tracker#>` without folding those statements into salary-gap math. `modes/interview-prep.md`, `modes/interview/plan.md`, and `modes/interview/debrief.md` now carry prior statements between rounds; the fork preserves human-readable default output, requires `--user {USER}`, and routes the log through `users/{USER}/data/salary-observations.tsv`.
