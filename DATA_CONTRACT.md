@@ -35,12 +35,13 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/pipeline.md` | URL inbox |
 | `users/{USER}/data/scan-history.tsv` | Scan history (9 tab-separated columns; column 8 is the local SimHash JD fingerprint and column 9 is the posting date) |
 | `users/{USER}/data/scan-runs.tsv` | Per-run scan counters appended by `scan.mjs` and read by `stats.mjs` |
+| `users/{USER}/data/portal-health.tsv` | Consecutive reachability status for scanned portals, appended by `scan.mjs` and read by `stats.mjs` |
 | `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
 | `users/{USER}/data/pdf-index.tsv` | Generated PDF manifest used by dashboard PDF hotkeys |
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/data/offers/*` | Received offers/contracts, promise notes, prep reports, and reply drafts (PII; written by `offer-prep`) |
-| `users/{USER}/data/salary-observations.tsv` | Append-only compensation observation log read by `salary-gap.mjs` |
+| `users/{USER}/data/salary-observations.tsv` | Append-only compensation observation log: `{tracker#}\t{date}\t{desired\|advertised\|actual\|stated}\t{amount}\t{currency}\t{source}\t{note}\t{round}\t{interviewer}`. The optional trailing round/interviewer fields apply to stated figures; read by `salary-gap.mjs` |
 | `users/{USER}/data/status-log.tsv` | Append-only status transition ledger read by `funnel-velocity.mjs`; the planned `set-status.mjs` append path lands with upstream #1695, so this file may not exist yet |
 | `users/{USER}/data/upskill/*` | Skill-gap analysis reports written by the `upskill` mode |
 | `users/{USER}/data/blacklist.md` | Opt-in do-not-apply company list; only the user or an agent acting on explicit instruction may write it |

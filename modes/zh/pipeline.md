@@ -13,7 +13,7 @@
    e. **将记录从“待处理”移入“已处理”**：更新状态为 `- [x] #NNN | 职位链接 | 公司名称 | 职位名称 | 评分/5 | PDF 状态`。
 
    **关于自动生成 PDF 的分流控制 (Configurable)：**
-   系统将读取个人配置 `config/profile.yml` 中的 `auto_pdf_score_threshold`（自动生成 PDF 评分阈值）。如果该配置项不存在，则默认阈值为 `3.0`。
+   系统将读取个人配置 `users/{USER}/config/profile.yml` 中的 `auto_pdf_score_threshold`（自动生成 PDF 评分阈值）。如果该配置项不存在，则默认阈值为 `3.0`。
    如果本次岗位的评估得分低于该阈值，系统将**跳过**简历 PDF 的生成步骤（照常撰写评估报告，并在报告头部标明 `**PDF:** not generated — run /career-ops pdf {company-slug} to create on demand`，同时在 tracker 的 PDF 列登记为 ❌）。
    如果评分等于或高于该阈值，则照常自动生成量身定制的简历 PDF。
 
@@ -45,6 +45,7 @@
 ## 智能解析 URL 职位描述
 
 1. **Playwright (首选)**：`browser_navigate` + `browser_snapshot`。能够稳定处理所有单页面应用 (SPA)。
+   - **可选 — CLI 提取器（`users/{USER}/config/profile.yml` 中的 `scan.extractor: cli`）：** 改为运行 `node browser-extract.mjs <url>`（`--mode jd`）——紧凑的 `{ "url", "title", "text" }`，更少 token（因门户而异）。出错或缺失时**静默**回退到 `browser_navigate` + `browser_snapshot`。
 2. **WebFetch (备选)**：适用于静态页面，或在 Playwright 环境不可用时作为后备。
 3. **WebSearch (最终手段)**：在第三方招聘聚合平台上查找同名职位的快照。
 

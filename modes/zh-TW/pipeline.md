@@ -13,7 +13,7 @@
    e. **把紀錄從「待處理」移入「已處理」**：更新狀態為 `- [x] #NNN | 職缺連結 | 公司名稱 | 職缺名稱 | 評分/5 | PDF 狀態`。
 
    **自動產生 PDF 的分流控制（可設定）：**
-   系統會讀取個人設定 `config/profile.yml` 中的 `auto_pdf_score_threshold`（自動產生 PDF 的評分門檻）。若該設定不存在，預設門檻為 `3.0`。
+   系統會讀取個人設定 `users/{USER}/config/profile.yml` 中的 `auto_pdf_score_threshold`（自動產生 PDF 的評分門檻）。若該設定不存在，預設門檻為 `3.0`。
    若本次職缺的評分低於門檻，系統會**跳過**履歷 PDF 的產生步驟（照常撰寫評估報告，並在報告開頭標明 `**PDF:** not generated — run /career-ops pdf {company-slug} to create on demand`，同時在 tracker 的 PDF 欄登記為 ❌）。
    若評分等於或高於門檻，則照常自動產生量身打造的履歷 PDF。
 
@@ -45,6 +45,7 @@
 ## 智慧解析 URL 職缺描述
 
 1. **Playwright（首選）**：`browser_navigate` + `browser_snapshot`。能穩定處理所有單頁式應用 (SPA)。
+   - **可選 — CLI 擷取器（`users/{USER}/config/profile.yml` 中的 `scan.extractor: cli`）：** 改為執行 `node browser-extract.mjs <url>`（`--mode jd`）——精簡的 `{ "url", "title", "text" }`，更少 token（視職缺網站而定）。發生錯誤或缺少時**靜默**回退至 `browser_navigate` + `browser_snapshot`。
 2. **WebFetch（次選）**：適用於靜態頁面，或在 Playwright 環境不可用時作為後備。
 3. **WebSearch（最終手段）**：在第三方求職聚合平台上找同名職缺的快照。
 
