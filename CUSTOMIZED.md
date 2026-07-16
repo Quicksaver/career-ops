@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `7d2c715454a8c12330fa03811f8746b868d81488`
-- Fork ref: current `main` at `7082b427a4460d8f11a92ddfecd5ec145af71de2`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `172`
-- Diff-size baseline after merge, before this inventory refresh: `260 files changed, 21896 insertions(+), 3135 deletions(-)`
+- Upstream ref: `upstream/main` at `6cdf44058963a1811f854495ef251d19b53c054e`
+- Fork ref: current `main` at `0bdea22f7cc7ddb6170c4ef780c4c1cb7f0c856c`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `174`
+- Diff-size baseline after merge, before this inventory refresh: `260 files changed, 21904 insertions(+), 3135 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,11 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `7d2c715454a8c12330fa03811f8746b868d81488` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `6cdf44058963a1811f854495ef251d19b53c054e` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Community review governance: `MAINTAINERS.md` names the first community Reviewer and defines the areas where that review can unblock merges, while `docs/REVIEWING.md` provides a short doctrine-led checklist covering the data contract, tests, scope, behavior changes, security, and contributor tone. This is documentation-only and does not alter the fork's runtime, user-data routing, or maintenance workflow.
 - Portal health history and coverage decay: `scan.mjs` now appends per-target `reachable`, `empty`, `slug_gone`, or `network` observations and escalates only after the configured consecutive-failure threshold; `stats.mjs` exposes persistently dead configured portals. Conflict resolution moves `portal-health.tsv` from upstream's root `data/` default to `users/{USER}/data/`, keeps `--dry-run` write-free, and prints `verify-portals.mjs --file` commands against the active user's `portals.yml`.
 - Interview-round compensation continuity: `salary-gap.mjs` accepts append-only `stated` observations with optional round and interviewer fields and exposes `--stated-for <tracker#>` without folding those statements into salary-gap math. `modes/interview-prep.md`, `modes/interview/plan.md`, and `modes/interview/debrief.md` now carry prior statements between rounds; the fork preserves human-readable default output, requires `--user {USER}`, and routes the log through `users/{USER}/data/salary-observations.tsv`.
 - Oracle Recruiting Cloud scanning: `providers/oraclecloud.mjs`, its provider tests, and the example portal entry add zero-auth ORC discovery with pagination, location normalization, and provider-registry coverage. The provider remains stateless and runs through the fork's active-user scan configuration and pipeline/history paths.
