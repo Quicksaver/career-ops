@@ -8,7 +8,7 @@
  * cv-template.html ready to be turned into a PDF.
  *
  * Usage:
- *   node openai-tailor.mjs --jd ./jds/my-job.txt --report reports/001-company-2026.md
+ *   node openai-tailor.mjs --user <id> --jd ./jds/my-job.txt --report users/<id>/reports/001-company-2026-01-01.md
  *
  * Requires (for hosted endpoints):
  *   OPENAI_API_KEY (or --key)   — your provider key
@@ -19,7 +19,6 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
-import yaml from 'js-yaml';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -85,7 +84,7 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_TIMEOUT_MS
 
   EXAMPLES
-    OPENAI_API_KEY=sk-... node openai-tailor.mjs --jd ./jds/job.txt --report reports/001-company-2026-01-01.md
+    OPENAI_API_KEY=sk-... node openai-tailor.mjs --user <id> --jd ./jds/job.txt --report users/<id>/reports/001-company-2026-01-01.md
 `);
   process.exit(0);
 }
@@ -128,10 +127,14 @@ if (!existsSync(reportPath)) {
 const jdText = readFileSync(jdPath, 'utf-8').trim();
 const reportText = readFileSync(reportPath, 'utf-8').trim();
 
-// Attempt to parse company slug and candidate name
+// Parse the report-linked artifact identity. The report number already
+// distinguishes multiple roles at one company, so the fork keeps the canonical
+// {REPORT_NUM}-{company}-{date} basename instead of adding a second role slug.
 const reportFilename = basename(reportPath);
-const match = reportFilename.match(/^\d+-([a-z0-9-]+)-\d{4}-\d{2}-\d{2}\.md$/);
-const companySlug = match ? match[1] : 'unknown-company';
+const reportMatch = reportFilename.match(/^(\d+)-([a-z0-9-]+)-(\d{4}-\d{2}-\d{2})\.md$/);
+const reportNum = reportMatch ? reportMatch[1] : '001';
+const companySlug = reportMatch ? reportMatch[2] : 'unknown-company';
+const reportDate = reportMatch ? reportMatch[3] : new Date().toISOString().split('T')[0];
 
 // ---------------------------------------------------------------------------
 // Endpoint + security guard.
@@ -304,30 +307,17 @@ try {
     mkdirSync(PATHS.output, { recursive: true });
   }
 
-  let candidateName = 'candidate';
-  try {
-    const profile = yaml.load(profileContent);
-    if (profile && profile.name) {
-      candidateName = profile.name;
-    }
-  } catch (err) {
-    console.warn(`⚠️   Failed to parse profile.yml: ${err.message}`);
-  }
-  candidateName = candidateName
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-
-  const filename = `cv-${candidateName}-${companySlug}.html`;
+  const artifactBase = `${reportNum}-${companySlug}-${reportDate}`;
+  const filename = `${artifactBase}.html`;
   const htmlPath = join(PATHS.output, filename);
 
   writeFileSync(htmlPath, tailoredHtml, 'utf-8');
   console.log(`\n✅  Tailored HTML saved: ${htmlPath}`);
 
   // Print next steps
-  const pdfFilename = `cv-${candidateName}-${companySlug}-${new Date().toISOString().split('T')[0]}.pdf`;
-  const reportNumMatch = reportFilename.match(/^(\d+)-/);
-  const reportNum = reportNumMatch ? reportNumMatch[1] : '001';
+  const pdfPath = join(PATHS.output, `${artifactBase}.pdf`);
 
-  console.log(`\n📄  Next step (generate PDF):\n    node generate-pdf.mjs output/${filename} output/${pdfFilename} --format=letter --report=${reportNum}\n`);
+  console.log(`\n📄  Next step (generate PDF):\n    node generate-pdf.mjs --user ${userContext.userId} ${JSON.stringify(htmlPath)} ${JSON.stringify(pdfPath)} --format=letter --report=${reportNum}\n`);
 
 } catch (err) {
   console.warn(`⚠️   Could not save HTML: ${err.message}`);

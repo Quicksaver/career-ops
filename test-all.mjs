@@ -1124,6 +1124,18 @@ if (
   fail('openai-eval.mjs still assumes root cv.md/reports or does not require an active user');
 }
 
+const openaiTailorSource = readFile('openai-tailor.mjs');
+if (
+  /userPath\(userContext,\s*['"]output['"]\)/.test(openaiTailorSource) &&
+  /artifactBase\s*=\s*`\$\{reportNum\}-\$\{companySlug\}-\$\{reportDate\}`/.test(openaiTailorSource) &&
+  /generate-pdf\.mjs --user \$\{userContext\.userId\}/.test(openaiTailorSource) &&
+  !/const pdfFilename = `cv-\$\{candidateName\}/.test(openaiTailorSource)
+) {
+  pass('openai-tailor keeps report-linked artifact names and an explicit-user PDF handoff');
+} else {
+  fail('openai-tailor can drift from report-linked user-scoped artifact naming');
+}
+
 const jdSkillGapSource = readFile('jd-skill-gap.mjs');
 if (
   /getUserContext\(process\.argv\.slice\(2\)/.test(jdSkillGapSource) &&
@@ -7198,6 +7210,14 @@ try {
     pass('Known template tokens still substitute under single-pass');
   } else {
     fail('Single-pass substitution left a known token unreplaced');
+  }
+
+  // CLI arguments: --help prints custom --format and --report usage guidelines
+  const usageOut = execFileSync(process.execPath, [join(ROOT, 'generate-cover-letter.mjs'), '--help'], { encoding: 'utf-8' });
+  if (usageOut.includes('--format') && usageOut.includes('--report') && usageOut.includes('[--format letter|a4]')) {
+    pass('Cover letter CLI --help documents format and report options');
+  } else {
+    fail('Cover letter CLI --help does not document format and report options');
   }
 } catch (e) {
   fail(`Cover letter single-pass substitution test crashed: ${e.message}`);
