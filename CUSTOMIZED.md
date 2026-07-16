@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `723f727f739e56fe8ad147c124f01851d1649f4d`
-- Fork ref: current `main` at `1f7a17f52e549c129e74366835b92beda83417d6`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `168`
-- Diff-size baseline after merge, before this inventory refresh: `239 files changed, 21778 insertions(+), 3031 deletions(-)`
+- Upstream ref: `upstream/main` at `8bb4d2b8c5b9a2fb0fdd5a38b0c475ed192040a5`
+- Fork ref: current `main` at `09d2a57d3297d380009f0a84ddbda0dafe73a600`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `170`
+- Diff-size baseline after merge, before this inventory refresh: `239 files changed, 21821 insertions(+), 3068 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,16 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `723f727f739e56fe8ad147c124f01851d1649f4d` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `8bb4d2b8c5b9a2fb0fdd5a38b0c475ed192040a5` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Cover-letter CLI controls: `generate-cover-letter.mjs` now accepts `--format letter|a4` and `--report NNN`, forwarding both plus the payload input path to the shared PDF renderer so cover letters can use the selected page size and join `data/pdf-index.tsv`. The conflict resolution keeps `--user <username>`, profile-selected cover templates, sanitized output inside `users/{USER}/output/`, and explicit-user help text.
+- Empty Projects suppression: `build-cv-html.mjs` and `build-cv-latex.mjs` remove the complete optional Projects section when the render payload has no projects, avoiding a bare section heading while preserving the fork's active-user output and template-containment rules.
+- Headless tailoring artifact identity: upstream `openai-tailor.mjs` added a role slug to its candidate-named PDF suggestion for same-company multi-role searches. In this fork the report number already provides the stable per-role identity, so the merge retires candidate/role-derived filenames in that path and emits the canonical `{REPORT_NUM}-{company-slug}-{date}.{html|pdf}` basename plus an explicit `generate-pdf.mjs --user {USER}` handoff. This brings the helper into line with the existing report/tracker/PDF identity contract rather than duplicating role identity in filenames.
+- Onboarding runtime diagnostics: `doctor.mjs` now passes Node 22.5 or later, warns without blocking on Node 18 through pre-22.5 because `node:sqlite` tracker indexing is unavailable there, and continues to fail below Node 18. The markdown tracker remains usable when the SQLite index is unavailable.
+- Updater commit failures: `update-system.mjs` now distinguishes a genuinely empty commit from a failed commit that leaves target files changed or staged. Real failures surface the first Git error and an explicit scoped recovery command instead of being reported as a successful no-op; the fork's user-path rollback safeguards and skill-entrypoint materialization remain intact.
+- Documentation corrections: README evaluation copy now accurately describes five weighted dimensions feeding the 1.0-5.0 score, and the public manifesto signature ledger gains one entry. These changes do not affect user-layer data.
 - v1.20.0 and CareerOps Manifesto baseline: `VERSION`, release metadata, `MANIFESTO.md`, `SIGNATURES.md`, the signature/guestbook/community workflows, README/onboarding links, and `manifesto.mjs` are adopted. `AGENTS.md` keeps the upstream once-only, non-blocking setup suggestion while retaining the fork's active-user onboarding contract.
 - Dashboard manifesto access: `dashboard/internal/ui/screens/pipeline.go` and the i18n catalog now expose the `m` shortcut, help label, and footer hyperlink. The conflict resolution composes that entry with the fork's inline tabs, active sort display, responsive one-line help fallback, and per-user dashboard behavior instead of restoring upstream's wider default footer layout.
 - Unified atomic report allocation: upstream replaced private evaluator `max+1` scans with exported reservation APIs in `reserve-report-num.mjs` and migrated Gemini, Ollama, OpenAI-compatible, and OpenRouter evaluators. The fork keeps the shared allocator logic, including tracker row/report-link occupancy, ownership tokens, shared tracker locking, safe ranges, and arbitrary-width IDs, while requiring `--user {USER}` for CLI use and passing each evaluator's `users/{USER}/reports/` and `users/{USER}/data/applications.md` paths into reserve and release calls.
@@ -617,6 +623,7 @@ Files:
 - `modes/pdf.md`
 - `modes/latex.md`
 - `batch/batch-prompt.md`
+- `openai-tailor.mjs`
 - `templates/README.md`
 
 What this customizes:
@@ -624,11 +631,13 @@ What this customizes:
 - Requires generated CV artifacts to use `output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.{html|pdf|tex}`.
 - Removes candidate-name/ad-hoc CV output names from the instructions.
 - Keeps report, tracker, PDF, HTML, and LaTeX artifact names aligned.
+- Adapts the headless OpenAI-compatible tailor to the same basename and prints an explicit-user PDF command. Upstream's role-slug filename addition is redundant here because each report number already identifies one company/role evaluation.
 
 Future merge notes:
 
 - Preserve this if local workflows rely on report-numbered artifacts.
 - If upstream adopts the same naming contract, remove the local instruction patches and keep only any wording still needed for this fork.
+- If upstream changes headless tailoring names again, preserve report-number identity and active-user output containment; human-readable role text belongs in the report/tracker rather than becoming a second artifact identity.
 
 ## Batch PDF Gate
 
