@@ -344,6 +344,7 @@ acquire_state_lock() {
         return 0
       fi
       rm -f "$STATE_LOCK_PID_FILE" 2>/dev/null || true
+      remove_benign_state_lock_entries
       rmdir "$STATE_LOCK_DIR" 2>/dev/null || true
       echo "ERROR: Failed to initialize state lock metadata at $STATE_LOCK_DIR"
       return 1
@@ -365,6 +366,7 @@ acquire_state_lock() {
       lock_pid=$(cat "$STATE_LOCK_PID_FILE" 2>/dev/null || true)
       if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
         rm -f "$STATE_LOCK_PID_FILE"
+        remove_benign_state_lock_entries
         if rmdir "$STATE_LOCK_DIR" 2>/dev/null; then
           echo "WARN: Recovered stale state lock (PID $lock_pid not running)."
           continue
@@ -383,11 +385,22 @@ acquire_state_lock() {
   done
 }
 
+remove_benign_state_lock_entries() {
+  # Finder may add a zero-length custom-icon file to directories on macOS.
+  # It is unrelated to lock ownership but prevents rmdir from releasing or
+  # recovering an otherwise empty state-lock directory.
+  local finder_icon="$STATE_LOCK_DIR/Icon"$'\r'
+  if [[ -f "$finder_icon" && ! -s "$finder_icon" ]]; then
+    unlink "$finder_icon" 2>/dev/null || true
+  fi
+}
+
 release_state_lock() {
   if [[ "${STATE_LOCK_OWNED:-0}" -ne 1 ]]; then
     return
   fi
   rm -f "$STATE_LOCK_PID_FILE" 2>/dev/null || true
+  remove_benign_state_lock_entries
   rmdir "$STATE_LOCK_DIR" 2>/dev/null || true
   STATE_LOCK_OWNED=0
 }
@@ -611,7 +624,7 @@ next_report_num_unlocked() {
     for f in "$REPORTS_DIR"/*.md; do
       [[ -f "$f" ]] || continue
       local basename
-      basename=$(basename "$f")
+      basename="${f##*/}"
       local num="${basename%%-*}"
       num=$((10#$num)) # Remove leading zeros for arithmetic
       if (( num > max_num )); then

@@ -423,6 +423,8 @@ What this customizes:
 - Treats clean Codex completion as `exit 0` plus valid final JSON with `status: "completed"` plus report and tracker artifacts. Timeout-based artifact recovery remains a fallback, not the primary success path.
 - Records Codex contract failures explicitly when the final JSON, report, or tracker TSV is missing, instead of leaving the offer in `processing`.
 - Recovers stale `processing` rows at the start of a new non-dry-run batch by marking them failed with `stale-processing-state`, so interrupted workers do not block or hide the next run.
+- Removes a zero-length macOS Finder `Icon\r` metadata file before releasing or recovering the state-lock directory. Finder can add this file beside the lock PID; without the cleanup, `rmdir` leaves an ownerless `.batch-state.lock` behind and every worker eventually times out waiting for it.
+- Keeps report-number allocation inside the state-lock critical section, but derives each report basename with shell parameter expansion instead of spawning one `basename` process per historical report. Large profiles with thousands of reports therefore release the lock within the configured wait window rather than serializing workers behind a multi-minute scan.
 - Uses the runner-reserved `REPORT_NUM` as the TSV first column, report link number, and artifact number so parallel workers do not race while calculating tracker numbers from `applications.md`.
 - Adapts upstream tracker report-link normalization to the per-user layout: workers still write user-root-relative `[REPORT_NUM](reports/...)` links, and `merge-tracker.mjs --user {USER}` rewrites them relative to `users/{USER}/data/applications.md` before merging.
 - Preserves upstream `--limit N` so a batch run can process only the next N pending offers, while keeping the fork's existing user-scoped state, Codex worker, and timeout behavior around that bounded-run flow.
@@ -452,6 +454,8 @@ Future merge notes:
 - Keep the Codex command rooted at `PROJECT_DIR` so generated reports, tracker additions, and user-layer paths resolve the same way as normal career-ops commands.
 - Preserve the schema-checked final JSON contract for Codex workers; do not regress to parsing the free-form transcript as the main completion signal.
 - Preserve stale-state recovery and explicit missing-artifact failure reasons. They are needed because a headless worker can write partial artifacts or transcript JSON without producing the required final-message JSON.
+- Preserve cleanup of the benign zero-length Finder `Icon\r` entry on lock initialization failure, dead-owner recovery, and normal release. Do not broaden it to delete arbitrary files from the lock directory.
+- Keep report basename extraction process-free while the state lock is held; reintroducing an external command per report makes lock duration scale badly for long-lived profiles and causes healthy parallel workers to hit the 30-second timeout.
 - Preserve runner-reserved report numbering for tracker TSVs if upstream changes batch merge behavior. Worker-side `applications.md` max calculations are unsafe under parallelism.
 - Preserve report numbering beyond 999 if upstream changes `reserve-report-num.mjs`; scans for occupied slots and `--release` validation must accept any positive-width numeric prefix while artifact display can stay padded to at least 3 digits.
 - Preserve upstream report-link normalization, but keep its filesystem roots user-scoped. Do not reintroduce root-level `data/applications.md`, root `reports/`, or `CAREER_OPS_TRACKER` as the normal production path.
