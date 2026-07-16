@@ -321,6 +321,25 @@ try {
   try {
     reviewLib.validateDuplicateConsistency(
       { errors: [], warnings: relatedFindings.slice(0, 2) },
+      { findings: [] },
+    );
+    pass('duplicate consistency ignores exact pairs wholly absent from the current pass review');
+  } catch (error) {
+    fail(`settled exact duplicate pair leaked into the current pass: ${error.message}`);
+  }
+  const expandedExactPair = reviewLib.expandActiveDuplicatePairs(
+    { errors: [], warnings: relatedFindings.slice(0, 2) },
+    [relatedFindings[0]],
+  );
+  if (expandedExactPair.reactivated === 1 && expandedExactPair.findings.length === 2 &&
+      expandedExactPair.findings.some(item => item.id === relatedFindings[1].id)) {
+    pass('a newly active duplicate finding reactivates its exact seen counterpart');
+  } else {
+    fail(`exact duplicate counterpart was not reactivated: ${JSON.stringify(expandedExactPair)}`);
+  }
+  try {
+    reviewLib.validateDuplicateConsistency(
+      { errors: [], warnings: relatedFindings.slice(0, 2) },
       { findings: [trackerDuplicateDecision, decision(relatedFindings[1], {})] },
     );
     fail('exact tracker/report duplicate candidate sets accepted conflicting dispositions');

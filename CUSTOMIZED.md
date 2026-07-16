@@ -1091,6 +1091,12 @@ What this customizes:
   rather than failing the run or applying half a resolution. When both sides
   confirm the duplicate, the tracker-selected canonical identity mechanically
   determines the report keeper.
+- Scopes aggregate duplicate consistency to decisions active in the current
+  pass, so exact pairs fully settled earlier cannot produce missing-decision
+  failures. When a repair creates or changes one side of an exact pair while
+  the other side still has an unchanged seen record, the runner reactivates the
+  seen counterpart and reviews both together. This prevents a one-sided action
+  from relying on stale paired judgement after tracker state changes.
 - Treats active tracker links and report contents as current identity while
   retaining batch completion logs as historical provenance only. Orphan checks
   use the exact linked report filename, so a tracker link cannot accidentally

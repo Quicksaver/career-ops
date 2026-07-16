@@ -24,6 +24,7 @@ import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.m
 import { compactCompletedRun, compactPhaseRecords } from './lib/run-artifacts.mjs';
 import {
   buildReviewLanes,
+  expandActiveDuplicatePairs,
   findingJobIds,
   normalizeReviewDecisions,
   partitionReviewedFindings,
@@ -742,7 +743,12 @@ async function main() {
     for (let pass = firstPass; pass <= maxPasses; pass++) {
       const ledger = readReviewLedger(reviewLedgerPath);
       const partition = partitionReviewedFindings(verification, ledger);
-      const active = partition.active.filter(finding => !reviewedThisRun.has(finding.fingerprint));
+      const baseActive = partition.active.filter(finding => !reviewedThisRun.has(finding.fingerprint));
+      const paired = expandActiveDuplicatePairs(verification, baseActive);
+      const active = paired.findings.filter(finding => !reviewedThisRun.has(finding.fingerprint));
+      if (paired.reactivated > 0) {
+        log(`review pass ${pass}: reactivated ${paired.reactivated} seen exact duplicate counterpart(s) because their paired finding changed`);
+      }
       if (active.length === 0) break;
       summary.passes = pass;
       const lanes = buildReviewLanes(active, parallelSettings.parallel);
