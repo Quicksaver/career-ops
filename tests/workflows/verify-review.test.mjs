@@ -576,6 +576,48 @@ try {
     fail(`legacy escaped TSV restore wrong: ${JSON.stringify(legacyRestored)}`);
   }
 
+  writeFileSync(join(reportsDir, '013-stale-tsv-2026-01-04.md'), [
+    '# Evaluation: Stale TSV — Systems Engineer', '',
+    '**Date:** 2026-01-04', '**URL:** https://example.com/jobs/stale-tsv', '',
+    '## Machine Summary', '```yaml', 'company: Stale TSV',
+    'role: Systems Engineer', 'score: 3.4', 'final_decision: Apply', '```', '',
+  ].join('\n'));
+  writeFileSync(join(mergedDir, '9.tsv'), [
+    '999', '2026-02-01', 'Reused Slot', 'Different Role', 'Evaluated', '2.0/5',
+    '❌', '[999](reports/999-reused-slot-2026-02-01.md)', 'later batch reused this slot',
+  ].join('\t') + '\n');
+  const staleTsvVerification = {
+    errors: [], warnings: [{
+      id: 'orphan-report:013-stale-tsv-2026-01-04.md', code: 'orphan_report',
+      message: 'Orphan report with stale TSV provenance',
+      details: { report_num: 13, file: 'reports/013-stale-tsv-2026-01-04.md' },
+    }],
+  };
+  const staleTsvFinding = reviewLib.verificationFindings(staleTsvVerification)[0];
+  const staleTsvRestored = applyReview(staleTsvVerification, [decision(staleTsvFinding, {
+    classification: 'confirmed_orphan', disposition: 'restore_orphan',
+    rationale: 'The report is complete, but its historical batch slot was reused.',
+    evidence: [{ path: 'reports/013-stale-tsv-2026-01-04.md', observation: 'Complete report metadata.' }],
+    orphan_resolution: {
+      report_file: 'reports/013-stale-tsv-2026-01-04.md',
+      tracker_tsv: 'batch/tracker-additions/merged/9.tsv',
+    },
+  })]);
+  const staleTsvTracker = readFileSync(trackerPath, 'utf-8');
+  const staleTsvActions = readFileSync(join(dataDir, 'verification-actions.jsonl'), 'utf-8')
+    .split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+  const staleTsvAction = staleTsvActions.find(record =>
+    record.finding_id === staleTsvVerification.warnings[0].id);
+  if (staleTsvRestored.tracker_rows_restored === 1 &&
+      staleTsvTracker.includes('| 13 | 2026-01-04 | Stale TSV | Systems Engineer |') &&
+      staleTsvAction?.tracker_tsv === null &&
+      staleTsvAction?.requested_tracker_tsv === 'batch/tracker-additions/merged/9.tsv' &&
+      staleTsvAction?.tracker_tsv_fallback_reason === 'TSV/report number mismatch') {
+    pass('stale reused orphan TSV provenance falls back to deterministic report reconstruction');
+  } else {
+    fail(`stale orphan TSV fallback wrong: result=${JSON.stringify(staleTsvRestored)} action=${JSON.stringify(staleTsvAction)} tracker=${staleTsvTracker}`);
+  }
+
   writeFileSync(join(reportsDir, '001-collision-distinct-2026-01-05.md'), [
     '# Evaluation: Collision Distinct — Platform Engineer', '',
     '**Date:** 2026-01-05', '**URL:** https://example.com/jobs/collision-distinct', '',
@@ -604,7 +646,7 @@ try {
     .find(name => /-collision-distinct-2026-01-05\.md$/.test(name));
   const restoredCollisionNum = Number.parseInt(restoredCollisionReport?.match(/^(\d+)-/)?.[1] || '', 10);
   if (collisionRestored.tracker_rows_restored === 1 && collisionRestored.artifacts_archived === 0 &&
-      restoredCollisionNum > 12 && collisionTracker.includes(`| ${restoredCollisionNum} |`) &&
+      restoredCollisionNum > 13 && collisionTracker.includes(`| ${restoredCollisionNum} |`) &&
       collisionTracker.includes('Collision Distinct') &&
       existsSync(join(outputDir, restoredCollisionReport.replace(/\.md$/, '.pdf'))) &&
       !existsSync(join(reportsDir, '001-collision-distinct-2026-01-05.md'))) {

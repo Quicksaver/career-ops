@@ -384,14 +384,32 @@ async function main() {
         ? safeUserPath(trackerTsv, /^batch\/tracker-additions\/merged\/[A-Za-z0-9._-]+\.tsv$/, 'orphan tracker TSV')
         : null;
       let entry = null;
+      let trackerTsvUsed = null;
+      let trackerTsvFallbackReason = null;
       if (tsvPath && existsSync(tsvPath) && !collision) {
-        entry = parseMergedTsv(tsvPath);
-        if (entry.num !== originalNum || basename(reportPath).match(/^\d+/)?.[0] !== String(entry.num).padStart(3, '0')) {
-          throw new Error(`${item.finding.id}: TSV/report number mismatch`);
+        try {
+          const candidate = parseMergedTsv(tsvPath);
+          if (candidate.num !== originalNum ||
+              basename(reportPath).match(/^\d+/)?.[0] !== String(candidate.num).padStart(3, '0')) {
+            trackerTsvFallbackReason = 'TSV/report number mismatch';
+          } else {
+            const linked = candidate.report.match(/\]\(([^)]+)\)/)?.[1];
+            if (!linked || basename(linked) !== basename(reportPath)) {
+              trackerTsvFallbackReason = 'TSV does not reference the orphan report';
+            } else {
+              entry = candidate;
+              trackerTsvUsed = trackerTsv;
+            }
+          }
+        } catch (error) {
+          trackerTsvFallbackReason = `TSV could not be parsed: ${error.message}`;
         }
-        const linked = entry.report.match(/\]\(([^)]+)\)/)?.[1];
-        if (!linked || basename(linked) !== basename(reportPath)) throw new Error(`${item.finding.id}: TSV does not reference the orphan report`);
-      } else {
+      } else if (tsvPath && !existsSync(tsvPath)) {
+        trackerTsvFallbackReason = 'TSV no longer exists';
+      } else if (tsvPath && collision) {
+        trackerTsvFallbackReason = `tracker number #${originalNum} is already used`;
+      }
+      if (!entry) {
         const metadata = reportMetadata(reportPath);
         const missing = ['date', 'company', 'role', 'score'].filter(field => !metadata[field]);
         if (missing.length > 0) {
@@ -464,7 +482,9 @@ async function main() {
         schema_version: 1, resolved_at: reviewedAt, run_id: runId,
         action: 'restore_orphan', finding_id: item.finding.id,
         report_file: reportFile, restored_report_file: `reports/${finalReportName}`,
-        tracker_tsv: trackerTsv, tracker_num: entry.num, renumbered: entry.num !== originalNum,
+        tracker_tsv: trackerTsvUsed, requested_tracker_tsv: trackerTsv,
+        tracker_tsv_fallback_reason: trackerTsvFallbackReason,
+        tracker_num: entry.num, renumbered: entry.num !== originalNum,
         rationale: item.decision.rationale, evidence: item.decision.evidence, backup_root: backupRoot,
       });
     }

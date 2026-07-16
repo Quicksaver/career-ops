@@ -1047,12 +1047,16 @@ What this customizes:
 - Adds deterministic orphan handling: restore a valid lost tracker row from a
   matching preserved `batch/tracker-additions/merged/*.tsv` when available, or
   reconstruct date/company/role/score/status/Via from a complete verified report
-  when the historical TSV no longer exists. An occupied report number receives
-  a fresh ID and its report plus matching HTML/PDF/TeX artifacts are renamed as
-  one backed-up transaction. Confirmed redundant/obsolete orphan reports and
-  matching output artifacts are archived. Bounded tracker patches cover company,
-  Via, canonical status, score, and report-link findings. These actions are
-  recorded in `data/verification-actions.jsonl` with timestamped backups.
+  when the historical TSV no longer exists or its reusable batch slot now
+  contains another job. The applier revalidates the TSV row number and linked
+  report at mutation time, falls back without failing the run when provenance
+  is stale or malformed, and records the requested TSV, actual source, and
+  fallback reason in `data/verification-actions.jsonl`. An occupied report
+  number receives a fresh ID and its report plus matching HTML/PDF/TeX artifacts
+  are renamed as one backed-up transaction. Confirmed redundant/obsolete orphan
+  reports and matching output artifacts are archived. Bounded tracker patches
+  cover company, Via, canonical status, score, and report-link findings. These
+  actions use timestamped backups.
 - Makes orphan action metadata deterministic after the reviewer chooses the
   outcome. For `archive_orphan`, `verify-runner.mjs` derives `report_file` from
   the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot
