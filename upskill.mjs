@@ -25,6 +25,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { load as yamlLoad } from 'js-yaml';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 import {
@@ -275,6 +276,32 @@ export function aggregateGaps(reports, knownSkills) {
   return { gaps, excludedAsKnown, totalLowFit };
 }
 
+/**
+ * Targeted-mode gap analysis for a single JD (#1739): which JD skills are gaps
+ * vs. already known from the CV/profile.
+ *
+ * Uses the SAME canonicalization as the aggregate path (extractSkills on both
+ * sides, canonical-to-canonical comparison) so a known CV skill is suppressed
+ * and a real gap surfaces. The previous inline implementation matched raw
+ * lowercased regex tokens with substring `.includes()`, which (a) never matched
+ * symbol skills like `c\+\+`/`\.net` and (b) over-suppressed via substrings
+ * (`go` ⊂ `mongodb`, `sql` ⊂ `postgresql`, `java` ⊂ `javascript`) — inverting the
+ * result on every skill (#1851). Emits canonical names, matching aggregate mode.
+ *
+ * @param {string} jdText - the target job description text
+ * @param {string} knownText - cv + profile text (already-known skills)
+ * @returns {{ gaps: string[], excludedAsKnown: string[], knownSkills: string[] }}
+ */
+export function computeTargetedGaps(jdText, knownText) {
+  const known = extractSkills(knownText);
+  const gaps = [];
+  const excludedAsKnown = [];
+  for (const skill of extractSkills(jdText)) {
+    (known.has(skill) ? excludedAsKnown : gaps).push(skill);
+  }
+  return { gaps, excludedAsKnown, knownSkills: [...known].sort() };
+}
+
 // --- Main ---
 function analyze(minReports) {
   if (!existsSync(APPS_FILE)) {
@@ -479,6 +506,48 @@ soft_gaps:
   if (!/Kafka/.test(parsed.gapText)) failures.push('Gap table row not captured');
   if (!/Airflow/.test(parsed.gapText)) failures.push('soft_gaps not captured');
 
+  // Targeted mode (#1851): known-skill suppression must be canonical-to-canonical,
+  // never raw-token substring matching. The old inline path inverted every skill —
+  // CV skills shown as gaps, real gaps hidden. This is the exact reproduction from
+  // the bug report.
+  {
+    const { gaps, excludedAsKnown } = computeTargetedGaps(
+      'Kubernetes, C++, .NET, Java, SQL, Go, LLMs',        // JD asks for
+      'k8s, C++, .NET, JavaScript, PostgreSQL, MongoDB, LLMs' // CV already has
+    );
+    const gapSet = new Set(gaps);
+    const exSet = new Set(excludedAsKnown);
+    for (const g of ['Java', 'SQL', 'Go']) {
+      if (!gapSet.has(g)) failures.push(`targeted: ${g} should be a gap (got ${gaps.join(',')})`);
+      if (exSet.has(g)) failures.push(`targeted: real gap ${g} wrongly suppressed as known`);
+    }
+    for (const k of ['Kubernetes', 'C++', '.NET', 'LLMs']) {
+      if (!exSet.has(k)) failures.push(`targeted: ${k} should be excluded as known (got ${excludedAsKnown.join(',')})`);
+      if (gapSet.has(k)) failures.push(`targeted: known skill ${k} wrongly reported as gap`);
+    }
+  }
+
+  // Targeted --url-text path (#1894): the fetched page text must reach
+  // computeTargetedGaps as a plain STRING. It used to be run through normalizeJd
+  // (which wants the { title, text } DOM object), yielding { text: '' } and then
+  // a `text.matchAll is not a function` crash. Guard both halves: a realistic
+  // multi-line JD string produces the right gaps, and the source no longer feeds
+  // the raw string to normalizeJd.
+  {
+    const jdText = 'Requirements:\n- Kubernetes and Go\n- 5+ years experience';
+    const { gaps } = computeTargetedGaps(jdText, 'Python, AWS'); // must not throw on a string
+    if (!gaps.includes('Kubernetes') || !gaps.includes('Go')) {
+      failures.push(`url-text: multi-line JD string should yield Kubernetes+Go gaps (got ${gaps.join(',')})`);
+    }
+    const selfSrc = readFileSync(fileURLToPath(import.meta.url), 'utf-8');
+    if (/normalizeJd\(\s*targetText/.test(selfSrc)) {
+      failures.push('url-text: upskill.mjs still passes the raw fetched string to normalizeJd (regression, #1894)');
+    }
+    if (!/compactText\(targetText\)/.test(selfSrc)) {
+      failures.push('url-text: fetched text should be normalized with compactText (string->string), #1894');
+    }
+  }
+
   if (failures.length > 0) {
     console.error(`upskill self-test failed: ${failures.join('; ')}`);
     process.exit(1);
@@ -552,7 +621,11 @@ if (urlTextIdx !== -1 || directUrl) {
         console.warn('Playwright extraction failed or blocked, trying fallback WebFetch...', err.message);
         try {
           const secureUrl = await validateUrlSecurity(inputSource);
-          const res = await fetch(secureUrl, { signal: AbortSignal.timeout(30000) });
+          // validateUrlSecurity only vets the initial URL; a redirect could still
+          // steer the fetch at an internal host (SSRF). The Playwright path
+          // re-validates per hop, but this plain fetch must refuse redirects
+          // outright — fail closed rather than follow an unvetted Location (#1851).
+          const res = await fetch(secureUrl, { signal: AbortSignal.timeout(30000), redirect: 'error' });
           if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
           targetText = await res.text();
         } catch (fetchErr) {
@@ -563,9 +636,15 @@ if (urlTextIdx !== -1 || directUrl) {
         if (browser) await browser.close();
       }
 
+      // Whitespace-collapse + length-cap the fetched page text. Use compactText
+      // (string -> string), NOT normalizeJd: normalizeJd expects the { title,
+      // text } DOM-read object and returns { url, title, text }, so feeding it
+      // the innerText/fetch STRING silently produced { text: '' } — destroying
+      // the JD and then throwing `text.matchAll is not a function` downstream
+      // (#1894). compactText is the string-in/string-out helper this wants.
       try {
-        const { normalizeJd } = await import('./browser-extract.mjs');
-        targetText = normalizeJd({ title: '', text: targetText }, inputSource).text;
+        const { compactText } = await import('./browser-extract.mjs');
+        targetText = compactText(targetText);
       } catch (e) {}
     } else {
       if (existsSync(inputSource)) {
@@ -576,43 +655,27 @@ if (urlTextIdx !== -1 || directUrl) {
       }
     }
 
-    const rawJdSkills = extractSkills(targetText);
-    const jdSkills = Array.isArray(rawJdSkills) ? rawJdSkills : Array.from(rawJdSkills || []);
-
-    let knownTextChunks = [];
+    // Assemble the known-skills text (active-user CV + profile), matching
+    // aggregate mode without importing candidate evidence from system examples.
+    const knownTextChunks = [];
     if (existsSync(PROFILE_FILE)) {
-      try { knownTextChunks.push(readFileSync(PROFILE_FILE, 'utf-8').toLowerCase()); } catch (e) {}
+      try { knownTextChunks.push(readFileSync(PROFILE_FILE, 'utf-8')); } catch (e) {}
     }
-
     if (!existsSync(CV_FILE)) {
       console.error(`Fatal: Active user's CV not found at ${CV_FILE}`);
       process.exit(1);
     }
-    try { knownTextChunks.push(readFileSync(CV_FILE, 'utf-8').toLowerCase()); } catch (e) {}
+    try { knownTextChunks.push(readFileSync(CV_FILE, 'utf-8')); } catch (e) {}
 
-    const combinedKnownText = knownTextChunks.join('\n');
-    const knownSkillsSet = new Set(
-      [...extractSkills(combinedKnownText)].map(skill => skill.toLowerCase())
-    );
-
-    const gapList = [];
-    const excludedAsKnown = [];
-
-    jdSkills.forEach(skill => {
-      if (!skill) return;
-      if (knownSkillsSet.has(skill.toLowerCase())) {
-        excludedAsKnown.push(skill);
-      } else {
-        gapList.push(skill);
-      }
-    });
+    const { gaps: gapList, excludedAsKnown, knownSkills } =
+      computeTargetedGaps(targetText, knownTextChunks.join('\n'));
 
     const targetedResult = {
       mode: 'targeted',
       source: inputSource,
       gaps: gapList.map(skill => ({ skill })),
       excludedAsKnown: excludedAsKnown.map(skill => ({ skill })),
-      knownSkills: Array.from(knownSkillsSet).sort()
+      knownSkills,
     };
 
     if (jsonOutput) {

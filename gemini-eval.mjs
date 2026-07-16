@@ -28,7 +28,7 @@
  * `modelName` below and the `--model` examples accordingly.
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
@@ -37,6 +37,9 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
+import {
+  formatReportNumber, releaseReportNumbers, reserveReportNumbers,
+} from './reserve-report-num.mjs';
 
 // ---------------------------------------------------------------------------
 // Bootstrap: load .env before anything else
@@ -165,16 +168,6 @@ function readFile(path, label) {
     return `[${label} not found — skipping]`;
   }
   return readFileSync(path, 'utf-8').trim();
-}
-
-function nextReportNumber() {
-  if (!existsSync(PATHS.reports)) return '001';
-  const files = readdirSync(PATHS.reports)
-    .filter(f => /^\d{3}-/.test(f))
-    .map(f => parseInt(f.slice(0, 3)))
-    .filter(n => !isNaN(n));
-  if (files.length === 0) return '001';
-  return String(Math.max(...files) + 1).padStart(3, '0');
 }
 
 function validateEvaluationShape(text) {
@@ -384,12 +377,18 @@ if (summaryMatch) {
 // ---------------------------------------------------------------------------
 if (saveReport) {
   let reportSaved = false;
+  let reservedNumbers = [];
   try {
     if (!existsSync(PATHS.reports)) {
       mkdirSync(PATHS.reports, { recursive: true });
     }
 
-    const num         = nextReportNumber();
+    reservedNumbers   = await reserveReportNumbers(1, {
+      rootDir: ROOT,
+      reportsDir: PATHS.reports,
+      trackerPath: PATHS.tracker,
+    });
+    const num         = formatReportNumber(reservedNumbers[0]);
     const today       = new Date().toISOString().split('T')[0];
     const companySlug = slugifyCompany(company);
     const filename    = `${num}-${companySlug}-${today}.md`;
@@ -444,6 +443,17 @@ ${evaluationText.replace(/---SCORE_SUMMARY---[\s\S]*?---END_SUMMARY---/, '').tri
     } catch (err) {
       console.warn(`⚠️   Report saved, but could not merge tracker addition into users/${userContext.userId}/data/applications.md: ${err.message}`);
       process.exitCode = 1;
+    }
+  }
+
+  if (reservedNumbers.length > 0) {
+    try {
+      await releaseReportNumbers(reservedNumbers, {
+        reportsDir: PATHS.reports,
+        trackerPath: PATHS.tracker,
+      });
+    } catch (err) {
+      console.warn(`⚠️   Could not release report reservation: ${err.message}`);
     }
   }
 }

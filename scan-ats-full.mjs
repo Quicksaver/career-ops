@@ -23,6 +23,7 @@
  *   node scan-ats-full.mjs --user <username> --limit 200          # max companies per ATS (default: all)
  *   node scan-ats-full.mjs --user <username> --dry-run            # preview without writing files
  *   node scan-ats-full.mjs --user <username> --liveness           # Playwright-verify matches before writing
+ *   node scan-ats-full.mjs --user <username> --include-blacklisted # audit blacklist matches instead of skipping
  *   node scan-ats-full.mjs --user <username> --verbose            # log per-board fetch failures
  *   node scan-ats-full.mjs --user <username> --md-out <dir>       # also write a dated markdown digest to <dir>
  *   node scan-ats-full.mjs --user <username> --help               # print usage and exit
@@ -38,7 +39,7 @@ import greenhouse from './providers/greenhouse.mjs';
 import lever from './providers/lever.mjs';
 import ashby from './providers/ashby.mjs';
 import workday from './providers/workday.mjs';
-import { buildTitleFilter, buildLocationFilter, loadSeenUrls, appendToPipeline, appendToScanHistory, configureScanUserPaths } from './scan.mjs';
+import { buildTitleFilter, buildLocationFilter, loadSeenUrls, appendToPipeline, appendToScanHistory, configureScanUserPaths, loadBlacklist } from './scan.mjs';
 import {
   ensureUserDirs,
   getUserContext,
@@ -46,6 +47,7 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { SEED_SOURCES, toPortalEntry } from './seeds/vc-portfolios.mjs';
+import { normalizeCompany } from './tracker-utils.mjs';
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -124,8 +126,8 @@ const SOURCES = {
 
 const KNOWN_FLAGS = [
   '--since', '--limit', '--ats', '--seeds', '--dry-run', '--liveness',
-  '--verbose', '--md-out', '--json', '--include-undated', '--shuffle',
-  '--help', '-h',
+  '--verbose', '--md-out', '--json', '--include-undated', '--include-blacklisted',
+  '--shuffle', '--help', '-h',
 ];
 
 // Flags that consume the next argv token as a value (space-separated form —
@@ -139,6 +141,7 @@ const USAGE = `Usage:
   node scan-ats-full.mjs --user <username> --limit 200
   node scan-ats-full.mjs --user <username> --dry-run
   node scan-ats-full.mjs --user <username> --liveness
+  node scan-ats-full.mjs --user <username> --include-blacklisted
   node scan-ats-full.mjs --user <username> --verbose
   node scan-ats-full.mjs --user <username> --md-out <dir>
   node scan-ats-full.mjs --user <username> --help`;
@@ -210,6 +213,7 @@ function parseArgs(args) {
     mdOut: valueOf('--md-out'),
     json: args.includes('--json'),
     includeUndated: args.includes('--include-undated'),
+    includeBlacklisted: args.includes('--include-blacklisted'),
     shuffle: args.includes('--shuffle'),
   };
 }
@@ -256,11 +260,49 @@ export function classifyPostingDate(job, cutoff) {
   return 'keep';
 }
 
+// Apply the same user-owned do-not-apply gate as scan.mjs to reverse-scan
+// results. Absent/empty blacklist is a no-op. Default skips are counted and
+// never silent; --include-blacklisted keeps matches but marks them for audit.
+export function filterBlacklistedOffers(offers, blacklist, { includeBlacklisted = false } = {}) {
+  if (!blacklist || blacklist.size === 0) {
+    return { offers, filteredBlacklist: 0, annotatedBlacklisted: 0 };
+  }
+
+  const kept = [];
+  let filteredBlacklist = 0;
+  let annotatedBlacklisted = 0;
+
+  for (const offer of offers) {
+    const entry = blacklist.get(normalizeCompany(offer.company || ''));
+    if (!entry) {
+      kept.push(offer);
+      continue;
+    }
+
+    if (!includeBlacklisted) {
+      filteredBlacklist++;
+      continue;
+    }
+
+    annotatedBlacklisted++;
+    const label = `blacklisted${entry.reason ? `: ${entry.reason}` : ''}`;
+    kept.push({
+      ...offer,
+      blacklisted: true,
+      note: typeof offer.note === 'string' && offer.note.trim()
+        ? `${label} — ${offer.note}`
+        : label,
+    });
+  }
+
+  return { offers: kept, filteredBlacklist, annotatedBlacklisted };
+}
+
 // Cap-aware company sampling. Default: the dataset's natural (alphabetical)
 // prefix. With --shuffle: a random sample of `limit` companies, so a capped
 // scan isn't always biased to the same alphabetical-first slice. Pure; returns
 // a new array and never mutates `list`.
-export function sampleCompanies(list, limit, shuffle) {
+export function sampleCompanies(list, limit, shuffle = false) {
   if (!shuffle || limit >= list.length) return list.slice(0, limit);
   const copy = list.slice();
   for (let i = copy.length - 1; i > 0; i--) {
@@ -443,6 +485,7 @@ async function main() {
   log(`Reverse ATS scan — user ${userContext.userId} | ${sourcesSummary || 'no sources'} | since ${opts.sinceDays}d${opts.limit < Infinity ? ` | limit ${opts.limit}/ats` : ''}${opts.shuffle ? ' | shuffled' : ''}${opts.includeUndated ? ' | +undated' : ''}${opts.liveness ? ' | liveness' : ''}${opts.dryRun ? ' | DRY RUN' : ''}`);
 
   const { seen: seenUrls } = loadSeenUrls();
+  const blacklist = loadBlacklist();
   // sinceMs and includeUndated let providers (currently only workday.mjs)
   // stop paginating a tenant early instead of always walking to max_pages:
   // sinceMs once postings are confidently past the --since window, and
@@ -523,8 +566,9 @@ async function main() {
     }
   }
 
-  let offers = newOffers;
-  if (offers.length && opts.liveness) offers = await filterLive(newOffers);
+  const blacklistResult = filterBlacklistedOffers(newOffers, blacklist, { includeBlacklisted: opts.includeBlacklisted });
+  let offers = blacklistResult.offers;
+  if (offers.length && opts.liveness) offers = await filterLive(offers);
   offers.sort((a, b) => (b.postedAt || 0) - (a.postedAt || 0));
 
   log(`\n${'━'.repeat(45)}`);
@@ -542,13 +586,21 @@ async function main() {
       : '';
     log(`Undated dropped: ${droppedNoDate}${breakdown}${opts.includeUndated ? '' : '. Use --include-undated to keep'}`);
   }
+  if (blacklist.size > 0) {
+    if (opts.includeBlacklisted) {
+      log(`Blacklisted:      ${blacklistResult.annotatedBlacklisted} let through annotated (--include-blacklisted)`);
+    } else {
+      log(`Blacklisted:      ${blacklistResult.filteredBlacklist} skipped (blacklist)`);
+    }
+  }
   log(`New matches:        ${offers.length}`);
 
   if (offers.length) {
     log('\nNew offers:');
     for (const o of offers) {
       const posted = o.postedAt ? new Date(o.postedAt).toISOString().slice(0, 10) : 'n/a';
-      log(`  + [${o.source}] ${posted} | ${o.company} | ${o.title} | ${o.location || 'N/A'}\n    ${o.url}`);
+      const blacklistSuffix = o.blacklisted ? ' [BLACKLISTED — on your do-not-apply list]' : '';
+      log(`  + [${o.source}] ${posted} | ${o.company} | ${o.title} | ${o.location || 'N/A'}${blacklistSuffix}\n    ${o.url}`);
     }
   }
 
@@ -600,6 +652,8 @@ async function main() {
       datasetStatus,
       postingsKept: offers.length,
       postingsDroppedNoDate: droppedNoDate,
+      postingsFilteredBlacklist: blacklistResult.filteredBlacklist,
+      postingsAnnotatedBlacklisted: blacklistResult.annotatedBlacklisted,
       unreachableBoards: totalErrors,
       saved,
       offers: offers.map(o => ({
@@ -609,6 +663,8 @@ async function main() {
         location: o.location || null,
         postedAt: o.postedAt ? new Date(o.postedAt).toISOString().slice(0, 10) : null,
         dateStatus: o.dateStatus || (o.postedAt ? 'dated' : 'unknown'),
+        blacklisted: Boolean(o.blacklisted),
+        note: o.note || null,
         source: o.source,
       })),
     }) + '\n');

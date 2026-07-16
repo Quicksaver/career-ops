@@ -74,6 +74,7 @@ article-digest.md
 modes/_custom.md
 .update-dismissed
 .update-lock
+.manifesto-noted
 
 # Plugin layer — opt-in toggles + user-installed plugins + integrity lock (never auto-updated)
 config/plugins.yml

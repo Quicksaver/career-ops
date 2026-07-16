@@ -25,7 +25,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run build:latex` | `build-cv-latex.mjs` | Build .tex from structured JSON payload |
 | `npm run sync-check` | `cv-sync-check.mjs` | Validate CV/profile consistency |
 | `npm run patterns` | `analyze-patterns.mjs` | Analyze tracker outcomes and report patterns |
-| `npm run upskill` | `upskill.mjs` | Aggregate skill-gap map from tracked reports |
+| `npm run upskill` | `upskill.mjs` | Aggregate skill-gap map from tracked reports or targeted analysis with `--url-text <url|file>` |
 | `npm run add` | `add-entry.mjs` | Dedup + insert a `/career-ops add` entry into `users/{USER}/cv.md` / `users/{USER}/article-digest.md` |
 | `npm run update:check` | `update-system.mjs check` | Check for upstream updates |
 | `npm run update` | `update-system.mjs apply` | Apply upstream update |
@@ -313,6 +313,7 @@ npm run upskill -- --user <username>
 npm run upskill -- --user <username> --json
 npm run upskill -- --user <username> --min-reports 3
 node upskill.mjs --user <username> --url-text path/to/jd.md
+node upskill.mjs --user <username> --url-text https://boards.greenhouse.io/acme/jobs/123
 node upskill.mjs --user <username> https://company.example/jobs/123
 node upskill.mjs --self-test
 ```
@@ -437,7 +438,9 @@ npm run rollback
 
 ## liveness
 
-Tests whether job posting URLs are still live using headless Chromium. Detects expired patterns (e.g. "job no longer available"), HTTP 404/410, ATS redirect patterns, and apply-button presence. Supports multi-language expired patterns (English, German, French).
+Tests whether job posting URLs are still live. Two rungs: a zero-token ATS API check first (`liveness-api.mjs` — Greenhouse, Lever, Ashby, Workday), falling back to headless Chromium (`liveness-browser.mjs`) for non-ATS pages or when the API is inconclusive. The browser rung detects expired patterns (e.g. "job no longer available"), HTTP 404/410, ATS redirect patterns, and apply-button presence, and supports multi-language expired patterns (English, German, French).
+
+Per-job ATS endpoints (Greenhouse, Lever, Workday) treat a 200 as proof the posting is live; Ashby's public API is org-level (the whole job board), so that rung parses the board and confirms the specific job id is still listed. A definitive 404/410 from any ATS API is authoritative and short-circuits the browser check entirely — zero tokens, no browser launch.
 
 ```bash
 npm run liveness -- https://example.com/job/123
@@ -512,6 +515,8 @@ Reverse ATS discovery scanner. Where `scan.mjs` scans the companies you track in
 
 Postings without a usable publish date are skipped — a reverse scan is only useful for fresh postings. New matches are appended to `users/{USER}/data/pipeline.md` and `users/{USER}/data/scan-history.tsv` in the same format as `scan.mjs`.
 
+`data/blacklist.md` is respected here too: blacklisted companies are skipped by default and reported in the summary. Pass `--include-blacklisted` to audit them instead; matching postings flow through annotated (`note: blacklisted: {reason}` in `data/pipeline.md`).
+
 ### Cross-listing detection
 
 `users/{USER}/data/scan-history.tsv` carries a **SimHash fingerprint** of the JD text in its 8th column (`jd_fingerprint`), and the original posting date in its 9th column (`postedAt`). The fingerprint column exists to catch a specific double-submission hazard: the same role posted by the direct employer **and** by a recruitment agency, often with the employer name stripped from the agency listing. URL dedup and company+role dedup both miss this pair because the URLs and company names are different — but agencies rarely rewrite the requirements text, so a near-identical JD body is a reliable signal.
@@ -533,6 +538,7 @@ node scan-ats-full.mjs --user <username> --ats greenhouse,workday   # subset of 
 node scan-ats-full.mjs --user <username> --limit 200                # max companies per ATS
 node scan-ats-full.mjs --user <username> --dry-run                  # preview without writing
 node scan-ats-full.mjs --user <username> --liveness                 # Playwright-verify matches first
+node scan-ats-full.mjs --user <username> --include-blacklisted      # audit blacklist matches instead of skipping
 node scan-ats-full.mjs --user <username> --md-out users/<username>/reports/scans # also write a dated markdown digest
 ```
 
