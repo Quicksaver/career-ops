@@ -171,7 +171,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `scan-ats-full.mjs` | Reverse-ATS keyword-first scanner — walks public ATS directories, respects the active user's title/location filters and blacklist, and writes only to that user's pipeline/history/cache files |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
-| `users/{USER}/reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy). Header includes `**Legitimacy:** {tier}`. |
+| `users/{USER}/reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy) + Risk Summary, plus `## Machine Summary` YAML for downstream scripts. Header includes `**Legitimacy:** {tier}`. |
 
 ### Plugins (optional)
 
