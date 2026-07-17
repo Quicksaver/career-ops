@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `25d335a458103cc4259a0516da6babd87bdf36ed`
-- Fork ref: current `main` at `d95c2b967f4650ec9fd1879bac6622b6b02c39de`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `177`
-- Diff-size baseline after merge, before this inventory refresh: `260 files changed, 21923 insertions(+), 3136 deletions(-)`
+- Upstream ref: `upstream/main` at `4acfddf8f44787e8f6e6373d3a540e964f873371`
+- Fork ref: current `main` at `514699fa017dbf6305df3425cc5f48fa821924f5`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `180`
+- Diff-size baseline after merge, before this inventory refresh: `261 files changed, 21983 insertions(+), 3145 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,13 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.20 behavior and web v0.3.0 through `25d335a458103cc4259a0516da6babd87bdf36ed` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.21 behavior and web v0.3.0 through `4acfddf8f44787e8f6e6373d3a540e964f873371` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Unified company Risk Summary: evaluation and batch reports now close Block G with a fixed five-signal summary covering posting legitimacy, employment classification, culture, interview red flags, and AI/infrastructure consistency without adding new judgment. The same values are preserved as a nested `risk_summary` Machine Summary map for downstream analysis; interview-redflag links and source files remain under `users/{USER}/interview-prep/`, and reports remain under `users/{USER}/reports/`.
+- Scanner trust persistence: `scan.mjs` now surfaces flagged trust scores and reasons as a labeled `trust:` pipeline segment and appends score/flag columns after `postedAt` in `users/{USER}/data/scan-history.tsv`. Clean postings and scans without `trust_filter` keep the pipeline row unchanged, while pipeline triage can feed flagged trust evidence into Block G before evaluation.
+- v1.21.0 release and attribution updates: release metadata and changelog entries are adopted, the updater's manifesto URL now carries `utm_source=updater`, several localized READMEs gain author-entity parity, and `SIGNATURES.md` gains one community signature. These release and documentation changes do not alter active-user routing or candidate-data ownership.
 - README wordmark and language navigation: all 15 localized READMEs replace the text heading with an adaptive light/dark SVG wordmark, add the standalone project logo asset, center the language selector, and move Spanish into the second position. `SIGNATURES.md` also gains one community signature. These are presentation-only changes and do not alter the fork's runtime, active-user routing, or candidate-data boundary.
 - Community review governance: `MAINTAINERS.md` names the first community Reviewer and defines the areas where that review can unblock merges, while `docs/REVIEWING.md` provides a short doctrine-led checklist covering the data contract, tests, scope, behavior changes, security, and contributor tone. This is documentation-only and does not alter the fork's runtime, user-data routing, or maintenance workflow.
 - Portal health history and coverage decay: `scan.mjs` now appends per-target `reachable`, `empty`, `slug_gone`, or `network` observations and escalates only after the configured consecutive-failure threshold; `stats.mjs` exposes persistently dead configured portals. Conflict resolution moves `portal-health.tsv` from upstream's root `data/` default to `users/{USER}/data/`, keeps `--dry-run` write-free, and prints `verify-portals.mjs --file` commands against the active user's `portals.yml`.
@@ -210,6 +213,9 @@ New upstream features or behavior now present:
 
 Conflict notes from this merge:
 
+- `AGENTS.md`, `modes/interview-redflag.md`, and `modes/oferta.md`: adopted the Risk Summary report contract and preserved the required `**Warning level:**` cross-reference while keeping report and interview-prep files under `users/{USER}/`; relative report links still use `../interview-prep/...` from the per-user reports directory.
+- `batch/batch-prompt.md`: adopted the fixed Risk Summary table and `risk_summary` Machine Summary map, changed red-flag source lookup to `{{USER_ROOT}}/interview-prep/`, and retained the fork's single canonical Machine Summary schema rather than duplicating upstream's root-oriented schema inside the report-header example.
+- `modes/pipeline.md`, `scan.mjs`, and `test-all.mjs`: adopted labeled pipeline trust segments and trailing scan-history trust columns while documenting the history file at `users/{USER}/data/scan-history.tsv`; the scanner already writes through the active user's configured pipeline and history paths.
 - `AGENTS.md`, `modes/pdf.md`, `jd-skill-gap.mjs`, `paste-reply.mjs`, `upskill.mjs`, `modes/reply-watch.md`, and `docs/SCRIPTS.md`: adopted the new skill-gap, manual-reply, and targeted-upskill workflows while replacing upstream root `cv.md`, `config/profile.yml`, `data/`, `reports/`, and output assumptions with explicit `--user {USER}` routing and `users/{USER}/...` paths.
 - `dashboard/internal/data/career.go`, `dashboard/internal/data/career_test.go`, `dashboard/internal/ui/screens/pipeline.go`, and `dashboard/main.go`: combined the upstream discard-reason picker and atomic Notes write with the fork's dated dashboard interaction notes, distinct `Closed` state, lazy viewport hydration, and per-user dashboard root. Reason reads reject path traversal and normalize quoted YAML values before showing them in the picker.
 - `batch/batch-prompt.md` and `analyze-patterns.mjs`: retained the new `discard_reasons` Machine Summary field and removed a duplicate report-summary block introduced by overlap; learning-loop recommendations now point to `users/{USER}/modes/_custom.md` instead of the tracked root template.
