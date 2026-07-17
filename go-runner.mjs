@@ -26,6 +26,7 @@ import {
   compactPhaseRecords,
   RUN_RETENTION_DAYS,
 } from './lib/run-artifacts.mjs';
+import { goUnresolvedFindingLines } from './lib/go-summary.mjs';
 
 const HELP = `career-ops deterministic go runner
 
@@ -664,7 +665,9 @@ function printHumanSummary(summary) {
   console.log(`[go] queue ${summary.baseline_pending ?? 0} → ${summary.final_pending ?? 'unknown'} pending; processed ${summary.pipeline?.processed || 0}`);
   console.log(`[go] discovered: scan ${summary.scan?.added_pending || 0}, handoff ${summary.handoff?.observed_added_pending || 0}, LinkedIn ${summary.linkedin?.added_pending || 0}`);
   if (summary.verification_review) {
-    console.log(`[go] verification: reviewed ${reviewedCount(summary.verification_review)}, repaired ${repairedCount(summary.verification_review)}, unresolved ${summary.verification_review.unresolved_findings?.length || 0}`);
+    const unresolvedFindings = summary.verification_review.unresolved_findings || [];
+    console.log(`[go] verification: reviewed ${reviewedCount(summary.verification_review)}, repaired ${repairedCount(summary.verification_review)}, unresolved ${unresolvedFindings.length}`);
+    for (const line of goUnresolvedFindingLines(unresolvedFindings)) console.log(line);
   }
   console.log(`[go] logs: ${summary.logs}`);
   if (summary.user_action) console.log(`[go] action required: ${summary.user_action}`);

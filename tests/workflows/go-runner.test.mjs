@@ -12,6 +12,7 @@ try {
   const codexConfig = await import(pathToFileURL(join(ROOT, 'lib/codex-config.mjs')).href);
   const parallelConfig = await import(pathToFileURL(join(ROOT, 'lib/parallel-config.mjs')).href);
   const duplicateLifecycle = await import(pathToFileURL(join(ROOT, 'lib/duplicate-lifecycle.mjs')).href);
+  const goSummary = await import(pathToFileURL(join(ROOT, 'lib/go-summary.mjs')).href);
   const rejectedKeeper = duplicateLifecycle.mostAdvancedDuplicateRow([
     { num: 1, status: 'Applied' },
     { num: 2, status: 'Rejected' },
@@ -27,6 +28,23 @@ try {
     pass('duplicate lifecycle ranks Responded above Rejected above Applied above Evaluated');
   } else {
     fail('duplicate lifecycle ordering is wrong');
+  }
+  const unresolvedLines = goSummary.goUnresolvedFindingLines([{
+    finding_level: 'error',
+    finding_code: 'broken_report_link',
+    message: '#2603: Report not found: ../reports/2603-opfyx-ltd-2026-06-12.md\ninspect logs',
+  }]);
+  if (unresolvedLines.length === 2 &&
+      unresolvedLines[0] === '[go] unresolved issues (1):' &&
+      unresolvedLines[1] === '[go] unresolved error, broken_report_link: #2603: Report not found: ../reports/2603-opfyx-ltd-2026-06-12.md inspect logs') {
+    pass('go summary exposes each unresolved verification finding inline');
+  } else {
+    fail(`go unresolved summary lines wrong: ${JSON.stringify(unresolvedLines)}`);
+  }
+  if (goSummary.goUnresolvedFindingLines(null).length === 0) {
+    pass('go summary omits the unresolved section when verification is clean');
+  } else {
+    fail('go summary emits an unresolved section for clean verification');
   }
   const fixture = [
     '# Pipeline', '', '## Pending',
@@ -429,6 +447,12 @@ try {
     pass('go runner forwards resolved parallelism to reviewed verification');
   } else {
     fail('go runner does not forward resolved parallelism to reviewed verification');
+  }
+  if (runner.includes("const unresolvedFindings = summary.verification_review.unresolved_findings || []") &&
+      runner.includes('goUnresolvedFindingLines(unresolvedFindings)')) {
+    pass('go runner prints unresolved verification details from the reviewed result');
+  } else {
+    fail('go runner reports only the unresolved count without the finding details');
   }
   if (runner.includes('cleanupExpiredRuns') && runner.includes('ignoreActivePids: [process.pid]') &&
       runner.includes('compactCompletedRun') && runner.includes("summary.status === 'completed'")) {

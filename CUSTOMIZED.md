@@ -1013,6 +1013,7 @@ Files:
 - `verify-pipeline.mjs`
 - `batch/batch-runner.sh`
 - `lib/codex-config.mjs`
+- `lib/go-summary.mjs`
 - `lib/verification-review.mjs`
 - `lib/parallel-config.mjs`
 - `lib/pipeline-queue.mjs`
@@ -1193,6 +1194,7 @@ What this customizes:
   repeated as `human review, job(s) #..., {finding code} → needs_human_review`.
   This recap is non-enumerable runner state used only by the human renderer, so
   `--json` retains its existing machine contract and stdout purity.
+- Makes the parent `go` summary expose every unresolved verifier item immediately after the aggregate verification count, including its severity, stable finding code, and sanitized message. Machine-readable `--json` output remains unchanged.
 - Also repeats every other still-unresolved raw finding at the end of a direct
   human run with its warning/error level, related tracker/report IDs, and issue
   code. Manual items stay in their dedicated block and are excluded from the
