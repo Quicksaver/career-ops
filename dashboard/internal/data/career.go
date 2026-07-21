@@ -1,6 +1,7 @@
 package data
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -762,15 +763,37 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 // notesAppend is appended (with a semicolon separator if notes are non-empty) to
 // whatever the Notes cell already contains. Pass an empty string to leave
 // notes unchanged.
-func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus, notesAppend string) error {
+func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus, notesAppend string) (returnErr error) {
 	filePath := filepath.Join(careerOpsPath, "applications.md")
-	content, err := os.ReadFile(filePath)
-	if err != nil {
+	if _, err := os.Stat(filePath); err != nil {
 		filePath = filepath.Join(careerOpsPath, "data", "applications.md")
-		content, err = os.ReadFile(filePath)
-		if err != nil {
+		if _, err := os.Stat(filePath); err != nil {
 			return err
 		}
+	}
+	filePath, err := canonicalPath(filePath)
+	if err != nil {
+		return fmt.Errorf("resolve tracker path: %w", err)
+	}
+
+	lock, err := acquireTrackerLock(filePath, defaultTrackerLockOptions())
+	if err != nil {
+		return fmt.Errorf("acquire tracker lock: %w", err)
+	}
+	defer func() {
+		if err := lock.release(); err != nil {
+			releaseErr := fmt.Errorf("release tracker lock: %w", err)
+			if returnErr == nil {
+				returnErr = releaseErr
+			} else {
+				returnErr = errors.Join(returnErr, releaseErr)
+			}
+		}
+	}()
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -826,7 +849,7 @@ func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerAppli
 		return fmt.Errorf("application not found: report %s", app.ReportNumber)
 	}
 
-	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
+	return writeFileAtomic(filePath, []byte(strings.Join(lines, "\n")))
 }
 
 // appendNotesInLine appends text to the Notes cell of a tracker row without

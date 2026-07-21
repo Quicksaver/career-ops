@@ -1164,6 +1164,12 @@ print_summary() {
     avg=$(awk -v sum="$score_sum" -v count="$score_count" 'BEGIN{printf "%.1f", sum / count}' 2>/dev/null || echo "N/A")
     echo "Average score: $avg/5 ($score_count scored)"
   fi
+
+  if [[ -f "$PROJECT_DIR/batch/aggregate-tokens.mjs" ]]; then
+    if ! node "$PROJECT_DIR/batch/aggregate-tokens.mjs" --user "$USER_ID"; then
+      echo "Warning: token aggregation failed." >&2
+    fi
+  fi
 }
 
 print_status_table() {

@@ -30,6 +30,7 @@ import {
   systemPath,
   userPath,
 } from './lib/user-context.mjs';
+import { looksLikeScoreCell } from './tracker-parse.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 let userContext;
@@ -339,8 +340,7 @@ if (brokenReports === 0) ok('All report links valid');
 // --- Check 4: Score format ---
 let badScores = 0;
 for (const e of entries) {
-  const s = e.score.replace(/\*\*/g, '').trim();
-  if (!/^\d+\.?\d*\/5$/.test(s) && s !== 'N/A' && s !== 'DUP') {
+  if (!looksLikeScoreCell(e.score)) {
     error(`#${e.num}: Invalid score format: "${e.score}"`, 'invalid_score', `invalid-score:${e.num}`, { tracker_num: e.num, score: e.score });
     badScores++;
   }

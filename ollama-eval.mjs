@@ -25,6 +25,7 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { outputLanguageInstruction, parseOutputLanguage } from './profile-language.mjs';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -34,6 +35,11 @@ import {
 import {
   formatReportNumber, releaseReportNumbers, reserveReportNumbers,
 } from './reserve-report-num.mjs';
+import { TokenAccumulator, formatBreakdown, normalizeOpenAIUsage } from './utils/token-tracker.mjs';
+
+const tracker = new TokenAccumulator();
+tracker.recordZeroToken('scan');
+tracker.recordZeroToken('pdf payload');
 
 try {
   const { config } = await import('dotenv');
@@ -102,6 +108,7 @@ const PATHS = {
   shared:  systemPath('modes', '_shared.md'),
   oferta:  systemPath('modes', 'oferta.md'),
   cv:      userPath(userContext, 'cv.md'),
+  profileYml: userPath(userContext, 'config/profile.yml'),
   reports: userPath(userContext, 'reports'),
   tracker: userPath(userContext, 'data/applications.md'),
 };
@@ -213,6 +220,8 @@ console.log('\n📂  Loading context files...');
 const sharedContext = readFile(PATHS.shared, 'modes/_shared.md');
 const ofertaLogic   = readFile(PATHS.oferta, 'modes/oferta.md');
 const cvContent     = readFile(PATHS.cv,     `users/${userContext.userId}/cv.md`);
+const profileYml    = readFile(PATHS.profileYml, `users/${userContext.userId}/config/profile.yml`);
+const languageInstruction = outputLanguageInstruction(parseOutputLanguage(profileYml));
 
 // ---------------------------------------------------------------------------
 // Build system prompt
@@ -244,8 +253,9 @@ IMPORTANT OPERATING RULES FOR THIS SESSION
    - Block D (Comp research): use training-data salary estimates; note them as estimates.
    - Block G (Legitimacy): analyze JD text only; skip URL/page freshness checks.
    - Post-evaluation file saving is handled by the script, not by you.
-2. Generate Blocks A through G in full.
-3. At the very end, output this exact machine-readable block:
+2. ${languageInstruction}
+3. Generate Blocks A through G in full.
+4. At the very end, output this exact machine-readable block:
 
 ---SCORE_SUMMARY---
 COMPANY: <company name or "Unknown">
@@ -279,9 +289,12 @@ try {
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: `JOB DESCRIPTION TO EVALUATE:\n\n${jdText}` },
       ],
-      stream:      false,
-      temperature: 0.4,
-      options: { num_ctx: 32768 },
+      stream: false,
+      // Ollama's /api/chat reads generation params from `options` only — a
+      // top-level `temperature` is silently ignored, so the eval was running at
+      // Ollama's default (0.8) instead of the intended 0.4. Keep it deterministic
+      // (matching the openai/gemini engines) by putting it where Ollama reads it.
+      options: { temperature: 0.4, num_ctx: 32768 },
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -295,6 +308,8 @@ try {
 
   const data = await res.json();
   evaluationText = data.choices?.[0]?.message?.content?.trim();
+  const usage = normalizeOpenAIUsage(data.usage);
+  tracker.record('evaluation', usage);
   if (!evaluationText) {
     console.error('❌  Ollama returned an empty response.');
     process.exit(1);
@@ -399,3 +414,5 @@ ${evaluationText.replace(/---SCORE_SUMMARY---[\s\S]*?---END_SUMMARY---/, '').tri
 console.log('\n' + '─'.repeat(66));
 console.log(`  Score: ${score}/5  |  Archetype: ${archetype}  |  Legitimacy: ${legitimacy}`);
 console.log('─'.repeat(66) + '\n');
+
+console.log(formatBreakdown(tracker, modelName, 'ollama'));

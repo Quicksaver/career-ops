@@ -11,27 +11,30 @@
  * Run: node career-ops/normalize-statuses.mjs --user <id> [--dry-run]
  */
 
-import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'fs';
+import { readFileSync, copyFileSync, existsSync, mkdirSync, realpathSync } from 'fs';
+import { dirname } from 'path';
 import {
   ensureUserDirs,
   getUserContext,
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
-import { rebuildRow } from './tracker-utils.mjs';
+import { openTrackerTransaction, rebuildRow } from './tracker-utils.mjs';
 
 let userContext;
 try {
-  userContext = getUserContext(process.argv.slice(2));
+  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
 } catch (err) {
   printUserContextErrorAndExit(err);
 }
 
-const APPS_FILE = userPath(userContext, 'data/applications.md');
+const appsFileInput = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
+const APPS_FILE = existsSync(appsFileInput) ? realpathSync(appsFileInput) : appsFileInput;
 const DRY_RUN = userContext.args.includes('--dry-run');
 
 // Ensure required directories exist (fresh setup)
-ensureUserDirs(userContext, ['data']);
+if (userContext.userRoot) ensureUserDirs(userContext, ['data']);
+else mkdirSync(dirname(APPS_FILE), { recursive: true });
 
 // Canonical status mapping
 function normalizeStatus(raw) {
@@ -105,7 +108,21 @@ if (!existsSync(APPS_FILE)) {
   console.log('No applications.md found. Nothing to normalize.');
   process.exit(0);
 }
-const content = readFileSync(APPS_FILE, 'utf-8');
+
+let trackerTransaction = null;
+if (!DRY_RUN) {
+  try {
+    trackerTransaction = await openTrackerTransaction(APPS_FILE);
+  } catch (err) {
+    console.error(`Cannot acquire tracker lock: ${err.message}`);
+    process.exit(1);
+  }
+  process.once('exit', () => {
+    try { trackerTransaction.close(); } catch {}
+  });
+}
+try {
+const content = trackerTransaction ? trackerTransaction.read() : readFileSync(APPS_FILE, 'utf-8');
 const lines = content.split('\n');
 
 let changes = 0;
@@ -171,11 +188,15 @@ console.log(`\n📊 ${changes} statuses normalized`);
 
 if (!DRY_RUN && changes > 0) {
   // Backup first
-  copyFileSync(APPS_FILE, APPS_FILE + '.bak');
-  writeFileSync(APPS_FILE, lines.join('\n'));
-  console.log('✅ Written to applications.md (backup: applications.md.bak)');
+  const backupPath = `${APPS_FILE}.bak`;
+  copyFileSync(APPS_FILE, backupPath);
+  trackerTransaction.replace(lines.join('\n'));
+  console.log(`✅ Written to ${APPS_FILE} (backup: ${backupPath})`);
 } else if (DRY_RUN) {
   console.log('(dry-run — no changes written)');
 } else {
   console.log('✅ No changes needed');
+}
+} finally {
+  trackerTransaction?.close();
 }

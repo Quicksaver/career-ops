@@ -1,10 +1,10 @@
 ---
 name: career-ops
-description: AI job search command center -- evaluate offers, generate CVs, scan portals, track applications
+description: AI job search command center -- evaluate offers, tailor CVs, scan portals, track applications. Use when the user pastes a job description or URL, asks to evaluate an offer, tailor a resume or cover letter, scan job boards, prepare for an interview, or track/update their applications.
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | verify | scan | scan-handoff | scan-auth | deep | pdf | latex | latex-tex | cover | email | add | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | offer-prep | titles | upskill | followup | update]"
+argument-hint: "[go | verify | scan | scan-handoff | scan-auth | deep | pdf | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | offer-prep | titles | upskill | followup | reply-watch | update]"
 license: MIT
 ---
 
@@ -94,6 +94,8 @@ Determine the mode from `$mode`:
 | `latex` | `latex` |
 | `latex-tex` | `latex-tex` |
 | `email` | `email` |
+| `add` | `add` |
+| `expand` | `expand` |
 | `training` | `training` |
 | `project` | `project` |
 | `tracker` | `tracker` |
@@ -112,9 +114,10 @@ Determine the mode from `$mode`:
 | `titles` | `titles` |
 | `upskill` | `upskill` |
 | `followup` | `followup` |
+| `reply-watch` | `reply-watch` |
+| `interview-redflag` | `interview-redflag` |
 | `update` | `update` |
 | `cover` | `cover` |
-| `add` | `add` |
 
 **Auto-pipeline detection:** If `$mode` is not a known sub-command AND contains JD text (keywords: "responsibilities", "requirements", "qualifications", "about the role", "we're looking for", company name + role) or a URL to a JD, execute `auto-pipeline`.
 
@@ -124,7 +127,7 @@ If `$mode` is not a sub-command AND doesn't look like a JD, show discovery.
 
 ## Output Language Directive
 
-Before executing any mode, read `config/profile.yml` if it exists and resolve:
+Before executing any mode, read `users/{ACTIVE_USER}/config/profile.yml` if it exists and resolve:
 
 - `language.output` → ISO language code for human-facing output. Default: `en`.
 - `language.modes_dir` → optional market-mode directory. This controls market vocabulary and local evaluation rules only.
@@ -178,6 +181,7 @@ Available commands:
   /career-ops cover     → Cover letter: standalone JD paste or /career-ops cover {slug}
   /career-ops email     → Formal application email draft (draft-only; never sends, submits, or clicks)
   /career-ops add       → Add a project/paper/role to your CV (fetch + preview + confirm)
+  /career-ops expand    → Auto-discover and add missing competencies from profile links
   /career-ops training  → Evaluate course/cert against North Star
   /career-ops project   → Evaluate portfolio project idea
   /career-ops tracker   → Application status overview

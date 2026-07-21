@@ -48,11 +48,13 @@ const CANONICAL_STATUSES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'O
 
 // In-flight applications. Deliberately NARROWER than the dashboard's
 // ActiveApps (which also counts Evaluated): an evaluated-but-never-sent row is
-// a candidate, not an application in flight.
+// a candidate, not an application in flight. Hired is a terminal success, not
+// in flight, so it is intentionally excluded here (but see PURSUED/funnel).
 const ACTIVE_STATUSES = new Set(['Applied', 'Responded', 'Interview', 'Offer']);
 
 // Rows that count toward avgScoreApplied — jobs the user actually pursued.
 // Plain avgScore mixes in SKIP/Discarded and understates real fit.
+// Hired is the fullest pursuit of all, so it belongs here.
 const PURSUED_STATUSES = new Set(['Applied', 'Responded', 'Interview', 'Offer', 'Hired', 'Rejected']);
 
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -127,8 +129,10 @@ export function trackerStatusByNum(content) {
 /**
  * Cumulative funnel: everX = "reached stage X or beyond, ever". The math
  * mirrors the dashboard's ComputeProgressMetrics (career.go): Rejected counts
- * into everApplied (a rejection proves a submission), and each later stage
- * sums itself plus everything beyond it. Rates are relative to everApplied.
+ * into everApplied (a rejection proves a submission), Hired counts into every
+ * stage through everOffer (a landed job proves the offer and everything before
+ * it), and each later stage sums itself plus everything beyond it. Rates are
+ * relative to everApplied.
  *
  * Keys are deliberately NOT bare status names — `tracker.byStatus.Applied` is
  * "currently in Applied" while `everApplied` is "ever applied"; the same word

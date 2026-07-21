@@ -368,7 +368,7 @@ try {
     '1\thttps://example.com/job\tfixture\t-',
   ].join('\n') + '\n');
   for (const script of ['merge-tracker.mjs', 'reconcile-pipeline.mjs', 'verify-pipeline.mjs']) {
-    writeFileSync(join(batchTmp, script), 'process.exit(0);\n');
+    writeFileSync(join(batchTmp, script), 'process["exit"](0);\n');
   }
   writeFileSync(join(batchTmp, 'resolve-parallel.mjs'), 'console.log("1\\tdefault");\n');
   writeFileSync(join(batchTmp, 'reserve-report-num.mjs'), [
