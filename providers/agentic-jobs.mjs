@@ -4,11 +4,14 @@
 import { decodeEntities } from './_html-entities.mjs';
 
 // Agentic Engineering Jobs provider — scrapes the server-rendered listing at
-// https://agentic-engineering-jobs.com/. The site has no public API, but every
-// job card is plain HTML wrapped in a `data-impression-slug` container, so the
-// full list is parseable from one page fetch (zero tokens, no browser).
+// https://agentic-engineering-jobs.com/jobs. The site has no public API, but
+// job cards are present in the initial HTML, so the full visible page is
+// parseable from one fetch (zero tokens, no browser).
 //
-// Card text lines after tag-stripping follow a stable order:
+// The current format uses `<a href="/jobs/{slug}">` cards with semantic class
+// signals for title/company/remote plus ISO country codes and a date. The
+// original `data-impression-slug` container parser remains as a compatibility
+// fallback for cached/older markup. Legacy card text follows this order:
 //   [Featured?] → title → company → location → tech tags… → 🇺🇸 flag → [date]
 // The country flag emoji is decoded to a country name and appended to the
 // location so scan.mjs's location_filter can gate non-US postings that only
@@ -17,6 +20,7 @@ import { decodeEntities } from './_html-entities.mjs';
 // Wire in via a `job_boards:` entry with `provider: agentic-jobs`.
 
 const SITE_ORIGIN = 'https://agentic-engineering-jobs.com';
+const LISTING_URL = `${SITE_ORIGIN}/jobs`;
 const TRUSTED_HOST = 'agentic-engineering-jobs.com';
 
 /** @param {string} url */
@@ -36,6 +40,15 @@ function assertAgenticUrl(url) {
 
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
 
+function regionCodeToCountry(code) {
+  try {
+    const name = regionNames.of(code);
+    return name && name !== code ? name : '';
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Convert a two-letter regional-indicator flag emoji (e.g. 🇩🇪) into an
  * English country name ("Germany"). Returns '' when the input isn't a flag or
@@ -50,12 +63,60 @@ export function flagToCountry(s) {
     return cp >= 0x1f1e6 && cp <= 0x1f1ff ? String.fromCharCode(cp - 0x1f1e6 + 65) : '';
   });
   if (codes.some((c) => !c)) return '';
-  try {
-    const name = regionNames.of(codes.join(''));
-    return name && name !== codes.join('') ? name : '';
-  } catch {
-    return '';
+  return regionCodeToCountry(codes.join(''));
+}
+
+function htmlText(html) {
+  if (typeof html !== 'string' || !html) return '';
+  return decodeEntities(html.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Parse the current anchor-card body into a normalized Job.
+ * @param {string} slug
+ * @param {string} body
+ * @returns {{ title: string, url: string, company: string, location: string, postedAt?: number } | null}
+ */
+export function normalizeCurrentAgenticCard(slug, body) {
+  if (!slug || !/^[a-z0-9_-]+$/i.test(slug) || typeof body !== 'string') return null;
+
+  const titleMatch = body.match(/<span\b[^>]*class="[^"]*\bfont-semibold\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+  const companyMatch = body.match(/<p\b[^>]*class="[^"]*\btext-muted\b[^"]*\btruncate\b[^"]*"[^>]*>([\s\S]*?)<\/p>/i);
+  const title = htmlText(titleMatch?.[1] || '');
+  const company = htmlText(companyMatch?.[1] || '');
+  if (!title || !company) return null;
+
+  // bg-indigo-100 is the current work-model/location badge; violet badges are
+  // technology tags and must never slide into the location field.
+  const locationMatch = body.match(/<span\b[^>]*class="[^"]*\bbg-indigo-100\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+  const locationParts = [];
+  const locationBadge = htmlText(locationMatch?.[1] || '');
+  if (locationBadge) locationParts.push(locationBadge);
+
+  // A posting can carry multiple country flags in one span, with the reliable
+  // machine value exposed as title="CA, GB". Preserve every country so global
+  // location filters do not mistake a country-scoped Remote role for worldwide.
+  const countryCodes = [];
+  for (const match of body.matchAll(/<span\b[^>]*\btitle="([A-Z]{2}(?:\s*,\s*[A-Z]{2})*)"[^>]*>/gi)) {
+    countryCodes.push(...match[1].split(',').map((code) => code.trim().toUpperCase()));
   }
+  for (const code of [...new Set(countryCodes)]) {
+    const country = regionCodeToCountry(code);
+    if (country && !locationParts.includes(country)) locationParts.push(country);
+  }
+
+  const job = {
+    title,
+    url: `${SITE_ORIGIN}/jobs/${slug}`,
+    company,
+    location: locationParts.join(', '),
+  };
+  const dateMatch = body.match(/>(\d{4}-\d{2}-\d{2})</);
+  if (dateMatch) {
+    const parsed = Date.parse(`${dateMatch[1]}T00:00:00Z`);
+    if (!Number.isNaN(parsed)) job.postedAt = parsed;
+  }
+  return job;
 }
 
 /**
@@ -110,6 +171,20 @@ export function normalizeAgenticCard(slug, lines) {
 export function parseAgenticListing(html) {
   const out = [];
   const seen = new Set();
+
+  // Current SSR format (July 2026): duplicate responsive anchors can point to
+  // the same job, so URL-level dedup is required even within one response.
+  const anchorPattern = /<a\b[^>]*\bhref=["']\/jobs\/([a-z0-9_-]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of html.matchAll(anchorPattern)) {
+    const job = normalizeCurrentAgenticCard(match[1], match[2]);
+    if (job && !seen.has(job.url)) {
+      seen.add(job.url);
+      out.push(job);
+    }
+  }
+
+  // Original SSR format: retain as a fallback/compatibility path. Running it
+  // after the anchor parser also supports a mixed rollout without duplicates.
   const segments = html.split(/<div[^>]*\bdata-impression-slug="/).slice(1);
   for (const seg of segments) {
     const slug = seg.slice(0, seg.indexOf('"'));
@@ -134,13 +209,13 @@ export default {
   },
 
   async fetch(_entry, ctx) {
-    const url = assertAgenticUrl(`${SITE_ORIGIN}/`);
+    const url = assertAgenticUrl(LISTING_URL);
     // redirect:'error' prevents SSRF via server-side redirects
     const html = await ctx.fetchText(url, { redirect: 'error' });
     const jobs = parseAgenticListing(html);
     if (jobs.length === 0) {
       throw new Error(
-        'agentic-jobs: parsed 0 job cards — the site markup likely changed (expected data-impression-slug containers)',
+        'agentic-jobs: parsed 0 job cards — the site markup likely changed (expected /jobs/{slug} anchors or data-impression-slug containers)',
       );
     }
     return jobs;

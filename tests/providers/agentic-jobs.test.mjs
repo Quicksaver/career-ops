@@ -1,6 +1,6 @@
 // tests/providers/agentic-jobs.test.mjs — Agentic Engineering Jobs provider
-// (server-rendered listing at agentic-engineering-jobs.com, parsed from
-// data-impression-slug card containers). Follows the discovered-test layout
+// (server-rendered listing at agentic-engineering-jobs.com, parsed from current
+// /jobs/{slug} anchors or legacy data-impression-slug card containers). Follows the discovered-test layout
 // from #1440.
 import { pass, fail, ROOT } from '../helpers.mjs';
 import { join } from 'path';
@@ -10,7 +10,7 @@ console.log('\nProvider — agentic-jobs (agentic-engineering-jobs.com SSR listi
 try {
   const mod = await import(pathToFileURL(join(ROOT, 'providers/agentic-jobs.mjs')).href);
   const agentic = mod.default;
-  const { flagToCountry, cardLines, normalizeAgenticCard, parseAgenticListing } = mod;
+  const { flagToCountry, cardLines, normalizeAgenticCard, normalizeCurrentAgenticCard, parseAgenticListing } = mod;
 
   if (agentic.id === 'agentic-jobs') pass('agentic-jobs.id is "agentic-jobs"');
   else fail(`agentic-jobs.id is ${JSON.stringify(agentic.id)}`);
@@ -118,6 +118,57 @@ try {
     fail('normalizeAgenticCard() should return null for incomplete cards');
   }
 
+  // Current anchor-card format (live markup as of 2026-07-21).
+  const CURRENT_CARD = `
+    <div class="flex flex-col gap-3">
+      <span class="inline-flex font-medium bg-amber-100">Featured</span>
+      <span class="text-base font-semibold text-foreground">Product Engineer (m/w/d)</span>
+      <p class="text-sm text-muted truncate">Orbit &amp; Co</p>
+      <span class="inline-flex font-medium bg-indigo-100">Remote</span>
+      <span class="inline-flex font-medium bg-violet-100">AWS Bedrock</span>
+      <span class="text-base leading-none" title="DE">🇩🇪</span>
+      <div class="text-sm text-muted">2026-07-07</div>
+    </div>`;
+  const currentCard = normalizeCurrentAgenticCard('orbit-product-engineer-mwd-bSoC5p', CURRENT_CARD);
+  if (
+    currentCard &&
+    currentCard.title === 'Product Engineer (m/w/d)' &&
+    currentCard.company === 'Orbit & Co' &&
+    currentCard.location === 'Remote, Germany' &&
+    currentCard.postedAt === Date.parse('2026-07-07T00:00:00Z')
+  ) {
+    pass('normalizeCurrentAgenticCard() parses title/company/work model/country/date from current SSR markup');
+  } else {
+    fail(`normalizeCurrentAgenticCard() = ${JSON.stringify(currentCard)}`);
+  }
+
+  const MULTI_COUNTRY_CARD = `
+    <span class="text-base font-semibold">Senior Backend Engineer</span>
+    <p class="text-muted truncate">GitLab</p>
+    <span class="bg-indigo-100">Remote</span>
+    <span class="bg-violet-100">MCP</span>
+    <span class="leading-none" title="CA, GB">🇨🇦 🇬🇧</span>
+    <div>2026-07-20</div>`;
+  const multiCountry = normalizeCurrentAgenticCard('gitlab-backend', MULTI_COUNTRY_CARD);
+  if (multiCountry?.location === 'Remote, Canada, United Kingdom') {
+    pass('normalizeCurrentAgenticCard() preserves every country on multi-flag Remote cards');
+  } else {
+    fail(`normalizeCurrentAgenticCard() multi-country location = ${JSON.stringify(multiCountry?.location)}`);
+  }
+
+  const NO_LOCATION_CARD = `
+    <span class="text-base font-semibold">Software Engineer, AI Agents</span>
+    <p class="text-muted truncate">Cloudflare</p>
+    <span class="bg-violet-100">MCP</span>
+    <span class="leading-none" title="IN">🇮🇳</span>
+    <div>2026-07-20</div>`;
+  const noCurrentLocation = normalizeCurrentAgenticCard('cloudflare-ai-agents', NO_LOCATION_CARD);
+  if (noCurrentLocation?.location === 'India') {
+    pass('normalizeCurrentAgenticCard() does not mistake a technology badge for a location');
+  } else {
+    fail(`normalizeCurrentAgenticCard() no-location result = ${JSON.stringify(noCurrentLocation)}`);
+  }
+
   // parseAgenticListing — full page → deduped job list
   const LISTING = `
 <html><body><main>
@@ -153,6 +204,19 @@ try {
     fail(`parseAgenticListing() returned ${jobs.length} jobs, expected 2`);
   }
 
+  const CURRENT_LISTING = `<html><body>
+    <a class="job-card" href="/jobs/orbit-product-engineer-mwd-bSoC5p">${CURRENT_CARD}</a>
+    <a class="responsive-duplicate" href="/jobs/orbit-product-engineer-mwd-bSoC5p">${CURRENT_CARD}</a>
+    <a href="/jobs/gitlab-backend">${MULTI_COUNTRY_CARD}</a>
+    <a href="/jobs/remote"><span>Remote jobs</span></a>
+  </body></html>`;
+  const currentJobs = parseAgenticListing(CURRENT_LISTING);
+  if (currentJobs.length === 2 && currentJobs[0].company === 'Orbit & Co' && currentJobs[1].company === 'GitLab') {
+    pass('parseAgenticListing() parses current anchor cards, rejects taxonomy links, and dedupes responsive duplicates');
+  } else {
+    fail(`parseAgenticListing() current markup = ${JSON.stringify(currentJobs)}`);
+  }
+
   const g = jobs[1];
   if (
     g &&
@@ -176,7 +240,7 @@ try {
   if (
     fetched.length === 2 &&
     ok.calls.length === 1 &&
-    ok.calls[0].url === 'https://agentic-engineering-jobs.com/' &&
+    ok.calls[0].url === 'https://agentic-engineering-jobs.com/jobs' &&
     ok.calls[0].opts.redirect === 'error'
   ) {
     pass('agentic-jobs.fetch() fetches the listing once with redirect: error and returns the parsed jobs');

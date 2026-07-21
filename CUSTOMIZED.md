@@ -566,6 +566,8 @@ Files:
 - `providers/makeitingermany.mjs`
 - `providers/rustjobs.mjs`
 - `providers/arbeitsagentur.mjs`
+- `providers/agentic-jobs.mjs`
+- `tests/providers/agentic-jobs.test.mjs`
 - `templates/portals.example.yml`
 - `test-all.mjs`
 
@@ -576,6 +578,7 @@ What this customizes:
 - Working Nomads is partly retired from the fork's custom-provider dispatcher: the provider module is now direct/upstream-style, while local config compatibility for `api`, inferred location, `api_params.q/category/location/tags`, and `published_within_days` remains in `providers/workingnomads.mjs`.
 - Arbeitsagentur remains an upstream-style provider module, but the fork adds local normalization that prefixes remote-titled postings with `Remote, ...`, avoids doing so for explicit no-remote/no-homeoffice titles, and uses `Deutschland` when the API omits a location. This keeps location filtering useful for nationwide/remote Germany scans without letting `NO REMOTE` titles slip through as remote.
 - The current upstream Arbeitsagentur provider adds `remoteMatch: filter` and `remoteMaxPages` so server-side `homeoffice=nv_true` filtering can complement the fork's title-based remote normalization; preserve both paths because source configs may rely on either.
+- Agentic Engineering Jobs remains an upstream-style provider module, but the fork fixes its July 2026 markup regression: the listing moved from root-page `data-impression-slug` containers to server-rendered `/jobs/{slug}` anchors. The local parser reads title, company, work model, ISO country codes, and posting date from the new cards, deduplicates responsive duplicate anchors, rejects taxonomy links, and retains the original container parser for cached or mixed-rollout markup. Regression tests also ensure violet technology badges are never treated as locations and that multi-country remote restrictions reach scanner location filtering.
 - Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
 - Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
 - Extends the example portal config with these discovery sources and custom notes/parameters.
@@ -588,6 +591,7 @@ Future merge notes:
 - If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage. Upstream's Ashby-specific timeout/backoff is not yet a full replacement for the custom helper because the fork uses the helper across several custom structured providers.
 - Keep upstream Workable, SmartRecruiters, Recruitee, IBM, Arbeitsagentur, Jobstreet, Glints, BambooHR, and Breezy tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
 - Preserve the Arbeitsagentur remote/no-remote normalization unless upstream adds an equivalent signal in the provider output or scan filtering layer.
+- Remove the local Agentic Engineering Jobs parser delta and its fork-only regression cases once upstream parses the current `/jobs/{slug}` anchor cards with equivalent field extraction, responsive-card deduplication, taxonomy-link rejection, multi-country location handling, and either preserves legacy-container compatibility or demonstrates that fallback is no longer needed. Verify the upstream replacement against the live board and the provider test before retiring this entry.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
 
 ## Scan Company And Location Filters
@@ -1417,6 +1421,7 @@ On every upstream update, explicitly check whether upstream now includes:
 
 - Any provider currently implemented in `providers/_custom.mjs`.
 - Any fork provider adapter now covered by upstream first-party modules such as RemoteOK, Remotive, IBM, or Working Nomads. Working Nomads is already on the upstream-style module path; only the fork's local filter compatibility should remain unless upstream adds equivalent filters.
+- Upstream Agentic Engineering Jobs parsing for the current `/jobs/{slug}` anchor-card markup, including accurate work-model/country/date extraction and duplicate/taxonomy-link handling.
 - A shared retry/backoff helper for provider fetches.
 - Report-numbered CV artifact naming.
 - Deterministic HTML CV rendering that preserves active-user containment, selected system templates, supported local/data-image photos, and report-linked artifact names.
