@@ -221,7 +221,11 @@ function checkPrereq({ path, fix }) {
   if (prereqPresent(userContext.userRoot, path)) {
     return { pass: true, label: `users/${userContext.userId}/${path} found` };
   }
-  return { pass: false, label: `users/${userContext.userId}/${path} not found`, fix };
+  return {
+    warn: true,
+    label: `users/${userContext.userId}/${path} not found (user setup required)`,
+    fix,
+  };
 }
 
 function checkFonts() {
