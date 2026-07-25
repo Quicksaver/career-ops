@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `8393854329de26d75f52bf53f0456c8ac9c2c745`
-- Fork ref: current `main` at `0e7af8ab6f59690c4e32685fcc76ea587c80de8b`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `182`
-- Diff-size baseline after merge, before this inventory refresh: `266 files changed, 22083 insertions(+), 3206 deletions(-)`
+- Upstream ref: `upstream/main` at `254764af7540b368c4ef28304109c1e22e38de1f`
+- Fork ref: current `main` at `2d6c7c206b0d0a7e41484aeab01e2009d751b60e`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `185`
+- Diff-size baseline after merge, before this inventory refresh: `273 files changed, 22270 insertions(+), 3226 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,17 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.22 behavior and web v0.3.0 through `8393854329de26d75f52bf53f0456c8ac9c2c745` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.22 behavior and web v0.3.0 through `254764af7540b368c4ef28304109c1e22e38de1f` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- Safer tracker status targeting: `set-status.mjs --role` now validates even a lone company match before mutating it, distinguishes symbol-bearing titles such as C# and C++, and fails closed with a structured `role-mismatch` unless the caller explicitly uses `--force`. The fork keeps this behavior on `users/{USER}/data/applications.md` through its existing active-user resolver.
+- Multi-brand SuccessFactors support: `providers/successfactors.mjs` preserves brand/tenant path prefixes when deriving RMK tile, jobs, search, and job-detail URLs, while avoiding doubled endpoint segments. The provider remains stateless and runs through the fork's active-user portal configuration and scanner state.
+- Updater materialization verification: `update-system.mjs apply` now distinguishes expected upstream-absent manifest paths from real checkout failures, keeps expected Git pathspec errors quiet, recursively verifies the target manifest reached disk, and reports a required second pass instead of claiming a partial update succeeded. The merge retains the fork's broader system-path inventory and user-layer rollback safeguards.
+- Onboarding diagnostics: missing CV, profile, mode profile, or portals prerequisites now appear as non-fatal setup warnings in the human doctor checklist rather than failed runtime checks. Conflict resolution preserves the active user's full `users/{USER}/...` path in each warning, while the separate machine-readable `onboardingNeeded` contract continues to gate career-ops modes.
+- Localized Risk Summary parity: Arabic, Japanese, Turkish, Simplified Chinese, and Traditional Chinese evaluation modes now carry the same fixed five-signal Risk Summary block as the default evaluation mode. The fork routes each red-flag source lookup through `users/{USER}/interview-prep/` while retaining report-relative links.
+- Plugin and release integration: the canonical Claude-compatible plugin manifest now declares the career-ops skill and is mirrored byte-for-byte under `.github/plugin/` for the awesome-copilot validator; Release Please updates both copies and the quick suite detects drift. Web CI now runs the web unit tests before typecheck/build.
+- Documentation and language surface: the Turkish README joins the localized documentation set, Spanish accents and the LaTeX script invocation are corrected, Cowork setup notes reflect first-party verification, and the public signature ledger gains five entries. These changes do not alter active-user routing or candidate-data ownership.
 - v1.22.0 provider expansion: Alibaba, Agentic Engineering Jobs, Gem, Jobvite, and Welcome to the Jungle join the zero-token provider registry, while Arbeitsagentur and SmartRecruiters receive parsing fixes. Providers remain system-layer code; configuration and resulting pipeline/history state remain under `users/{USER}/`.
 - Scanner precision and persistence: `scan.mjs` adds absolute `--posted-after` / `--posted-before` windows, visa-sponsorship filters, cosmetic URL normalization, and company+role dedup seeded from the active user's tracker, scan history, and pending pipeline. The merge composes those gates with the fork's company/location filters and closed-duplicate reopen behavior, so a rediscovered closed role still updates its original row instead of creating a second application.
 - Shared tracker-writer transactions: upstream supplies one filesystem lock/atomic replacement implementation for tracker writers and the Go dashboard. The fork keeps the full read/modify/write transaction but derives the lock from the canonical active-user tracker path; fixture overrides remain test-only and `Closed` remains a distinct canonical fork state alongside upstream `Hired` fixes.
@@ -221,6 +228,9 @@ New upstream features or behavior now present:
 
 Conflict notes from this merge:
 
+- `doctor.mjs`: adopted upstream's non-fatal setup-warning presentation while retaining the fork's active-user prerequisite root and explicit `users/{USER}/...` labels; the machine-readable onboarding state remains authoritative for whether user workflows may proceed.
+- `docs/SCRIPTS.md`: kept the fork's deterministic HTML renderer documentation and accepted upstream's corrected direct `node build-cv-latex.mjs` invocation and heading.
+- `modes/ar/fursah.md`, `modes/ja/kyujin.md`, `modes/tr/is-ilani.md`, `modes/zh-TW/oferta.md`, and `modes/zh/oferta.md`: adopted upstream's localized Risk Summary blocks but changed their red-flag source paths to `users/{USER}/interview-prep/`; generated report links remain relative to `users/{USER}/reports/`.
 - `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream `/expand`, output-language, Kimi/Gemini, and v1.22 documentation with the fork's active-user router, `go`/`verify`/`scan-handoff`/`scan-auth` supervision, `Closed` lifecycle, and explicit `users/{USER}` path contract.
 - `build-cv-html.mjs`, `build-cv-latex.mjs`, `generate-pdf.mjs`, and `modes/pdf.md`: composed the shared optional-section core, photo/preview support, and page budgets with template containment, report-linked naming, section-order validation, and active-user output containment.
 - `gemini-eval.mjs`, `ollama-eval.mjs`, `openai-eval.mjs`, and `openrouter-runner.mjs`: kept upstream token tracking and output-language directives while restoring per-user CV/profile/report allocation and tracker merging. Gemini's reservation is released on every failure path and its tracker addition is written only after the user-scoped report succeeds.
