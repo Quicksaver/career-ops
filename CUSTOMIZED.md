@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `254764af7540b368c4ef28304109c1e22e38de1f`
-- Fork ref: current `main` at `2d6c7c206b0d0a7e41484aeab01e2009d751b60e`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `185`
-- Diff-size baseline after merge, before this inventory refresh: `273 files changed, 22270 insertions(+), 3226 deletions(-)`
+- Upstream ref: `upstream/main` at `79ba55d7f66863eb6e7e8ce213fb8dd98b30de49`
+- Fork ref: current `main` at `49dc371ffa76aafaa4660974c5d26107c1f282cb`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `187`
+- Diff-size baseline after merge, before this inventory refresh: `290 files changed, 22573 insertions(+), 3593 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,20 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.22 behavior and web v0.3.0 through `254764af7540b368c4ef28304109c1e22e38de1f` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.23 behavior and web v0.3.0 through `79ba55d7f66863eb6e7e8ce213fb8dd98b30de49` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- v1.23.0 sourcing expansion: iCIMS, VDAB, and Flowxtra providers, resumable reverse-ATS sweeps, profile-derived VDAB keywords, better provider health classification, DNS caching, and URL-aware location matching are adopted. The merge passes the active user's profile path into provider context and keeps all portal, checkpoint, pipeline, and scan-history state under `users/{USER}/`.
+- Agentic Engineering Jobs now uses upstream's documented REST API implementation. The fork's July 2026 HTML-card parser and its markup-specific regression cases are retired because the upstream API supplies equivalent structured title, company, location, work-model, date, and dedup behavior without scraping page markup.
+- Company and ATS discovery tools: `company-history.mjs` adds descriptive responsiveness/repost evidence cards, while `discover-ats.mjs` resolves company lists into scannable ATS entries. Both normal CLI paths require an active user; history reads `users/{USER}/data/`, and discovery writes only `users/{USER}/portals.yml`.
+- Scanner integrity: cross-process pipeline locking, normalized-company persistence in scan history, country-eligibility filtering, URL hints for ambiguous location filters, expanded portal-health error categories, and resumable reverse scans are adopted. Conflict resolution composes these with the fork's company filter, closed-duplicate reopen semantics, active-user caches, and JSON stdout discipline.
+- Work-authorization gating: evaluation and batch prompts compare JD sponsorship language with structured `location.authorized_in` and `location.needs_sponsorship`, quote the posting verbatim, and distinguish sponsors, not-needed, unstated, and no-sponsorship outcomes. Candidate work rights continue to come only from `users/{USER}/config/profile.yml`.
+- Context and batch controls: the context-budget compressor, deterministic golden-budget analysis, `batch-tailor.mjs`, and `sync-pdf-flags.mjs` are adopted. New CLI utilities require `--user` or `CAREER_OPS_USER`, and their reports, batch state, tracker, and PDF manifest paths are derived from the selected user.
+- CV composition and theming: reusable HTML section partials, optional-section coverage, resume-subheading LaTeX compatibility, and profile `style:` tokens are adopted. The shared renderer receives `users/{USER}/config/profile.yml` explicitly; it no longer falls back to a root-level profile when called without user context.
+- Interview and localization coverage: Dutch market modes, Brazilian Portuguese interview plan/practice/debrief modes, transcript persistence, the Tamil README, Cursor skill discovery, and OpenCode/Kimi entrypoint improvements are adopted. All newly added candidate-data references were rewritten to `users/{USER}/...`.
+- Dashboard updates: the `Responded` status/tab, compensation parsing fixes, localized labels, and related derivation tests are adopted while preserving the fork's per-user binary layout, distinct `Closed`/`Hired` states, lazy report hydration, and forward funnel tabs (`Open`, `Applied`, `Responded`, `Interview`, `Offer`, ...).
+- Web and dependency maintenance: web state/company helpers, release workflows, dependency updates, and the upstream `postcss`/`sharp` security overrides are adopted. The reconciled web package lock is regenerated from the merged manifest.
 - Safer tracker status targeting: `set-status.mjs --role` now validates even a lone company match before mutating it, distinguishes symbol-bearing titles such as C# and C++, and fails closed with a structured `role-mismatch` unless the caller explicitly uses `--force`. The fork keeps this behavior on `users/{USER}/data/applications.md` through its existing active-user resolver.
 - Multi-brand SuccessFactors support: `providers/successfactors.mjs` preserves brand/tenant path prefixes when deriving RMK tile, jobs, search, and job-detail URLs, while avoiding doubled endpoint segments. The provider remains stateless and runs through the fork's active-user portal configuration and scanner state.
 - Updater materialization verification: `update-system.mjs apply` now distinguishes expected upstream-absent manifest paths from real checkout failures, keeps expected Git pathspec errors quiet, recursively verifies the target manifest reached disk, and reports a required second pass instead of claiming a partial update succeeded. The merge retains the fork's broader system-path inventory and user-layer rollback safeguards.
@@ -576,8 +586,6 @@ Files:
 - `providers/makeitingermany.mjs`
 - `providers/rustjobs.mjs`
 - `providers/arbeitsagentur.mjs`
-- `providers/agentic-jobs.mjs`
-- `tests/providers/agentic-jobs.test.mjs`
 - `templates/portals.example.yml`
 - `test-all.mjs`
 
@@ -588,7 +596,7 @@ What this customizes:
 - Working Nomads is partly retired from the fork's custom-provider dispatcher: the provider module is now direct/upstream-style, while local config compatibility for `api`, inferred location, `api_params.q/category/location/tags`, and `published_within_days` remains in `providers/workingnomads.mjs`.
 - Arbeitsagentur remains an upstream-style provider module, but the fork adds local normalization that prefixes remote-titled postings with `Remote, ...`, avoids doing so for explicit no-remote/no-homeoffice titles, and uses `Deutschland` when the API omits a location. This keeps location filtering useful for nationwide/remote Germany scans without letting `NO REMOTE` titles slip through as remote.
 - The current upstream Arbeitsagentur provider adds `remoteMatch: filter` and `remoteMaxPages` so server-side `homeoffice=nv_true` filtering can complement the fork's title-based remote normalization; preserve both paths because source configs may rely on either.
-- Agentic Engineering Jobs remains an upstream-style provider module, but the fork fixes its July 2026 markup regression: the listing moved from root-page `data-impression-slug` containers to server-rendered `/jobs/{slug}` anchors. The local parser reads title, company, work model, ISO country codes, and posting date from the new cards, deduplicates responsive duplicate anchors, rejects taxonomy links, and retains the original container parser for cached or mixed-rollout markup. Regression tests also ensure violet technology badges are never treated as locations and that multi-country remote restrictions reach scanner location filtering.
+- The fork's Agentic Engineering Jobs HTML parser is retired in this merge. Upstream's documented REST API provider now supplies equivalent structured fields and avoids coupling the scanner to the board's card markup.
 - Keeps small provider adapter modules so `scan.mjs` can load these sources through the upstream provider plugin contract.
 - Adds retry-aware JSON fetching with timeouts, exponential backoff, jitter, and a deliberately narrow retryable-status set.
 - Extends the example portal config with these discovery sources and custom notes/parameters.
@@ -601,7 +609,7 @@ Future merge notes:
 - If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage. Upstream's Ashby-specific timeout/backoff is not yet a full replacement for the custom helper because the fork uses the helper across several custom structured providers.
 - Keep upstream Workable, SmartRecruiters, Recruitee, IBM, Arbeitsagentur, Jobstreet, Glints, BambooHR, and Breezy tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
 - Preserve the Arbeitsagentur remote/no-remote normalization unless upstream adds an equivalent signal in the provider output or scan filtering layer.
-- Remove the local Agentic Engineering Jobs parser delta and its fork-only regression cases once upstream parses the current `/jobs/{slug}` anchor cards with equivalent field extraction, responsive-card deduplication, taxonomy-link rejection, multi-country location handling, and either preserves legacy-container compatibility or demonstrates that fallback is no longer needed. Verify the upstream replacement against the live board and the provider test before retiring this entry.
+- Keep Agentic Engineering Jobs on the upstream REST API path unless that API is removed; do not restore the retired HTML parser without a verified API failure and equivalent live-board regression evidence.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
 
 ## Scan Company And Location Filters
