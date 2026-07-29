@@ -130,6 +130,7 @@ const (
 	filterInterview = "interview"
 	filterOffer     = "offer"
 	filterHired     = "hired"
+	filterResponded = "responded"
 	filterSkip      = "skip"
 	filterRejected  = "rejected"
 	filterClosed    = "closed"
@@ -145,6 +146,7 @@ func getPipelineTabs() []pipelineTab {
 	return []pipelineTab{
 		{filterEvaluated, i18n.Current.TabOpen},
 		{filterApplied, i18n.Current.TabApplied},
+		{filterResponded, i18n.Current.TabResponded},
 		{filterInterview, i18n.Current.TabInterview},
 		{filterOffer, i18n.Current.TabOffer},
 		{filterHired, i18n.Current.TabHired},
@@ -383,6 +385,21 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 	reloaded.searchInput = m.searchInput
 	// Preserve user's column visibility choices across refresh.
 	reloaded.visibleCols = m.visibleCols
+	// Preserve in-progress interactive flows. The viewer status path starts
+	// the hired celebration / discard reason picker on the pipeline model and
+	// then immediately triggers a data reload; rebuilding the model here used
+	// to wipe that state, so picking Discarded/SKIP from the report viewer
+	// silently never asked for a reason and never wrote the status.
+	reloaded.hiredApp = m.hiredApp
+	reloaded.hiredStep = m.hiredStep
+	reloaded.discardPicker = m.discardPicker
+	reloaded.discardCursor = m.discardCursor
+	reloaded.discardOptions = m.discardOptions
+	reloaded.discardCustomInput = m.discardCustomInput
+	reloaded.discardCustomText = m.discardCustomText
+	reloaded.discardPendingApp = m.discardPendingApp
+	reloaded.discardPendingStatus = m.discardPendingStatus
+	reloaded.discardPredictedCount = m.discardPredictedCount
 	reloaded.applyFilterAndSort()
 	reloaded.CopyReportCache(&m)
 

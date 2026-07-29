@@ -295,6 +295,7 @@ top_strengths:
 risk_level: "{Low | Medium | High}"
 confidence: "{Low | Medium | High}"
 next_action: "{one concrete next step}"
+work_auth: "{sponsors | not_needed | unstated | no_sponsorship}"
 discard_reasons:
   - "{predicted reason if final_decision is Skip/Consider, e.g. salary_too_low, hybrid_required, tech_stack_mismatch, seniority_mismatch, geo_restriction, size_mismatch, company_culture, or other specific reason}"
 via: {agency/recruiter firm as a quoted string, or null for direct applications}
@@ -315,6 +316,7 @@ Rules:
 - `company_confidential: true` requires a non-null `via`. Prefer the named agency/recruiter; when no agency is named, use the known application or discovery portal (for example `"Empregos.org"`) rather than inventing an employer. If no intermediary or source channel is supported by the JD metadata, fail the worker instead of emitting an untraceable `?` row.
 - `advertised_comp` is the JD's **own** figure, verbatim; `null` when the JD states nothing — never estimate it and never substitute researched market data (Block D research stays in Block D). Batch workers never write `{{USER_ROOT}}/data/salary-observations.tsv` — the report itself is the advertised observation (`salary-gap.mjs` reads it).
 - Do not invent missing data. If confidence is limited, set `confidence: "Low"` and explain the limitation in the human-readable sections.
+- `work_auth` reflects the Block A work-authorization tier: `no_sponsorship` only when the JD **explicitly** refuses sponsorship for a role outside the candidate's `authorized_in`; `unstated` when the JD is silent (neutral, not a blocker); `not_needed` when the role is within `authorized_in` or sponsorship isn't required; `sponsors` when the JD explicitly offers it.
 - `risk_summary` mirrors the `## Risk Summary` block row by row — same source verdicts, snake_cased: `legitimacy` from the Block G tier (`high_confidence` / `proceed_with_caution` / `suspicious`), `culture` from the Block A Culture screen (`pass` / `caution` / `fail`), `interview_redflags` from the red-flag file's warning level (`none` / `caution` / `warning`). Any row rendered `— not evaluated` (or `— no interview sessions yet`) is `not_evaluated` here. Never invent a value the block does not show.
 
 ### Step 3 — Save the Report
@@ -336,9 +338,45 @@ Report header:
 **Archetype:** {detected}
 **Score:** {X.X/5}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
+**Work Auth:** {✅ Sponsors | ➖ Not needed | ⚠️ Unstated | ⛔ No sponsorship}
 **URL:** {{URL}}
 **PDF:** {output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.pdf if the Step 4 gate passes, else a localized equivalent of `not generated - run /career-ops pdf {company-slug} to create on demand` in `language.output`}
 **Batch ID:** {{ID}}
+
+
+---
+
+## Machine Summary
+
+```yaml
+company: "{empresa}"
+role: "{rol}"
+score: {X.X}
+legitimacy_tier: "{High Confidence | Proceed with Caution | Suspicious}"
+archetype: "{detectado}"
+final_decision: "{Apply | Consider | Research first | Skip}"
+hard_stops:
+  - "{blocking gap or risk}"
+soft_gaps:
+  - "{non-blocking gap}"
+top_strengths:
+  - "{strength most relevant to this role}"
+risk_level: "{Low | Medium | High}"
+confidence: "{Low | Medium | High}"
+next_action: "{one concrete next step}"
+work_auth: "{sponsors | not_needed | unstated | no_sponsorship}"
+discard_reasons:
+  - "{predicted reason if final_decision is Skip/Consider, e.g. salary_too_low, hybrid_required, tech_stack_mismatch, seniority_mismatch, geo_restriction, size_mismatch, company_culture, or other specific reason}"
+via: {agency/recruiter firm as a quoted string, or null for direct applications}
+company_confidential: {true when the end employer is unknown (company is "?"), else false}
+advertised_comp: {verbatim JD salary/range as a quoted string (e.g. "80-90k EUR"), or null when the JD states nothing}
+risk_summary:
+  legitimacy: "{high_confidence | proceed_with_caution | suspicious}"
+  classification: "{clear | flagged | not_evaluated}"
+  culture: "{pass | caution | fail | not_evaluated}"
+  interview_redflags: "{none | caution | warning | not_evaluated}"
+  ai_infra: "{consistent | mismatch | not_evaluated}"
+```
 ```
 
 Then include:

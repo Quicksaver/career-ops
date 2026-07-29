@@ -33,11 +33,12 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/applications.md` | Application tracker source of truth |
 | `users/{USER}/data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync --user {USER}` — safe to delete) |
 | `users/{USER}/data/pipeline.md` | URL inbox |
-| `users/{USER}/data/scan-history.tsv` | Scan history (9 tab-separated columns; column 8 is the local SimHash JD fingerprint and column 9 is the posting date) |
+| `users/{USER}/data/scan-history.tsv` | Scan history (tab-separated, append-only trailing columns; column 8 is the local SimHash JD fingerprint, column 9 is the posting date, columns 10-11 are trust score/flags, and column 12 is the normalized company key). Older rows may omit trailing columns. |
 | `users/{USER}/data/scan-runs.tsv` | Per-run scan counters appended by `scan.mjs` and read by `stats.mjs` |
-| `users/{USER}/data/portal-health.tsv` | Consecutive reachability status for scanned portals, appended by `scan.mjs` and read by `stats.mjs` |
+| `users/{USER}/data/portal-health.tsv` | Consecutive reachability status for scanned portals, appended by `scan.mjs` and read by `stats.mjs`; statuses include `reachable`, `empty`, `slug_gone`, `network`, `auth`, `server`, and `unknown` |
 | `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
+| `users/{USER}/data/agent-inbox.md` | Append-only request queue drained at session start |
 | `users/{USER}/data/pdf-index.tsv` | Generated PDF manifest used by dashboard PDF hotkeys |
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/data/offers/*` | Received offers/contracts, promise notes, prep reports, and reply drafts (PII; written by `offer-prep`) |
@@ -69,8 +70,12 @@ These files contain system logic, scripts, templates, and instructions that impr
 |------|---------|
 | `modes/_shared.md` | Scoring system, global rules, tools |
 | `modes/_custom.template.md` | Template seed for the user's `modes/_custom.md` |
+| `modes/_profile.template.md` | Template seed for the user's `modes/_profile.md` |
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
+| `modes/cover.md` | Cover letter generation instructions |
+| `modes/latex.md` | LaTeX/Overleaf CV export instructions |
+| `modes/add.md` | CV addition (project/paper/role) instructions |
 | `modes/scan.md` | Portal scanner instructions |
 | `modes/scan-handoff.md` | Agent/WebSearch scan handoff instructions |
 | `modes/scan-auth.md` | Authenticated portal scanner instructions |
@@ -101,22 +106,41 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/upskill.md` | Skill-gap analysis instructions |
 | `modes/followup.md` | Follow-up cadence instructions |
 | `modes/offer-prep.md` | Offer-stage contract reading companion instructions |
+| `modes/interview.md` | Interactive profile/CV onboarding interview instructions |
+| `modes/interview-prep.md` | Company-specific interview prep instructions |
+| `modes/interview-redflag.md` | Company red-flag detection instructions |
 | `modes/interview/*` | Interview prep planning, practice, and debrief skills |
+| `modes/agent-inbox.md` | Agent inbox (queued requests) instructions |
+| `modes/reply-watch.md` | Employer reply classification instructions |
+| `modes/update.md` | System update instructions |
+| `modes/ar/*` | Arabic language modes |
+| `modes/da/*` | Danish language modes |
 | `modes/de/*` | German language modes |
+| `modes/es/*` | Spanish language modes |
 | `modes/fr/*` | French language modes |
 | `modes/hi/*` | Hindi language modes |
+| `modes/id/*` | Indonesian language modes |
+| `modes/it/*` | Italian language modes |
 | `modes/ja/*` | Japanese language modes |
+| `modes/ko/*` | Korean language modes |
+| `modes/nl/*` | Dutch language modes |
 | `modes/pl/*` | Polish language modes |
 | `modes/pt/*` | Portuguese language modes |
 | `modes/ru/*` | Russian language modes |
+| `modes/tr/*` | Turkish language modes |
+| `modes/ua/*` | Ukrainian language modes |
+| `modes/zh/*` | Chinese language modes |
 | `modes/heuristics/*` | Shared candidate-facing application heuristics |
 | `CLAUDE.md` | Agent instructions (Claude Code) |
 | `OPENCODE.md` | Agent instructions (OpenCode) |
+| `CODEX.md` | Agent instructions (Codex) |
+| `KIMI.md` | Agent instructions (Kimi CLI) |
 | `GEMINI.md` | Legacy no-op context guard (prevents Antigravity duplicate imports) |
 | `AGENTS.md` | Canonical agent instructions (imported by CLI-specific wrappers) |
 | `*.mjs` | Utility scripts |
 | `lib/*` | Shared system helpers |
 | `scan-auth/*.mjs` | Authenticated portal scanner classes |
+| `providers/` | Job-source provider modules for the zero-token scanner |
 | `plugins/` | Bundled plugins + the plugin engine (opt-in external integrations) |
 | `plugins.mjs` | Plugin CLI (list/run/available/add/new/enable/skill/trust/remove) |
 | `plugins-registry/` | Curated community plugins, one `<id>.json` per plugin (the trust root) |
@@ -129,6 +153,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `templates/*` | Base templates |
 | `fonts/*` | Self-hosted fonts |
 | `.claude/skills/*` | Skill definitions (Claude Code) |
+| `.cursor/skills/*` | Skill definitions (Cursor) |
 | `.opencode/skills/*` | Skill definitions (OpenCode) |
 | `.qwen/skills/*` | Skill definitions (Qwen Code) |
 | `.antigravitycli/skills/*` | Skill definitions (Antigravity CLI) |

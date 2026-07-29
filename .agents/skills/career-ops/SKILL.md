@@ -1,10 +1,14 @@
 ---
 name: career-ops
-description: AI job search command center -- evaluate offers, tailor CVs, scan portals, track applications. Use when the user pastes a job description or URL, asks to evaluate an offer, tailor a resume or cover letter, scan job boards, prepare for an interview, or track/update their applications.
+description: >-
+  AI job search command center -- evaluate offers, generate CVs, scan portals,
+  track applications. Use when the user pastes a job URL or JD, asks to scan
+  portals, generate a CV/PDF, track applications, prepare for interviews, draft
+  outreach/emails, or run any career-ops mode.
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | verify | scan | scan-handoff | scan-auth | deep | pdf | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | offer-prep | titles | upskill | followup | reply-watch | update]"
+argument-hint: "[go | verify | scan | scan-handoff | scan-auth | discover | deep | pdf | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | offer-prep | titles | upskill | followup | reply-watch | update]"
 license: MIT
 ---
 
@@ -15,6 +19,7 @@ career-ops is a multi-CLI job-search command center. The routing below is shared
 ## Invocation Notes
 
 - CLIs with slash-command registration can expose this router as `/career-ops`.
+- In Cursor, this skill lives at `.cursor/skills/career-ops/` and is auto-discovered; ask for a mode by name, or paste a JD/URL to trigger auto-pipeline.
 - Interactive Codex sessions use `codex` in the repo root. Slash commands are not guaranteed in Codex, so ask Codex to run the same mode by name if `/career-ops` is unavailable.
 - Headless Codex workers use `codex exec "prompt"`.
 - The routing semantics below stay the same regardless of whether the entrypoint is a slash command or a natural-language prompt.
@@ -87,6 +92,7 @@ Determine the mode from `$mode`:
 | `interview-prep` | `interview-prep` |
 | `interview` | `interview` |
 | `eu-swe` | `regional/eu-swe` |
+| `eu-fintech` | `regional/eu-fintech` |
 | `interview/plan` | `interview/plan` |
 | `interview/practice` | `interview/practice` |
 | `interview/debrief` | `interview/debrief` |
@@ -108,6 +114,7 @@ Determine the mode from `$mode`:
 | `scan` | `scan` |
 | `scan-handoff` | `scan-handoff` |
 | `scan-auth` | `scan-auth` |
+| `discover` | `discover` |
 | `batch` | `batch` |
 | `patterns` | `patterns` |
 | `offer-prep` | `offer-prep` |
@@ -172,6 +179,7 @@ Available commands:
   /career-ops interview-prep → Generate company-specific interview prep doc
   /career-ops interview    → Interactive profile/CV onboarding interview
   /career-ops eu-swe    → Calibrate a European SWE application before CV/apply/interview
+  /career-ops eu-fintech → Scan 21 EU fintech portals for Product Manager roles (zero-token)
   /career-ops interview/plan → Time-blocked prep plan for an upcoming interview
   /career-ops interview/practice → Practice interview, one question at a time with feedback
   /career-ops interview/debrief → Post-interview debrief: close gaps, predict next round
@@ -192,6 +200,7 @@ Available commands:
   /career-ops scan      → Scan portals and discover new offers
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
   /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
+  /career-ops discover  → Resolve a company list to scannable ATS boards + append to portals.yml (zero-token)
   /career-ops batch     → Batch processing with parallel workers
   /career-ops patterns  → Analyze rejection patterns and improve targeting
   /career-ops offer-prep → Read a received offer/contract with the candidate: clause walk + lawyer questions (not legal advice)
@@ -228,7 +237,7 @@ For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.m
 
 Read `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`, plus any user-layer files the mode names from `users/{ACTIVE_USER}/`.
 
-Applies to: `tracker`, `agent-inbox`, `verify`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`
+Applies to: `tracker`, `agent-inbox`, `verify`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`, `discover`
 
 ### Execution ownership for long-running modes
 

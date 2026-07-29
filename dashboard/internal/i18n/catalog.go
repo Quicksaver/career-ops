@@ -25,6 +25,7 @@ type Catalog struct {
 	TabOffer     string
 	TabHired     string
 	TabClosed    string
+	TabResponded string
 	TabTop       string
 	TabSkip      string
 	TabRejected  string
@@ -249,6 +250,7 @@ var En = Catalog{
 	TabOffer:     "OFFER",
 	TabHired:     "HIRED",
 	TabClosed:    "CLOSED",
+	TabResponded: "RESPONDED",
 	TabTop:       "TOP ≥4",
 	TabSkip:      "SKIP",
 	TabRejected:  "REJECTED",
@@ -384,6 +386,7 @@ var Tr = Catalog{
 	TabOffer:     "TEKLİF",
 	TabHired:     "İŞE ALINDI",
 	TabClosed:    "KAPANDI",
+	TabResponded: "YANIT VERİLDİ",
 	TabTop:       "EN İYİ ≥4",
 	TabSkip:      "UYGUN DEĞİL",
 	TabRejected:  "REDDEDİLDİ",
@@ -519,6 +522,7 @@ var Es = Catalog{
 	TabOffer:     "OFERTA",
 	TabHired:     "CONTRATADAS",
 	TabClosed:    "CERRADAS",
+	TabResponded: "RESPONDIDAS",
 	TabTop:       "TOP ≥4",
 	TabSkip:      "OMITIR",
 	TabRejected:  "RECHAZADAS",

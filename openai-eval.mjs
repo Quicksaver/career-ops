@@ -41,6 +41,7 @@ import {
   formatReportNumber, releaseReportNumbers, reserveReportNumbers,
 } from './reserve-report-num.mjs';
 import { TokenAccumulator, formatBreakdown, normalizeOpenAIUsage } from './utils/token-tracker.mjs';
+import { buildBudgetedPrompt } from './lib/context-budget.mjs';
 
 const tracker = new TokenAccumulator();
 tracker.recordZeroToken('scan');
@@ -53,7 +54,6 @@ try {
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
-// ---------------------------------------------------------------------------
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 const rawArgs = process.argv.slice(2);
@@ -86,6 +86,7 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
                      (env OPENAI_BASE_URL, default https://api.openai.com/v1)
     --key <key>      API key             (env OPENAI_API_KEY)
     --no-save        Do not save report to users/<username>/reports/ directory
+    --no-compress    Skip token budget compression (full context injection)
     --help           Show this help
 
   ENV
@@ -131,6 +132,7 @@ let modelName  = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 let baseUrl    = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
 let apiKey     = process.env.OPENAI_API_KEY || '';
 let saveReport = true;
+let noCompress = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--file' && args[i + 1]) {
@@ -154,6 +156,8 @@ for (let i = 0; i < args.length; i++) {
     apiKey = args[++i];
   } else if (args[i] === '--no-save') {
     saveReport = false;
+  } else if (args[i] === '--no-compress') {
+    noCompress = true;
   } else if (!args[i].startsWith('--')) {
     jdText += (jdText ? '\n' : '') + args[i];
   }
@@ -238,27 +242,37 @@ const profileYml    = readFile(PATHS.profileYml, `users/${userContext.userId}/co
 const languageInstruction = outputLanguageInstruction(parseOutputLanguage(profileYml));
 
 // ---------------------------------------------------------------------------
-// Build system prompt
+// Build system prompt with token budget management
 // ---------------------------------------------------------------------------
+const { contextBody, budgetReport } = buildBudgetedPrompt({
+  sharedContent: sharedContext,
+  ofertaContent: ofertaLogic,
+  cvContent,
+  profileYml,
+  jdText,
+  noCompress,
+  maxTokens: 128_000, // gpt-4o-mini context window
+});
+
+// Log token budget info
+if (budgetReport.compressed) {
+  console.log(`📊  Token budget: ${budgetReport.beforeTokens} → ${budgetReport.afterTokens} tokens (saved ${budgetReport.beforeTokens - budgetReport.afterTokens})`);
+  console.log(`    Trimmed sections: ${budgetReport.removed.join(', ')}`);
+  if (budgetReport.overBudget) {
+    console.log(`    ⚠️  Still ${budgetReport.afterTokens - budgetReport.budget} tokens over budget after compression`);
+  }
+} else if (budgetReport.overBudget) {
+  console.log(`⚠️  Token budget: ${budgetReport.totalTokens} tokens exceeds ${budgetReport.budget} limit by ${budgetReport.totalTokens - budgetReport.budget}`);
+} else {
+  console.log(`📊  Token budget: ${budgetReport.totalTokens} tokens (within ${budgetReport.budget} limit)`);
+}
+
 const systemPrompt = `You are career-ops, an AI-powered job search assistant.
 You evaluate job offers against the user's CV using a structured A-G scoring system.
 
 Your evaluation methodology is defined below. Follow it exactly.
 
-═══════════════════════════════════════════════════════
-SYSTEM CONTEXT (_shared.md)
-═══════════════════════════════════════════════════════
-${sharedContext}
-
-═══════════════════════════════════════════════════════
-EVALUATION MODE (oferta.md)
-═══════════════════════════════════════════════════════
-${ofertaLogic}
-
-═══════════════════════════════════════════════════════
-CANDIDATE RESUME (cv.md)
-═══════════════════════════════════════════════════════
-${cvContent}
+${contextBody}
 
 ═══════════════════════════════════════════════════════
 IMPORTANT OPERATING RULES FOR THIS SESSION

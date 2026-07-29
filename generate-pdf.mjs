@@ -38,6 +38,7 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { randomUUID } from 'node:crypto';
+import { readStyleTokens, injectThemeStyle } from './theme-style.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PDF_PAGE_MARGIN = '0.6in';
@@ -199,7 +200,35 @@ function normalizeTextForATS(html) {
   }
 }
 
+/**
+ * Strip diacritics so a heading is recognized regardless of how it was typed.
+ *
+ * Rendered Polish headings are not always spelled with their diacritics —
+ * "Wykształcenie" and "Wyksztalcenie" both occur in already-generated CVs.
+ * NFD splits most Polish letters into a base plus a combining mark we drop;
+ * ł (U+0142) has no canonical decomposition, so it needs its own pass.
+ *
+ * Only used for alias lookup — display titles keep their diacritics.
+ */
+function foldDiacritics(text) {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ł/g, 'l');
+}
+
+/**
+ * Heading spelling -> canonical section key.
+ *
+ * Polish (modes/pl) is here because without these aliases the rendered Polish
+ * titles match nothing derived from the English cv.md: validateCvSectionOrder()
+ * finds fewer than two comparable sections and silently returns, leaving the
+ * section-order guard disabled on every CV rendered in that mode.
+ *
+ * Keys are folded on construction so authored diacritics match stripped input.
+ */
 const SECTION_ALIASES = new Map([
+  // English — cv.md is the source of truth and is written in English.
   ['summary', 'summary'],
   ['professional summary', 'summary'],
   ['competencies', 'competencies'],
@@ -215,7 +244,30 @@ const SECTION_ALIASES = new Map([
   ['certifications', 'certifications'],
   ['skills', 'skills'],
   ['technical skills', 'skills'],
-]);
+  // Polish — the vocabulary documented in modes/pl/README.md, plus the word-order
+  // variants that turn up in practice (both "Kompetencje kluczowe" and
+  // "Kluczowe kompetencje" are used for the same section).
+  ['podsumowanie', 'summary'],
+  ['podsumowanie zawodowe', 'summary'],
+  ['profil zawodowy', 'summary'],
+  ['kompetencje', 'competencies'],
+  ['kompetencje kluczowe', 'competencies'],
+  ['kluczowe kompetencje', 'competencies'],
+  ['doświadczenie', 'experience'],
+  ['doświadczenie zawodowe', 'experience'],
+  ['przebieg kariery', 'experience'],
+  ['projekty', 'projects'],
+  ['kluczowe projekty', 'projects'],
+  ['wybrane projekty', 'projects'],
+  ['wykształcenie', 'education'],
+  ['edukacja', 'education'],
+  ['wykształcenie i certyfikaty', 'education'],
+  ['certyfikaty', 'certifications'],
+  ['certyfikaty i szkolenia', 'certifications'],
+  ['szkolenia i certyfikaty', 'certifications'],
+  ['umiejętności', 'skills'],
+  ['umiejętności techniczne', 'skills'],
+].map(([alias, key]) => [foldDiacritics(alias), key]));
 
 function normalizeSectionTitle(text) {
   return text
@@ -229,7 +281,7 @@ function normalizeSectionTitle(text) {
 }
 
 function sectionKey(text) {
-  const normalized = normalizeSectionTitle(text);
+  const normalized = foldDiacritics(normalizeSectionTitle(text));
   return SECTION_ALIASES.get(normalized) ?? normalized;
 }
 
@@ -403,7 +455,13 @@ export function repoRelativeManifestPath(pathValue) {
 export function injectPrintPageCss(html, format = 'a4') {
   const normalizedFormat = String(format || 'a4').toLowerCase();
   const pageSize = normalizedFormat === 'letter' ? 'Letter' : 'A4';
-  const pageStyle = `<style id="career-ops-page-setup">\n@page { size: ${pageSize}; margin: ${PDF_PAGE_MARGIN}; }\n</style>`;
+  // Read --page-margin (set by the template's own :root default, and overridden
+  // by injectThemeStyle's block when style.margin is configured) instead of
+  // hardcoding PDF_PAGE_MARGIN outright — this @page rule is injected last, so a
+  // hardcoded value would silently win the cascade and make style.margin
+  // ineffective (#1837 review). PDF_PAGE_MARGIN is only the fallback for a
+  // template that never declares --page-margin at all.
+  const pageStyle = `<style id="career-ops-page-setup">\n@page { size: ${pageSize}; margin: var(--page-margin, ${PDF_PAGE_MARGIN}); }\n</style>`;
 
   if (/<\/head>/i.test(html)) {
     return html.replace(/<\/head>/i, `${pageStyle}\n</head>`);
@@ -577,6 +635,9 @@ async function generatePDF() {
     inputPath,
     maxPages,
     strictPages,
+    styleTokens: userContext.userRoot
+      ? readStyleTokens(userPath(userContext, 'config/profile.yml'))
+      : {},
   });
 }
 
@@ -651,6 +712,13 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
   const inputPath = opts.inputPath || '';
 
   mkdirSync(dirname(outputPath), { recursive: true });
+
+  // Inject the user's theme tokens (config/profile.yml `style:`) as CSS custom
+  // properties so the templates' var(--x, <default>) reads pick them up (#1837).
+  // No `style:` block → no tokens → byte-identical output. Both the CV path and
+  // the cover-letter path flow through here, so both are themed from one place.
+  const styleTokens = opts.styleTokens ?? {};
+  html = injectThemeStyle(html, styleTokens);
 
   html = injectPrintPageCss(html, format);
   html = await inlineLocalFonts(html);
@@ -737,4 +805,4 @@ if (isMain) {
   });
 }
 
-export { normalizeTextForATS, assertNoUnresolvedPlaceholders };
+export { normalizeTextForATS, assertNoUnresolvedPlaceholders, sectionKey };

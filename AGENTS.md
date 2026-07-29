@@ -103,7 +103,7 @@ If yes → `node update-system.mjs apply`. If no → `node update-system.mjs dis
 
 ## What is career-ops
 
-AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluation, CV generation, portal scanning, batch processing. Runs on any AI coding CLI following the [open agent skill standard](https://agentskills.io) (Claude Code, Codex, OpenCode, Qwen, Copilot, Kimi, Antigravity CLI, Grok Build CLI). Legacy Gemini API evaluation remains via `gemini-eval.mjs`.
+AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluation, CV generation, portal scanning, batch processing. Runs on any AI coding CLI following the [open agent skill standard](https://agentskills.io) (Claude Code, Cursor, Codex, OpenCode, Qwen, Copilot, Kimi, Antigravity CLI, Grok Build CLI). Legacy Gemini API evaluation remains via `gemini-eval.mjs`.
 
 ### Codex invocation
 
@@ -133,7 +133,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `users/{USER}/data/scan-runs.tsv` | Per-run scan counters (appended by `scan.mjs`, read by `stats.mjs`) |
 | `followup-cadence.mjs` | Follow-up cadence calculator (human output by default, `--json` for machines) |
 | `followup-seed.mjs` | Seeds `users/{USER}/data/follow-ups.md` with a pinned first follow-up date when a row turns Applied (JSON output) |
-| `set-status.mjs` | Canonical locked/validated/atomic tracker status writer: `node set-status.mjs --user {USER} <report#\|company> <State> [--note]` |
+| `set-status.mjs` | Canonical locked/validated/atomic tracker status writer: `node set-status.mjs --user {USER} <report#\|company> <State> [--note] [--force]` |
 | `invite-match.mjs` | Fuzzy-matches a pasted interview-invite email against `users/{USER}/data/applications.md`, ranking candidates when a company has multiple tracker entries (human output by default, `--json` for machines) |
 | `paste-reply.mjs` | Manual/no-Gmail input path into `reply-watch.mjs` — appends a normalized email candidate to `users/{USER}/data/reply-candidates.json`; never classifies or touches the tracker itself |
 | `detect-reposts.mjs` | Repost detector — flags roles re-listed 2+ times in 90 days from scan-history.tsv (human output by default, `--json` for machines) |
@@ -147,7 +147,11 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `users/{USER}/data/blacklist.md` | Opt-in do-not-apply company list; never auto-populated and respected by scan/evaluation/application gates |
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever/PCSX APIs plus structured and plugin providers directly, zero LLM cost |
 | `scan-auth.mjs` | Authenticated portal scanner — uses per-user Playwright browser profiles under `~/.scan-auth/users/{USER}/{PORTAL}/profile` |
-| `scan-ats-full.mjs` | Reverse-ATS keyword-first scanner — walks public ATS directories, respects the active user's title/location filters and blacklist, and writes only to that user's pipeline/history/cache files |
+| `scan-ats-full.mjs` | Reverse-ATS keyword-first scanner — walks public Greenhouse/Lever/Ashby/Workday/iCIMS datasets, respects the active user's title/location filters and blacklist, checkpoints for `--resume`, and writes only to that user's pipeline/history/cache files |
+| `discover-ats.mjs` | Resolves a company list to scannable ATS boards and appends reviewed discoveries to `users/{USER}/portals.yml` |
+| `company-history.mjs` | Descriptive employer responsiveness and repost-history evidence from the active user's tracker, follow-ups, status log, and scan history |
+| `batch-tailor.mjs` | Bulk-tailors CVs for high-scoring tracker rows while preserving user-scoped report and output identity |
+| `sync-pdf-flags.mjs` | Synchronizes tracker PDF markers from `users/{USER}/data/pdf-index.tsv` |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
 | `users/{USER}/reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy) + Risk Summary, plus `## Machine Summary` YAML for downstream scripts. Header includes `**Legitimacy:** {tier}`. |
@@ -253,7 +257,7 @@ Once all files exist, confirm:
 Then suggest automation:
 > "Want me to scan for new offers automatically? I can set up a recurring scan every few days so you don't miss anything. Just say 'scan every 3 days' and I'll configure it."
 
-If accepted, use the `/loop` or `/schedule` skill (if available) for a recurring scan entrypoint; otherwise suggest a cron job or periodic manual scans.
+If the user accepts, use the `/loop` or `/schedule` skill (if available) to set up a recurring scan entrypoint for their CLI (`/career-ops scan`, `/career-ops-scan`, or the equivalent Codex prompt). If those aren't available, point them to [docs/AUTOMATION.md](docs/AUTOMATION.md) for copy-paste cron / launchd / Windows Task Scheduler recipes plus a zero-token triage-to-shortlist prompt, or remind them to run the scan mode periodically.
 
 ### Personalization
 
@@ -348,6 +352,7 @@ Two separate axes:
 | Wants to classify application replies and review updates | `reply-watch` — classifies replies, matches to applications, suggests tracker updates |
 | Wants to update the system | `update` |
 | Wants to queue a request for later / check the inbox between sessions | `agent-inbox` — append-only checklist drained next session; nothing auto-submits |
+| Wants to add a finished project, paper, or role to the CV | `add` — source-grounded preview, confirm-before-write; dedup + insertion via `add-entry.mjs` |
 
 ### CV Source of Truth
 
@@ -485,6 +490,8 @@ Write one TSV file per evaluation to `users/{USER}/batch/tracker-additions/{ID}.
 **Optional Via field (#1596):** applications through an agency/recruiter append a **tagged** extra field `via={Agency}` (e.g. `via=Hays`) after notes — never positional; the tag is mandatory. A single untagged extra keeps its legacy meaning (location). Unknown end employer → `?` as company (locale-invariant marker, never "Confidential") + a descriptor in notes. `merge-tracker.mjs` rejects ambiguous extras loudly; `--migrate-via` adds the column to an existing tracker.
 
 **Report link normalization:** The TSV always carries a user-root-relative `[num](reports/...)` link. `merge-tracker.mjs` rewrites it so the link is relative to the tracker file's own directory before writing it into the tracker — `../reports/...` when the tracker is at `users/{USER}/data/applications.md`. This keeps links clickable from the tracker because markdown links resolve relative to the file that contains them. Normalization is idempotent. To fix links in an existing tracker, run `node merge-tracker.mjs --user {USER} --migrate` (see #760).
+
+**Req/posting ID in notes disambiguates same-title postings (#1524, #2009):** when a company posts two genuinely different requisitions whose titles fuzzy-match (e.g. a leveled variant and its bare title, or two sibling team roles), put the req/job/posting ID in the **notes** column on both rows. `merge-tracker.mjs` reads it (`REQ_NUMBER_RE`) and treats rows carrying *different* recognizable IDs as distinct openings, overriding fuzzy title matching. Recognized forms are a `job id` / `posting id` / `requisition` / `req` / `jr` / `job` / `posting` / `ref` / `r_` label followed by an alphanumeric ID containing at least one digit — e.g. `req JR-10423`, `job id 88214`, `ref R_2291`. Prefer this whenever the JD exposes an ID; it is the only signal that survives near-identical titles.
 
 ### Pipeline Integrity
 

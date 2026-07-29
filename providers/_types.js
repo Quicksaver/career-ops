@@ -102,6 +102,9 @@
  *                              entire careers site. Providers that ignore it stay correct:
  *                              the probe caps their requests defensively via the context's
  *                              own fetch functions.
+ * @property {string} [profilePath] Active user's profile.yml path. Providers that
+ *                              fall back to candidate search preferences must use
+ *                              this path instead of a repository-root profile.
  * @property {(ms: number) => Promise<void>} [sleep] Optional cross-provider pacing hook used by
  *                              paginating providers (avature, workday) to throttle between page
  *                              requests. May be absent — providers fall back to a native

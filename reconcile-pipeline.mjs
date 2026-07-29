@@ -34,7 +34,7 @@ import { normalizeReportLink } from './tracker-links.mjs';
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 let userContext;
 try {
-  userContext = getUserContext(process.argv.slice(2), { requireUser: false });
+  userContext = getUserContext(process.argv.slice(2));
 } catch (err) {
   printUserContextErrorAndExit(err);
 }
@@ -103,12 +103,9 @@ function resolveDirInsideRepo(inputPath, fallbackPath, flag) {
   return abs;
 }
 
-const defaultPipeline = existsSync(join(CAREER_OPS, 'data/pipeline.md'))
-  ? join(CAREER_OPS, 'data/pipeline.md')
-  : join(CAREER_OPS, 'pipeline.md');
-const defaultState = userContext.userRoot ? userPath(userContext, 'batch/batch-state.tsv') : join(CAREER_OPS, 'batch/batch-state.tsv');
-const defaultUserPipeline = userContext.userRoot ? userPath(userContext, 'data/pipeline.md') : defaultPipeline;
-const defaultReports = userContext.userRoot ? userPath(userContext, 'reports') : join(CAREER_OPS, 'reports');
+const defaultState = userPath(userContext, 'batch/batch-state.tsv');
+const defaultUserPipeline = userPath(userContext, 'data/pipeline.md');
+const defaultReports = userPath(userContext, 'reports');
 const pipelineArg = argValue('--pipeline');
 const stateArg = argValue('--state');
 const reportsArg = argValue('--reports');

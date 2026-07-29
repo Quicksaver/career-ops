@@ -71,6 +71,27 @@ On contradiction, add exactly one flag line at the top of Block B in the report,
 
 The flag is an additive line only — Block B's existing content stays unchanged below it, and no flag line appears when there is no contradiction.
 
+### Work-authorization check
+
+After the Role Summary table, compare the candidate's work authorization against what the JD says about sponsorship and work eligibility. Read the candidate's work rights from `users/{USER}/config/profile.yml` → `location.authorized_in` (list of countries/regions where they already hold authorization) and `location.needs_sponsorship`, falling back to the free-text `location.visa_status` when those structured keys are absent. Classify into exactly one tier:
+
+- ✅ **Sponsors** — the JD explicitly offers visa sponsorship or relocation, and the role is in a country **not** in `authorized_in`.
+- ➖ **Not needed** — the role is in a country listed in `authorized_in` (or is genuinely location-agnostic remote the candidate can work from an authorized country), **or** `needs_sponsorship` is false.
+- ⚠️ **Unstated** — the role is outside `authorized_in` and the JD says nothing about sponsorship. Silence is absence of signal, not a refusal — this tier is **NEUTRAL**.
+- ⛔ **No sponsorship** — the JD explicitly states it will **not** sponsor (e.g. "no visa sponsorship", "must have existing work authorization", "we are unable to sponsor"), **and** the role is outside `authorized_in`.
+
+Rules (mirror the Geo-mismatch discipline):
+- Quote the JD **verbatim** — never paraphrase the sponsorship language.
+- A generic "must be authorized to work in {country}" where {country} **is** in `authorized_in` is ➖ Not needed, not ⛔.
+- If the profile has no `authorized_in`/`needs_sponsorship` keys and only the free-text `visa_status`, infer conservatively and default to ⚠️ Unstated rather than guessing a blocker.
+- **Scoring (aligns with `modes/_profile.md` "Your Location Policy"):** ✅ / ➖ / ⚠️ are score-neutral — do **not** apply a location or relocation penalty. Only ⛔ **No sponsorship** for a role the candidate cannot take from an authorized country is a genuine hard blocker: score location low and record it as a `hard_stop`.
+
+On a ⛔ determination, add exactly one flag line at the top of Block B in the report, quoting the evidence **verbatim**:
+
+`⛔ **No sponsorship:** JD states "{verbatim JD line}" and role is outside your authorized_in`
+
+The flag is additive only; ✅ / ➖ / ⚠️ emit no flag line.
+
 ## Block B — Match with CV
 
 Read `users/{USER}/cv.md`. Create a table with each JD requirement mapped to exact lines in the CV.
@@ -321,6 +342,17 @@ This signal does not change the High Confidence / Proceed with Caution / Suspici
 
 **Context Notes:** Any caveats (niche role, government job, evergreen position, etc.) that explain potentially concerning signals.
 
+### Prior-contact FYI (non-scoring)
+
+Check the `responsiveness` axis of the `node company-history.mjs --company <company>` card, passing the company name as its own single, quoted argument — never splice it into a longer shell string, since company names can legitimately contain quotes, `$`, backticks, or `;`. Branch on `responsiveness.label` and append ONE informational line to the report. The `facts` array can hold several applications to the same company, so fill placeholders deterministically **per category**: for each placeholder use the most recent application matching THAT placeholder's own condition — fill a responded placeholder from the most recent responded fact, a silent placeholder from the most recent silent fact — rather than forcing one fact to serve both groups. When more than one application matches a category, append a separate count for that category (e.g. ", and {K} earlier applications with the same pattern") so no history is omitted or misrepresented:
+
+- `silent-on-you` (fill from the most recent silent fact; if more than one silent application exists, append the count of the others):
+> Note: you applied to {company} on {date}; no response in {N}d after {M} follow-ups. Not a legitimacy signal — factor into how much effort to invest.
+- `mixed` (they answered at least one of your applications and went silent on another — a flat "no response" would be inaccurate). Fill the responded placeholders from the most recent **responded** fact and the silent placeholders from the most recent **silent** fact — two different applications — and give a separate count per category when more than one matches:
+> Note: mixed history with {company} — they responded on #{responded_num} ({responded_date}) but went silent on #{silent_num} (applied {silent_date}, {N}d). Not a legitimacy signal — factor into how much effort to invest.
+
+This is information about **your own history** with the company, not about this posting. It must NOT alter the 1-5 score and must NOT alter the Assessment tier above — those are driven exclusively by the `postingChurn` axis and the other Block G signals. If the label is `responded-before` or `no-history`, say nothing (silence is fine; no note needed).
+
 ### Edge case handling:
 - **Government/academic postings:** Longer timelines are standard. Adjust thresholds (60-90 days is normal).
 - **Evergreen/continuous hire postings:** If the JD explicitly says "ongoing" or "rolling," note it as context -- this is not a ghost job, it is a pipeline role.
@@ -371,10 +403,10 @@ After saving the report and recording in the tracker, append a cover letter draf
 
 **How to generate the draft:**
 
-1. Read `cv.md` — select 4 achievement bullets most relevant to the JD's top requirements (exact wording, real metrics only)
+1. Read `users/{USER}/cv.md` — select 4 achievement bullets most relevant to the JD's top requirements (exact wording, real metrics only)
 2. Read `users/{USER}/config/profile.yml` — extract candidate name, current role, years of experience
 3. Write a 2-sentence opening based on the role title and JD mission language
-4. Write a 1-paragraph profile intro from the cv.md summary, adapted to the JD domain
+4. Write a 1-paragraph profile intro from the users/{USER}/cv.md summary, adapted to the JD domain
 5. Leave the "Problems / Why this company / Approach" section as a placeholder — this requires user input
 6. Detect and flag any gaps (domain mismatch, language requirement, start date urgency) so the user sees them immediately
 
@@ -392,13 +424,13 @@ After saving the report and recording in the tracker, append a cover letter draf
 {2-sentence opening based on JD role title and mission language}
 
 **Profile introduction**
-{1 paragraph from cv.md summary, adapted to JD domain and required competencies}
+{1 paragraph from users/{USER}/cv.md summary, adapted to JD domain and required competencies}
 
-**Key achievements** *(selected from cv.md — exact wording preserved)*
-- **{lead from cv.md},** {impact sentence with metric}.
-- **{lead from cv.md},** {impact sentence with metric}.
-- **{lead from cv.md},** {impact sentence with metric}.
-- **{lead from cv.md},** {impact sentence with metric}.
+**Key achievements** *(selected from users/{USER}/cv.md — exact wording preserved)*
+- **{lead from users/{USER}/cv.md},** {impact sentence with metric}.
+- **{lead from users/{USER}/cv.md},** {impact sentence with metric}.
+- **{lead from users/{USER}/cv.md},** {impact sentence with metric}.
+- **{lead from users/{USER}/cv.md},** {impact sentence with metric}.
 
 **Problems I will solve** *(placeholder — requires company research + your input)*
 > To be completed: what challenges does {company} face that you'd address? How would you approach them?
@@ -446,6 +478,7 @@ Save full evaluation in `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-DD}.
 **Archetype:** {detected}
 **Score:** {X/5}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
+**Work Auth:** {✅ Sponsors | ➖ Not needed | ⚠️ Unstated | ⛔ No sponsorship}
 **PDF:** {path or pending}
 
 ---
@@ -499,12 +532,12 @@ Save full evaluation in `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-DD}.
 - Score: match average (1-5) — Read `modes/_custom.md` → Scoring Rules, if it exists, and apply its override here. Default (if absent or silent): average of block scores.
 - Status: `Evaluated`
 - PDF: ❌ (or ✅ if auto-pipeline generated PDF)
-- Report: root-relative link `[001](reports/001-company-2026-01-01.md)` (when merged via `merge-tracker.mjs` it is normalized to be relative to the tracker's own dir, e.g. `../reports/...`; see #760)
+- Report: root-relative link `[001](users/{USER}/reports/001-company-2026-01-01.md)` (when merged via `merge-tracker.mjs` it is normalized to be relative to the tracker's own dir, e.g. `../users/{USER}/reports/...`; see #760)
 
 **Tracker TSV format:**
 
 ```tsv
-{num}\t{date}\t{company}\t{role}\tEvaluated\t{score}/5\t{pdf_emoji}\t[{num}](reports/{num}-{company-slug}-{date}.md)\t{one-line note}
+{num}\t{date}\t{company}\t{role}\tEvaluated\t{score}/5\t{pdf_emoji}\t[{num}](users/{USER}/reports/{num}-{company-slug}-{date}.md)\t{one-line note}
 ```
 
 With the optional Via column (intermediary channel, #1596) after Company:

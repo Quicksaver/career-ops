@@ -5,6 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{NAME}} — CV</title>
 <style>
+  /* Themeable tokens (#1837): overridable via config/profile.yml `style:`, which
+     the PDF pipeline injects as a later :root block. Defaults below reproduce the
+     original hardcoded values, so a profile without a `style:` block is unchanged. */
+  :root {
+    --accent-color: hsl(187 74% 32%);
+    --font-family: "Liberation Sans", 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+    --font-size: 11px;
+    /* Matches generate-pdf.mjs's PDF_PAGE_MARGIN — the actual PDF page margin
+       comes from the later @page rule injectPrintPageCss appends (which reads
+       this same variable), so this default must match it exactly. */
+    --page-margin: 0.6in;
+  }
+  @page { margin: var(--page-margin); }
+
   /* ATS-safe typography (#font-extraction fix):
      The bundled variable woff2 fonts (Space Grotesk / DM Sans) render with
      glyph advances that make PDF text extractors inject spurious spaces inside
@@ -27,7 +41,7 @@
     --cv-faint: #888;
     --cv-separator: #ccc;
     --cv-rule: #e2e2e2;
-    --cv-primary: hsl(187, 74%, 32%);
+    --cv-primary: var(--accent-color);
     --cv-primary-strong: hsl(187, 74%, 28%);
     --cv-primary-soft: hsl(187, 40%, 95%);
     --cv-primary-border: hsl(187, 40%, 88%);
@@ -55,8 +69,8 @@
   }
 
   body {
-    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
-    font-size: 11px;
+    font-family: var(--font-family);
+    font-size: var(--font-size);
     line-height: 1.5;
     color: var(--cv-text);
     background: var(--cv-background);
@@ -80,7 +94,7 @@
   }
 
   .header h1 {
-    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+    font-family: var(--font-family);
     font-size: 28px;
     font-weight: 700;
     color: var(--cv-heading);
@@ -100,7 +114,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px 14px;
-    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+    font-family: var(--font-family);
     font-size: 10.5px;
     line-height: 1.4;
     color: var(--cv-muted);
@@ -141,7 +155,7 @@
   }
 
   .section-title {
-    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+    font-family: var(--font-family);
     font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
@@ -155,7 +169,7 @@
 
   /* === PROFESSIONAL SUMMARY === */
   .summary-text {
-    font-size: 11px;
+    font-size: var(--font-size);
     line-height: 1.7;
     color: var(--cv-summary);
   }
@@ -178,7 +192,7 @@
   }
 
   .competency-tag {
-    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+    font-family: var(--font-family);
     font-size: 10px;
     font-weight: 500;
     color: var(--cv-primary-strong);
@@ -202,7 +216,7 @@
   }
 
   .job-company {
-    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+    font-family: var(--font-family);
     font-size: 12.5px;
     font-weight: 600;
     color: var(--cv-accent);
@@ -215,7 +229,7 @@
   }
 
   .job-role {
-    font-size: 11px;
+    font-size: var(--font-size);
     font-weight: 600;
     color: var(--cv-body);
     margin-bottom: 6px;
@@ -248,7 +262,7 @@
   }
 
   .project-title {
-    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+    font-family: var(--font-family);
     font-size: 11.5px;
     font-weight: 600;
     color: var(--cv-accent);
@@ -291,7 +305,7 @@
 
   .edu-title {
     font-weight: 600;
-    font-size: 11px;
+    font-size: var(--font-size);
     color: var(--cv-body);
   }
 
@@ -428,7 +442,7 @@
   }
 
   html[lang="ar"] .header-gradient {
-    background: linear-gradient(to left, hsl(187, 74%, 32%), hsl(270, 70%, 45%));
+    background: linear-gradient(to left, var(--accent-color), hsl(270, 70%, 45%));
   }
 
   html[lang="ar"] .job ul {

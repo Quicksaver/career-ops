@@ -26,6 +26,7 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
+import { parsePdfIndex } from './find.mjs';
 import { LEGACY_COLMAP, detectColumns, resolveScoreStatus, normalizeVia } from './tracker-parse.mjs';
 import { canonicalizeTrackerPath, trackerLockDirFor, acquireTrackerLock, writeFileAtomic, normalizeCompany, cell } from './tracker-utils.mjs';
 
@@ -54,7 +55,7 @@ const MERGE_HOLD_MS = Number(process.env.CAREER_OPS_MERGE_HOLD_MS) || 0;
 const MERGE_READY_IPC = process.env.CAREER_OPS_MERGE_READY_IPC === '1';
 
 const TRACKER_LOCK_DIR = trackerLockDirFor(APPS_FILE);
-
+const PDF_INDEX_FILE = join(REPORTS_ROOT, 'data', 'pdf-index.tsv');
 /**
  * Normalize report links before writing them into the tracker file.
  *
@@ -230,6 +231,53 @@ function extractReqNumber(notes) {
 function parseScore(s) {
   const m = s.replace(/\*\*/g, '').match(/([\d.]+)/);
   return m ? parseFloat(m[1]) : 0;
+}
+
+/**
+ * Load the optional generated-PDF manifest.
+ *
+ * data/pdf-index.tsv is gitignored and only exists after generate-pdf.mjs has
+ * written at least one PDF. Missing manifest = nothing to sync.
+ *
+ * @returns {Map<string,string>} Normalized report# → PDF path.
+ */
+function loadPdfIndex() {
+  return existsSync(PDF_INDEX_FILE)
+    ? parsePdfIndex(readFileSync(PDF_INDEX_FILE, 'utf-8'))
+    : new Map();
+}
+
+/**
+ * Flip stale PDF cells to ✅ when the generated-PDF manifest has the row's
+ * report number.
+ *
+ * @param {Array<object>} existingApps - Parsed tracker rows.
+ * @param {string[]} appLines - Mutable tracker file lines.
+ * @param {Map<string,string>} pdfIndex - Normalized report# → PDF path.
+ * @returns {number} Number of tracker rows updated.
+ */
+function syncPdfFlags(existingApps, appLines, pdfIndex) {
+  let changed = 0;
+  if (pdfIndex.size === 0) return changed;
+
+  for (const app of existingApps) {
+    const reportNum = extractReportNum(app.report);
+    if (!reportNum || !pdfIndex.has(String(reportNum)) || app.pdf !== '❌') continue;
+
+    const lineIdx = appLines.indexOf(app.raw);
+    if (lineIdx < 0) continue;
+
+    console.log(`${DRY_RUN ? '🔄 PDF sync (dry-run)' : '🔄 PDF sync'}: #${app.num} ${app.company} — report ${reportNum} now has a generated PDF`);
+    if (!DRY_RUN) {
+      const updatedLine = buildRow({ ...app, pdf: '✅' });
+      appLines[lineIdx] = updatedLine;
+      app.pdf = '✅';
+      app.raw = updatedLine;
+    }
+    changed++;
+  }
+
+  return changed;
 }
 
 // Column layout for the applications.md table. The tracker may use the original
@@ -532,16 +580,28 @@ for (const line of appLines) {
 }
 
 console.log(`📊 Existing: ${existingApps.length} entries, max #${maxNum}${userContext.userId ? ` (user: ${userContext.userId})` : ''}`);
+let added = 0;
+let updated = 0;
+let skipped = 0;
+const pdfIndex = loadPdfIndex();
+const pdfSynced = syncPdfFlags(existingApps, appLines, pdfIndex);
+updated += pdfSynced;
 
 // Read tracker additions
 if (!existsSync(ADDITIONS_DIR)) {
   console.log('No tracker-additions directory found.');
+  if (pdfSynced > 0 && !DRY_RUN) writeFileAtomic(APPS_FILE, appLines.join('\n'));
+  if (DRY_RUN) console.log('(dry-run — no changes written)');
+  trackerLock.release();
   process.exit(0);
 }
 
 const tsvFiles = readdirSync(ADDITIONS_DIR).filter(f => f.endsWith('.tsv'));
 if (tsvFiles.length === 0) {
   console.log('✅ No pending additions to merge.');
+  if (pdfSynced > 0 && !DRY_RUN) writeFileAtomic(APPS_FILE, appLines.join('\n'));
+  if (DRY_RUN) console.log('(dry-run — no changes written)');
+  trackerLock.release();
   process.exit(0);
 }
 
@@ -554,9 +614,6 @@ tsvFiles.sort((a, b) => {
 
 console.log(`📥 Found ${tsvFiles.length} pending additions`);
 
-let added = 0;
-let updated = 0;
-let skipped = 0;
 const newLines = [];
 const blockedFiles = new Set();
 const integrityBlockedFiles = new Set();
@@ -700,11 +757,12 @@ for (const file of tsvFiles) {
     usedNumbers.add(entryNum);
     if (entryNum > maxNum) maxNum = entryNum;
 
+    const pdf = reportNum && pdfIndex.has(String(reportNum)) ? '✅' : addition.pdf;
     const newLine = buildRow({
       num: entryNum, date: addition.date, company: addition.company, role: addition.role,
       via: addition.via || '—',
       location: addition.location || '—',
-      score: addition.score, status: addition.status, pdf: addition.pdf,
+      score: addition.score, status: addition.status, pdf,
       report: addition.report, notes: addition.notes,
     });
     newLines.push(newLine);
@@ -746,6 +804,15 @@ if (!DRY_RUN) {
 console.log(`\n📊 Summary: +${added} added, 🔄${updated} updated, ⏭️${skipped} skipped`);
 if (DRY_RUN) console.log('(dry-run — no changes written)');
 trackerLock.release();
+
+// Sync PDF flags (idempotent; uses its own lock/transaction)
+if (!DRY_RUN) {
+  try {
+    execFileSync('node', [join(CAREER_OPS, 'sync-pdf-flags.mjs')], { stdio: 'inherit' });
+  } catch (e) {
+    console.warn(`⚠️  Failed to sync PDF flags: ${e.message}`);
+  }
+}
 
 // Optional verify
 if (VERIFY && !DRY_RUN) {
