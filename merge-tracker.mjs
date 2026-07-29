@@ -808,7 +808,16 @@ trackerLock.release();
 // Sync PDF flags (idempotent; uses its own lock/transaction)
 if (!DRY_RUN) {
   try {
-    execFileSync('node', [join(CAREER_OPS, 'sync-pdf-flags.mjs')], { stdio: 'inherit' });
+    const syncArgs = [join(CAREER_OPS, 'sync-pdf-flags.mjs')];
+    if (userContext.userId) syncArgs.push('--user', userContext.userId);
+    execFileSync('node', syncArgs, {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        CAREER_OPS_TRACKER: APPS_FILE,
+        CAREER_OPS_PDF_INDEX: PDF_INDEX_FILE,
+      },
+    });
   } catch (e) {
     console.warn(`⚠️  Failed to sync PDF flags: ${e.message}`);
   }

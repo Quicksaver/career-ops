@@ -34,7 +34,7 @@ import {
 } from './lib/user-context.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const IS_MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const IS_MAIN = Boolean(process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href);
 let userContext;
 try {
   userContext = getUserContext(process.argv.slice(2), {
