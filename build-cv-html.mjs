@@ -73,6 +73,14 @@ function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
+// Render the one inline formatting primitive supported by CV prose. Escape
+// first so payload text can never introduce arbitrary markup, then convert
+// Markdown bold into the ATS-safe <strong> element already styled by the CV
+// templates and preserved by PDF text extraction.
+function renderInlineText(text) {
+  return escapeHtml(text).replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
+}
+
 // Sanitize a URL for an href attribute: only allow the schemes the template's
 // contact row uses, coerce bare emails/domains, drop javascript:/data: and other
 // script-bearing schemes, then HTML-escape for the attribute context.
@@ -317,7 +325,7 @@ function buildExperience(entries, partial) {
   if (!partial) {
     return entries.filter(Boolean).map(e => {
       const bullets = Array.isArray(e.bullets)
-        ? e.bullets.filter(Boolean).map(b => `        <li>${escapeHtml(b)}</li>`).join('\n')
+        ? e.bullets.filter(Boolean).map(b => `        <li>${renderInlineText(b)}</li>`).join('\n')
         : '';
       const location = e.location
         ? `\n    <div class="job-location">${escapeHtml(e.location)}</div>`
@@ -338,7 +346,7 @@ ${bullets}
   const { entryTemplate, blocks } = partial;
   return entries.filter(Boolean).map(e => {
     const bullets = Array.isArray(e.bullets)
-      ? e.bullets.filter(Boolean).map(b => `<li>${escapeHtml(b)}</li>`).join('\n    ')
+      ? e.bullets.filter(Boolean).map(b => `<li>${renderInlineText(b)}</li>`).join('\n    ')
       : '';
     const blockValues = new Map([
       ['LOCATION_BLOCK', { value: escapeHtml(e.location || ''), present: Boolean(e.location) }],
@@ -365,7 +373,7 @@ function buildProjects(entries, partial) {
       const descText = e.description
         || (Array.isArray(e.bullets) ? e.bullets.filter(Boolean).join(' ') : '');
       const desc = descText
-        ? `\n    <div class="project-desc">${escapeHtml(descText)}</div>`
+        ? `\n    <div class="project-desc">${renderInlineText(descText)}</div>`
         : '';
       const tech = e.tech
         ? `\n    <div class="project-tech">${escapeHtml(e.tech)}</div>`
@@ -382,13 +390,13 @@ function buildProjects(entries, partial) {
       || (Array.isArray(e.bullets) ? e.bullets.filter(Boolean).join(' ') : '');
     const blockValues = new Map([
       ['BADGE_BLOCK', { value: escapeHtml(e.badge || ''), present: Boolean(e.badge) }],
-      ['DESC_BLOCK',  { value: escapeHtml(descText),      present: Boolean(descText) }],
+      ['DESC_BLOCK',  { value: renderInlineText(descText), present: Boolean(descText) }],
       ['TECH_BLOCK',  { value: escapeHtml(e.tech || ''),  present: Boolean(e.tech) }],
     ]);
     return fillEntry(entryTemplate, blocks, {
       NAME:  escapeHtml(e.name || ''),
       BADGE: escapeHtml(e.badge || ''),
-      DESC:  escapeHtml(descText),
+      DESC:  renderInlineText(descText),
       TECH:  escapeHtml(e.tech || ''),
     }, blockValues);
   }).join('\n  ');
@@ -402,7 +410,7 @@ function buildEducation(entries, partial) {
         ? ` <span class="edu-org">${escapeHtml(e.org)}</span>`
         : '';
       const desc = e.description
-        ? `\n    <div class="edu-desc">${escapeHtml(e.description)}</div>`
+        ? `\n    <div class="edu-desc">${renderInlineText(e.description)}</div>`
         : '';
       return `<div class="edu-item">
     <div class="edu-header">
@@ -417,13 +425,13 @@ function buildEducation(entries, partial) {
   return entries.filter(Boolean).map(e => {
     const blockValues = new Map([
       ['ORG_BLOCK',  { value: escapeHtml(e.org || ''),         present: Boolean(e.org) }],
-      ['DESC_BLOCK', { value: escapeHtml(e.description || ''), present: Boolean(e.description) }],
+      ['DESC_BLOCK', { value: renderInlineText(e.description || ''), present: Boolean(e.description) }],
     ]);
     return fillEntry(entryTemplate, blocks, {
       TITLE: escapeHtml(e.title || ''),
       ORG:   escapeHtml(e.org || ''),
       YEAR:  escapeHtml(e.year || ''),
-      DESC:  escapeHtml(e.description || ''),
+      DESC:  renderInlineText(e.description || ''),
     }, blockValues);
   }).join('\n  ');
 }
@@ -535,7 +543,7 @@ function renderReport(payload, partials) {
     PAGE_WIDTH: pageWidth,
     NAME: escapeHtml(candidate.name || ''),
     SECTION_SUMMARY: escapeHtml(sectionTitles.summary),
-    SUMMARY_TEXT: escapeHtml(payload.summary || ''),
+    SUMMARY_TEXT: renderInlineText(payload.summary || ''),
     SECTION_COMPETENCIES: escapeHtml(sectionTitles.competencies),
     COMPETENCIES: buildCompetencies(payload.competencies, partials.get('competencies')),
     SECTION_EXPERIENCE: escapeHtml(sectionTitles.experience),
@@ -718,7 +726,7 @@ async function runSelfTest() {
       portfolio: { url: 'https://test.example.com', display: 'test.example.com' },
       location: 'City, State',
     },
-    summary: 'Backend engineer with a focus on R&D and cost-efficient "north star" systems.',
+    summary: 'Backend engineer with a focus on **R&D** and cost-efficient "north star" systems.',
     competencies: ['Cloud Architecture', 'RESTful API Design', 'Kubernetes & Docker'],
     experience: [{
       company: 'Test Corp',
@@ -726,7 +734,7 @@ async function runSelfTest() {
       location: 'Remote',
       dates: 'June 2024 - Present',
       bullets: [
-        'Built automated testing pipelines with CI/CD integration',
+        'Built **automated testing pipelines** with CI/CD integration',
         'Reduced regression test time by 60% through parallel execution',
       ],
     }],
@@ -734,13 +742,13 @@ async function runSelfTest() {
       name: 'Test Project',
       badge: 'Open Source',
       tech: 'Python, FastAPI, Docker',
-      description: 'Built a REST API with automated test coverage exceeding 90%.',
+      description: 'Built a **REST API** with automated test coverage exceeding 90% and escaped <input>.',
     }],
     education: [{
       title: 'Bachelor of Science in Computer Science',
       org: 'Test University',
       year: '2024',
-      description: 'Coursework: Data Structures, Algorithms, Machine Learning.',
+      description: 'Coursework: **Data Structures**, Algorithms, Machine Learning.',
     }],
     certifications: [{ title: 'Certified Kubernetes Administrator', org: 'CNCF', year: '2025' }],
     skills: [
@@ -772,6 +780,20 @@ async function runSelfTest() {
   }
   if (/Kubernetes & Docker/.test(html)) {
     console.error('Self-test failed: found an unescaped ampersand in output');
+    process.exit(1);
+  }
+  for (const expected of ['<strong>R&amp;D</strong>', '<strong>automated testing pipelines</strong>', '<strong>REST API</strong>', '<strong>Data Structures</strong>']) {
+    if (!html.includes(expected)) {
+      console.error(`Self-test failed: inline emphasis missing from rendered CV: ${expected}`);
+      process.exit(1);
+    }
+  }
+  if (html.includes('**') || html.includes('<input>')) {
+    console.error('Self-test failed: inline emphasis markers or unsafe payload markup leaked into output');
+    process.exit(1);
+  }
+  if (!html.includes('escaped &lt;input&gt;')) {
+    console.error('Self-test failed: inline emphasis rendering bypassed HTML escaping');
     process.exit(1);
   }
 

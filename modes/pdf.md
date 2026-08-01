@@ -16,8 +16,8 @@
 7. Detect role archetype → adapt framing
 8. Build an internal recruiter-side risk map from the JD using `modes/heuristics/recruiter-side.md`: likely doubts, matching evidence, and which document section should address each doubt
 9. Rewrite Professional Summary by injecting JD keywords + exit narrative bridge ("Built and sold a business. Now applying systems thinking to [JD domain].")
-10. Select top 3-4 most relevant projects for the job
-11. Reorder experience bullets by JD relevance and by the risk map: strongest matching evidence first
+10. Include at most the 3-4 projects most relevant to the job; omit less-relevant projects from the tailored CV.
+11. Preserve reverse-chronological Work Experience blocks, but within each block exclude bullet points that are less relevant to the JD or duplicate another section, then order the remaining evidence by the risk map with the strongest match first. Treat this as an exclusion rule, not a fixed top-N bullet cap.
 12. Build competency grid from JD requirements (6-8 keyword phrases), prioritizing `existing` and `supportedByResume` skills from Step 4 — never a `gap` skill
 13. Inject keywords naturally into existing achievements (NEVER invent)
 14. Apply the six-second clarity gate from `modes/heuristics/recruiter-side.md`: top third must make target role, strongest fit, and proof obvious
@@ -30,7 +30,7 @@
 19. Execute: `node generate-pdf.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf --format={letter|a4} --report={REPORT_NUM}` — `{REPORT_NUM}` is the NNN from the report filename/link (e.g. `008` for `users/{USER}/reports/008-acme-….md`), not a recalculated tracker number. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `users/{USER}/data/pdf-index.tsv` so the dashboard can open and regenerate the exact PDF. Omit it only for one-off CVs with no tracker entry.
     - The rendered PDF has a two-page warning threshold by default. `--max-pages=N` accepts a positive integer; pass `--max-pages=1` when the user or market prefers a one-page CV.
     - If the rendered PDF exceeds its threshold, generation warns loudly with the actual and allowed page counts plus trimming guidance, then reports and indexes the unchanged PDF so existing longer-CV flows keep working.
-    - Pass `--strict-pages` only when the user or market requires a hard limit. Strict overflow leaves the draft available for inspection but does not report or index it as successful; trim lower-priority content and rerun.
+    - Pass `--strict-pages` when the user profile or market requires a hard limit. If the profile requires two pages, pass `--max-pages=2 --strict-pages`; on overflow, editorially compress and rerun until it succeeds. Never report or index an over-budget draft as the finished CV.
 20. Report: PDF path, number of pages, keyword coverage %, and any skill gaps from Step 4 still unaddressed
 
 **Naming rule:** All generated CV artifacts in `users/{USER}/output/` MUST use the same report-linked basename:
@@ -111,7 +111,7 @@ cv:
 2. Professional Summary (3-4 lines, keyword-dense)
 3. Core Competencies (6-8 keyword phrases in flex-grid)
 4. Work Experience (reverse chronological)
-5. Projects (top 3-4 most relevant)
+5. Projects (at most the 3-4 most relevant)
 6. Education & Certifications
 7. Skills (languages + technical)
 
@@ -214,11 +214,11 @@ Write a JSON file with this structure, then run `node build-cv-html.mjs --user {
 | `candidate.photo` | string | Opt-in profile photo (#264): a local path or `data:` URL. Empty/absent emits **no `<img>`**, rendering pixel-for-pixel identical to the photoless layout (US/UK/many-market ATS penalize photos; opt in for DACH/European markets). |
 | `candidate.photo_style` | string | Optional photo framing: `rounded` (default), `circle`, or `square`. Read it from `candidate.photo_style` in `config/profile.yml`; invalid values fail before HTML is written. |
 | `sections` | object | Optional localized section titles; any omitted key falls back to the English default shown above. |
-| `summary` | string | Personalized summary with keywords. |
+| `summary` | string | Personalized summary with keywords. Use `**short phrase**` for selective ATS-safe bold emphasis. |
 | `competencies` | string[] | 6-8 keyword phrases → competency tags. |
-| `experience[]` | object | `company`, `role`, `location` (optional), `dates`, `bullets` (reordered, keyword-injected). |
-| `projects[]` | object | `name`, `badge` (optional), `tech` (optional), `description` (a `bullets` array is also accepted and joined into the description line). |
-| `education[]` | object | `title` (degree), `org` (institution), `year`, `description` (optional). |
+| `experience[]` | object | `company`, `role`, `location` (optional), `dates`, `bullets` (reordered, keyword-injected). Bullet text supports selective `**short phrase**` emphasis. |
+| `projects[]` | object | `name`, `badge` (optional), `tech` (optional), `description` (a `bullets` array is also accepted and joined into the description line). Descriptions support selective `**short phrase**` emphasis. |
+| `education[]` | object | `title` (degree), `org` (institution), `year`, `description` (optional). Descriptions support selective `**short phrase**` emphasis. |
 | `certifications[]` | object | `title`, `org`, `year`. |
 | `skills[]` | object | `category` + `items` (comma-separated string or string array). |
 

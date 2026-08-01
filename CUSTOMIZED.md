@@ -725,6 +725,32 @@ Future merge notes:
 - If upstream changes the batch worker prompt format, reapply the rule at the first point after score/final decision are known and before any HTML/PDF artifact is written.
 - Preserve the Work Experience ordering constraint if upstream rewrites the CV tailoring instructions; relevance sorting should not make an older role appear more recent than it was.
 
+## CV Relevance, Emphasis, And Page Defaults
+
+The fork lets a user profile enforce a readable page budget while tailoring project selection, experience depth, and visual emphasis to each job.
+
+Files:
+
+- `build-cv-html.mjs`
+- `modes/pdf.md`
+- `batch/batch-prompt.md`
+- `users/{USER}/modes/_custom.md`
+
+What this customizes:
+
+- Tailored CVs include at most the 3-4 projects most relevant to the target role; less-relevant projects may be omitted rather than receiving mandatory compact entries.
+- Work Experience remains reverse chronological, but each block excludes bullets that are less relevant to the JD or duplicate another section. The wording is intentionally an exclusion rule rather than a fixed "only the top N bullets" cap, so relevant supporting evidence can remain when it adds value.
+- Structured CV payloads support selective Markdown-style `**short phrase**` emphasis in the professional summary, experience bullets, project descriptions, and education descriptions. `build-cv-html.mjs` escapes the source text first and then renders those markers as ATS-safe `<strong>` elements, so saved HTML previews and generated PDFs retain the same emphasis without allowing raw HTML injection.
+- Direct-HTML generation may use `<strong>` for the same short, evidence-bearing phrases. Whole sentences should not be bolded, and emphasis must never introduce or imply a claim absent from the user's approved sources.
+- Profiles using this balanced selection policy enforce a strict two-page result with `--max-pages=2 --strict-pages`; overflow must be editorially compressed and rerendered before the artifact is reported or indexed as successful. The profile must not infer a one-page target from geography or market convention, shrink template typography/margins, or fabricate content to fit.
+
+Future merge notes:
+
+- Preserve the asymmetric selection rule: Projects are capped at the 3-4 most relevant, while Work Experience uses relevance-based exclusion within every retained chronological block rather than a fixed bullet count.
+- Keep inline emphasis support in the deterministic structured renderer, including escape-before-render behavior and self-test coverage for summary, experience, project, education, and unsafe input.
+- If upstream adds native rich-text fields, migrate existing `**...**` payload support without losing `<strong>` output in saved HTML previews or PDFs.
+- Do not implement the two-page limit through automatic truncation. Strict overflow should trigger an editorial rewrite and rerender; one-page output remains an explicit opt-in.
+
 ## CV Theme Overrides
 
 The fork makes the HTML/PDF CV palette configurable from `config/profile.yml`.

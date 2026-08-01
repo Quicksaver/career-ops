@@ -413,8 +413,8 @@ If the PDF gate passes:
 4. Choose paper format: US/Canada -> `letter`; otherwise `a4`.
 5. Adapt framing to the detected archetype.
 6. Rewrite the Professional Summary with real evidence and relevant keywords.
-7. Select the most relevant projects and proof points.
-8. Reorder bullets within each Work Experience block by relevance, but preserve the reverse-chronological order of the experience blocks themselves.
+7. Include at most the 3-4 projects most relevant to the role; omit less-relevant projects from the tailored CV.
+8. Preserve the reverse-chronological order of Work Experience blocks. Within each block, exclude bullet points that are less relevant to the JD or duplicate another section, then order the remaining evidence strongest-first. This is an exclusion rule, not a fixed top-N bullet cap.
 9. Build a 6-8 item competency grid.
 10. Inject keywords ethically into existing achievements; never invent skills or metrics.
 11. Write HTML to `{{USER_ROOT}}/output/{{REPORT_NUM}}-{company-slug}-{{DATE}}.html`.
@@ -427,6 +427,8 @@ node generate-pdf.mjs --user {{USER}} \
   --format={letter|a4} \
   --report={{REPORT_NUM}}
 ```
+
+Read the page-budget rule in `{{USER_ROOT}}/modes/_custom.md`. When it requires a hard two-page result, append `--max-pages=2 --strict-pages`. If rendering reports an overflow, revise the CV through editorial compression and rerun; do not accept, report, or index a three-page draft as successful.
 
 On success, use `pdf_emoji` = `✅` and set `"pdf"` to the output path in the final JSON.
 
