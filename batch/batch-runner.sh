@@ -616,39 +616,21 @@ log_discard() {
   printf '%s\t%s\t%s\t%s\n' "$ts" "$id" "$url" "$reason" >> "$discard_log"
 }
 
-# Calculate next report number.
-# Caller must hold STATE_LOCK_DIR while this runs.
-next_report_num_unlocked() {
-  local max_num=0
-  if [[ -d "$REPORTS_DIR" ]]; then
-    for f in "$REPORTS_DIR"/*.md; do
-      [[ -f "$f" ]] || continue
-      local basename
-      basename="${f##*/}"
-      local num="${basename%%-*}"
-      num=$((10#$num)) # Remove leading zeros for arithmetic
-      if (( num > max_num )); then
-        max_num=$num
-      fi
-    done
-  fi
-  # Also check state file for assigned report numbers
-  if [[ -f "$STATE_FILE" ]]; then
-    while IFS=$'\t' read -r _ _ _ _ _ rnum _ _ _; do
-      [[ "$rnum" == "report_num" || "$rnum" == "-" || -z "$rnum" ]] && continue
-      local n=$((10#$rnum))
-      if (( n > max_num )); then
-        max_num=$n
-      fi
-    done < "$STATE_FILE"
-  fi
-  printf '%03d' $((max_num + 1))
-}
 
 # Update or insert state for an offer.
 # Caller must hold STATE_LOCK_DIR while this runs.
 update_state_unlocked() {
   local id="$1" url="$2" status="$3" started="$4" completed="$5" report_num="$6" score="$7" error="$8" retries="$9"
+
+  # batch-state.tsv is tab-separated with one row per line -- a literal tab,
+  # newline, or carriage return inside $error (e.g. from a worker's raw error
+  # text, or JSON.parse unescaping \n/\r/\t in a caller upstream) would split
+  # into extra columns or extra rows and corrupt every row after it. Collapse
+  # them to spaces centrally here so every caller is protected, not just the
+  # one that happened to trigger this.
+  error=${error//$'\r'/ }
+  error=${error//$'\n'/ }
+  error=${error//$'\t'/ }
 
   if [[ ! -f "$STATE_FILE" ]]; then
     init_state
@@ -709,12 +691,32 @@ mark_paused_rate_limit() {
 reserve_report_num_unlocked() {
   local id="$1" url="$2" started="$3" retries="$4"
 
+  # Use the shared, cross-process-atomic reservation system (O_CREAT|O_EXCL
+  # sentinel files in reserve-report-num.mjs) instead of the old bash-native
+  # max(existing report files, batch-state.tsv numbers)+1 scan. The bash-native
+  # version had zero visibility into reservations made by any OTHER process
+  # calling `node reserve-report-num.mjs` directly -- e.g. an interactively
+  # dispatched Agent evaluating one offer with a browser tool while a batch
+  # run is in flight. Both could independently compute the same "next" number
+  # and collide on disk. Found 2026-07-30: two separate collisions (report
+  # 049, report 051) in one batch run for exactly this reason -- routing every
+  # caller through the same node script means they all share one real lock.
   local report_num=""
-  if report_num=$(next_report_num_unlocked); then
+  report_num=$(node "$PROJECT_DIR/reserve-report-num.mjs" 2>/dev/null | tr -d '[:space:]')
+  if [[ -n "$report_num" ]]; then
     update_state_unlocked "$id" "$url" "processing" "$started" "-" "$report_num" "-" "-" "$retries"
   fi
 
   printf '%s\n' "$report_num"
+}
+
+# Release a report-number reservation via the shared atomic system. Safe to
+# call even if the number was never actually reserved this way (e.g. a
+# resumed/paused offer) -- the underlying script no-ops on a missing sentinel.
+release_report_num() {
+  local report_num="$1"
+  [[ -n "$report_num" && "$report_num" != "-" ]] || return 0
+  node "$PROJECT_DIR/reserve-report-num.mjs" --release "$report_num" >/dev/null 2>&1 || true
 }
 
 reserve_report_num() {
@@ -785,13 +787,13 @@ build_contract_error() {
   elif [[ "$exit_code" -ne 0 ]]; then
     reasons+=("worker-exit-$exit_code")
   fi
-  if [[ "$CLI" == "codex" ]]; then
+  if [[ "$final_json_valid" == "true" && "$final_json_status" != "completed" ]]; then
+    reasons+=("worker-status-${final_json_status:-unknown}")
+  elif [[ "$CLI" == "codex" ]]; then
     if [[ ! -f "$final_file" ]]; then
       reasons+=("missing-final-json")
     elif [[ "$final_json_valid" != "true" ]]; then
       reasons+=("invalid-final-json")
-    elif [[ "$final_json_status" != "completed" ]]; then
-      reasons+=("worker-status-${final_json_status:-unknown}")
     fi
   fi
   [[ -n "$report_file" ]] || reasons+=("missing-report")
@@ -1032,6 +1034,7 @@ process_offer() {
   tracker_file=$(find_tracker_for_id "$id")
   local final_json_valid=false
   local final_json_status=""
+  local final_json_error=""
   if [[ "$CLI" == "codex" ]]; then
     if validate_worker_json "$final_file"; then
       final_json_valid=true
@@ -1040,8 +1043,36 @@ process_offer() {
       echo "WARN: Worker #$id did not return valid final JSON at $final_file." >> "$log_file"
     fi
   else
+    # Non-Codex workers put their authoritative result in the last fenced JSON
+    # block. Parse only that block so reasoning text containing a status-shaped
+    # example cannot flip the run. A missing block remains backward compatible:
+    # the cross-artifact validator below is still the completion authority.
     final_json_valid=true
     final_json_status="completed"
+    local worker_result_json parsed_worker_result
+    worker_result_json=$(awk '
+      /^```json[[:space:]]*$/ { in_block=1; block=""; next }
+      in_block && /^```[[:space:]]*$/ { in_block=0; last=block; next }
+      in_block { block = block $0 "\n" }
+      END { printf "%s", last }
+    ' "$log_file" 2>/dev/null || true)
+    if [[ -n "$worker_result_json" ]]; then
+      parsed_worker_result=$(printf '%s' "$worker_result_json" | node -e '
+        let data = "";
+        process.stdin.on("data", d => data += d);
+        process.stdin.on("end", () => {
+          try {
+            const obj = JSON.parse(data);
+            const status = obj?.status === "completed" || obj?.status === "failed" ? obj.status : "";
+            const error = typeof obj?.error === "string" ? obj.error.replace(/[\r\n\t]+/g, " ") : "";
+            process.stdout.write(status + "\t" + error);
+          } catch {}
+        });
+      ' 2>/dev/null || true)
+      if [[ -n "$parsed_worker_result" ]]; then
+        IFS=$'\t' read -r final_json_status final_json_error <<< "$parsed_worker_result"
+      fi
+    fi
   fi
 
   local artifacts_valid=false
@@ -1074,12 +1105,14 @@ process_offer() {
     if is_decimal_number "$score" && awk -v min="$MIN_SCORE" 'BEGIN{exit !(min > 0)}'; then
       if awk -v score="$score" -v min="$MIN_SCORE" 'BEGIN{exit !(score < min)}'; then
         update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$score" "below-min-score" "$retries"
+        release_report_num "$report_num"
         echo "    ⏭️  Skipped (score: $score < min-score: $MIN_SCORE)"
         return 0
       fi
     fi
 
     update_state "$id" "$url" "completed" "$started_at" "$completed_at" "$report_num" "$score" "-" "$retries"
+    release_report_num "$report_num"
     if [[ $exit_code -ne 0 ]]; then
       echo "    ✅ Completed via artifact recovery (score: $score, report: $report_num, worker exit: $exit_code)"
     else
@@ -1096,6 +1129,7 @@ process_offer() {
     fi
     local worker_error
     worker_error=$(worker_json_field "$final_file" error)
+    [[ -n "$worker_error" ]] || worker_error="$final_json_error"
     if [[ -n "$worker_error" ]]; then
       error_msg="$error_msg: $worker_error"
     fi

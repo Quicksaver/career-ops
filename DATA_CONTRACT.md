@@ -23,6 +23,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/config/plugins.yml` | Plugin activation toggles (opt-in; seeded from `config/plugins.example.yml`) |
 | `users/{USER}/modes/_profile.md` | Archetypes, narrative, negotiation scripts |
 | `users/{USER}/modes/_custom.md` | House rules, custom workflows, and output preferences (procedural; survives updates) |
+| `users/{USER}/modes/_brief.md` | Compact profile brief used by the two-pass triage first pass |
 | `users/{USER}/voice-dna.md` | Writing voice guardrail — banned words, anti-AI-slop rules, tone (optional) |
 | `users/{USER}/article-digest.md` | Proof points from portfolio |
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
@@ -43,12 +44,14 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/data/offers/*` | Received offers/contracts, promise notes, prep reports, and reply drafts (PII; written by `offer-prep`) |
 | `users/{USER}/data/salary-observations.tsv` | Append-only compensation observation log: `{tracker#}\t{date}\t{desired\|advertised\|actual\|stated}\t{amount}\t{currency}\t{source}\t{note}\t{round}\t{interviewer}`. The optional trailing round/interviewer fields apply to stated figures; read by `salary-gap.mjs` |
-| `users/{USER}/data/status-log.tsv` | Append-only status transition ledger read by `funnel-velocity.mjs`; the planned `set-status.mjs` append path lands with upstream #1695, so this file may not exist yet |
+| `users/{USER}/data/status-log.tsv` | Append-only status transition ledger written by `set-status.mjs` beside the active user's tracker and read by `funnel-velocity.mjs` |
+| `users/{USER}/data/outcomes/*` | Application outcome logs and archived application artifacts written by the `outcome` mode |
 | `users/{USER}/data/upskill/*` | Skill-gap analysis reports written by the `upskill` mode |
 | `users/{USER}/data/blacklist.md` | Opt-in do-not-apply company list; only the user or an agent acting on explicit instruction may write it |
 | `users/{USER}/data/assessments.tsv` | Append-only skills-assessment log: `{date}\t{company}\t{report#\|-}\t{platform}\t{subject}\t{threshold%\|-}\t{score%\|-}\t{stale_note}`. Appended by `node assessment-log.mjs --user {USER} add`; never edited in place |
 | `users/{USER}/data/active-interviews.md` | Active interview process notes |
 | `users/{USER}/data/reply-candidates.json` | Candidate matches produced from application replies |
+| `users/{USER}/data/contacts.tsv` | Job-search phonebook containing confirmed recruiter, hiring-manager, peer, and interviewer contact data (third-party PII; written by `contacto`) |
 | `users/{USER}/data/verification-reviews.jsonl` | Append-only exact-fingerprint seen decisions for reviewed verification findings |
 | `users/{USER}/data/verification-actions.jsonl` | Append-only audit ledger for reviewed verification repairs and archive/restore actions |
 | `users/{USER}/data/verify-runs/*` | Reviewed-verification run artifacts; completed runs compact to `summary.json`, all runs expire after 10 days |
@@ -62,15 +65,19 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/jds/*` | Saved job descriptions |
 | `~/.scan-auth/users/{USER}/{PORTAL}/profile/` | Browser profile for authenticated scanning |
 
+Project-level CLI configuration such as root `opencode.json` is also user-owned and ignored, but it is environment configuration rather than candidate data; copy `opencode.example.json` to start.
+
 ## System Layer (safe to auto-update)
 
 These files contain system logic, scripts, templates, and instructions that improve with each release.
 
 | File | Purpose |
 |------|---------|
-| `modes/_shared.md` | Scoring system, global rules, tools |
+| `modes/_shared.md` | Eval-core: scoring system, global rules, tools |
+| `modes/_writing.md` | Writing guardrails (Voice DNA / Writing Style / ATS) — loaded by the CV/cover/apply writing modes, not by evaluation (#1710) |
 | `modes/_custom.template.md` | Template seed for the user's `modes/_custom.md` |
 | `modes/_profile.template.md` | Template seed for the user's `modes/_profile.md` |
+| `modes/_brief.template.md` | Template seed for the user's `modes/_brief.md` |
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
 | `modes/cover.md` | Cover letter generation instructions |
@@ -109,6 +116,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/interview.md` | Interactive profile/CV onboarding interview instructions |
 | `modes/interview-prep.md` | Company-specific interview prep instructions |
 | `modes/interview-redflag.md` | Company red-flag detection instructions |
+| `modes/outcome.md` | Application outcome instructions |
 | `modes/interview/*` | Interview prep planning, practice, and debrief skills |
 | `modes/agent-inbox.md` | Agent inbox (queued requests) instructions |
 | `modes/reply-watch.md` | Employer reply classification instructions |
@@ -146,6 +154,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `plugins-registry/` | Curated community plugins, one `<id>.json` per plugin (the trust root) |
 | `plugin-install.mjs` / `plugin-audit.mjs` / `validate-plugin-registry.mjs` | Plugin install/audit/registry-validation utilities |
 | `config/plugins.example.yml` | Plugin activation template (seed for `users/{USER}/config/plugins.yml`) |
+| `opencode.example.json` | OpenCode project config template (seed for `opencode.json`; ships Playwright MCP registration) |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `schemas/*` | Strict JSON contracts for deterministic agent steps |
@@ -162,6 +171,8 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `VERSION` | Current version number |
 | `DATA_CONTRACT.md` | This file |
 | `writing-samples/README.md` | System-owned onboarding documentation for the writing-samples directory |
+| `seed-fixture.mjs` / `test-fixtures/*` | Upgrade-test fixtures and seeder (system layer; fictional data, never user data) |
+| `upgrade-tests.mjs` | Dynamic upgrade regression harness (PR gate: old install applies the commit under test hermetically) |
 
 ## The Rule
 

@@ -31,7 +31,7 @@ Possible states: `Evaluated` → `Applied` → `Responded` → `Interview` → `
 - `Discarded` = discarded by candidate
 - `SKIP` = doesn't fit, don't apply
 
-If the user asks to update a state, run `node set-status.mjs --user {USER} <report#|company> <State> [--note]`; do not hand-edit the table.
+If the user asks to update a state, use the canonical CLI — `node set-status.mjs --user {USER} <report#|company> <State> [--note]` — rather than hand-editing the row: it validates the state, holds the active user's tracker lock, and appends the transition to `users/{USER}/data/status-log.tsv` (the ledger `funnel-velocity.mjs` reads). When the user states the real event date ("they replied on Tuesday", "rejected me last week"), pass `--on YYYY-MM-DD` so the ledger records when it actually happened, not when it was typed in. Hand-edit only what `set-status.mjs` cannot express (non-status cells).
 
 **Salary observations:** when the user reports a confirmed compensation figure for a row ("recruiter said 84k", "offer letter says 92k", "signed at 90k"), append one `actual` observation line to `users/{USER}/data/salary-observations.tsv` (create the file if missing; format per `docs/SCRIPTS.md` → salary-gap) with the source tier matching how the figure arrived: `recruiter-verbal` for a spoken figure, `offer-letter` for a written offer, `contract` for a signed contract. The log is append-only — a new figure is a new line, never an edit of a prior one. Then echo that application's gap in one line; `node salary-gap.mjs --user {USER} --summary` shows the full picture.
 
@@ -50,6 +50,7 @@ Also show statistics:
 - % with PDF generated
 - % with report generated
 - If `users/{USER}/data/salary-observations.tsv` has confirmed `actual` observations, include the output of `node salary-gap.mjs --user {USER} --summary` (advertised→actual gaps, desired attainment)
+- If the tracker has Applied-or-beyond rows, include the output of `node funnel-velocity.mjs --user {USER} --summary` (funnel rates vs market benchmarks, in-flight waits, stage velocity once `users/{USER}/data/status-log.tsv` has data). Keep its honesty framing intact: the selection-bias note on above-range rates, censored counts next to medians, and no multiplier claims the script itself didn't print
 
 For the full lifetime stats view (cumulative funnel, scanner totals, portal
 coverage, follow-up compliance), run `node stats.mjs --user {USER} --summary` and present its

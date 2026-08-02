@@ -23,6 +23,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from "./lib/user-context.mjs";
+import { assertFacts } from "./verify-cv-facts.mjs";
 import { resolveTemplate } from "./cv-templates.mjs";
 
 function safeOutputPath(raw, outputRoot) {
@@ -31,6 +32,7 @@ function safeOutputPath(raw, outputRoot) {
   return join(outputRoot, filename);
 }
 
+/** Assert that a payload object contains the required keys. */
 function _require(obj, keys, context) {
   for (const key of keys) {
     if (!obj || typeof obj !== "object" || !(key in obj)) {
@@ -39,6 +41,7 @@ function _require(obj, keys, context) {
   }
 }
 
+/** Escape user-provided text before inserting it into generated HTML. */
 function escapeHtml(text) {
   if (!text) return "";
   return String(text)
@@ -49,10 +52,12 @@ function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
+/** Add an HTTPS scheme to a profile URL when it is omitted. */
 function asUrl(value) {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }
 
+/** Build the escaped contact line shown in the cover-letter header. */
 function buildContactLine(candidate) {
   const parts = [];
   if (candidate.location) parts.push(escapeHtml(candidate.location));
@@ -62,36 +67,44 @@ function buildContactLine(candidate) {
   }
   if (candidate.phone) parts.push(escapeHtml(candidate.phone));
   if (candidate.linkedin) {
-    parts.push(`<a href="${escapeHtml(asUrl(candidate.linkedin))}">LinkedIn</a>`);
+    const display = candidate.linkedin.replace(/^https?:\/\//i, "");
+    parts.push(`<a href="${escapeHtml(asUrl(candidate.linkedin))}">${escapeHtml(display)}</a>`);
   }
   if (candidate.github) {
-    const display = candidate.github.replace(/^https?:\/\//, "");
+    const display = candidate.github.replace(/^https?:\/\//i, "");
     parts.push(`<a href="${escapeHtml(asUrl(candidate.github))}">${escapeHtml(display)}</a>`);
   }
   return parts.join(" &nbsp;|&nbsp; ");
 }
 
+/** Build the optional credentials line from the candidate payload. */
 function buildCredentialsBlock(candidate) {
   const credentials = candidate.credentials || [];
   if (!credentials.length) return "";
   return `<div class="credentials">${credentials.map(escapeHtml).join(" &nbsp;|&nbsp; ")}</div>`;
 }
 
+/** Build the escaped company, city, and date line for the letter. */
 function buildDateline(letter) {
   const parts = [letter.company, letter.city, letter.date].filter(Boolean).map(escapeHtml);
   return parts.join(" &nbsp;&nbsp; ");
 }
 
+/** Build the optional achievements list for the letter body. */
 function buildAchievementsBlock(achievements) {
   if (!achievements || !achievements.length) return "";
   const items = achievements.map(ach => {
-    const lead = escapeHtml(ach.lead || "");
+    // Trim a caller-supplied trailing comma (cover.md's own bullet-format
+    // example shows the lead ending in a comma) so it never doubles up with
+    // the comma this function always appends.
+    const lead = escapeHtml((ach.lead || "").replace(/,\s*$/, ""));
     const impact = escapeHtml(ach.impact || "");
     return `    <li><b>${lead},</b> ${impact}</li>`;
   }).join("\n");
   return `<ul class="achievements">\n${items}\n  </ul>`;
 }
 
+/** Build the optional footnotes block with escaped links. */
 function buildFootnotesBlock(footnotes) {
   if (!footnotes || !footnotes.length) return "";
   const lines = footnotes.map(fn => {
@@ -166,6 +179,7 @@ export function buildHtml(payload, templatePath) {
   return html.replace(/\{\{[A-Z_]+\}\}/g, (token) => replacements[token] ?? token);
 }
 
+/** Parse a payload, run the fact gate, and render the cover-letter PDF. */
 async function main() {
   const { values: args } = parseArgs({
     options: {
@@ -224,14 +238,31 @@ Usage:
 
   if (!existsSync(outputRoot)) mkdirSync(outputRoot, { recursive: true });
 
-  // Imported lazily so buildHtml can be used (and tested) without Playwright.
-  const { renderHtmlToPdf } = await import("./generate-pdf.mjs");
-
   try {
     const templatePath = resolveCoverTemplatePath(payload, {
       profilePath: userPath(userContext, "config/profile.yml"),
     });
     const html = buildHtml(payload, templatePath);
+    // Cover letters are candidate-facing documents too. Reuse the CV fact
+    // validator before importing Playwright or writing a PDF so a failed gate
+    // cannot leave behind a misleading artifact.
+    const factCheck = assertFacts(html, {
+      label: "cover letter",
+      sourcePaths: [
+        userPath(userContext, "cv.md"),
+        userPath(userContext, "article-digest.md"),
+      ],
+      configPath: userPath(userContext, "config/cv-facts.json"),
+    });
+    if (factCheck.verdict === "warn") {
+      console.error(`CV fact check warning: cover letter`);
+      for (const phrase of factCheck.warnings) {
+        console.error(`  - advisory phrase: ${phrase}`);
+      }
+    }
+    // Imported only after fact validation so a failed gate does not load
+    // Playwright or create a PDF artifact.
+    const { renderHtmlToPdf } = await import("./generate-pdf.mjs");
     const outputPath = resolve(payload.output_path);
     await renderHtmlToPdf(html, outputPath, {
       format: args.format || "a4",

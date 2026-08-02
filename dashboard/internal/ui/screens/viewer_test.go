@@ -14,6 +14,15 @@ import (
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
 
+func TestViewerCurrentStatusPairsLeadsWithRowStatus(t *testing.T) {
+	m := ViewerModel{app: model.CareerApplication{Status: "Interview"}}
+
+	pairs := m.currentStatusPairs()
+	if len(pairs) == 0 || pairs[0].Canonical != "Interview" {
+		t.Fatalf("currentStatusPairs()[0] = %+v, want Interview leading", pairs[0])
+	}
+}
+
 func TestViewerRebuildRenderClampsScrollOffset(t *testing.T) {
 	m := ViewerModel{
 		lines:        []string{"short"},

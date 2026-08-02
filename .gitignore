@@ -65,6 +65,7 @@ modes/_profile.md
 voice-dna.md
 article-digest.md
 modes/_custom.md
+modes/_brief.md
 .update-dismissed
 .update-lock
 .manifesto-noted
@@ -106,6 +107,8 @@ data/model-blacklist.json
 .claude/memory/
 .opencode/settings.local.json
 .opencode/memory/
+# OpenCode project config (often holds personal MCP/model/per-machine prefs).
+opencode.json
 career-dashboard
 career-dashboard.exe
 package-lock.json
@@ -120,3 +123,8 @@ plan/
 
 # Web — runtime cache/history the dashboard writes locally; nothing here is tracked.
 .career-ops-web/
+
+# Upgrade-test fixtures are fictional system-layer data, never user data
+# (see DATA_CONTRACT.md). Re-include them past the unanchored user-layer
+# patterns above (cv.md, portals.yml).
+!test-fixtures/**

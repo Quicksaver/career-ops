@@ -32,8 +32,7 @@ import yaml from 'js-yaml';
 
 import { fetchJson as defaultFetchJson, makeHttpCtx } from './providers/_http.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
-
-const DEFAULT_PORTALS_PATH = process.env.CAREER_OPS_PORTALS || 'portals.yml';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 
 // The core providers/ directory — the SAME plugins the scanner loads. Resolved
 // from this file's location so it's independent of the caller's cwd.
@@ -503,7 +502,17 @@ async function runAdd(name, { fetchJson }) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  const fileFlagRaw = rawArgs.indexOf('--file');
+  let userContext;
+  try {
+    userContext = getUserContext(rawArgs, {
+      requireUser: fileFlagRaw === -1 && !process.env.CAREER_OPS_PORTALS,
+    });
+  } catch (err) {
+    printUserContextErrorAndExit(err);
+  }
+  const args = userContext.args;
   const strict = args.includes('--strict');
   const fetchJson = defaultFetchJson;
 
@@ -515,7 +524,9 @@ async function main() {
 
   const fileFlag = args.indexOf('--file');
   const filePath = resolve(
-    fileFlag === -1 ? DEFAULT_PORTALS_PATH : args[fileFlag + 1] || '',
+    fileFlag === -1
+      ? process.env.CAREER_OPS_PORTALS || userPath(userContext, 'portals.yml')
+      : args[fileFlag + 1] || '',
   );
 
   // Load the scanner's provider plugins so non-ATS boards (Workday,

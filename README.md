@@ -116,6 +116,7 @@ career-ops is the first reference implementation of [the CareerOps Manifesto](ht
 | **Portal Scanner**       | 100+ companies pre-configured (Anthropic, OpenAI, ElevenLabs, Retool, n8n...) + zero-token local parsers, ATS APIs, structured providers, and custom queries |
 | **Batch Processing**     | Parallel evaluation with headless CLI workers (`claude -p` / `codex exec` / `opencode run`)                                              |
 | **Application Email Drafts** | Formal recruiter/referral/cold application emails from a report or pasted JD, with subject line, attachment checklist, source-backed fit points, and a profile-driven contact block. Draft-only -- career-ops never sends, submits, or clicks anything. |
+| **Funded Company Discovery** | Review-first `company:funded` command surfaces recently funded companies and source diagnostics from structured public feeds without editing your data |
 | **Dashboard TUI**        | Terminal UI to browse, filter, and sort your pipeline                                                                                    |
 | **Human-in-the-Loop**    | AI evaluates and recommends, you decide and act. The system never submits an application -- you always have the final call               |
 | **Pipeline Integrity**   | Automated merge, dedup, status normalization, health checks                                                                              |
@@ -190,6 +191,18 @@ claude   # or codex / opencode / qwen / agy / grok
 ```
 
 </details>
+
+### Global install
+
+```bash
+npm i -g @santifer/career-ops
+```
+
+This installs the `career-ops` binary globally so you can run it directly instead of via `npx`. Unlike `npx @santifer/career-ops init` (which bootstraps a project directory), the global install gives you a persistent `career-ops` command available anywhere in your terminal.
+
+**Which one should you use?**
+- `npx @santifer/career-ops init` — best for first use; creates a dedicated project folder.
+- `npm i -g @santifer/career-ops` — best once you have a project folder and want to run career-ops commands directly.
 
 > **The system is designed to be customized by your AI coding CLI itself.** Modes, archetypes, scoring weights, negotiation scripts -- just ask it to change them. It reads the same files it uses, so it knows exactly what to edit.
 
@@ -306,6 +319,7 @@ career-ops uses a shared command router. In CLIs that register slash commands, i
 /career-ops batch          → Batch evaluate multiple offers
 /career-ops tracker        → View application status
 /career-ops apply          → Fill application forms with AI
+/career-ops outcome        → Record application outcome & archive artifacts
 /career-ops pipeline       → Process pending URLs
 /career-ops contacto       → Find hiring manager / recruiter / peer + draft a ≤300-char LinkedIn message per contact type
 /career-ops deep           → Generate a structured 6-axis research prompt (AI strategy, recent moves, culture, challenges, competitors, candidate angle)

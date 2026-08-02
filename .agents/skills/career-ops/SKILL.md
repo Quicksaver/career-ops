@@ -8,7 +8,7 @@ description: >-
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | verify | scan | scan-handoff | scan-auth | discover | deep | pdf | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | offer-prep | titles | upskill | followup | reply-watch | update]"
+argument-hint: "[go | verify | scan | scan-handoff | scan-auth | discover | deep | pdf | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | offer-prep | titles | upskill | followup | reply-watch | outcome | update]"
 license: MIT
 ---
 
@@ -122,6 +122,7 @@ Determine the mode from `$mode`:
 | `upskill` | `upskill` |
 | `followup` | `followup` |
 | `reply-watch` | `reply-watch` |
+| `outcome` | `outcome` |
 | `interview-redflag` | `interview-redflag` |
 | `update` | `update` |
 | `cover` | `cover` |
@@ -207,6 +208,7 @@ Available commands:
   /career-ops titles    → Suggest adjacent job titles from your CV to broaden the search
   /career-ops upskill   → Aggregate skill-gap analysis from your evaluated reports
   /career-ops followup  → Follow-up cadence tracker: flag overdue, generate drafts
+  /career-ops outcome   → Record application outcome & archive artifacts
   /career-ops update    → Update career-ops system files with diff preview + compat check
 
 Inbox: add URLs to users/{ACTIVE_USER}/data/pipeline.md → /career-ops pipeline
@@ -237,7 +239,7 @@ For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.m
 
 Read `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`, plus any user-layer files the mode names from `users/{ACTIVE_USER}/`.
 
-Applies to: `tracker`, `agent-inbox`, `verify`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`, `discover`
+Applies to: `tracker`, `agent-inbox`, `verify`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `reply-watch`, `outcome`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`, `discover`
 
 ### Execution ownership for long-running modes
 

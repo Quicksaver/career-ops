@@ -30,7 +30,7 @@ import {
   systemPath,
   userPath,
 } from './lib/user-context.mjs';
-import { looksLikeScoreCell } from './tracker-parse.mjs';
+import { looksLikeScoreCell, isSeparatorRow, isHeaderRow, resolveColumns } from './tracker-parse.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 let userContext;
@@ -132,24 +132,13 @@ const lines = content.split('\n');
 // Location column after Role). Fixed-position indexing would otherwise read
 // Location where Score is expected and flag false errors. Falls back to the
 // legacy fixed layout when no recognizable header row is found.
-const LEGACY_COLMAP = { num: 1, date: 2, company: 3, role: 4, score: 5, status: 6, pdf: 7, report: 8, notes: 9 };
-const HEADER_ALIASES = {
-  '#': 'num', 'num': 'num', 'date': 'date', 'company': 'company', 'empresa': 'company',
-  'via': 'via', 'role': 'role', 'puesto': 'role', 'location': 'location', 'score': 'score',
-  'status': 'status', 'pdf': 'pdf', 'report': 'report', 'notes': 'notes',
-};
-function detectColumns(allLines) {
-  for (const line of allLines) {
-    if (!line.startsWith('|')) continue;
-    const cells = line.split('|').map(s => s.trim().toLowerCase());
-    if (!cells.includes('company') || !cells.includes('role')) continue;
-    const map = {};
-    cells.forEach((c, i) => { if (HEADER_ALIASES[c] != null) map[HEADER_ALIASES[c]] = i; });
-    if (['num', 'company', 'role', 'score', 'status'].every(k => map[k] != null)) return map;
-  }
-  return null;
-}
-const COLMAP = detectColumns(lines) || LEGACY_COLMAP;
+//
+// Sourced from tracker-parse.mjs rather than re-declared here: this file used
+// to carry its own copy of LEGACY_COLMAP, HEADER_ALIASES and detectColumns, so
+// a fix to the shared module left verify-pipeline reading a different layout
+// than merge-tracker wrote — the drift tracker-parse.mjs exists to prevent, and
+// the same half-application #1291 was filed for.
+const COLMAP = resolveColumns(lines);
 const MAX_IDX = Math.max(...Object.values(COLMAP));
 
 const entries = [];
@@ -351,7 +340,7 @@ if (badScores === 0) ok('All scores valid');
 let badRows = 0;
 for (const line of lines) {
   if (!line.startsWith('|')) continue;
-  if (line.includes('---') || line.includes('Empresa')) continue;
+  if (isSeparatorRow(line) || isHeaderRow(line)) continue;
   const parts = line.split('|');
   if (parts.length <= MAX_IDX) {
     error(`Row with too few columns (need ${MAX_IDX} data cols): ${line.substring(0, 80)}...`, 'malformed_tracker_row', `malformed-tracker-row:${badRows + 1}`, { row: line });

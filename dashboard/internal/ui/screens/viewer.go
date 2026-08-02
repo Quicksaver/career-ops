@@ -160,14 +160,9 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 
 		case "c":
 			m.statusPicker = true
+			// The picker's own current-status-first reordering (see
+			// getStatusPairs) always places this row's status at index 0.
 			m.statusCursor = 0
-			currentNorm := data.NormalizeStatus(m.app.Status)
-			for idx, pair := range getStatusPairs() {
-				if pair.Canonical == currentNorm {
-					m.statusCursor = idx
-					break
-				}
-			}
 			m.clampScrollOffset()
 			return m, nil
 
@@ -232,7 +227,7 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 func (m ViewerModel) bodyHeight() int {
 	h := m.height - 4 // header + footer + padding
 	if m.statusPicker {
-		h -= (len(getStatusPairs()) + 1)
+		h -= (len(m.currentStatusPairs()) + 1)
 	}
 	if h < 3 {
 		h = 3
@@ -801,8 +796,8 @@ func (m ViewerModel) handleStatusPicker(msg tea.KeyMsg) (ViewerModel, tea.Cmd) {
 
 	case "down", "j":
 		m.statusCursor++
-		if m.statusCursor >= len(getStatusPairs()) {
-			m.statusCursor = len(getStatusPairs()) - 1
+		if m.statusCursor >= len(m.currentStatusPairs()) {
+			m.statusCursor = len(m.currentStatusPairs()) - 1
 		}
 
 	case "up", "k":
@@ -814,7 +809,7 @@ func (m ViewerModel) handleStatusPicker(msg tea.KeyMsg) (ViewerModel, tea.Cmd) {
 	case "enter":
 		m.statusPicker = false
 		m.clampScrollOffset()
-		newStatus := getStatusPairs()[m.statusCursor].Canonical
+		newStatus := m.currentStatusPairs()[m.statusCursor].Canonical
 		return m, func() tea.Msg {
 			return ViewerUpdateStatusMsg{
 				App:       m.app,
@@ -837,7 +832,7 @@ func (m ViewerModel) overlayStatusPicker(body string) string {
 	var picker []string
 	picker = append(picker, padStyle.Render(borderStyle.Render(i18n.Current.PickerChangeStatus)))
 
-	for i, pair := range getStatusPairs() {
+	for i, pair := range m.currentStatusPairs() {
 		style := lipgloss.NewStyle().Foreground(m.theme.Text).Width(pickerWidth)
 		if i == m.statusCursor {
 			style = style.Background(m.theme.Overlay).Bold(true)
@@ -851,6 +846,13 @@ func (m ViewerModel) overlayStatusPicker(body string) string {
 
 	bodyLines = append(bodyLines, picker...)
 	return strings.Join(bodyLines, "\n")
+}
+
+// currentStatusPairs resolves the status-change picker options for the
+// application currently open in the viewer, so the picker leads with this
+// row's own status (see getStatusPairs).
+func (m ViewerModel) currentStatusPairs() []StatusPair {
+	return getStatusPairs(data.NormalizeStatus(m.app.Status))
 }
 
 // UpdateAppStatus updates the status of the current application inside the viewer model.
