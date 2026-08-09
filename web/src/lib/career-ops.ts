@@ -165,7 +165,11 @@ export type Application = {
 export function readApplications(): Application[] {
   const md = read("data/applications.md");
   if (!md) return [];
-  return parseApplications(md, careerOpsRoot());
+  // The tracker is user data, but its header aliases are system metadata.
+  // Passing the user root here makes loadHeaderAliases() miss
+  // tracker-aliases.json and silently fall back to the legacy fixed layout;
+  // any additive column such as Via then shifts Score into Status.
+  return parseApplications(md, careerOpsSystemRoot());
 }
 
 /**

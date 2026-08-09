@@ -369,6 +369,18 @@ if (!HAS_WEB) {
   } else {
     fail(`web reader: alias table drifted from HEADER_ALIASES — web ${JSON.stringify(webAliases)} vs core ${JSON.stringify(HEADER_ALIASES)}`);
   }
+
+  // In the multi-user fork the tracker and schema deliberately have different
+  // roots: data/applications.md lives under users/{USER}, while the shared alias
+  // table remains system-layer metadata. Freeze the adapter boundary so a future
+  // upstream reconciliation cannot accidentally look for tracker-aliases.json
+  // inside the selected user's folder and fall back to shifted legacy columns.
+  const webAdapter = readFileSync(join(ROOT, 'web', 'src', 'lib', 'career-ops.ts'), 'utf-8');
+  if (/parseApplications\(md,\s*careerOpsSystemRoot\(\)\)/.test(webAdapter)) {
+    pass('web reader: user tracker resolves header aliases from the system root');
+  } else {
+    fail('web reader: readApplications must pass careerOpsSystemRoot() to the shared tracker parser');
+  }
 }
 
 // ═══ Stage 2 (#1596): Via column ════════════════════════════════════════════
