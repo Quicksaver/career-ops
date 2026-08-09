@@ -33,6 +33,7 @@ Process multiple job offers in parallel via headless workers. Each worker runs t
 | `--parallel N` | `batch.parallel`, then `1` | Number of concurrent headless workers; explicit flag wins |
 | `--dry-run` | off | Preview pending offers without processing |
 | `--retry-failed` | off | Only retry offers marked as `failed` in state |
+| `--recover-artifact-failures` | off | Revalidate false Machine Summary failures and mark only complete, contract-valid artifact sets as completed; launches no workers |
 | `--resume-paused` | off | Resume offers paused after a Claude session/rate limit |
 | `--start-from N` | `0` | Skip offers with ID below N |
 | `--limit N` | `0` | Max number of offers to process in this run (0 = no limit) |

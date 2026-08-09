@@ -52,6 +52,7 @@ STATUS_ONLY=false
 WATCH_MODE=false
 DEFER_VERIFICATION=false
 VERIFICATION_FAILED=false
+RECOVER_ARTIFACT_FAILURES=false
 
 # Return success for non-negative integer or decimal strings.
 is_decimal_number() {
@@ -91,6 +92,10 @@ Options:
   --watch              Live-refresh progress until the run completes
   --defer-verification Skip the batch-local final verifier because a parent
                        coordinator will run structured verification
+  --recover-artifact-failures
+                       Revalidate completed worker artifacts that were falsely
+                       marked failed, update their state, and exit without
+                       launching workers
   -h, --help           Show this help
 
 Files:
@@ -154,6 +159,7 @@ while [[ $# -gt 0 ]]; do
     --status) STATUS_ONLY=true; shift ;;
     --watch) WATCH_MODE=true; shift ;;
     --defer-verification) DEFER_VERIFICATION=true; shift ;;
+    --recover-artifact-failures) RECOVER_ARTIFACT_FAILURES=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -725,7 +731,24 @@ reserve_report_num() {
 
 find_report_for_num() {
   local report_num="$1"
-  find "$REPORTS_DIR" -maxdepth 1 -type f -name "${report_num}-*.md" -print -quit 2>/dev/null || true
+  local report_file=""
+  local candidate_count=0
+  local candidate=""
+
+  # A report-number reservation is represented by NNN-RESERVED.md in the same
+  # directory as real reports. Never let that sentinel enter artifact
+  # validation: it contains reservation metadata, not a Machine Summary.
+  while IFS= read -r -d '' candidate; do
+    report_file="$candidate"
+    candidate_count=$((candidate_count + 1))
+  done < <(find "$REPORTS_DIR" -maxdepth 1 -type f \
+    -name "${report_num}-*.md" ! -name "${report_num}-RESERVED.md" -print0 2>/dev/null)
+
+  if (( candidate_count == 1 )); then
+    printf '%s\n' "$report_file"
+  elif (( candidate_count > 1 )); then
+    echo "WARN: Report $report_num is ambiguous: found $candidate_count non-reservation report files." >&2
+  fi
 }
 
 find_tracker_for_id() {
@@ -821,6 +844,62 @@ extract_score_from_artifacts() {
   fi
 
   printf '%s\n' "${score:-"-"}"
+}
+
+# Recover false artifact-validation failures without rerunning model workers.
+# Recovery is deliberately narrow: the persisted state must carry the exact
+# historical sentinel-selection symptom, the worker must have returned a valid
+# completed final JSON, and the real report + tracker addition must pass the
+# same cross-artifact validator used by normal completion.
+recover_artifact_failures() {
+  local recovered=0
+  local unresolved=0
+  local inspected=0
+
+  while IFS=$'\t' read -r id url status started completed report_num score error retries; do
+    [[ "$id" == "id" ]] && continue
+    [[ "$status" == "failed" ]] || continue
+    [[ "$error" == *"artifact-validation: report is missing a YAML Machine Summary"* ]] || continue
+    inspected=$((inspected + 1))
+
+    local report_file tracker_file final_file
+    report_file=$(find_report_for_num "$report_num")
+    tracker_file=$(find_tracker_for_id "$id")
+    final_file="$LOGS_DIR/${report_num}-${id}.final.json"
+
+    if [[ -z "$report_file" || -z "$tracker_file" ]] || ! validate_worker_json "$final_file" || \
+       [[ "$(worker_json_field "$final_file" status)" != "completed" ]] || \
+       [[ "$(worker_json_field "$final_file" id)" != "$id" ]] || \
+       [[ "$(worker_json_field "$final_file" report_num)" != "$report_num" ]]; then
+      unresolved=$((unresolved + 1))
+      echo "    ⚠️  Not recoverable: #$id (report $report_num) is missing a completed artifact set"
+      continue
+    fi
+
+    local validation_error=""
+    if ! validation_error=$(node "$SCRIPT_DIR/validate-worker-artifacts.mjs" \
+      --report "$report_file" --tracker "$tracker_file" --final "$final_file" --repair 2>&1); then
+      unresolved=$((unresolved + 1))
+      validation_error=$(printf '%s' "$validation_error" | tr '\r\n\t' ' ' | cut -c1-500)
+      echo "    ⚠️  Not recoverable: #$id (report $report_num): $validation_error"
+      continue
+    fi
+
+    score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file" "$LOGS_DIR/${report_num}-${id}.log")
+    if ! is_decimal_number "$score"; then
+      unresolved=$((unresolved + 1))
+      echo "    ⚠️  Not recoverable: #$id (report $report_num) has no validated score"
+      continue
+    fi
+
+    update_state "$id" "$url" "completed" "$started" "$completed" "$report_num" "$score" "-" "$retries"
+    release_report_num "$report_num"
+    recovered=$((recovered + 1))
+    echo "    ✅ Recovered #$id (score: $score, report: $report_num)"
+  done < "$STATE_FILE"
+
+  echo "Recovered artifact failures: inspected=$inspected completed=$recovered unresolved=$unresolved"
+  (( unresolved == 0 ))
 }
 
 # Process a single offer
@@ -1032,6 +1111,12 @@ process_offer() {
   local report_file tracker_file
   report_file=$(find_report_for_num "$report_num")
   tracker_file=$(find_tracker_for_id "$id")
+  # Once a concrete report occupies the reserved number, the sentinel is no
+  # longer needed for collision prevention. Releasing it before validation
+  # also prevents stale sentinel/report pairs on genuine contract failures.
+  if [[ -n "$report_file" ]]; then
+    release_report_num "$report_num"
+  fi
   local final_json_valid=false
   local final_json_status=""
   local final_json_error=""
@@ -1346,6 +1431,14 @@ main() {
     check_status_prerequisites
     watch_status
     exit 0
+  fi
+
+  if [[ "$RECOVER_ARTIFACT_FAILURES" == "true" ]]; then
+    check_status_prerequisites
+    PARALLEL=1
+    acquire_lock
+    recover_artifact_failures
+    exit $?
   fi
 
   check_prerequisites

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
-import { fail, pass, ROOT } from '../helpers.mjs';
+import { fail, getBash, pass, ROOT } from '../helpers.mjs';
 
 console.log('\nWorkflow — batch artifact integrity');
 
@@ -11,6 +11,40 @@ const { validateWorkerArtifacts } = await import(pathToFileURL(join(ROOT, 'batch
 const tmp = mkdtempSync(join(tmpdir(), 'career-ops-batch-artifacts-'));
 
 try {
+  const batchRunnerSource = readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf8');
+  const reportFinder = batchRunnerSource.match(/find_report_for_num\(\) \{[\s\S]*?\n\}/)?.[0];
+  const selectionReports = join(tmp, 'report-selection');
+  mkdirSync(selectionReports, { recursive: true });
+  writeFileSync(join(selectionReports, '777-RESERVED.md'), '{"reservation":true}\n');
+  const selectedReport = join(selectionReports, '777-example-2026-01-01.md');
+  writeFileSync(selectedReport, '## Machine Summary\n```yaml\ncompany: Example\nrole: Engineer\n```\n');
+  let selected = '';
+  if (reportFinder) {
+    selected = execFileSync(getBash(), [
+      '-c', `${reportFinder}\nREPORTS_DIR="$1"\nfind_report_for_num 777`,
+      'batch-report-selection', selectionReports,
+    ], { encoding: 'utf8' }).trim();
+  }
+  if (selected === selectedReport) {
+    pass('batch report discovery excludes the coexisting reservation sentinel');
+  } else {
+    fail(`batch report discovery selected the wrong artifact: ${JSON.stringify(selected)}`);
+  }
+
+  writeFileSync(join(selectionReports, '777-other-2026-01-01.md'), 'duplicate\n');
+  let ambiguous = 'unexpected';
+  if (reportFinder) {
+    ambiguous = execFileSync(getBash(), [
+      '-c', `${reportFinder}\nREPORTS_DIR="$1"\nfind_report_for_num 777`,
+      'batch-report-selection', selectionReports,
+    ], { encoding: 'utf8' }).trim();
+  }
+  if (ambiguous === '') {
+    pass('batch report discovery fails closed on multiple real reports for one number');
+  } else {
+    fail(`batch report discovery chose an ambiguous artifact: ${JSON.stringify(ambiguous)}`);
+  }
+
   const reportPath = join(tmp, '001-confidential-2026-01-01.md');
   const trackerPath = join(tmp, '7.tsv');
   const finalPath = join(tmp, '001-7.final.json');
