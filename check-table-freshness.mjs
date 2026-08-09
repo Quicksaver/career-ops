@@ -55,6 +55,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { flagValue } from './lib/cli-flags.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(CAREER_OPS, 'templates');
@@ -65,10 +66,8 @@ const rawArgs = process.argv.slice(2);
 let args = rawArgs;
 const summaryMode = args.includes('--summary');
 const selfTestMode = args.includes('--self-test');
-const maxAgeIdx = args.indexOf('--max-age-months');
-const maxAgeRaw = maxAgeIdx !== -1 ? args[maxAgeIdx + 1] : null;
-const todayIdx = args.indexOf('--today');
-const todayFlag = todayIdx !== -1 ? args[todayIdx + 1] : null;
+const maxAgeRaw = flagValue(args, '--max-age-months') ?? null;
+const todayFlag = flagValue(args, '--today') ?? null;
 
 // Strict positive-integer parser for freshness thresholds. parseInt would
 // accept "6months" and truncate 6.5 to 6 — a threshold must be an exact whole
@@ -517,7 +516,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // (fail-fast on bad flag values, same as scan-ats-full.mjs).
   const configWarnings = [];
   let maxAgeMonths;
-  if (maxAgeIdx !== -1) {
+  if (maxAgeRaw !== null) {
     maxAgeMonths = parsePositiveInt(maxAgeRaw);
     if (maxAgeMonths === null) {
       console.error(`Error: invalid --max-age-months value ${JSON.stringify(maxAgeRaw ?? null)} — expected a positive integer (whole months)`);

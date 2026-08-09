@@ -19,6 +19,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
+import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PROVIDERS_DIR = join(ROOT, 'providers');
@@ -285,9 +286,13 @@ async function main() {
     return;
   }
 
-  const fileFlag = args.indexOf('--file');
+  // An explicit but empty `--file=` must reach the usage error below. Passing
+  // '' to resolve() would return the current directory and produce a misleading
+  // filesystem error instead.
+  const hasFileFlag = hasFlag(args, '--file');
+  const fileFlag = hasFileFlag ? (flagValue(args, '--file') ?? '') : undefined;
   let defaultPortalsPath = process.env.CAREER_OPS_PORTALS || '';
-  if (fileFlag === -1 && !defaultPortalsPath) {
+  if (!hasFileFlag && !defaultPortalsPath) {
     let userContext;
     try {
       userContext = getUserContext(args);
@@ -296,7 +301,8 @@ async function main() {
     }
     defaultPortalsPath = userPath(userContext, 'portals.yml');
   }
-  const filePath = resolve(fileFlag === -1 ? defaultPortalsPath : args[fileFlag + 1] || '');
+  const selectedPath = fileFlag === undefined ? defaultPortalsPath : fileFlag;
+  const filePath = selectedPath ? resolve(selectedPath) : '';
   if (!filePath) {
     console.error('Usage: node validate-portals.mjs --user <username> [--file portals.yml] [--self-test]');
     process.exit(1);

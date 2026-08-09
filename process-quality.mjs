@@ -32,6 +32,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
+import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 
 const FRICTION_TAG = /\[process-friction(?::\s*([^\]]+))?\]/i;
 
@@ -39,10 +40,9 @@ const FRICTION_TAG = /\[process-friction(?::\s*([^\]]+))?\]/i;
 const rawArgs = process.argv.slice(2);
 const selfTestMode = rawArgs.includes('--self-test');
 const args = rawArgs;
-const fileIdx = args.indexOf('--file');
-const minThresholdIdx = args.indexOf('--min-threshold');
-const rawMinThreshold = minThresholdIdx !== -1 && args[minThresholdIdx + 1] !== undefined
-  ? parseInt(args[minThresholdIdx + 1], 10)
+const minThresholdValue = flagValue(args, '--min-threshold');
+const rawMinThreshold = minThresholdValue !== undefined
+  ? parseInt(minThresholdValue, 10)
   : 1;
 // Clamped here (not just inside aggregateProcessQuality) so printSummary's
 // displayed threshold always matches the threshold actually applied.
@@ -306,20 +306,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   let userContext = null;
   try {
-    userContext = getUserContext(rawArgs, { requireUser: fileIdx === -1 });
+    userContext = getUserContext(rawArgs, { requireUser: !hasFlag(rawArgs, '--file') });
   } catch (err) {
     printUserContextErrorAndExit(err);
   }
   const cliArgs = userContext?.args ?? rawArgs;
   const cliJsonMode = cliArgs.includes('--json');
-  const cliMinThresholdIdx = cliArgs.indexOf('--min-threshold');
-  const cliRawMinThreshold = cliMinThresholdIdx !== -1 && cliArgs[cliMinThresholdIdx + 1] !== undefined
-    ? parseInt(cliArgs[cliMinThresholdIdx + 1], 10)
+  const cliMinThresholdValue = flagValue(cliArgs, '--min-threshold');
+  const cliRawMinThreshold = cliMinThresholdValue !== undefined
+    ? parseInt(cliMinThresholdValue, 10)
     : 1;
   const cliMinThreshold = Number.isFinite(cliRawMinThreshold) && cliRawMinThreshold >= 0 ? cliRawMinThreshold : 1;
-  const cliFileIdx = cliArgs.indexOf('--file');
-  const activeInterviewsPath = cliFileIdx !== -1 && cliArgs[cliFileIdx + 1] !== undefined
-    ? cliArgs[cliFileIdx + 1]
+  const cliFileValue = flagValue(cliArgs, '--file');
+  const activeInterviewsPath = cliFileValue !== undefined
+    ? cliFileValue
     : userPath(userContext, 'data/active-interviews.md');
 
   const rows = loadActiveInterviews(activeInterviewsPath);

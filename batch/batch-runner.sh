@@ -1035,6 +1035,7 @@ process_offer() {
   local final_json_valid=false
   local final_json_status=""
   local final_json_error=""
+  local final_json_score=""
   if [[ "$CLI" == "codex" ]]; then
     if validate_worker_json "$final_file"; then
       final_json_valid=true
@@ -1049,7 +1050,7 @@ process_offer() {
     # the cross-artifact validator below is still the completion authority.
     final_json_valid=true
     final_json_status="completed"
-    local worker_result_json parsed_worker_result
+    local worker_result_json parsed
     worker_result_json=$(awk '
       /^```json[[:space:]]*$/ { in_block=1; block=""; next }
       in_block && /^```[[:space:]]*$/ { in_block=0; last=block; next }
@@ -1057,7 +1058,7 @@ process_offer() {
       END { printf "%s", last }
     ' "$log_file" 2>/dev/null || true)
     if [[ -n "$worker_result_json" ]]; then
-      parsed_worker_result=$(printf '%s' "$worker_result_json" | node -e '
+      parsed=$(printf '%s' "$worker_result_json" | node -e '
         let data = "";
         process.stdin.on("data", d => data += d);
         process.stdin.on("end", () => {
@@ -1065,12 +1066,26 @@ process_offer() {
             const obj = JSON.parse(data);
             const status = obj?.status === "completed" || obj?.status === "failed" ? obj.status : "";
             const error = typeof obj?.error === "string" ? obj.error.replace(/[\r\n\t]+/g, " ") : "";
-            process.stdout.write(status + "\t" + error);
-          } catch {}
+            const score = typeof obj.score === "number" ? String(obj.score) : "";
+            process.stdout.write(status + "\x1f" + error + "\x1f" + score);
+          } catch {
+            process.stdout.write("");
+          }
         });
       ' 2>/dev/null || true)
-      if [[ -n "$parsed_worker_result" ]]; then
-        IFS=$'\t' read -r final_json_status final_json_error <<< "$parsed_worker_result"
+      if [[ -n "$parsed" ]]; then
+        # \x1f (US), not \t: tab is IFS *whitespace*, so bash collapses runs of it
+        # and strips leading/trailing ones. On the common path -- a worker that
+        # succeeded, so `error` is empty -- the two tabs around that empty field
+        # collapse into one, `score` slides into parsed_error, and parsed_score
+        # comes back empty. The `elif` below then never fires and every
+        # successful offer records score "-". A non-whitespace delimiter gets
+        # one-field-per-unit splitting with empty fields preserved.
+        local parsed_status parsed_error parsed_score
+        IFS=$'\x1f' read -r parsed_status parsed_error parsed_score <<< "$parsed"
+        final_json_status="$parsed_status"
+        final_json_error="$parsed_error"
+        final_json_score="$parsed_score"
       fi
     fi
   fi
@@ -1100,6 +1115,9 @@ process_offer() {
     # Try to extract score from worker output
     local score="-"
     score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file" "$log_file")
+    if [[ "$score" == "-" && -n "$final_json_score" ]]; then
+      score="$final_json_score"
+    fi
 
     # Check min-score gate
     if is_decimal_number "$score" && awk -v min="$MIN_SCORE" 'BEGIN{exit !(min > 0)}'; then

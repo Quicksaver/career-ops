@@ -29,6 +29,7 @@ import { readFileSync, existsSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { resolvePdfIndexPath } from './tracker-utils.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
 import {
   getUserContext,
@@ -156,9 +157,9 @@ function main() {
   }
   const rows = parseTrackerRows(readFileSync(trackerPath, 'utf-8'));
 
-  const manifestPath = userContext.userRoot
-    ? userPath(userContext, 'data/pdf-index.tsv')
-    : resolve(ROOT, 'data', 'pdf-index.tsv');
+  // Derived from the tracker resolved just above, not from ROOT: a redirected
+  // CAREER_OPS_TRACKER must not be searched against this install's manifest (#2471).
+  const manifestPath = resolvePdfIndexPath(trackerPath);
   const pdfIndex = existsSync(manifestPath)
     ? parsePdfIndex(readFileSync(manifestPath, 'utf-8'))
     : new Map();

@@ -14,10 +14,10 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { extractTrackerReportNumbers, resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
-import { rebuildRow, resolveTrackerPath, openTrackerTransaction } from './tracker-utils.mjs';
+import { rebuildRow, resolveTrackerPath, resolvePdfIndexPath, openTrackerTransaction } from './tracker-utils.mjs';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -36,16 +36,23 @@ try {
 const APPS_FILE = process.env.CAREER_OPS_TRACKER
   ? resolveTrackerPath(CAREER_OPS)
   : userPath(userContext, 'data/applications.md');
-const PDF_MANIFEST = process.env.CAREER_OPS_PDF_INDEX || (
-  userContext.userRoot
-    ? userPath(userContext, 'data/pdf-index.tsv')
-    : join(dirname(APPS_FILE), 'pdf-index.tsv')
-);
+// Derive the manifest from the selected tracker so explicit fixture/workspace
+// overrides move both files together, while normal commands remain user-scoped.
+const PDF_MANIFEST = resolvePdfIndexPath(APPS_FILE);
 
 const flags = { dryRun: false, json: false };
+const unknownOptions = [];
 for (const arg of userContext.args) {
   if (arg === '--dry-run') flags.dryRun = true;
   else if (arg === '--json') flags.json = true;
+  else unknownOptions.push(arg);
+}
+
+if (unknownOptions.length > 0) {
+  const error = `unknown option(s): ${unknownOptions.join(', ')}`;
+  if (flags.json) console.error(JSON.stringify({ error, code: 'unknown-option' }));
+  else console.error(`Error: ${error}\nUsage: node sync-pdf-flags.mjs [--dry-run] [--json]`);
+  process.exit(1);
 }
 
 if (!existsSync(APPS_FILE)) {

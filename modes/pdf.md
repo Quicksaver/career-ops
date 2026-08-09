@@ -1,5 +1,8 @@
 # Mode: pdf — ATS-Optimized PDF Generation
 
+Optional pass:
+- **`--hm-audit`:** `/career-ops pdf --hm-audit` adds the hiring-manager audit at Step 20 — an adversarial read of the tailored CV by a separate, research-grounded reviewer before it becomes a PDF (`modes/pdf/hm-audit.md`). Off by default: it costs a subagent dispatch plus web research. Turn it on per run with the flag, or for every run in your own `modes/_custom.md`.
+
 ## Full pipeline
 
 ## Application-scoped artifacts
@@ -30,7 +33,7 @@ Run `npm run jd:similarity -- {bundle-root}/jd/current.md {bundle-root}/jd/previ
 8. Before tailoring, optionally compare the new JD with the latest tailored CV or JD. Resolve the application/report with `node find.mjs --user {USER} {report-or-tracker-number}`. If either comparison source cannot be located, do not silently reuse a CV. Run `npm run jd:similarity -- {new-jd.txt} {previous-jd-or-cv.txt}` and display its decision and score. Reuse is allowed only when the recommendation is `reuse` or the user explicitly overrides it; `reuse-with-edits` still requires the listed edits, and `regenerate` requires the normal tailoring flow.
 9. Build an internal recruiter-side risk map from the JD using `modes/heuristics/recruiter-side.md`: likely doubts, matching evidence, and which document section should address each doubt
 10. Rewrite Professional Summary by injecting JD keywords + exit narrative bridge ("Built and sold a business. Now applying systems thinking to [JD domain].")
-11. Include at most the 3-4 projects most relevant to the job; omit less-relevant projects from the tailored CV.
+11. Include at most the 3-4 projects most relevant to the job; omit less-relevant projects from the tailored CV. If `users/{USER}/cv.md` carries an Awards / Honors section, populate `awards[]` with the entries that support this role — for an early-career candidate a contest medal or dean's list may outrank a thin project. Omit the key when there is nothing to list and the section disappears entirely; never invent an award to fill it.
 12. Preserve reverse-chronological Work Experience blocks, but within each block exclude bullet points that are less relevant to the JD or duplicate another section, then order the remaining evidence by the risk map with the strongest match first. Treat this as an exclusion rule, not a fixed top-N bullet cap.
 13. Build competency grid from JD requirements (6-8 keyword phrases), prioritizing `existing` and `supportedByResume` skills from Step 4 — never a `gap` skill
 14. Inject keywords naturally into existing achievements (NEVER invent)
@@ -41,11 +44,18 @@ Run `npm run jd:similarity -- {bundle-root}/jd/current.md {bundle-root}/jd/previ
 19. Run the fact gate: `node verify-cv-facts.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html`
     - This is a hard gate before PDF rendering.
     - If it fails, stop and fix the generated HTML by removing invented metrics or adding verified evidence to `users/{USER}/cv.md`, `users/{USER}/article-digest.md`, or `users/{USER}/config/cv-facts.json`.
-20. Execute: `node generate-pdf.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf --format={letter|a4} --report={REPORT_NUM}` — `{REPORT_NUM}` is the NNN from the report filename/link (e.g. `008` for `users/{USER}/reports/008-acme-….md`), not a recalculated tracker number. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `users/{USER}/data/pdf-index.tsv` so the dashboard can open and regenerate the exact PDF. Omit it only for one-off CVs with no tracker entry.
+20. **Hiring-manager audit — off by default, opt-in only.** Run `modes/pdf/hm-audit.md` if and only if one of these is true; otherwise skip straight to Step 21 without prompting.
+    - The invocation carried `--hm-audit` (`/career-ops pdf --hm-audit`, or the same flag on a natural-language request).
+    - `users/{USER}/modes/_custom.md` turns it on as a house rule.
+
+    The fact gate proves nothing was invented; it cannot tell you whether these are the *right* bullets for the role. The audit researches the likely reviewer, dispatches a separate subagent role-playing them, and returns a bullet-by-bullet keep/cut/rewrite verdict plus a blunt "would I advance this to a screen?" call. It adds a subagent dispatch plus web research on top of the tailoring, which is why it is opted into rather than run on every PDF.
+
+    The audit recommends; the user decides. If they take any rewrite, return to Step 17, rebuild the payload and the HTML, and re-run the fact gate before rendering. The audit is persisted only once that decision is known, and records which rewrites were applied — so the `## HM Audit` section never describes a CV the rendered PDF no longer matches. Do not re-run the audit against the rebuilt CV: a second dispatch doubles the cost for a verdict the user has already acted on.
+21. Execute: `node generate-pdf.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf --format={letter|a4} --report={REPORT_NUM}` — `{REPORT_NUM}` is the NNN from the report filename/link (e.g. `008` for `users/{USER}/reports/008-acme-….md`), not a recalculated tracker number. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `users/{USER}/data/pdf-index.tsv` so the dashboard can open and regenerate the exact PDF. Omit it only for one-off CVs with no tracker entry.
     - The rendered PDF has a two-page warning threshold by default. `--max-pages=N` accepts a positive integer; pass `--max-pages=1` when the user or market prefers a one-page CV.
     - If the rendered PDF exceeds its threshold, generation warns loudly with the actual and allowed page counts plus trimming guidance, then reports and indexes the unchanged PDF so existing longer-CV flows keep working.
     - Pass `--strict-pages` when the user profile or market requires a hard limit. If the profile requires two pages, pass `--max-pages=2 --strict-pages`; on overflow, editorially compress and rerun until it succeeds. Never report or index an over-budget draft as the finished CV.
-21. Report: PDF path, number of pages, keyword coverage %, and any skill gaps from Step 4 still unaddressed
+22. Report: PDF path, number of pages, keyword coverage %, and any skill gaps from Step 4 still unaddressed
 
 **Naming rule:** All generated CV artifacts in `users/{USER}/output/` MUST use the same report-linked basename:
 `{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.{html|pdf}`.
@@ -183,6 +193,7 @@ Write a JSON file with this structure, then run `node build-cv-html.mjs --user {
     "projects": "Projects",
     "education": "Education",
     "certifications": "Certifications",
+    "awards": "Awards & Honors",
     "skills": "Skills"
   },
   "summary": "Personalized summary with JD keywords injected (honest vs cv.md).",
@@ -204,6 +215,9 @@ Write a JSON file with this structure, then run `node build-cv-html.mjs --user {
   ],
   "certifications": [
     { "title": "Certified Kubernetes Administrator", "org": "CNCF", "year": "2024" }
+  ],
+  "awards": [
+    { "title": "Gold Medal, International Olympiad in Informatics", "org": "IOI", "year": "2021" }
   ],
   "skills": [
     { "category": "Languages", "items": "Python, JavaScript, C++" },
@@ -234,6 +248,7 @@ Write a JSON file with this structure, then run `node build-cv-html.mjs --user {
 | `projects[]` | object | `name`, `badge` (optional), `tech` (optional), `description` (a `bullets` array is also accepted and joined into the description line). Descriptions support selective `**short phrase**` emphasis. |
 | `education[]` | object | `title` (degree), `org` (institution), `year`, `description` (optional). Descriptions support selective `**short phrase**` emphasis. |
 | `certifications[]` | object | `title`, `org`, `year`. |
+| `awards[]` | object | `title` (award name), `org` (issuing body, optional), `year` (optional). Optional section — omit the key or pass `[]` and the whole block is dropped, header included. Use it for competitive or academic distinctions (olympiad medals, hackathon wins, dean's list) that carry more signal than a thin experience section. |
 | `skills[]` | object | `category` + `items` (comma-separated string or string array). |
 
 `build-cv-html.mjs` errors out (non-zero exit) if any template placeholder is left unresolved, so a malformed payload fails loudly instead of shipping a broken CV. Run `node build-cv-html.mjs --test` for a self-test render.
