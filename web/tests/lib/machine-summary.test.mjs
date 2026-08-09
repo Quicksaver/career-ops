@@ -10,6 +10,7 @@ test("reads populated decision-signal lists from Machine Summary YAML", () => {
 
 \`\`\`yaml
 company: Acme
+next_action: Apply after confirming the salary range
 hard_stops:
   - Must relocate
 soft_gaps:
@@ -24,6 +25,7 @@ Prose.
 `;
 
   assert.deepEqual(parseMachineSummarySignals(report), {
+    nextAction: "Apply after confirming the salary range",
     hardStops: ["Must relocate"],
     softGaps: ["Missing one optional tool"],
     topStrengths: ["Strong product ownership", "Relevant platform experience"],
@@ -41,6 +43,7 @@ top_strengths:
 `;
 
   assert.deepEqual(parseMachineSummarySignals(report), {
+    nextAction: null,
     hardStops: [],
     softGaps: [],
     topStrengths: ["Evidence-backed fit"],
@@ -52,6 +55,24 @@ test("returns null for missing, empty, malformed, or wrong-shaped summaries", ()
   assert.equal(parseMachineSummarySignals("## Machine Summary\n```yaml\nhard_stops: []\n```"), null);
   assert.equal(parseMachineSummarySignals("## Machine Summary\n```yaml\nhard_stops: [unterminated\n```"), null);
   assert.equal(parseMachineSummarySignals("## Machine Summary\n```yaml\nhard_stops: relocate\n```"), null);
+});
+
+test("returns a verdict when next_action is the only populated decision signal", () => {
+  const report = `## Machine Summary
+\`\`\`yaml
+next_action: Research the employment arrangement before applying.
+hard_stops: []
+soft_gaps: []
+top_strengths: []
+\`\`\`
+`;
+
+  assert.deepEqual(parseMachineSummarySignals(report), {
+    nextAction: "Research the employment arrangement before applying.",
+    hardStops: [],
+    softGaps: [],
+    topStrengths: [],
+  });
 });
 
 test("does not read an unrelated YAML fence before the Machine Summary", () => {
@@ -68,6 +89,7 @@ top_strengths:
 `;
 
   assert.deepEqual(parseMachineSummarySignals(report), {
+    nextAction: null,
     hardStops: [],
     softGaps: [],
     topStrengths: ["Correct fence"],

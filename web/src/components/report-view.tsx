@@ -14,20 +14,21 @@ import { DeleteFromTracker } from "@/components/delete-from-tracker";
 import { parseMachineSummarySignals } from "@/lib/machine-summary.mjs";
 
 // Progressive disclosure of the report. The core writes prose blocks
-// "## F) Verdict (lead)", "## A) Role Summary", "## B) Match with CV", then
+// "## A) Role Summary", "## B) Match with CV", through "## F) Interview Plan",
 // C–G + machine artifacts (Machine Summary YAML, Application Answers, submit
-// log). A mainstream user deciding "should I apply?" needs the verdict + fit;
-// the rest is depth-on-demand. We lead with the verdict as a callout, keep A/B
-// expanded, collapse C–G as content, and drop machine artifacts to a dimmer
+// log). A mainstream user deciding "should I apply?" needs the Machine Summary
+// verdict + fit; the rest is depth-on-demand. We lead with the decision table,
+// keep A/B expanded, collapse C–G as content, and drop machine artifacts to a dimmer
 // "Technical" tier — and strip the bare "F)" author-letters from headings
 // (native <details>, no client JS — this stays a server component).
 
 type Section = { heading: string; letter: string | null; content: string };
 
 type MachineSummarySignals = NonNullable<ReturnType<typeof parseMachineSummarySignals>>;
+type SignalListKey = "hardStops" | "softGaps" | "topStrengths";
 
 const SIGNAL_ROWS: {
-  key: keyof MachineSummarySignals;
+  key: SignalListKey;
   label: string;
   tone: string;
 }[] = [
@@ -38,15 +39,23 @@ const SIGNAL_ROWS: {
 
 function DecisionSignalsTable({ signals }: { signals: MachineSummarySignals }) {
   const rows = SIGNAL_ROWS.filter(({ key }) => signals[key].length > 0);
-  if (rows.length === 0) return null;
+  if (!signals.nextAction && rows.length === 0) return null;
 
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-border bg-surface/30">
+    <div className="mb-4 overflow-hidden rounded-2xl border border-brand/25 bg-brand-soft/50">
       <table className="w-full border-collapse text-sm">
-        <caption className="border-b border-border px-5 py-3 text-left font-mono text-[11px] uppercase tracking-[0.16em] text-faint">
+        <caption className="border-b border-brand/20 px-5 py-3 text-left font-mono text-[11px] uppercase tracking-[0.16em] text-brand/80">
           Decision signals
         </caption>
-        <tbody className="divide-y divide-border">
+        <tbody className="divide-y divide-brand/15">
+          {signals.nextAction && (
+            <tr>
+              <th scope="row" className="w-40 px-5 py-4 text-left align-top text-xs font-semibold uppercase tracking-wide text-brand">
+                Verdict
+              </th>
+              <td className="px-5 py-3.5 font-medium text-foreground">{signals.nextAction}</td>
+            </tr>
+          )}
           {rows.map(({ key, label, tone }) => (
             <tr key={key}>
               <th scope="row" className={`w-40 px-5 py-4 text-left align-top text-xs font-semibold uppercase tracking-wide ${tone}`}>
@@ -206,14 +215,12 @@ export function ReportView({
                 </article>
               );
             }
-            // Verdict (F) leads as a highlighted callout with no competing heading —
-            // it's THE answer. A/B stay expanded (fit detail); C–G collapse as
-            // content (with a 1-line preview); machine artifacts drop to a dimmer
-            // "Technical" tier so the CLI-DNA is present-but-clearly-secondary.
-            const verdict = sections.find((s) => s.letter === "F");
-            const rest = sections.filter((s) => s !== verdict);
-            const machine = rest.filter((s) => isMachine(s.heading));
-            const mainSections = rest.filter((s) => !isMachine(s.heading));
+            // Machine-summary signals lead as the decision. A/B stay expanded
+            // (fit detail); C–G, including F's Interview Plan, collapse in their
+            // natural report order. Machine artifacts remain in the dimmer
+            // "Technical" tier so the raw data stays available to developers.
+            const machine = sections.filter((s) => isMachine(s.heading));
+            const mainSections = sections.filter((s) => !isMachine(s.heading));
             const anyAB = mainSections.some((s) => s.letter === "A" || s.letter === "B");
             return (
               <div className="mt-8">
@@ -225,17 +232,8 @@ export function ReportView({
 
                 {machineSignals && <DecisionSignalsTable signals={machineSignals} />}
 
-                {verdict && (
-                  <div className="rounded-2xl border border-brand/25 bg-brand-soft/50 px-5 py-4">
-                    <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.16em] text-brand/80">Verdict</p>
-                    <article className="report-prose [&_p]:font-medium [&_p]:text-foreground">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{verdict.content}</ReactMarkdown>
-                    </article>
-                  </div>
-                )}
-
                 {mainSections.map((s, i) => {
-                  const expanded = s.letter === "A" || s.letter === "B" || (!anyAB && i === 0);
+                  const expanded = s.letter === "A" || s.letter === "B" || (s.letter !== "F" && !anyAB && i === 0);
                   if (expanded) {
                     return (
                       <article key={i} className="report-prose mt-6">
