@@ -11,6 +11,7 @@ import { ScoreMethodology } from "@/components/score-methodology";
 import { GeneratePdfButton } from "@/components/generate-pdf-button";
 import { ApplyButton } from "@/components/apply-button";
 import { DeleteFromTracker } from "@/components/delete-from-tracker";
+import { parseMachineSummarySignals } from "@/lib/machine-summary.mjs";
 
 // Progressive disclosure of the report. The core writes prose blocks
 // "## F) Verdict (lead)", "## A) Role Summary", "## B) Match with CV", then
@@ -22,6 +23,47 @@ import { DeleteFromTracker } from "@/components/delete-from-tracker";
 // (native <details>, no client JS — this stays a server component).
 
 type Section = { heading: string; letter: string | null; content: string };
+
+type MachineSummarySignals = NonNullable<ReturnType<typeof parseMachineSummarySignals>>;
+
+const SIGNAL_ROWS: {
+  key: keyof MachineSummarySignals;
+  label: string;
+  tone: string;
+}[] = [
+  { key: "hardStops", label: "Hard stops", tone: "text-red-400" },
+  { key: "softGaps", label: "Soft gaps", tone: "text-amber-400" },
+  { key: "topStrengths", label: "Top strengths", tone: "text-emerald-400" },
+];
+
+function DecisionSignalsTable({ signals }: { signals: MachineSummarySignals }) {
+  const rows = SIGNAL_ROWS.filter(({ key }) => signals[key].length > 0);
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-2xl border border-border bg-surface/30">
+      <table className="w-full border-collapse text-sm">
+        <caption className="border-b border-border px-5 py-3 text-left font-mono text-[11px] uppercase tracking-[0.16em] text-faint">
+          Decision signals
+        </caption>
+        <tbody className="divide-y divide-border">
+          {rows.map(({ key, label, tone }) => (
+            <tr key={key}>
+              <th scope="row" className={`w-40 px-5 py-4 text-left align-top text-xs font-semibold uppercase tracking-wide ${tone}`}>
+                {label}
+              </th>
+              <td className="px-5 py-3.5 text-foreground">
+                <ul className="list-disc space-y-1.5 pl-5 marker:text-faint">
+                  {signals[key].map((item, index) => <li key={`${key}-${index}`}>{item}</li>)}
+                </ul>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function cleanHeading(h: string): string {
   const stripped = h
@@ -91,9 +133,10 @@ export function ReportView({
   const date = app?.date || field("Date");
   const archetype = field("Archetype");
   const url = field("URL");
+  const machineSignals = report ? parseMachineSummarySignals(report) : null;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-[96rem] px-6 py-8">
       <Link
         href="/pipeline"
         className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-brand"
@@ -179,6 +222,8 @@ export function ReportView({
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{intro}</ReactMarkdown>
                   </article>
                 )}
+
+                {machineSignals && <DecisionSignalsTable signals={machineSignals} />}
 
                 {verdict && (
                   <div className="rounded-2xl border border-brand/25 bg-brand-soft/50 px-5 py-4">
