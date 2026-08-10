@@ -905,6 +905,7 @@ recover_artifact_failures() {
 # Process a single offer
 process_offer() {
   local id="$1" url="$2" source="$3" notes="$4"
+  local remaining="$5"
 
   local started_at
   started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -935,7 +936,7 @@ process_offer() {
     printf '' > "$jd_file"
   fi
 
-  echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
+  echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)), remaining $remaining)"
 
   # Build the prompt with placeholders replaced
   local prompt
@@ -1590,7 +1591,7 @@ main() {
   if (( PARALLEL <= 1 )); then
     # Sequential processing
     for i in "${!pending_ids[@]}"; do
-      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}"
+      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))"
       if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
         echo "=== Batch paused: session/rate limit reached. Resume later with --resume-paused. ==="
         break
@@ -1634,7 +1635,7 @@ main() {
       fi
 
       # Launch worker in background
-      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" &
+      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))" &
       pids+=($!)
       pid_ids+=("${pending_ids[$i]}")
       running=$((running + 1))

@@ -365,7 +365,9 @@ try {
   writeFileSync(join(batchDir, 'batch-output-schema.json'), '{}\n');
   writeFileSync(join(batchUserRoot, 'batch/batch-input.tsv'), [
     'id\turl\tsource\tnotes',
-    '1\thttps://example.com/job\tfixture\t-',
+    '1\thttps://example.com/one\tfixture\t-',
+    '2\thttps://example.com/two\tfixture\t-',
+    '3\thttps://example.com/three\tfixture\t-',
   ].join('\n') + '\n');
   for (const script of ['merge-tracker.mjs', 'reconcile-pipeline.mjs', 'verify-pipeline.mjs']) {
     writeFileSync(join(batchTmp, script), 'process["exit"](0);\n');
@@ -389,10 +391,11 @@ try {
   } else {
     execFileSync('chmod', ['+x', join(batchDir, 'batch-runner.sh'), join(fakeBin, 'codex')]);
   }
+  let batchOutput = '';
   try {
-    execFileSync(getBash(), [
+    batchOutput = execFileSync(getBash(), [
       toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--cli', 'codex',
-      '--model', 'profile-model', '--reasoning-effort', 'high', '--max-retries', '0',
+      '--parallel', '2', '--model', 'profile-model', '--reasoning-effort', 'high', '--max-retries', '0',
     ], {
       cwd: batchTmp,
       env: {
@@ -403,9 +406,10 @@ try {
       },
       encoding: 'utf-8',
     });
-  } catch {
+  } catch (error) {
     // A deliberately failing fake worker may make the fixture runner non-zero;
     // argv capture is the contract under test.
+    batchOutput = String(error.stdout || '');
   }
   const codexArgv = readFileSync(argvPath, 'utf-8');
   if (codexArgv.includes('--model\nprofile-model\n') &&
@@ -413,6 +417,13 @@ try {
     pass('batch execution passes resolved model and reasoning to codex exec');
   } else {
     fail(`batch Codex argv missing resolved settings: ${JSON.stringify(codexArgv)}`);
+  }
+  if (batchOutput.includes('Processing offer #1: https://example.com/one (report 001, attempt 1, remaining 2)') &&
+      batchOutput.includes('Processing offer #2: https://example.com/two (report 001, attempt 1, remaining 1)') &&
+      batchOutput.includes('Processing offer #3: https://example.com/three (report 001, attempt 1, remaining 0)')) {
+    pass('parallel batch progress reports the number of queued offers remaining after each launch');
+  } else {
+    fail(`batch progress missing remaining counts: ${JSON.stringify(batchOutput)}`);
   }
   rmSync(batchTmp, { recursive: true, force: true });
 
