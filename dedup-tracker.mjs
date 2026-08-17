@@ -24,6 +24,7 @@ import {
   normalizeCompany,
 } from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow, normalizeVia } from './tracker-parse.mjs';
+import { validateFlags } from './lib/cli-flags.mjs';
 
 let userContext;
 try {
@@ -34,6 +35,9 @@ try {
 
 const appsFileInput = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
 const APPS_FILE = existsSync(appsFileInput) ? realpathSync(appsFileInput) : appsFileInput;
+const KNOWN_FLAGS = ['--dry-run', '--help', '-h'];
+const USAGE = 'Usage: node dedup-tracker.mjs --user <username> [--dry-run]';
+validateFlags(userContext.args, KNOWN_FLAGS, USAGE);
 const DRY_RUN = userContext.args.includes('--dry-run');
 
 if (userContext.userRoot) ensureUserDirs(userContext, ['data']);

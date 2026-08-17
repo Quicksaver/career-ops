@@ -11,7 +11,7 @@ database, no server. If you never run it, nothing about your CLI workflow change
 
 ## Quick start
 
-Requires Node 20+.
+Requires Node 22+ (see [Tests](#tests) — `npm test`'s glob discovery needs it).
 
 ```bash
 cd web
@@ -38,6 +38,16 @@ Open http://localhost:3000. In this fork, set `CAREER_OPS_USER=<username>` so th
   no account needed. Your CV and data stay in your own files.
 - **Never auto-submits:** the apply flow drafts and prefills; submitting is
   always a human action.
+- **CV generation never asks the agent to write:** the `pdf` worker tailors your
+  CV and emits it inline in a `<<cv-html>>` envelope; the backend parses that
+  envelope, writes the HTML, and renders the PDF itself. Job postings and
+  evaluation reports are untrusted input that reaches this agent, so the safest
+  thing is for it to hold no write tool at all — on Claude Code every write-capable
+  tool is disallowed for this mode (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`
+  and `Bash`). Other CLIs are invoked with a bare prompt and keep their own default
+  tool access, so on those the agent still *holds* write tools — what the pipeline
+  guarantees is that the CV which gets rendered is the one the backend parsed out of
+  the envelope, never a file an agent wrote behind it.
 - **Additive:** the web is isolated from the core's packaging, CI and release
   automation. The CLI works exactly the same without it.
 
@@ -45,6 +55,7 @@ Open http://localhost:3000. In this fork, set `CAREER_OPS_USER=<username>` so th
 
 ```bash
 npm run dev          # dev server (Turbopack)
+npm test             # unit suites (node --test, no framework)
 npx tsc --noEmit     # typecheck
 npm run build        # production build
 ```

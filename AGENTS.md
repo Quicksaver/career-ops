@@ -12,7 +12,7 @@ Two layers — full list in `DATA_CONTRACT.md`:
 
 **User Layer (NEVER auto-updated, personalization goes HERE):**
 - `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, `users/{USER}/modes/_custom.md`, `users/{USER}/article-digest.md`, `users/{USER}/portals.yml`
-- `users/{USER}/data/*`, `users/{USER}/reports/*`, `users/{USER}/output/*`, `users/{USER}/interview-prep/*`, `users/{USER}/jds/*`, `users/{USER}/writing-samples/*`, `users/{USER}/batch/*`
+- `users/{USER}/data/*`, `users/{USER}/reports/*`, `users/{USER}/output/*`, `users/{USER}/interview-prep/*`, `users/{USER}/jds/*`, `users/{USER}/documents/*`, `users/{USER}/writing-samples/*`, `users/{USER}/batch/*`
 
 **System Layer (auto-updatable, DON'T put user data here):**
 - `modes/_shared.md`, `modes/oferta.md`, all other modes
@@ -75,6 +75,8 @@ User-facing content (CV, cover letters, application emails, form answers, recrui
 - `users/{USER}/interview-prep/story-bank.md` and `users/{USER}/interview-prep/{company}-{role}.md` (the user's own STAR stories and interview-prep notes — same trust level as `cv.md`; consumed by the `interview` and `apply`/`match-star` modes)
 
 Everything else is **out of scope for content generation**: auto-memory (see below), any directory outside the career-ops project (parent/sibling repos, other codebases on the machine), knowledge from other Claude Code projects on the same machine, and cross-session inferences not written into an in-scope file.
+
+**One narrow exception — `intake`.** Documents the user drops in `users/{USER}/documents/` may be read *during the `intake` mode only*, and only to propose **source-annotated** additions to the in-scope files above. They are never a source for generated user-facing content directly, the no-fabrication rule applies unchanged (a proposal must restate what the document says), and nothing is written without the user's explicit confirmation. Once confirmed, the claim lives in `users/{USER}/config/profile.yml` / `users/{USER}/cv.md` / `users/{USER}/modes/_profile.md` and is in scope because it is *there*, not because it was in `users/{USER}/documents/`.
 
 **Rule from the original design:** *"Keywords get reformulated, never fabricated."* Reorder, reframe, emphasise — but never invent. If a claim isn't backed by an in-scope file, ask the user; if they don't add it, the output goes without it. Silence on a topic is fine; manufactured detail is not.
 
@@ -365,6 +367,7 @@ Two separate axes:
 | Receives an offer/contract and wants help understanding it before signing | `offer-prep` — clause walk with neutral tags + lawyer question list; describes, never judges; no verdicts, no online research; optional draft-only negotiation reply from the "Items to raise" list |
 | Wants to broaden the search with adjacent job titles suggested from the CV | `titles` |
 | Asks what skills to learn, wants a skill-gap analysis of their pipeline | `upskill` |
+| Wants to build or enrich the profile from documents they already have (master CV, LinkedIn export, diplomas, references) | `intake` — scans `users/{USER}/documents/`, extracts text locally (`intake.mjs`), proposes source-annotated additions to the active user's `config/profile.yml`/`cv.md`/`modes/_profile.md`; writes nothing without explicit confirm |
 | Asks about follow-ups or application cadence | `followup` |
 | Wants to classify application replies and review updates | `reply-watch` — classifies replies, matches to applications, suggests tracker updates |
 | Wants to record application outcome & archive artifacts | `outcome` |

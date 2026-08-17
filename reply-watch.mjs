@@ -24,20 +24,13 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
+import { validateFlags } from './lib/cli-flags.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let userContext;
-try {
-  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
-} catch (err) {
-  printUserContextErrorAndExit(err);
-}
-const args = userContext.args;
-const appsFileInput = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
-const APPS_FILE = fs.existsSync(appsFileInput) ? fs.realpathSync(appsFileInput) : appsFileInput;
-const dataRoot = userContext.userRoot ? userPath(userContext, 'data') : path.dirname(APPS_FILE);
-const DEFAULT_CANDIDATES_PATH = path.join(dataRoot, 'reply-candidates.json');
-const FOLLOWUPS_FILE = path.join(dataRoot, 'follow-ups.md');
+let APPS_FILE;
+let DEFAULT_CANDIDATES_PATH;
+let FOLLOWUPS_FILE;
 
 // Helper to ask a question in the CLI
 function askQuestion(query) {
@@ -221,7 +214,23 @@ async function updateTrackerStatuses(updates) {
   }
 }
 
+const KNOWN_FLAGS = ['--user', '--help', '-h'];
+const USAGE = 'Usage: node reply-watch.mjs --user <id> [path/to/candidates.json]';
+
 async function main() {
+  const rawArgs = process.argv.slice(2);
+  validateFlags(rawArgs, KNOWN_FLAGS, USAGE, { valueFlags: ['--user'] });
+  try {
+    userContext = getUserContext(rawArgs, { requireUser: !process.env.CAREER_OPS_TRACKER });
+  } catch (err) {
+    printUserContextErrorAndExit(err);
+  }
+  const args = userContext.args;
+  const appsFileInput = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
+  APPS_FILE = fs.existsSync(appsFileInput) ? fs.realpathSync(appsFileInput) : appsFileInput;
+  const dataRoot = userContext.userRoot ? userPath(userContext, 'data') : path.dirname(APPS_FILE);
+  DEFAULT_CANDIDATES_PATH = path.join(dataRoot, 'reply-candidates.json');
+  FOLLOWUPS_FILE = path.join(dataRoot, 'follow-ups.md');
   const candidatesPath = args[0] || DEFAULT_CANDIDATES_PATH;
   ensureCandidatesFile(candidatesPath);
 

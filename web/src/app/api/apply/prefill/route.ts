@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnHeadlessCli } from "@/lib/spawn-cli.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveCli } from "@/lib/clis";
@@ -157,7 +157,7 @@ Output ONLY a compact JSON object mapping each field id → {"value": "...", "ne
 
       const result = await new Promise<{ buf: string; code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
         // stdin = /dev/null so the CLI doesn't wait 3s for piped input.
-        const child = spawn(binPath, args, { cwd: careerOpsSystemRoot(), env: careerOpsCoreEnv(), stdio: ["ignore", "pipe", "pipe"] });
+        const child = spawnHeadlessCli(binPath, args, { cwd: careerOpsSystemRoot(), env: careerOpsCoreEnv() });
         let buf = "";
         let firstByteAt = 0;
         const hb = setInterval(() => {

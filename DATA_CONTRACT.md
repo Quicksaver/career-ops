@@ -26,6 +26,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/modes/_brief.md` | Compact profile brief used by the two-pass triage first pass |
 | `users/{USER}/voice-dna.md` | Writing voice guardrail — banned words, anti-AI-slop rules, tone (optional) |
 | `users/{USER}/article-digest.md` | Proof points from portfolio |
+| `users/{USER}/documents/*` | Source documents used only by the confirm-gated `intake` mode |
 | `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
 | `users/{USER}/interview-prep/{company}-{role}.md` | Company-specific interview prep reports (written by `/career-ops interview-prep`) |
 | `users/{USER}/interview-prep/sessions/*.md` | Interview sessions — real transcripts and mock sessions (sensitive; gitignored except scaffold). Drives `patterns` Step 1b targeting signal and interview-redflag analysis. |
@@ -40,6 +41,7 @@ Commands must resolve an active user before reading or writing any user-layer fi
 | `users/{USER}/data/scan-handoff.json` | Full Agent/WebSearch handoff list from the latest zero-token scan |
 | `users/{USER}/data/follow-ups.md` | Follow-up history |
 | `users/{USER}/data/agent-inbox.md` | Append-only request queue drained at session start |
+| `users/{USER}/data/intake-state.json` | Fingerprints of source documents explicitly confirmed as ingested |
 | `users/{USER}/data/pdf-index.tsv` | Generated PDF manifest used by dashboard PDF hotkeys |
 | `users/{USER}/data/parser-output/*` | Local parser debug/audit output |
 | `users/{USER}/data/offers/*` | Received offers/contracts, promise notes, prep reports, and reply drafts (PII; written by `offer-prep`) |

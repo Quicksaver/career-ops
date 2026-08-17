@@ -12,7 +12,8 @@
  */
 
 import { readFileSync, copyFileSync, existsSync, mkdirSync, realpathSync } from 'fs';
-import { dirname } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 import {
   ensureUserDirs,
   getUserContext,
@@ -21,25 +22,28 @@ import {
 } from './lib/user-context.mjs';
 import {
   openTrackerTransaction, rebuildRow, resolveTrackerPath,
-} from './tracker-utils.mjs';
+  loadCanonicalStates, resolveCanonicalState,} from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 
-let userContext;
-try {
-  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
-} catch (err) {
-  printUserContextErrorAndExit(err);
-}
+const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 
-const appsFileInput = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
-const APPS_FILE = existsSync(appsFileInput) ? realpathSync(appsFileInput) : appsFileInput;
-const DRY_RUN = userContext.args.includes('--dry-run');
-
-// Ensure required directories exist (fresh setup)
-if (userContext.userRoot) ensureUserDirs(userContext, ['data']);
-else mkdirSync(dirname(APPS_FILE), { recursive: true });
+let userContext = { args: [], userRoot: '' };
+let APPS_FILE = '';
+let DRY_RUN = false;
 
 // Canonical status mapping
+let statesCache = null;
+/** Canonical states from templates/states.yml, read once per CLI run. */
+function canonicalStates() {
+  if (statesCache) return statesCache;
+  try {
+    statesCache = loadCanonicalStates(join(CAREER_OPS, 'templates', 'states.yml'));
+  } catch {
+    statesCache = []; // broken install: fall through to "unknown", never a stale copy
+  }
+  return statesCache;
+}
+
 function normalizeStatus(raw) {
   // Strip markdown bold
   let s = raw.replace(/\*\*/g, '').trim();
@@ -61,7 +65,11 @@ function normalizeStatus(raw) {
   if (/^descartado$/i.test(s)) return { status: 'Discarded' };
 
   // Rechazada / Rechazado → Rejected
-  if (/^rechazada?$/i.test(s)) return { status: 'Rejected' };
+  // `rechazada?` reads as "rechazad" + an OPTIONAL trailing "a", so it accepted
+  // "rechazada" and the bare stem "rechazad" but never "rechazado" — the masculine
+  // form this comment claims to handle, that states.yml lists as an alias, and that
+  // the header of this file names. A bare "Rechazado" fell through to unknown.
+  if (/^rechazad[oa]$/i.test(s)) return { status: 'Rejected' };
   if (/^rechazado\s+\d{4}/i.test(s)) return { status: 'Rejected' };
 
   // Aplicado with date → Applied (strip date)
@@ -91,20 +99,37 @@ function normalizeStatus(raw) {
     if (lower === c.toLowerCase()) return { status: c };
   }
 
-  // Spanish aliases → English canonicals
-  if (['evaluada'].includes(lower)) return { status: 'Evaluated' };
-  if (['aplicado', 'enviada', 'aplicada', 'applied', 'sent'].includes(lower)) return { status: 'Applied' };
-  if (['respondido'].includes(lower)) return { status: 'Responded' };
-  if (['entrevista'].includes(lower)) return { status: 'Interview' };
-  if (['oferta'].includes(lower)) return { status: 'Offer' };
-  if (['contratado', 'contratada', 'hired', 'accepted', 'accept'].includes(lower)) return { status: 'Hired' };
-  if (['cerrada', 'cancelada', 'closed', 'expired'].includes(lower)) return { status: 'Closed' };
-  if (['descartada'].includes(lower)) return { status: 'Discarded' };
-  if (['no aplicar', 'no_aplicar', 'skip'].includes(lower)) return { status: 'SKIP' };
+  // Every remaining alias comes from templates/states.yml. This preserves the
+  // fork's Closed state while adopting upstream's full multilingual alias set.
+  const fromStates = resolveCanonicalState(lower, canonicalStates());
+  if (fromStates) return { status: fromStates };
 
   // Unknown — flag it
   return { status: null, unknown: true };
 }
+
+export { normalizeStatus };
+
+// Everything below is the CLI. It is guarded because importing this module used to
+// run it: the import alone opened a tracker transaction and rewrote applications.md.
+// That is why tests could only scrape this file's source with regexes instead of
+// calling the function, and why the rechazado gap went unnoticed.
+const IS_CLI = process.argv[1]
+  && pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (IS_CLI) {
+try {
+  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+const appsFileInput = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
+APPS_FILE = existsSync(appsFileInput) ? realpathSync(appsFileInput) : appsFileInput;
+DRY_RUN = userContext.args.includes('--dry-run');
+
+// Ensure required directories exist (fresh setup)
+if (userContext.userRoot) ensureUserDirs(userContext, ['data']);
+else mkdirSync(dirname(APPS_FILE), { recursive: true });
 
 // Read applications.md
 if (!existsSync(APPS_FILE)) {
@@ -205,3 +230,4 @@ if (!DRY_RUN && changes > 0) {
 } finally {
   trackerTransaction?.close();
 }
+} // end IS_CLI

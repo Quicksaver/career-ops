@@ -40,6 +40,7 @@ type Catalog struct {
 	ColStatus   string
 	ColLocation string
 	ColPay      string
+	ColPosted   string
 	ColLast     string
 	ColContact  string
 
@@ -266,6 +267,7 @@ var En = Catalog{
 	ColStatus:   "STATUS",
 	ColLocation: "LOCATION",
 	ColPay:      "PAY",
+	ColPosted:   "POSTED",
 	ColLast:     "LAST",
 	ColContact:  "CONTACT",
 
@@ -402,6 +404,7 @@ var Tr = Catalog{
 	ColStatus:   "DURUM",
 	ColLocation: "KONUM",
 	ColPay:      "ÜCRET",
+	ColPosted:   "YAYIN",
 	ColLast:     "SON",
 	ColContact:  "İLETİŞİM",
 
@@ -538,6 +541,7 @@ var Es = Catalog{
 	ColStatus:   "ESTADO",
 	ColLocation: "UBICACIÓN",
 	ColPay:      "SALARIO",
+	ColPosted:   "PUBLIC.",
 	ColLast:     "ÚLTIMO",
 	ColContact:  "CONTACTO",
 

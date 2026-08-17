@@ -10,7 +10,7 @@ import {
   rmSync,
 } from 'fs';
 import { basename, dirname, extname, join, relative, resolve } from 'path';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import {
   getUserContext,
   printUserContextErrorAndExit,

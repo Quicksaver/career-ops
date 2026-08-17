@@ -10,7 +10,7 @@
  * is that place: an append-only queue the agent drains at the start of a
  * session.
  *
- *   users/{USER}/data/agent-inbox.md
+ *   data/agent-inbox.md
  *     - [ ] <stamp> — <request>          (pending)
  *     - [x] <stamp> — <request> → result: <one line>   (resolved)
  *
@@ -21,26 +21,30 @@
  * protocol an agent follows is documented in modes/agent-inbox.md.
  *
  * Usage:
- *   node agent-inbox.mjs --user <username> add "evaluate https://acme.com/jobs/42"
- *   node agent-inbox.mjs --user <username> list [--all]                 # pending only, or every item
- *   node agent-inbox.mjs --user <username> resolve 1 [--result "scored 4.3 — report 012"]
+ *   node agent-inbox.mjs add "evaluate https://acme.com/jobs/42"
+ *   node agent-inbox.mjs list [--all]                 # pending only, or every item
+ *   node agent-inbox.mjs resolve 1 [--result "scored 4.3 — report 012"]
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import {
+  readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync,
+  openSync, fstatSync, readSync, closeSync,
+} from 'fs';
 import { dirname } from 'path';
+import { withPipelineLock } from './pipeline-lock.mjs';
 import {
   getUserContext,
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
 
-let userContext = null;
+let userContext;
 try {
   userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_INBOX });
 } catch (err) {
   printUserContextErrorAndExit(err);
 }
-
+const args = userContext.args;
 const PATH = process.env.CAREER_OPS_INBOX || userPath(userContext, 'data/agent-inbox.md');
 
 const HEADER = [
@@ -64,7 +68,7 @@ function ensureGitignored() {
   // The inbox is personal data. On installs whose .gitignore predates this
   // feature, make sure the default path is ignored so a first `add` can't
   // accidentally commit it. Only manages the default, non-overridden path.
-  if (PATH !== 'data/agent-inbox.md') return;
+  if (process.env.CAREER_OPS_INBOX || PATH !== 'data/agent-inbox.md') return;
   try {
     if (!existsSync('.gitignore')) return; // not a git checkout we should touch
     const text = readFileSync('.gitignore', 'utf8');
@@ -82,7 +86,34 @@ function ensureFile() {
   if (existsSync(PATH)) return;
   ensureGitignored();
   mkdirSync(dirname(PATH), { recursive: true });
-  writeFileSync(PATH, HEADER);
+  // 'wx': atomic create-exclusive. Two concurrent first-time `add` calls can
+  // both pass the existsSync check above before either writes; without an
+  // exclusive flag, the second writeFileSync (default 'w', which truncates)
+  // lands after the first has already appended its item and wipes it back to
+  // just the header. 'wx' makes only one of them win the create — the loser
+  // gets EEXIST and does nothing, same as if it had seen existsSync === true.
+  try {
+    writeFileSync(PATH, HEADER, { flag: 'wx' });
+  } catch (err) {
+    if (err?.code !== 'EEXIST') throw err;
+  }
+}
+
+// Whether appending to `path` needs a leading newline first, i.e. the file is
+// non-empty and doesn't already end in one. Reads only the last byte instead
+// of the whole file — the full-file read this replaced was only ever used to
+// check one byte.
+function needsLeadingNewline(path) {
+  const fd = openSync(path, 'r');
+  try {
+    const size = fstatSync(fd).size;
+    if (size === 0) return false;
+    const buf = Buffer.alloc(1);
+    readSync(fd, buf, 0, 1, size - 1);
+    return buf[0] !== 0x0a; // '\n'
+  } finally {
+    closeSync(fd);
+  }
 }
 
 // Parse the checklist into items, in file order.
@@ -97,24 +128,58 @@ function parseItems() {
 }
 
 function opt(name, def = '') {
-  const i = (userContext?.args ?? process.argv.slice(2)).indexOf('--' + name);
+  const i = args.indexOf('--' + name);
   if (i < 0) return def;
-  const v = (userContext?.args ?? process.argv.slice(2))[i + 1];
+  const v = args[i + 1];
   return v && !v.startsWith('--') ? v : def;
 }
 
-function add() {
-  const args = userContext?.args ?? process.argv.slice(2);
+async function add() {
   const text = oneLine(args.slice(1).join(' '));
   if (!text) fail('add needs a request, e.g. node agent-inbox.mjs add "evaluate https://..."');
   ensureFile();
-  const body = readFileSync(PATH, 'utf8').replace(/\s+$/, '');
-  writeFileSync(PATH, `${body}\n- [ ] ${stamp()} — ${text}\n`);
+  // Append rather than rewrite. This is the queue's concurrent path — anything
+  // running in the background can drop an item in — and a read-whole-file /
+  // write-whole-file cycle loses every request that lands between the two. With
+  // 30 concurrent `add` calls, half the queue vanished silently.
+  //
+  // POSIX guarantees an O_APPEND write is atomic below PIPE_BUF, and one
+  // checklist line is far under it, so concurrent appends interleave instead of
+  // clobbering. WINDOWS IS NOT POSIX, and that is the whole reason for the lock
+  // below: with 30 concurrent adds on windows-latest this dropped exactly one
+  // item (#2777), silently, which is the same failure this function exists to
+  // remove — it just moved to the one platform the guarantee does not cover.
+  //
+  // The lock is the repo's existing one rather than a second mechanism: the
+  // same `withPipelineLock` that scan.mjs uses for scan-history appends. Two
+  // lock implementations would drift, and the append is short enough that
+  // serializing it costs nothing next to spawning the process that calls it.
+  //
+  // Checking the last byte still happens INSIDE the lock: it decides whether a
+  // separating newline is needed, and reading it outside would race with
+  // another writer's append between the check and the write.
+  //
+  // timeoutMs is raised from the shared 8s default because this queue's whole
+  // point is bursty concurrent writers (a dashboard, a script, cron all drop
+  // items at once), and lock acquisition is a retry lottery, not a fair queue.
+  // Serving N herded waiters is the coupon-collector problem: ~N·H(N) rounds,
+  // so 30 concurrent adds need ~120 rounds while 8000/80 = 100 only affords
+  // ~100. On the slow, contended windows-latest runner that shortfall makes one
+  // waiter time out and its item is LOST, the exact #2777 drop, reappearing as
+  // a loud LockTimeoutError instead of a silent overwrite. Jitter in
+  // pipeline-lock.mjs cuts the collision rate ~6x but is explicitly "not a
+  // cure"; the fit-for-purpose budget for a burst-write queue is the contained
+  // fix. 30s gives ~375 rounds of headroom, well past the herd's worst case,
+  // while the critical section itself is a single sub-millisecond append.
+  await withPipelineLock(PATH, () => {
+    const separator = needsLeadingNewline(PATH) ? '\n' : '';
+    appendFileSync(PATH, `${separator}- [ ] ${stamp()} — ${text}\n`);
+  }, { timeoutMs: 30_000 });
   process.stdout.write(`Queued: ${text}\n`);
 }
 
 function list() {
-  const all = process.argv.includes('--all');
+  const all = args.includes('--all');
   const items = parseItems().filter((it) => all || !it.done);
   if (!items.length) return process.stdout.write(all ? 'Inbox is empty.\n' : 'No pending items.\n');
   items.forEach((it, n) => {
@@ -123,7 +188,6 @@ function list() {
 }
 
 function resolve() {
-  const args = userContext?.args ?? process.argv.slice(2);
   const n = Number(args[1]);
   if (!Number.isInteger(n) || n < 1) fail('resolve needs a 1-based item number (see `list`)');
   // Number against the pending view, so `list` then `resolve N` line up.
@@ -144,9 +208,8 @@ function fail(msg) {
   process.exit(1);
 }
 
-const args = userContext?.args ?? process.argv.slice(2);
 const cmd = args[0];
-if (cmd === 'add') add();
+if (cmd === 'add') await add();
 else if (cmd === 'list') list();
 else if (cmd === 'resolve') resolve();
 else {

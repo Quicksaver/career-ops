@@ -40,7 +40,7 @@
 import { readFileSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 
 const ROUND_ENUM = ['screen', 'hiring-manager', 'technical', 'system-design', 'behavioral', 'onsite', 'final'];

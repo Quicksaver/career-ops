@@ -48,17 +48,28 @@ function makeLane() {
   return { dir, userRoot, portals };
 }
 
-const runScan = (dir, env) => execFileSync(NODE, [join(ROOT, 'scan.mjs')], {
-  cwd: dir,
-  env: {
-    ...process.env,
-    CAREER_OPS_USER: 'test',
-    CAREER_OPS_USERS_DIR: join(dir, 'users'),
-    ...env,
-  },
-  encoding: 'utf-8',
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
+const SCANNER_PATH_VARS = [
+  'CAREER_OPS_PORTALS',
+  'CAREER_OPS_PROFILE',
+  'CAREER_OPS_PIPELINE',
+  'CAREER_OPS_SCAN_HISTORY',
+];
+
+const runScan = (dir, env) => {
+  const childEnv = { ...process.env };
+  for (const name of SCANNER_PATH_VARS) delete childEnv[name];
+  return execFileSync(NODE, [join(ROOT, 'scan.mjs')], {
+    cwd: dir,
+    env: {
+      ...childEnv,
+      CAREER_OPS_USER: 'test',
+      CAREER_OPS_USERS_DIR: join(dir, 'users'),
+      ...env,
+    },
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+};
 
 /** Pending rows in a pipeline file; [] when the file was never created. */
 function entries(pipelinePath) {
@@ -177,5 +188,45 @@ function entries(pipelinePath) {
     fail(`scan into a new directory failed: ${err.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// 5. The suite's own isolation, asserted rather than assumed. Check 1 claims to
+//    exercise DEFAULT paths, but it can only do that if nothing ambient reaches
+//    the child - and the user most likely to run this suite with these variables
+//    exported is the second-lane user this feature was built for. Simulate that
+//    environment and confirm the fixture's writes land in the lane's own
+//    directory and nowhere else.
+//
+//    Goes through the same runScan() the checks above use, deliberately. A case
+//    that spawned scan.mjs with its own hand-built environment would keep
+//    passing if the clearing were dropped, which is the whole failure mode: on a
+//    machine with these variables unset, removing it changes nothing observable.
+{
+  const { dir, portals } = makeLane();
+  const ambientRoot = mkdtempSync(join(tmpdir(), 'scan-outpaths-ambient-'));
+  const ambientPipeline = join(ambientRoot, 'pipeline.md');
+  const ambientHistory = join(ambientRoot, 'scan-history.tsv');
+  const saved = SCANNER_PATH_VARS.map((name) => [name, process.env[name]]);
+  try {
+    process.env.CAREER_OPS_PIPELINE = ambientPipeline;
+    process.env.CAREER_OPS_SCAN_HISTORY = ambientHistory;
+    runScan(dir, { CAREER_OPS_PORTALS: portals });
+    const laneEntries = entries(join(dir, 'users', 'test', 'data', 'pipeline.md')).length;
+    const leaked = existsSync(ambientPipeline) || existsSync(ambientHistory);
+    if (laneEntries > 0 && !leaked) {
+      pass('an ambient CAREER_OPS_PIPELINE / CAREER_OPS_SCAN_HISTORY cannot redirect this suite (#2568)');
+    } else {
+      fail(`suite is not isolated from the ambient environment: ${laneEntries} lane entr(y/ies), ambient files ${leaked ? 'WRITTEN' : 'untouched'} (#2568)`);
+    }
+  } catch (err) {
+    fail(`ambient-environment isolation check failed: ${err.message}`);
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(ambientRoot, { recursive: true, force: true });
   }
 }

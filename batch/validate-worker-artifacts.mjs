@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { normalizeVia } from '../tracker-parse.mjs';
 
 function clean(value) {

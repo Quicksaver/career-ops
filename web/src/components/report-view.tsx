@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import type { Application } from "@/lib/career-ops";
 import { Badge } from "@/components/ui/badge";
 import { scoreTone, scoreNum, legitimacyTone, parseReport } from "@/lib/format";
+import { cleanHeading, splitSections } from "@/lib/report-sections.mjs";
 import { StatusSelect } from "@/components/status-select";
 import { CompanyLogo } from "@/components/company-logo";
 import { ScoreMethodology } from "@/components/score-methodology";
@@ -74,14 +75,6 @@ function DecisionSignalsTable({ signals }: { signals: MachineSummarySignals }) {
   );
 }
 
-function cleanHeading(h: string): string {
-  const stripped = h
-    .replace(/^\s*(?:Block\s+)?[A-G][).:]\s*/i, "")
-    .replace(/\s*\((?:lead|verdict)\)\s*$/i, "")
-    .trim();
-  return stripped || h.trim();
-}
-
 // Machine artifacts (collapsed because they're for devs, not the mainstream) vs
 // human content C–G (collapsed only for length) — ux's "honest for devs" tier.
 function isMachine(heading: string): boolean {
@@ -99,27 +92,6 @@ function preview(md: string): string {
     .trim();
   const sentence = text.split(/(?<=[.!?])\s/)[0] ?? text;
   return sentence.length > 96 ? sentence.slice(0, 96).trimEnd() + "…" : sentence;
-}
-
-function splitSections(body: string): { intro: string; sections: Section[] } {
-  const intro: string[] = [];
-  const sections: Section[] = [];
-  let cur: { heading: string; letter: string | null; lines: string[] } | null = null;
-  for (const line of body.split("\n")) {
-    const h = line.match(/^##\s+(.*)$/);
-    if (h) {
-      if (cur) sections.push({ heading: cur.heading, letter: cur.letter, content: cur.lines.join("\n").trim() });
-      const heading = h[1].trim();
-      const letter = heading.match(/^(?:Block\s+)?([A-G])[).:\s]/i)?.[1]?.toUpperCase() ?? null;
-      cur = { heading, letter, lines: [] };
-    } else if (cur) {
-      cur.lines.push(line);
-    } else {
-      intro.push(line);
-    }
-  }
-  if (cur) sections.push({ heading: cur.heading, letter: cur.letter, content: cur.lines.join("\n").trim() });
-  return { intro: intro.join("\n").trim(), sections };
 }
 
 export function ReportView({

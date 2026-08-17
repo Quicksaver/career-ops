@@ -5,12 +5,11 @@
  *
  * "Apply to #13" is ambiguous: report numbers and tracker row numbers diverge,
  * and mapping company ↔ report# ↔ tracker# ↔ PDF used to require opening three
- * files (users/{USER}/data/applications.md, users/{USER}/reports/,
- * users/{USER}/data/pdf-index.tsv). This read-only tool
+ * files (applications.md, reports/, data/pdf-index.tsv). This read-only tool
  * answers it in one lookup.
  *
  * Usage:
- *   node find.mjs --user <id> <query> [--json]
+ *   node find.mjs <query> [--json]
  *
  * <query> is a report number, tracker number, or company/role fragment.
  * A numeric query matches BOTH the tracker # column and the report number in
@@ -20,9 +19,9 @@
  * the shared fuzzy matcher (role-matcher.mjs) as fallback for multi-word
  * phrases.
  *
- * Zero dependencies and strictly read-only: parses users/{USER}/data/applications.md
- * via the shared header-aware column mapping (tracker-parse.mjs) and the PDF
- * manifest users/{USER}/data/pdf-index.tsv (written by generate-pdf.mjs).
+ * Zero dependencies and strictly read-only: parses data/applications.md via
+ * the shared header-aware column mapping (tracker-parse.mjs) and the PDF
+ * manifest data/pdf-index.tsv (written by generate-pdf.mjs).
  */
 
 import { readFileSync, existsSync } from 'fs';
@@ -52,12 +51,11 @@ const cleanStatus = (s) =>
  * Parse the tracker markdown into lookup rows.
  *
  * The report number and path come from the Report cell's markdown link. The
- * path is normalized to be user-root-relative: trackers at
- * `users/{USER}/data/applications.md` carry `../reports/...` links (relative to
- * the tracker file, see #760), which would be misleading when printed from the
- * career-ops root.
+ * path is normalized to be root-relative: trackers at `data/applications.md`
+ * carry `../reports/...` links (relative to the tracker file, see #760), which
+ * would be misleading when printed from the career-ops root.
  *
- * @param {string} text - Full contents of users/{USER}/data/applications.md.
+ * @param {string} text - Full contents of applications.md.
  * @returns {Array<{trackerNum:number,date:string,company:string,role:string,score:string,status:string,reportNum:string|null,reportPath:string|null}>}
  */
 export function parseTrackerRows(text) {
@@ -83,7 +81,7 @@ export function parseTrackerRows(text) {
 }
 
 /**
- * Parse users/{USER}/data/pdf-index.tsv (report \t pdf \t html \t format \t date) into a
+ * Parse data/pdf-index.tsv (report \t pdf \t html \t format \t date) into a
  * normalized-report# → PDF-path map. Comment lines and rows generated without
  * a report number are skipped.
  *
@@ -133,18 +131,44 @@ export function findMatches(rows, query, pdfIndex = new Map()) {
 
 // ── CLI ─────────────────────────────────────────────────────────────
 
-function main() {
+const KNOWN_FLAGS = ['--json', '--help', '-h'];
+
+const USAGE = `Usage:
+  node find.mjs --user <id> <report# | tracker# | company/role fragment> [--json]
+  node find.mjs --user <id> --help`;
+
+function parseArgs(argv) {
   let userContext;
   try {
-    userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
+    userContext = getUserContext(argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
   } catch (err) {
     printUserContextErrorAndExit(err);
   }
   const args = userContext.args;
+
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(USAGE);
+    process.exit(0);
+  }
+
+  const unknownFlags = args.filter(a => a.startsWith('-') && !KNOWN_FLAGS.includes(a));
+  if (unknownFlags.length) {
+    console.error(`Error: unrecognized flag(s): ${unknownFlags.join(', ')}. Valid flags: ${KNOWN_FLAGS.join(', ')}`);
+    console.error(USAGE);
+    process.exit(1);
+  }
+
   const json = args.includes('--json');
   const query = args.filter(a => a !== '--json').join(' ').trim();
+  return { json, query, userContext };
+}
+
+function main() {
+  const { json, query, userContext } = parseArgs(process.argv);
   if (!query) {
-    console.log('Usage: node find.mjs --user <id> <report# | tracker# | company/role fragment> [--json]');
+    // The same USAGE the flag paths print. A second hand-written copy is a
+    // second thing to keep in step, which is the class of bug #2773 was about.
+    console.log(USAGE);
     process.exitCode = 1;
     return;
   }

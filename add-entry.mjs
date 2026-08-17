@@ -41,16 +41,37 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { pathToFileURL } from 'url';
+import { normalizeTextKey } from './tracker-parse.mjs';
 import {
   getUserContext,
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
 
+const KNOWN_FLAGS = ['--dry-run', '--stdin', '--json', '--help', '-h'];
+
+const USAGE = `Usage:
+  node add-entry.mjs <payload.json> [--dry-run]
+  node add-entry.mjs --stdin [--dry-run]
+  node add-entry.mjs --help                    # print this usage block and exit (-h is an alias)`;
+
 // Normalize a title/heading for duplicate detection: lowercase, collapse to
-// alphanumerics only. "FraudShield", "Fraud-Shield", "fraud shield" all match.
+// letters and digits. "FraudShield", "Fraud-Shield", "fraud shield" all match.
+//
+// Delegates to the shared normalizeTextKey rather than keeping a private
+// `[^a-z0-9]` strip. That strip deleted every non-Latin character, so a CV
+// written in Japanese, Russian or Hindi keyed EVERY heading and dedup key to
+// '' — which made `add` unusable rather than inaccurate: the non-empty-dedupKey
+// guard below rejected a key the user had actually supplied ("payload.cv
+// requires a non-empty dedupKey"), and two different section headings both
+// keying to '' matched each other, so an entry could land under the wrong
+// heading (#2849).
+//
+// Latin behaviour is unchanged except that an accented word now keys
+// faithfully: "Café" was truncated to "caf" (it never matched "Cafe" either
+// way), and now keys as "café".
 export function normalizeKey(s) {
-  return typeof s === 'string' ? s.toLowerCase().replace(/[^a-z0-9]+/g, '') : '';
+  return typeof s === 'string' ? normalizeTextKey(s) : '';
 }
 
 // Split a markdown doc into the block belonging to a `## <section>` heading:
@@ -193,19 +214,28 @@ async function readStdin() {
 }
 
 async function main() {
+  const rawArgs = process.argv.slice(2);
   let userContext = null;
   try {
-    userContext = getUserContext(process.argv.slice(2), { requireUser: !(process.env.CAREER_OPS_CV && process.env.CAREER_OPS_ARTICLE_DIGEST) });
+    userContext = getUserContext(rawArgs, { requireUser: false });
   } catch (err) {
     printUserContextErrorAndExit(err);
   }
   const args = userContext.args;
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(USAGE);
+    return;
+  }
+  const unknownFlags = args.filter(arg => arg.startsWith('-') && !KNOWN_FLAGS.includes(arg));
+  if (unknownFlags.length > 0) {
+    console.error(`Error: unrecognized flag(s): ${unknownFlags.join(', ')}. Valid flags: ${KNOWN_FLAGS.join(', ')}`);
+    console.error(USAGE);
+    process.exit(1);
+  }
   const dryRun = args.includes('--dry-run');
   const jsonOutput = args.includes('--json');
   const useStdin = args.includes('--stdin');
   const fileArg = args.find(a => !a.startsWith('--'));
-  const cvFile = process.env.CAREER_OPS_CV || userPath(userContext, 'cv.md');
-  const articleDigestFile = process.env.CAREER_OPS_ARTICLE_DIGEST || userPath(userContext, 'article-digest.md');
 
   if (!useStdin && !fileArg) {
     console.error('Usage: node add-entry.mjs --user <username> <payload.json> [--dry-run] [--json]  (or --stdin)');
@@ -221,8 +251,22 @@ async function main() {
     process.exit(1);
   }
 
-  const cvText = existsSync(cvFile) ? readFileSync(cvFile, 'utf-8') : null;
-  const articleText = existsSync(articleDigestFile) ? readFileSync(articleDigestFile, 'utf-8') : null;
+  const needsUser = (payload.cv && !process.env.CAREER_OPS_CV)
+    || (payload.articleDigest && !process.env.CAREER_OPS_ARTICLE_DIGEST);
+  if (needsUser && !userContext.userRoot) {
+    try {
+      userContext = getUserContext(rawArgs);
+    } catch (err) {
+      printUserContextErrorAndExit(err);
+    }
+  }
+  const cvFile = process.env.CAREER_OPS_CV
+    || (userContext.userRoot ? userPath(userContext, 'cv.md') : '');
+  const articleDigestFile = process.env.CAREER_OPS_ARTICLE_DIGEST
+    || (userContext.userRoot ? userPath(userContext, 'article-digest.md') : '');
+
+  const cvText = cvFile && existsSync(cvFile) ? readFileSync(cvFile, 'utf-8') : null;
+  const articleText = articleDigestFile && existsSync(articleDigestFile) ? readFileSync(articleDigestFile, 'utf-8') : null;
 
   let out;
   try {

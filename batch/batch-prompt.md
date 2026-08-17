@@ -470,7 +470,7 @@ Write exactly one TSV line to:
 Format, no header: nine required tab-separated columns, followed by tagged optional fields when required:
 
 ```text
-{{REPORT_NUM}}\t{{DATE}}\t{company}\t{role}\t{status}\t{score}/5\t{pdf_emoji}\t[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)\t{one_sentence_note}
+{{REPORT_NUM}}\t{{DATE}}\t{company}\t{role}\t{status}\t{score}/5\t{pdf_emoji}\t[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)\t{one_sentence_note}\t{url}
 ```
 
 Column order is important:

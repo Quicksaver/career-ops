@@ -30,7 +30,7 @@
  */
 
 
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 
 // ---------------------------------------------------------------------------
 // Selectors — grouped for easy maintenance when LinkedIn changes DOM

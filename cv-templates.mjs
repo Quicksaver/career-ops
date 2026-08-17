@@ -7,7 +7,7 @@
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

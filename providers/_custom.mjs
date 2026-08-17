@@ -21,7 +21,7 @@
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { FETCH_TIMEOUT_MS, fetchJsonWithRetry } from './_custom-fetch.mjs';
 const parseYaml = yaml.load;
 

@@ -13,7 +13,7 @@
 // partial's block names and the builder's lookup — a unit test of either half
 // alone would have passed.
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, cpSync, existsSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { join, basename } from 'path';
 import { tmpdir } from 'os';
 import { pass, fail, run, NODE, ROOT, lastRunFailure } from './helpers.mjs';
 
@@ -63,21 +63,25 @@ const EXPECTED = {
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'cv-2486-'));
+const usersDir = join(dir, 'users');
+const userRoot = join(usersDir, 'test');
+mkdirSync(userRoot, { recursive: true });
 let generatedPackDir = null;
 
 // Build the payload through the given template and return the HTML, or null
 // when the build failed (already reported).
 function build(label, templateArg) {
-  const input = join(dir, 'mixed.json');
-  const output = join(dir, `${label}.html`);
+  const input = join(userRoot, 'mixed.json');
+  const output = join(userRoot, `${label}.html`);
   writeFileSync(input, JSON.stringify(PAYLOAD));
 
-  const args = [join(ROOT, 'build-cv-html.mjs'), '--user', basename(dir), input, output];
+  const args = [join(ROOT, 'build-cv-html.mjs'), '--user', 'test', input, output];
   if (templateArg) args.push(templateArg);
 
-  if (run(NODE, args, { env: { ...process.env, CAREER_OPS_USERS_DIR: dirname(dir) } }) === null) {
+  if (run(NODE, args, { env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir } }) === null) {
     const f = lastRunFailure();
-    fail(`${label}: build-cv-html.mjs crashed (exit ${f?.status}) - ${(f?.stderr || '').trim().split('\n').pop()}`);
+    const diagnostic = (f?.stderr || '').trim().replace(/\s*\n\s*/g, ' | ');
+    fail(`${label}: build-cv-html.mjs crashed (exit ${f?.status}) - ${diagnostic}`);
     return null;
   }
   // A zero exit with no file would otherwise surface as a bare ENOENT.
