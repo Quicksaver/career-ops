@@ -4,10 +4,10 @@ This file documents what this fork changes relative to `upstream/main` so future
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `8e52e868b0f0ed9da4cc2cd8319b5377135221dc`
-- Fork ref: current `main` at `bca81f1871c37ee0115b910be7743542d12e4554`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `193`
-- Diff-size baseline after merge, before this inventory refresh: `318 files changed, 23216 insertions(+), 3998 deletions(-)`
+- Upstream ref: `upstream/main` at `22cbe88e0a39394020a334901c0ce37b0faedfcb`
+- Fork ref: current `main` at `1d506a458242bb763dcd43b410fef50de0d37c17`, before this inventory refresh
+- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `200`
+- Diff-size baseline after merge, before this inventory refresh: `336 files changed, 23897 insertions(+), 4629 deletions(-)`
 
 ## Merge Policy
 
@@ -30,10 +30,18 @@ Then update this file if a customization is added, removed, or made redundant.
 
 ## New Upstream Baseline Adopted In This Merge
 
-This inventory incorporates upstream 1.9 through 1.25 behavior and web v0.3.0 through v0.6.0 at `8e52e868b0f0ed9da4cc2cd8319b5377135221dc` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream 1.9 through 1.26 behavior and post-1.26 fixes at `22cbe88e0a39394020a334901c0ce37b0faedfcb` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
 
 New upstream features or behavior now present:
 
+- v1.26.0 and a total of 156 upstream commits since the prior baseline are adopted. The release adds rejection-latency signals, rejection-aware invite matching, pay-transparency and minimum-wage review prompts, `join.com` and additional zero-auth providers, CV/cover safeguards, scanner path overrides, and broader Unicode-safe matching; post-release work adds intake, relevance ranking, tracker/interview drift checks, failed-scan accounting, requisition-age visibility, and extensive runtime hardening.
+- Local intake and prioritization are adopted: `intake.mjs` extracts source-annotated proposals from user documents, `rank-pipeline.mjs` provides an opt-in LLM relevance annotation, `rejection-latency.mjs` reports a descriptive courtesy signal, and `tracker-sync-check.mjs` detects interview-state drift. Their normal paths are adapted to `users/{USER}/documents/`, `users/{USER}/data/`, and `users/{USER}/config/`; none reads or writes another user's files.
+- Sourcing gains Eightfold and join.com plus stronger Getro, Jobvite, Workday, Workable, Personio, Phenom, CSOD, Oracle, Softgarden, Radancy, The Muse, and RSS handling. Shared entity decoding, retry behavior, scan-history locking, failed-run records, deterministic URL dedup, and Unicode-aware company/role keys are composed with the fork's active-user pipeline/history/cache paths and closed-duplicate reopen semantics.
+- Dashboard and web surfaces now expose requisition age through the upstream `POSTED` date while preserving the fork's existing listing-date and contact-date columns. The web Apply flow can return to its origin and record an application, status writes take the core tracker lock, headless CLI launches close stdin consistently, Codex JSONL/exit status stays authoritative, and the runtime picker includes Grok Build and default-path OpenCode discovery.
+- CLI and dependency hardening is adopted: shared flag validation now rejects misspellings before reads or writes; `js-yaml` imports work across the supported 4.x/5.x range; updater local-edit detection tolerates line-ending-only differences and restores deleted system files; archive capture keeps SSRF/private-network guards; and pipeline/state locks handle contention, jitter, retry, and recovery records without shifting empty TSV fields.
+- Candidate-content fidelity improves across non-Latin headings, role matching, STAR matching, status aliases, CV scalar rendering, skill extraction, JD requirements, allowed-metric synonyms, theme dollar patterns, and Ollama profile context. These changes remain bounded by the fork's source-of-truth contract: claims still come only from the active user's allowed files.
+- Concrete reconciliation in this merge preserved fork-only behavior where upstream intentionally differs: re-evaluation keeps the established tracker/report/PDF identity, `Closed` remains a distinct lifecycle state, dashboard listing date remains available alongside upstream requisition age, web/core roots remain split between system code and active-user data, and every new candidate-data CLI requires or derives an explicit user.
+- Validation after reconciliation covered 4,113 core assertions, all dashboard Go packages, 254 web tests, a production Next.js build, and `verify-pipeline.mjs` against a seeded disposable user. The only core-suite warning was the expected live archive-render skip when no Playwright browser executable was available.
 - v1.25.0 and web v0.6.0 are adopted. The release adds Awards & Honors as an optional CV section, deterministic CV visual-regression fixtures, safer partial fallbacks and dollar-pattern replacement, cover-letter signatures plus unresolved-token rejection, live web state-file reloads, expanded sourcing providers, scanner flag/window controls, tracker data-loss fixes, and dependency/security maintenance.
 - CV and document workflow: Awards & Honors flows through the HTML and LaTeX builders and templates, and the opt-in hiring-manager audit can review a finished CV without becoming a factual source. Conflict resolution keeps the fork's active-user output containment, flat report/tracker/PDF identity, 3-4-project preference, relevance-based experience filtering, and strict user-source boundary; the new audit instructions use only `users/{USER}/...` inputs and outputs.
 - Cover letters now compose the shared writing guidance, accept an optional `letter.signature`, and fail if any template token remains unresolved. The fork retains active-user profile/template selection and report-linked output under `users/{USER}/output/`; no sending or submission authority was added.
