@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
 import { careerOpsSystemRoot } from "@/lib/career-ops";
+import { CANONICAL_STATES } from "@/lib/format";
 
 /**
  * ACL for templates/states.yml — the SINGLE SOURCE OF TRUTH for canonical
@@ -27,18 +28,13 @@ export type CanonicalState = {
   group: string;
 };
 
-const FALLBACK: CanonicalState[] = [
-  { id: "evaluated", label: "Evaluated", aliases: ["evaluada"], description: "Offer evaluated with report, pending decision", group: "evaluated" },
-  { id: "applied", label: "Applied", aliases: ["aplicado", "enviada", "aplicada", "sent"], description: "Application submitted", group: "applied" },
-  { id: "responded", label: "Responded", aliases: ["respondido"], description: "Company has responded (not yet interview)", group: "responded" },
-  { id: "interview", label: "Interview", aliases: ["entrevista"], description: "Active interview process", group: "interview" },
-  { id: "offer", label: "Offer", aliases: ["oferta"], description: "Offer received", group: "offer" },
-  { id: "rejected", label: "Rejected", aliases: ["rechazado", "rechazada"], description: "Rejected by company", group: "rejected" },
-  { id: "closed", label: "Closed", aliases: ["closed", "expired", "cerrada", "cancelada"], description: "Posting closed before application", group: "closed" },
-  { id: "discarded", label: "Discarded", aliases: ["descartado", "descartada"], description: "Discarded by candidate", group: "discarded" },
-  { id: "skip", label: "SKIP", aliases: ["no_aplicar", "no aplicar", "skip", "monitor"], description: "Doesn't fit, don't apply", group: "skip" },
-  { id: "hired", label: "Hired", aliases: ["contratado", "contratada", "hired", "accepted", "accept"], description: "Offer accepted, job landed!", group: "hired" },
-];
+const FALLBACK: CanonicalState[] = CANONICAL_STATES.map((label) => ({
+  id: label.toLowerCase(),
+  label,
+  aliases: [],
+  description: "",
+  group: label.toLowerCase(),
+}));
 
 /**
  * Cached per resolved states.yml path and keyed on the file's mtime+size (one

@@ -5,14 +5,14 @@
 // module.
 //
 // A user who has completed onboarding already has target roles recorded in
-// users/{USER}/config/profile.yml. Without this, a keyword-required provider's portals.yml
+// config/profile.yml. Without this, a keyword-required provider's portals.yml
 // block with no `keywords:` set just throws — forcing the same information to
 // be duplicated into every such provider's config by hand. This lets a
 // provider fall back to the candidate's own profile instead.
 //
 // Scoped deliberately: providers only ever receive their own portals.yml
 // entry (never the scanner's top-level config), so this only covers the
-// profile.yml tier — not a title_filter.positive fallback, which
+// config/profile.yml tier — not a title_filter.positive fallback, which
 // would require changing the Provider.fetch(entry, ctx) contract itself.
 
 import { existsSync, readFileSync } from 'fs';
@@ -22,7 +22,12 @@ import * as yaml from 'js-yaml';
 // cv-templates.mjs, followup-cadence.mjs, plugins/_engine.mjs, and
 // test-all.mjs — without this, a user with that env var set would get
 // silently different fallback behavior here than everywhere else.
-const DEFAULT_PROFILE_PATH = process.env.CAREER_OPS_PROFILE || null;
+// Read at call time, not at import: a module-level constant froze whatever
+// the variable held when the first provider loaded, so a test could not
+// isolate the fallback from a developer's own CAREER_OPS_PROFILE.
+function defaultProfilePath() {
+  return process.env.CAREER_OPS_PROFILE || 'config/profile.yml';
+}
 
 function cleanKeywords(value) {
   const arr = Array.isArray(value) ? value : [];
@@ -50,14 +55,13 @@ export function profileTargetKeywords(profile) {
 }
 
 /**
- * Reads the supplied active-user profile.yml (if present) and returns its target-role
+ * Reads config/profile.yml (if present) and returns its target-role
  * keywords. Fails open (empty array) on a missing/unparseable file — this is
  * a convenience fallback, never a hard requirement, so it must never throw.
  * @param {string} [profilePath]
  * @returns {string[]}
  */
-export function resolveProfileKeywords(profilePath = DEFAULT_PROFILE_PATH) {
-  if (!profilePath) return [];
+export function resolveProfileKeywords(profilePath = defaultProfilePath()) {
   if (!existsSync(profilePath)) return [];
   try {
     const profile = yaml.load(readFileSync(profilePath, 'utf-8')) || {};

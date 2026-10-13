@@ -1,6 +1,6 @@
 # Mode: interview/plan — Planejador de preparação para entrevista
 
-Dada uma descrição da vaga e a data/hora da entrevista, monte um plano de preparação estruturado e dividido em blocos de tempo, ajustado às lacunas específicas do candidato.
+Dada uma descrição da vaga e a users/{USER}/data/hora da entrevista, monte um plano de preparação estruturado e dividido em blocos de tempo, ajustado às lacunas específicas do candidato.
 
 ---
 

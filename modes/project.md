@@ -1,5 +1,7 @@
 # Mode: project — Portfolio Project Evaluation
 
+All candidate files and data paths in these instructions are relative to the explicitly selected `users/{USER}/` directory. Resolve reads and writes there. System modes, templates, and executable scripts remain relative to the code checkout. Pass `--user {USER}` to child commands or inherit the same `CAREER_OPS_USER`.
+
 **URL:** {project-url}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
 

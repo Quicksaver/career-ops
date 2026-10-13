@@ -6,7 +6,7 @@ import nextConfig from "../../next.config.mjs";
 import { careerOpsUserId, careerOpsRoot, careerOpsSystemRoot, careerOpsUsersRoot, careerOpsCoreEnv } from "../../src/lib/user-context.mjs";
 import { validateUserId } from "../../../lib/user-context.mjs";
 
-const KEYS = ["CAREER_OPS_USER", "CAREER_OPS_ROOT", "CAREER_OPS_USERS_DIR"];
+const KEYS = ["CAREER_OPS_USER", "CAREER_OPS_ROOT", "CAREER_OPS_USERS_DIR", "CAREER_OPS_CODE_ROOT", "CAREER_OPS_DATA_DIR"];
 
 function withEnv(values, run) {
   const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));

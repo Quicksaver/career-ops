@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import { readFileSync, existsSync } from 'fs';
+import { extractTrackerReportNumbers, resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { rebuildRow, resolveTrackerPath, writeFileAtomic, CLI_EXIT, makeCliFailWith, acquireTrackerLockForCli } from './tracker-utils.mjs';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 
 /**
  * mark-pdf-ready.mjs — canonical CLI to flip a tracker row's PDF column ❌→✅ (#2172).
@@ -34,16 +39,10 @@
  * report number) · 4 tracker lock timeout (busy — retry later).
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { extractTrackerReportNumbers, resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
-import {
-  rebuildRow, resolveTrackerPath, writeFileAtomic, CLI_EXIT, makeCliFailWith, acquireTrackerLockForCli,
-} from './tracker-utils.mjs';
-import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
+// The USER's data root, not this file's directory — same defect, same fix as
+// set-status.mjs above it in this change.
+const DATA_ROOT = getCareerOpsRoot();
 
 // LOCK_TIMEOUT is not destructured here — that exit path is raised inside
 // acquireTrackerLockForCli() itself (tracker-utils.mjs), via CLI_EXIT.LOCK_TIMEOUT.
@@ -109,9 +108,7 @@ const targetReportNum = parseInt(reportSelector, 10);
 
 // ── tracker access ───────────────────────────────────────────────
 
-const APPS_FILE = process.env.CAREER_OPS_TRACKER
-  ? resolveTrackerPath(CAREER_OPS)
-  : userPath(userContext, 'data/applications.md');
+const APPS_FILE = resolveTrackerPath(DATA_ROOT);
 if (!existsSync(APPS_FILE)) {
   failWith(EXIT_NOT_FOUND, 'no-tracker', `No tracker found at ${APPS_FILE}`);
 }

@@ -1,5 +1,7 @@
 # Mode: patterns -- Rejection Pattern Detector
 
+All candidate files and data paths in these instructions are relative to the explicitly selected `users/{USER}/` directory. Resolve reads and writes there. System modes, templates, and executable scripts remain relative to the code checkout. Pass `--user {USER}` to child commands or inherit the same `CAREER_OPS_USER`.
+
 ## Purpose
 
 Analyze all tracked applications to find patterns in outcomes and surface actionable insights. Identifies what's working (archetypes, remote policies, score ranges) and what's wasting time (geo-restricted roles, stack mismatches, low-score applications).
@@ -11,13 +13,13 @@ When interview sessions are available, it also reads *what the candidate actuall
 - `users/{USER}/data/applications.md` — Application tracker
 - `users/{USER}/reports/` — Individual evaluation reports
 - `users/{USER}/config/profile.yml` — User profile (for recommendation context)
-- `users/{USER}/modes/_profile.md` — User archetypes and framing
-- `users/{USER}/portals.yml` — Portal config (for filter update recommendations)
+- `modes/_profile.md` — User archetypes and framing
+- `portals.yml` — Portal config (for filter update recommendations)
 - `users/{USER}/interview-prep/sessions/*.md` — Interview sessions (optional; drives Step 1b). Drop real-interview transcripts and mock-session files here.
 
 ## Minimum Threshold
 
-Before running analysis, check: does `users/{USER}/data/applications.md` have at least 5 entries with status beyond "Evaluated" (i.e., Applied, Responded, Interview, Offer, Rejected, Closed, Discarded, SKIP)?
+Before running analysis, check: does `users/{USER}/data/applications.md` have at least 5 entries that were actually sent (Applied, Responded, Assessment, Interview, Offer, Hired, Rejected)? SKIP and Discarded rows are not submissions and do not count toward the floor.
 
 If not, tell the user:
 > "Not enough data yet -- {N}/5 applications have progressed beyond evaluation. Keep applying and come back when you have more outcomes to analyze."
@@ -36,20 +38,20 @@ Parse the JSON output. It contains:
 
 | Key | Contents |
 |-----|----------|
-| `metadata` | Total entries, date range, analysis date, counts by outcome |
+| `metadata` | Total entries, date range, analysis date, counts by outcome, and `outcomeRates` — the whole tracker through the same `submitted` / `decided` denominators as every breakdown row |
 | `funnel` | Count per status stage (evaluated, applied, interview, offer, etc.) |
-| `scoreComparison` | Avg/min/max score per outcome group (positive, negative, self_filtered, pending) |
-| `archetypeBreakdown` | Per-archetype: total, positive, negative, self_filtered, conversion rate |
+| `scoreComparison` | Avg/min/max score per outcome group (positive, awaiting, negative, discarded, self_filtered, pending) |
+| `archetypeBreakdown` | Per-archetype: total, submitted, decided, positive, awaiting, negative, discarded, self_filtered, conversionRate, decidedRate |
 | `blockerAnalysis` | Most frequent hard blockers: geo-restriction, stack-mismatch, seniority, onsite; each `percentage` is a share of `blockerBase` |
 | `blockerBase` | Entries carrying a non-empty gaps array — the denominator for `blockerAnalysis[].percentage` |
-| `remotePolicy` | Per-policy bucket: total, positive, negative, conversion rate |
+| `remotePolicy` | Per-policy bucket: same columns as `archetypeBreakdown` |
 | `companySizeBreakdown` | Per-size bucket: startup, scaleup, enterprise |
 | `vendorAnalysis` | ATS channel analysis: per-vendor advance rate + coverage (see below) |
 | `viaChannelAnalysis` | Via channel analysis (#1596): per-agency advance rate + agency-vs-direct aggregate (see below) |
-| `scoreThreshold` | Recommended minimum score + reasoning |
-| `techStackGaps` | Most frequent tech gaps in negative outcomes |
+| `scoreThreshold` | `recommended` (null until `sufficientSample`), `observedMinimum`, `sampleSize`, `sufficientSample`, reasoning |
+| `techStackGaps` | Most frequent tech gaps in negative / discarded outcomes |
 | `discardReasonStats` | User-committed skip/discard reasons; each `percentage` is a share of `discardReasonBase` |
-| `discardReasonBase` | Self-filtered or negative entries — the denominator for `discardReasonStats[].percentage` and its recommendation threshold |
+| `discardReasonBase` | Self-filtered, discarded or negative entries — the denominator for `discardReasonStats[].percentage` and its recommendation threshold |
 | `recommendations` | Top 5 actionable items with reasoning and impact level |
 
 If the script returns `error`, display the error message and exit.
@@ -60,7 +62,7 @@ If the script returns `error`, display the error message and exit.
 each report's `**URL:**` (community ATS with clean fingerprints only: Greenhouse,
 Lever, Ashby, Workday — white-labeled ATS are not URL-detectable and fall into an
 unreported `unknown` bucket). `advanceRate` = share that reached
-`Responded`/`Interview`/`Offer` (a bare `Applied` does **not** count).
+`Responded`/`Assessment`/`Interview`/`Offer` (a bare `Applied` does **not** count).
 
 Motivation: *Algorithmic Monocultures in Hiring* (Bommasani et al., FAccT 2026,
 [arXiv:2605.27371](https://arxiv.org/abs/2605.27371)) — rejections through a shared
@@ -101,7 +103,7 @@ via X — it converts"*, a weak one is an observation, not an accusation.
 
 ### Salary lens (optional)
 
-If compensation observations exist (report `advertised_comp` keys or `data/salary-observations.tsv` lines), run `node salary-gap.mjs --summary` as an additional lens: advertised→actual haircut per (company, role) and per currency, plus desired-attainment. Zero tokens — never recompute these numbers manually. Respect its data-quality section the same way as `sufficientSample`: low sample sizes are observations, not recommendations.
+If compensation observations exist (report `advertised_comp` keys or `users/{USER}/data/salary-observations.tsv` lines), run `node salary-gap.mjs --summary` as an additional lens: advertised→actual haircut per (company, role) and per currency, plus desired-attainment. Zero tokens — never recompute these numbers manually. Respect its data-quality section the same way as `sufficientSample`: low sample sizes are observations, not recommendations.
 
 ### Company History lens (optional)
 
@@ -115,7 +117,7 @@ Then present the cards, sorted silent-first (the script already orders them this
 
 ### Funnel Calibration lens (optional)
 
-If the tracker has Applied-or-beyond rows, run `node funnel-velocity.mjs --summary` as an additional lens: the candidate's funnel rates vs candidate-side market benchmark ranges, in-flight applications past the typical first-response window, and (once `data/status-log.tsv` has accrued transitions) median days per stage hop. Zero tokens — never recompute these numbers manually. Presentation rules (these are hard MUSTs, not style suggestions):
+If the tracker has Applied-or-beyond rows, run `node funnel-velocity.mjs --summary` as an additional lens: the candidate's funnel rates vs candidate-side market benchmark ranges, in-flight applications past the typical first-response window, and (once `users/{USER}/data/status-log.tsv` has accrued transitions) median days per stage hop. Zero tokens — never recompute these numbers manually. Presentation rules (these are hard MUSTs, not style suggestions):
 
 - **Above-range rates**: encouragement is wanted — this lens exists to counter silence-anxiety — but MUST keep the script's selection-bias note (targeted applications are expected to beat mass-platform averages). Confirmed filter quality, not market ease.
 - **Below-range rates**: calibration plus exactly one concrete action (follow-up compliance via followup mode, or score-threshold review via patterns Step 2). Never verdicts about the candidate.
@@ -127,18 +129,18 @@ If the tracker has Applied-or-beyond rows, run `node funnel-velocity.mjs --summa
 
 Outcome data (Step 1) tells you *whether* you're winning. Interview sessions tell you *what role you're actually selling* in the room — a higher-resolution, lower-noise signal of role-fit than win/loss, which is confounded by comp, timing, headcount, and a dozen reasons unrelated to fit.
 
-**Run this step only if session data exists.** Check: `interview-prep/sessions/*.md` (excluding `README.md` and `.gitkeep`).
+**Run this step only if session data exists.** Check: `users/{USER}/interview-prep/sessions/*.md` (excluding `README.md` and `.gitkeep`).
 
 If no sessions are present, **skip this step silently** and proceed with outcome-only analysis. This step is purely additive — the mode works fully without it, and gains resolution once sessions accumulate.
 
 If sessions exist, for each one:
 1. Separate the candidate's answers from the interviewer's questions. If speaker labels are missing, infer them (turns tagged `**Interviewer:**` / `**Candidate:**` per the session format).
-2. Determine the competency / role-signal each substantive answer demonstrates (e.g. *instructional-design*, *systems-architecture*, *data-analysis*, *stakeholder-management*, *people-leadership*). **Tags first, inference as fallback:** if the answer already carries an explicit competency tag — `<!-- competency: ... -->` per the convention in `interview-prep/sessions/README.md`, whether written by hand or emitted by a debrief tool (e.g. `interview/debrief`) — use it directly. Only infer the competency yourself when no tag is present.
+2. Determine the competency / role-signal each substantive answer demonstrates (e.g. *instructional-design*, *systems-architecture*, *data-analysis*, *stakeholder-management*, *people-leadership*). **Tags first, inference as fallback:** if the answer already carries an explicit competency tag — `<!-- competency: ... -->` per the convention in `users/{USER}/interview-prep/sessions/README.md`, whether written by hand or emitted by a debrief tool (e.g. `interview/debrief`) — use it directly. Only infer the competency yourself when no tag is present.
 3. Mark whether the answer is **fluent and specific** (concrete metrics, named tools, real decisions) or **flat and generic** (hedged, vague, textbook).
 
 Then aggregate across all sessions:
 - **Where do the fluent/specific answers cluster?** That competency cluster is the role-type the candidate is *actually* strongest at — regardless of the title on their résumé.
-- Compare that cluster against (a) the archetypes in `modes/_profile.md` and (b) the distribution of roles actually applied to in `data/applications.md`.
+- Compare that cluster against (a) the archetypes in `modes/_profile.md` and (b) the distribution of roles actually applied to in `users/{USER}/data/applications.md`.
 - **Surface the misfit:** if the strongest cluster (X) is under-represented in the roles applied to (Y), that is a targeting-correction signal:
   > "Your answers consistently light up around **X**, but you're mostly applying to **Y**. Consider adding archetype X and reweighting `portals.yml` `title_filter.positive` toward it."
 
@@ -157,7 +159,7 @@ Write the report to `users/{USER}/reports/pattern-analysis-{YYYY-MM-DD}.md`.
 
 **Applications analyzed:** {total}
 **Date range:** {from} to {to}
-**Outcomes:** {positive} positive, {negative} negative, {self_filtered} self-filtered, {pending} pending
+**Outcomes:** {positive} positive, {awaiting} awaiting a reply, {negative} negative, {self_filtered} self-filtered, {pending} not sent
 
 ---
 
@@ -177,13 +179,15 @@ Show each status with count and percentage of total. Use a simple table:
 |---------|-----------|-----|-----|-------|
 | Positive | X.X/5 | X.X | X.X | X |
 | Negative | ... | | | |
+| Awaiting | ... | | | |
 | Self-filtered | ... | | | |
 | Pending | ... | | | |
 
 ## Archetype Performance
 
-Table with each archetype, total applications, positive outcomes, conversion rate.
-Highlight the best-performing archetype and the worst.
+Table with each archetype: `submitted`, `decided`, positive, `decidedRate` (lead with it) and `conversionRate`. Highlight the best-performing archetype and the worst.
+
+`conversionRate` = positives over everything sent, so a mostly-unanswered segment reads low by construction. `decidedRate` = positives over the applications with a recorded outcome, and is `null` while nothing is decided — report that as "no data yet", never 0%. Never divide by `metadata.total`: it counts evaluated rows that were never sent; the whole-tracker rates live in `metadata.outcomeRates`.
 
 ## Top Blockers
 
@@ -195,13 +199,15 @@ gap-bearing entries, not the share of all applications.
 
 Table showing conversion rate by remote policy bucket (global, regional, geo-restricted, hybrid/onsite).
 
+**Never call a segment bad on `conversionRate` alone** — an all-awaiting bucket shows a low rate and a `null` `decidedRate`, which is silence, not rejection. Call `0%` negative only when `positive` is 0 and `decided` >= 2, and name the decided count.
+
 ## Tech Stack Gaps
 
-List of most common missing skills in negative/self-filtered outcomes with frequency.
+List of most common missing skills in negative / discarded / self-filtered outcomes with frequency.
 
 ## Recommended Score Threshold
 
-State the data-driven minimum score and reasoning.
+State the data-driven minimum score and reasoning. When `sufficientSample` is false, `recommended` is `null`: report `observedMinimum` as an observation over `sampleSize` outcome(s) and do not offer to persist it.
 
 ## Targeting Signal (interview sessions)
 
@@ -220,7 +226,7 @@ Number the top recommendations (from the script output). For each:
 ## Step 3 — Present Summary
 
 Show the user a condensed version with:
-1. One-line stat summary (X applications, Y% applied, Z% positive outcome)
+1. One-line stat summary from `metadata.outcomeRates` (X sent, Y decided, Z% of decided advanced) — never a share of `metadata.total`
 2. Top 3 findings (most impactful patterns)
 3. Link to full report
 
@@ -228,7 +234,7 @@ Example:
 > **Pattern Analysis Complete** (24 applications, Apr 7-8)
 >
 > Key findings:
-> - Geo-restricted roles are 0% conversion (7 of 24) -- stop evaluating US/Canada-only postings
+> - Geo-restricted roles: 0 of 7 **decided** applications advanced -- stop evaluating US/Canada-only postings
 > - Regional/global remote roles convert at 57-67% -- these are your sweet spot
 > - No positive outcomes below 4.2/5 -- consider this your score floor
 >
@@ -239,17 +245,17 @@ Example:
 Ask the user if they want to act on any recommendations:
 
 > "Want me to apply any of these recommendations? I can:
-> - Update `users/{USER}/portals.yml` to filter out geo-restricted roles
-> - Set a score threshold in `_profile.md` for PDF generation
+> - Update `portals.yml` to filter out geo-restricted roles
+> - Set a score threshold in `_profile.md` for PDF generation (only when `scoreThreshold.sufficientSample` is true)
 > - Adjust archetype targeting based on what's converting
 > - Realign targeting from the session signal — add the under-targeted archetype X to `modes/_profile.md` and reweight `portals.yml` `title_filter.positive` (if Step 1b ran)
 >
 > Just say which ones, or 'all' to apply everything."
 
 If the user agrees:
-- For portal filter changes: edit `users/{USER}/portals.yml`
-- For profile/archetype changes: edit `users/{USER}/modes/_profile.md` (NEVER `_shared.md`)
-- For score threshold: add to `users/{USER}/config/profile.yml` under a `patterns` key
+- For portal filter changes: edit `portals.yml`
+- For profile/archetype changes: edit `modes/_profile.md` (NEVER `_shared.md`)
+- For score threshold: add to `config/profile.yml` under a `patterns` key
 
 ## Outcome Classification
 
@@ -257,7 +263,9 @@ For reference, outcomes are classified as:
 
 | Status | Outcome |
 |--------|---------|
-| Interview, Offer, Responded, Applied | **Positive** (invested effort or got traction) |
-| Rejected, Closed, Discarded | **Negative** (company said no, offer closed, or candidate discarded) |
+| Interview, Offer, Responded, Hired | **Positive** (the employer moved it forward) |
+| Applied | **Awaiting** (sent, no answer yet — counts in the conversion denominator, never as a success) |
+| Rejected | **Negative** (the employer said no) |
+| Discarded | **Discarded** (you withdrew, or the posting closed — not an employer decision, not a proven submission; counts in neither `submitted` nor `decided`) |
 | SKIP, NO APLICAR | **Self-filtered** (user decided not to apply) |
-| Evaluated | **Pending** (no action taken yet) |
+| Evaluated | **Pending** (never sent) |

@@ -12,7 +12,7 @@ Interaktiv mode til det øjeblik, hvor kandidaten udfylder en ansøgningsformula
 ```
 1. DETEKTÉR     -> Læs den aktive Chrome-fane (skærmbillede/URL/titel)
 2. IDENTIFICÉR  -> Udtræk virksomhed + rolle fra siden
-3. SØG          -> Match mod eksisterende reports i reports/
+3. SØG          -> Match mod eksisterende reports i users/{USER}/reports/
 4. INDLÆS       -> Læs den fulde report + Blok G (hvis den findes)
 5. SAMMENLIGN   -> Svarer rollen på skærmen til den evaluerede? Hvis ændret -> advar
 6. ANALYSÉR     -> Identificér ALLE synlige spørgsmål i formularen
@@ -32,7 +32,7 @@ Interaktiv mode til det øjeblik, hvor kandidaten udfylder en ansøgningsformula
 ## Trin 2 -- Identificér og indlæs konteksten
 
 1. Udtræk virksomhedens navn og stillingstitlen fra siden
-2. Søg i `reports/` efter virksomhedsnavn (Grep case-insensitive)
+2. Søg i `users/{USER}/reports/` efter virksomhedsnavn (Grep case-insensitive)
 3. Hvis match -> indlæs den fulde report
 4. Hvis Blok G findes -> indlæs de tidligere svar-udkast som grundlag
 5. Hvis INTET match -> advar kandidaten og foreslå en hurtig auto-pipeline
@@ -43,7 +43,9 @@ Hvis rollen på skærmen afviger fra den evaluerede:
 - **Advar kandidaten**: "Rollen har ændret sig fra [X] til [Y]. Ønsker du, at jeg genevaluerer, eller at jeg tilpasser svarene til den nye titel?"
 - **Hvis tilpas**: Justér svarene til den nye rolle uden at genevaluere
 - **Hvis genevaluér**: Kør den fulde A-F-evaluering, opdatér report, regenerér Blok G
-- **Opdatér trackeren**: Ret rollens titel i applications.md om nødvendigt
+- **Opdatér trackeren**: aldrig ved at redigere `users/{USER}/data/applications.md`.
+  - **Efter en genevaluering**: skriv en TSV med rollens nye titel (regel 9 i `_shared.md`) og flet den med `node merge-tracker.mjs`. Report'en opdateres på stedet og beholder sit nummer, så fletningen matcher TSV'en med den eksisterende række via det nummer: titlen erstattes, og status bevares.
+  - **Efter en tilpasning**: lad titlen stå, for den navngiver den rolle, report'en evaluerede. Notér i stedet omdøbningen med `node set-status.mjs --report <report#> <nuværende status> --note "Opslaget omdøbt ved ansøgningen, rækken beholder den evaluerede titel"`. Rækkens nuværende status forbliver uændret, og noten tilføjes. Brug en fast tekst som denne og udelad `[Y]`: den nye titel er tekst fra siden, og tekst fra siden må aldrig stå på en kommandolinje.
 
 ## Trin 4 -- Analysér formularens spørgsmål
 
@@ -56,7 +58,7 @@ Identificér ALLE synlige spørgsmål:
 
 Klassificér hvert spørgsmål:
 - **Allerede besvaret i Blok G** -> genbrug det eksisterende svar
-- **Nyt spørgsmål** -> generér svaret fra report + `cv.md`
+- **Nyt spørgsmål** -> generér svaret fra report + `users/{USER}/cv.md`
 
 ## Trin 5 -- Generér svarene
 

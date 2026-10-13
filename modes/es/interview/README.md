@@ -22,12 +22,12 @@ Estas habilidades asumen que existen los siguientes archivos (valores predetermi
 
 | Archivo | Propósito |
 |---|---|
-| `cv.md` | CV de la persona candidata — fuente de verdad para experiencia y puntos de prueba |
-| `article-digest.md` | Puntos de prueba resumidos del portafolio (opcional) |
-| `config/profile.yml` | Perfil de la persona candidata — roles objetivo, compensación, narrativa |
-| `modes/_profile.md` | Arquetipos de la persona candidata, narrativa y factores excluyentes |
-| `interview-prep/story-bank.md` | Historias STAR+R acumuladas |
-| `interview-prep/question-bank.md` | Banco de preguntas con seguimiento de brechas (se crea en el primer uso) |
-| `interview-prep/interview-prep-guide.md` | Principios generales para la entrevista (opcional) |
-| `interview-prep/{company}-{role}.md` | Archivo de preparación específico para el rol |
-| `interview-prep/retracted-claims.md` | Afirmaciones que la persona candidata ha retirado por considerarlas indefendibles — filtro estricto en la práctica y el informe (formato: `**"[afirmación]"** ([contexto]). Razón: [motivo de una línea + encuadre correcto si corresponde].`) |
+| `users/{USER}/cv.md` | CV de la persona candidata — fuente de verdad para experiencia y puntos de prueba |
+| `users/{USER}/article-digest.md` | Puntos de prueba resumidos del portafolio (opcional) |
+| `users/{USER}/config/profile.yml` | Perfil de la persona candidata — roles objetivo, compensación, narrativa |
+| `users/{USER}/modes/_profile.md` | Arquetipos de la persona candidata, narrativa y factores excluyentes |
+| `users/{USER}/interview-prep/story-bank.md` | Historias STAR+R acumuladas |
+| `users/{USER}/interview-prep/question-bank.md` | Banco de preguntas con seguimiento de brechas (se crea en el primer uso) |
+| `users/{USER}/interview-prep/interview-prep-guide.md` | Principios generales para la entrevista (opcional) |
+| `users/{USER}/interview-prep/{company}-{role}.md` | Archivo de preparación específico para el rol |
+| `users/{USER}/interview-prep/retracted-claims.md` | Afirmaciones que la persona candidata ha retirado por considerarlas indefendibles — filtro estricto en la práctica y el informe (formato: `**"[afirmación]"** ([contexto]). Razón: [motivo de una línea + encuadre correcto si corresponde].`) |

@@ -11,26 +11,40 @@
  * content references Adobe Acrobat 9, a 2008-era version") — an empty
  * stale_note means no staleness was observed, not that the bank is current.
  *
- * Log lives in users/{USER}/data/assessments.tsv (user layer, append-only, created on first
+ * Log lives in data/assessments.tsv (user layer, append-only, created on first
  * `add`). Threshold/score are percentages; both optional — vendors often hide
  * the threshold, and some platforms never reveal the score.
  *
  * Future work (out of scope here): fold per-vendor staleness rates into
  * analyze-patterns.mjs the way ATS channel yield is analyzed today.
  *
- * Run: node assessment-log.mjs --user <id> add --company <name> [--report <num>] \
+ * Run: node assessment-log.mjs add --company <name> [--report <num>] \
  *        --platform <vendor> --subject <topic> [--threshold <pct>] \
  *        [--score <pct>] [--stale "<observed staleness note>"]
- *      node assessment-log.mjs --user <id>             (human-readable)
- *      node assessment-log.mjs --user <id> --json      (machine-readable)
- *      node assessment-log.mjs --user <id> --summary   (deprecated human-readable alias)
+ *      node assessment-log.mjs             (JSON)
+ *      node assessment-log.mjs --summary   (human-readable)
  *      node assessment-log.mjs --self-test
  */
 
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
-import { pathToFileURL } from 'url';
-import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { join, dirname } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { getCareerOpsRoot } from './path-resolver.mjs';
+import { localToday } from './lib/local-today.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
+
+const CAREER_OPS = getCareerOpsRoot();
+const LOG_PATH = join(CAREER_OPS, 'data/assessments.tsv');
+
+const KNOWN_FLAGS = ['--self-test', '--summary', '--help', '-h'];
+const ADD_VALUE_FLAGS = ['--company', '--report', '--platform', '--subject', '--threshold', '--score', '--stale'];
+
+const USAGE = `Usage:
+  node assessment-log.mjs add --company <name> [--report <num>] --platform <vendor> --subject <topic> [--threshold <pct>] [--score <pct>] [--stale "<note>"]
+  node assessment-log.mjs                         # print the assessment log as JSON
+  node assessment-log.mjs --summary               # print a human-readable summary
+  node assessment-log.mjs --self-test             # run the in-memory test suite
+  node assessment-log.mjs --help                  # print this usage block and exit (-h is an alias)`;
 
 const HEADER_COMMENT = [
   '# assessments.tsv — append-only skills-assessment log (user layer). Never rewrite rows.',
@@ -130,34 +144,35 @@ export function buildRow(fields, today) {
   ].join('\t');
 }
 
-function addEntry(args, logPath, jsonOutput = false) {
+function addEntry(args) {
   const fields = {};
   for (let i = 0; i < args.length; i++) {
     const m = args[i].match(/^--(company|report|platform|subject|threshold|score|stale)$/);
     if (m) { fields[m[1]] = args[i + 1] ?? ''; i++; }
   }
-  const today = new Date().toISOString().slice(0, 10);
+  // LOCAL day: this is the date written into the appended assessments.tsv row,
+  // and the UTC day stamped a user record with a day that had not happened yet
+  // for anyone west of Greenwich (#3070).
+  const today = localToday();
   let row;
   try {
     row = buildRow(fields, today);
   } catch (e) {
     console.error(`assessment-log: ${e.message}`);
-    console.error('Usage: node assessment-log.mjs --user <id> add --company <name> [--report <num>] --platform <vendor> --subject <topic> [--threshold <pct>] [--score <pct>] [--stale "<note>"]');
+    console.error(USAGE);
     process.exit(1);
   }
   // Append-only: existing rows are never rewritten. Create with header comment on first use.
-  mkdirSync(dirname(logPath), { recursive: true });
+  mkdirSync(dirname(LOG_PATH), { recursive: true });
   let prefix;
-  if (existsSync(logPath)) {
-    const existing = readFileSync(logPath, 'utf-8');
+  if (existsSync(LOG_PATH)) {
+    const existing = readFileSync(LOG_PATH, 'utf-8');
     prefix = existing.endsWith('\n') || existing === '' ? '' : '\n';
   } else {
     prefix = HEADER_COMMENT + '\n';
   }
-  appendFileSync(logPath, prefix + row + '\n');
-  const result = { added: true, row: row.split('\t') };
-  if (jsonOutput) console.log(JSON.stringify(result, null, 2));
-  else console.log(`assessment-log: added ${fields.company} — ${fields.platform} / ${fields.subject}`);
+  appendFileSync(LOG_PATH, prefix + row + '\n');
+  console.log(JSON.stringify({ added: true, row: row.split('\t') }, null, 2));
 }
 
 // --- Self-test (in-memory fixtures, no file writes) ---
@@ -235,13 +250,13 @@ function selfTest() {
 }
 
 // --- Output ---
-function printSummary(result, userId) {
+function printSummary(result) {
   const { aggregates, quality, assessments } = result;
   console.log('\nSKILLS ASSESSMENTS — per-application events\n');
 
   if (!assessments.length) {
     console.log('  No assessments logged yet.');
-    console.log(`  Log one: node assessment-log.mjs --user ${userId} add --company <name> --platform <vendor> --subject <topic>`);
+    console.log('  Log one: node assessment-log.mjs add --company <name> --platform <vendor> --subject <topic>');
   } else {
     console.log('  Events:');
     for (const a of assessments) {
@@ -273,27 +288,48 @@ function printSummary(result, userId) {
 }
 
 function main() {
-  const rawArgs = process.argv.slice(2);
-  if (rawArgs.includes('--self-test')) { selfTest(); return; }
+  const args = process.argv.slice(2);
 
-  let userContext;
-  try {
-    userContext = getUserContext(rawArgs);
-  } catch (err) {
-    printUserContextErrorAndExit(err);
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(USAGE);
+    process.exit(0);
   }
-  const args = userContext.args;
-  const logPath = userPath(userContext, 'data/assessments.tsv');
-  if (args[0] === 'add') { addEntry(args.slice(1), logPath, args.includes('--json')); return; }
 
-  const content = existsSync(logPath) ? readFileSync(logPath, 'utf-8') : '';
+  // Values passed to the add subcommand remain positional data even when they
+  // start with a dash (for example an explicitly unknown "-" percentage).
+  // Only a leading-dash argument outside those value slots is a CLI flag.
+  const consumedValueIndices = new Set();
+  if (args[0] === 'add') {
+    args.forEach((arg, index) => {
+      if (ADD_VALUE_FLAGS.includes(arg) && args[index + 1] !== undefined && !args[index + 1].startsWith('--')) {
+        consumedValueIndices.add(index + 1);
+      }
+    });
+  }
+
+  const validFlags = args[0] === 'add' ? [...KNOWN_FLAGS, ...ADD_VALUE_FLAGS] : KNOWN_FLAGS;
+  const unknownFlags = args.filter((arg, index) =>
+    arg.startsWith('-') && !consumedValueIndices.has(index) && !validFlags.includes(arg));
+  if (unknownFlags.length) {
+    console.error(`assessment-log: unrecognized flag(s): ${unknownFlags.join(', ')}. Valid flags: ${validFlags.join(', ')}`);
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  if (args.includes('--self-test')) { selfTest(); return; }
+  if (args[0] === 'add') { addEntry(args.slice(1)); return; }
+
+  const content = existsSync(LOG_PATH) ? readFileSync(LOG_PATH, 'utf-8') : '';
   const { rows, malformed } = parseAssessments(content);
   const result = summarize(rows, malformed);
 
-  if (args.includes('--json')) console.log(JSON.stringify(result, null, 2));
-  else printSummary(result, userContext.userId);
+  if (args.includes('--summary')) {
+    printSummary(result);
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   main();
 }

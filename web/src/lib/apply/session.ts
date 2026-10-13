@@ -2,7 +2,11 @@ import { chromium, type Browser, type BrowserContext, type Page, type Frame, typ
 import { extractForm, type ApplyField, type ExtractedForm } from "./extract";
 import { parseGreenhouse, fetchGreenhouseSchema } from "./greenhouse";
 import { statusBlock, dismissConsent, tryApplyTrigger, dropNewTabs, classifyEmpty, captchaWarning, multiStepInfo, verifyFill, type ApplyIssue } from "./diagnose";
-import { agentInterpretForm } from "./agent-interpret";
+import { interpretFormWithAgent } from "./agent-interpret";
+import { resolveCli } from "../clis";
+import { fencingReport } from "../cli-fencing.mjs";
+import { CAPS } from "../worker-capabilities.mjs";
+import { assertSafeApplyUrl, installApplyEgressGuard, isUnsafeApplyUrlError, isBlockedNavigation, UnsafeApplyUrlError } from "./url-guard.mjs";
 
 /** The frame with the most interactive controls — where the agentic interpreter
  *  should look when deterministic extraction found nothing usable. */
@@ -28,15 +32,20 @@ function cssAttr(v: string): string {
 
 /** Navigate resiliently: a transient nav error / slow ATS shouldn't fail the
  *  whole apply. Up to 3 attempts with backoff; returns the navigation Response
- *  (status/headers feed the cheap status-block check). */
+ *  (status/headers feed the cheap status-block check). A blocked/private hop
+ *  is not retried — it is the same SSRF miss as a first-hop-only check. */
 async function gotoResilient(page: Page, url: string): Promise<Response | null> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await assertSafeApplyUrl(page.url());
       await page.waitForLoadState("load", { timeout: 8_000 }).catch(() => {});
+      await assertSafeApplyUrl(page.url());
       return resp;
     } catch (e) {
+      if (isUnsafeApplyUrlError(e)) throw e;
+      if (isBlockedNavigation(e)) throw new UnsafeApplyUrlError();
       lastErr = e;
       await page.waitForTimeout(800 * (attempt + 1));
     }
@@ -174,10 +183,14 @@ async function nudgeScroll(page: Page): Promise<void> {
 }
 
 export async function openSession(url: string, cliId?: string, forceAgent?: boolean, noApplyBtn?: boolean): Promise<{ id: string; title: string; fields: ApplyField[]; shots: string[]; issues: ApplyIssue[]; needsDrive?: boolean }> {
+  // Refuse before launching any navigation, so an obviously-internal target
+  // never reaches Playwright at all.
+  await assertSafeApplyUrl(url);
   prune();
   if (globalThis.__coIdleTimer) clearTimeout(globalThis.__coIdleTimer); // someone's active
   const browser = await headedBrowser();
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await installApplyEgressGuard(context);
   context.setDefaultTimeout(8000); // no single action hangs the whole open/fill
   const page = await context.newPage();
   const abort = async (msg: string): Promise<never> => {
@@ -198,7 +211,14 @@ export async function openSession(url: string, cliId?: string, forceAgent?: bool
     }
   };
   // 1) Navigate (resilient) → cheapest hard-block check on the Response status.
-  const resp = await gotoResilient(page, url);
+  let resp: Response | null;
+  try {
+    resp = await gotoResilient(page, url);
+  } catch (e) {
+    await context.close().catch(() => {});
+    if (SESSIONS.size === 0) scheduleIdleClose();
+    throw e;
+  }
   await snap(); // first paint
   const sBlock = statusBlock(resp?.status(), resp ? resp.headers() : {});
   if (sBlock) return abort(sBlock.message);
@@ -236,11 +256,19 @@ export async function openSession(url: string, cliId?: string, forceAgent?: bool
   await snap();
 
   let aiInterpreted = false;
+  // Whether the user's CLI was actually LAUNCHED over the form, as reported by
+  // the interpreter. Kept apart from aiInterpreted: a launched agent can come
+  // back empty, and the fencing notice below is about the launch, not about the
+  // result. A missing CLI, an empty form or a fencing refusal (the throw the
+  // catch below absorbs) never launched anything, so no notice is owed.
+  let agentSpawned = false;
   // Opt-in: ALWAYS interpret with AI (max robustness, ignores the deterministic
   // result) — for users who'd rather pay tokens than risk a heuristic miss.
   if (forceAgent && cliId) {
     const aiFrame = await richestControlFrame(page);
-    const aiFields = await agentInterpretForm(aiFrame, cliId, form.title || (await page.title().catch(() => ""))).catch(() => [] as ApplyField[]);
+    const ai = await interpretFormWithAgent(aiFrame, cliId, form.title || (await page.title().catch(() => ""))).catch(() => ({ fields: [] as ApplyField[], spawned: false }));
+    agentSpawned = ai.spawned;
+    const aiFields = ai.fields;
     if (aiFields.length) {
       frame = aiFrame;
       form = { ...form, fields: aiFields };
@@ -275,6 +303,16 @@ export async function openSession(url: string, cliId?: string, forceAgent?: bool
   if (cap) issues.push(cap);
   if (multi) issues.push(multi);
   if (aiInterpreted) issues.push({ level: "info", code: "ai-interpreted", message: "This form had an uncommon layout, so AI read its fields live — give them an extra check before submitting." });
+  // agentInterpretForm just ran the user's chosen CLI over this form. If that
+  // runtime has no verified fencing mechanism it read the page with its default
+  // access, and the user should know — agent-interpret.ts has no stream of its
+  // own, so the notice belongs here, where its callers already surface soft
+  // issues (#2507). warn, not info: this is "proceeded, but look". Keyed on the
+  // LAUNCH the interpreter reports, not on aiInterpreted: an empty
+  // interpretation still ran the agent, and an interpreter that never launched
+  // it (no CLI, no controls, refused argv) owes no warning.
+  const interpretFencing = agentSpawned && cliId ? fencingReport({ cliId, cliName: resolveCli(cliId)?.spec.name ?? cliId, capabilities: CAPS.localReadOnly }) : null;
+  if (interpretFencing?.notice) issues.push({ level: "warn", code: "cli-unfenced", message: interpretFencing.notice });
   if (unlabeled > 0) issues.push({ level: "warn", code: "unlabeled-fields", message: `${unlabeled} field${unlabeled > 1 ? "s" : ""} couldn't be labelled cleanly — double-check ${unlabeled > 1 ? "them" : "it"} before submitting.` });
 
   const id = `apply-${crypto.randomUUID()}`;
@@ -289,15 +327,22 @@ export function getSession(id: string): Session | undefined {
 /** Open a bare headed page on a URL (for the agentic drive loop / validation),
  *  without the full extract pipeline. Caller must close the context. */
 export async function newDrivePage(url: string): Promise<{ page: Page; context: BrowserContext }> {
+  await assertSafeApplyUrl(url);
   if (globalThis.__coIdleTimer) clearTimeout(globalThis.__coIdleTimer);
   const browser = await headedBrowser();
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await installApplyEgressGuard(context);
   context.setDefaultTimeout(8000);
   const page = await context.newPage();
-  await gotoResilient(page, url);
-  await dismissConsent(page).catch(() => {});
-  await page.waitForTimeout(1000);
-  return { page, context };
+  try {
+    await gotoResilient(page, url);
+    await dismissConsent(page).catch(() => {});
+    await page.waitForTimeout(1000);
+    return { page, context };
+  } catch (e) {
+    await context.close().catch(() => {});
+    throw e;
+  }
 }
 
 /** Extract+enrich the current page (used after the drive loop reaches a form). */
@@ -320,9 +365,12 @@ export async function finalizeDrivenSession(id: string, cliId?: string): Promise
   let { frame, form } = await pickFormFrame(s.page);
   await enrichFromAts(s.url, form.fields);
   let aiInterpreted = false;
+  let agentSpawned = false; // see openSession: launch, not result
   if (!looksLikeApplicationForm(form) && cliId) {
     const aiFrame = await richestControlFrame(s.page);
-    const aiFields = await agentInterpretForm(aiFrame, cliId, form.title || s.title).catch(() => [] as ApplyField[]);
+    const ai = await interpretFormWithAgent(aiFrame, cliId, form.title || s.title).catch(() => ({ fields: [] as ApplyField[], spawned: false }));
+    agentSpawned = ai.spawned;
+    const aiFields = ai.fields;
     if (aiFields.length && looksLikeApplicationForm({ title: form.title, url: form.url, fields: aiFields })) {
       frame = aiFrame;
       form = { ...form, fields: aiFields };
@@ -335,6 +383,16 @@ export async function finalizeDrivenSession(id: string, cliId?: string): Promise
   if (form.title) s.title = form.title;
   const issues: ApplyIssue[] = [{ level: "info", code: "ai-navigated", message: "AI navigated to reach this application form on your machine — review the fields before submitting." }];
   if (aiInterpreted) issues.push({ level: "info", code: "ai-interpreted", message: "AI also read the fields live (uncommon layout) — give them an extra check." });
+  // agentInterpretForm just ran the user's chosen CLI over this form. If that
+  // runtime has no verified fencing mechanism it read the page with its default
+  // access, and the user should know — agent-interpret.ts has no stream of its
+  // own, so the notice belongs here, where its callers already surface soft
+  // issues (#2507). warn, not info: this is "proceeded, but look". Keyed on the
+  // LAUNCH the interpreter reports, not on aiInterpreted: an empty
+  // interpretation still ran the agent, and an interpreter that never launched
+  // it (no CLI, no controls, refused argv) owes no warning.
+  const interpretFencing = agentSpawned && cliId ? fencingReport({ cliId, cliName: resolveCli(cliId)?.spec.name ?? cliId, capabilities: CAPS.localReadOnly }) : null;
+  if (interpretFencing?.notice) issues.push({ level: "warn", code: "cli-unfenced", message: interpretFencing.notice });
   const cap = await captchaWarning(s.page);
   if (cap) issues.push(cap);
   return { title: s.title, fields: s.fields, issues };

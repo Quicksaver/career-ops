@@ -1,10 +1,10 @@
 # Режим: pipeline — Очередь URL (Second Brain)
 
-Обрабатывает URL вакансий из `data/pipeline.md`. Пользователь добавляет URL когда угодно, затем запускает `/career-ops pipeline` для обработки.
+Обрабатывает URL вакансий из `users/{USER}/data/pipeline.md`. Пользователь добавляет URL когда угодно, затем запускает `/career-ops pipeline` для обработки.
 
 ## Workflow
 
-1. **Прочитать** `data/pipeline.md` → найти `- [ ]` в секции "Ожидающие" (или "Pendientes" / "Pending" — pipeline.md может содержать заголовки на любом языке)
+1. **Прочитать** `users/{USER}/data/pipeline.md` → найти `- [ ]` в секции "Ожидающие" (или "Pendientes" / "Pending" — pipeline.md может содержать заголовки на любом языке)
 2. **Для каждого URL**:
    a. Зарезервировать следующий `REPORT_NUM` атомарно, запустив `node reserve-report-num.mjs` (и освободить маркер, запустив `node reserve-report-num.mjs --release <num>` после записи отчета)
    b. **Извлечь JD** через Playwright → WebFetch → WebSearch
@@ -42,7 +42,7 @@
 - **hh.ru**: API доступен: `https://api.hh.ru/vacancies/{id}` — JSON с полным описанием
 - **LinkedIn**: Может требовать логин → пометить `[!]`, попросить вставить текст
 - **PDF**: Если URL на PDF — прочитать через Read tool
-- **`local:` префикс**: Читать локальный файл. Пример: `local:jds/company-role.md`
+- **`local:` префикс**: Читать локальный файл. Пример: `local:users/{USER}/jds/company-role.md`
 
 ## Нумерация
 

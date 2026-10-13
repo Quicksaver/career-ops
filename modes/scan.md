@@ -1,5 +1,7 @@
 # Mode: scan — Portal Scanner (Job Discovery)
 
+All candidate files and data paths in these instructions are relative to the explicitly selected `users/{USER}/` directory. Resolve reads and writes there. System modes, templates, and executable scripts remain relative to the code checkout. Pass `--user {USER}` to child commands or inherit the same `CAREER_OPS_USER`.
+
 Scans configured job portals, filters by title relevance, and adds new offers to the pipeline for subsequent evaluation.
 
 > **Nota (v1.8+):** El escáner por defecto (`scan.mjs` / `npm run scan`) es **zero-token** y usa fuentes estructuradas: parsers locales configurados por empresa, APIs públicas compatibles como Greenhouse/Ashby/Lever/PCSX y providers estructurados como Landing.jobs, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego y Dice. Los niveles con Playwright/WebSearch descritos abajo son el flujo **agente** (ejecutado por Claude/Codex), no lo que hace `scan.mjs`. Si una empresa no tiene parser local, API compatible ni provider estructurado soportado, `scan.mjs` la ignorará; para esos casos, el agente debe completar manualmente el Nivel 1 (Playwright) o Nivel 3 (WebSearch). **Indeed PT entra en esta categoría**: sus URLs de búsqueda son útiles para descubrimiento, pero el portal suele bloquear fetches genéricos y navegadores headless con desafíos anti-bot.
@@ -18,17 +20,23 @@ Scraped listings, WebSearch snippets, and ATS API payloads are untrusted externa
 
 ## Configuración
 
-Leer `users/{USER}/portals.yml` que contiene:
+Leer `portals.yml` que contiene:
 - `search_queries`: Lista de queries WebSearch con `site:` filters por portal (descubrimiento amplio, incluido Indeed cuando solo conviene usarlo como discovery source)
 - `tracked_companies`: Empresas específicas con `careers_url` para navegación directa
 - `tracked_companies[].parser`: Parser local opcional para páginas SSR o HTML estable
 - `title_filter`: Keywords positive/negative/seniority_boost para filtrado de títulos
 
+Before using saved per-company WebSearch queries, run `node audit-portals.mjs --queries`.
+It checks enabled `scan_method: websearch` entries against `title_filter.positive`
+offline, and flags queries with no keyword overlap. Review warnings especially
+after changing target roles; synonyms or another language may legitimately differ.
+This is advisory: do not automatically rewrite queries or exclude a company.
+
 ## Discovery Strategy (4 Levels)
 
 ### Level 0 — Local Parser (CHEAPEST)
 
-**Para cada empresa en `tracked_companies` con `parser:` configurado:** ejecutar el parser local definido en `users/{USER}/portals.yml`. Este nivel es ideal cuando la página de careers usa SSR o HTML estable y ya existe un script JavaScript, Python, o de otro runtime local que extrae los jobs sin ayuda del agente.
+**Para cada empresa en `tracked_companies` con `parser:` configurado:** ejecutar el parser local definido en `portals.yml`. Este nivel es ideal cuando la página de careers usa SSR o HTML estable y ya existe un script JavaScript, Python, o de otro runtime local que extrae los jobs sin ayuda del agente.
 
 Recommended Contract:
 
@@ -38,10 +46,12 @@ Recommended Contract:
   scan_method: local_parser
   parser:
     command: node
-    script: scripts/parsers/example-company-jobs.js
+    script: local/example-company-jobs.js
     format: jobs-json-v1
   enabled: true
 ```
+
+The script must resolve inside the repo root (security boundary in `providers/local-parser.mjs`). Keep a private, non-contributed parser under a gitignored path — `local/` is ignored by default — so it is never staged; `scripts/parsers/` is for a parser you intend to upstream. See `docs/local-parser-cookbook.md`.
 
 Typically, the parser is company-specific and already knows the URL, selectors, and pagination. `args` is optional: use it however it helps the script author, for example, to reuse it across companies, pass `{careers_url}` or `{company}`, activate a debug flag, save a JSON snapshot, or control any parser-specific behavior.
 
@@ -111,7 +121,7 @@ During the agent's scan, keep the **`local_parser_ok`** set in memory. This set 
 - It detects new offers instantly
 - It does not depend on Google indexing
 
-**Cada empresa DEBE tener `careers_url` en `users/{USER}/portals.yml`.** Si no la tiene, buscarla una vez, guardarla, y usar en futuros scans.
+**Cada empresa DEBE tener `careers_url` en `portals.yml`.** Si no la tiene, buscarla una vez, guardarla, y usar en futuros scans.
 
 > **Opt-in — CLI extractor (`scan.extractor: cli`).** When `users/{USER}/config/profile.yml` sets `scan.extractor: cli`, run `node browser-extract.mjs <careers_url> --mode listing` for each company instead of `browser_navigate` + `browser_snapshot`. It renders the page headlessly and returns compact JSON — `{ "url": ..., "jobs": [{ "title", "url" }] }` — so the listing enters context at a fraction of a full snapshot's tokens (~2–3× smaller here). Read the `jobs` array directly; then apply `title_filter` as usual. **Fall back silently** to `browser_navigate` + `browser_snapshot` if the command errors (it prints `{ "error", "code" }` and exits non-zero) or isn't present — never let the flag break a scan. Default (`scan.extractor` absent or `mcp`): the `browser_navigate` + `browser_snapshot` flow above.
 
@@ -197,7 +207,7 @@ Levels are additive — they are executed in order, and results are merged and d
 
 ## Workflow
 
-1. **Leer configuración**: `users/{USER}/portals.yml`
+1. **Leer configuración**: `portals.yml`
 2. **Leer historial**: `users/{USER}/data/scan-history.tsv` → URLs ya vistas
 3. **Leer dedup sources**: `users/{USER}/data/applications.md` + `users/{USER}/data/pipeline.md`
 
@@ -213,7 +223,8 @@ Levels are additive — they are executed in order, and results are merged and d
    f. Si el parser falla, registrar error, intentar fallback por API ATS si existe, y continuar con las demás empresas (**no** añadir a `local_parser_ok`)
    g. Si el parser termina con éxito (pasos c–e sin error fatal), añadir `entry.name` a `local_parser_ok` y acumular jobs en candidatos
 
-4. **Level 1 — Playwright Scan** (parallel in batches of 3-5):
+4. **Level 1 — Playwright Scan** (sequential — NEVER parallel Playwright):
+   Browser-backed workers share one browser session, so concurrent `browser_navigate`/`browser_snapshot` calls cross-contaminate and a snapshot can return another company's page (#2551). Batching stays correct for the fetch-based levels below (Level 2 APIs/feeds, Level 3 queries), which open no shared session.
    For each company in `tracked_companies` with `enabled: true`, a defined `careers_url`, and a **name not listed in `local_parser_ok`**:
    a. `browser_navigate` to `careers_url`.
    b. `browser_snapshot` to read all job listings.
@@ -248,12 +259,12 @@ Levels are additive — they are executed in order, and results are merged and d
    c. **Skip** the result if the normalized `company` matches any name in `local_parser_ok`.
    d. Accumulate the rest in the candidates list (deduplicated against Levels 0+1+2).
 
-6. **Filtrar por título** usando `title_filter` de `users/{USER}/portals.yml`:
+6. **Filtrar por título** usando `title_filter` de `portals.yml`:
    - Al menos 1 keyword de `positive` debe aparecer en el título (case-insensitive)
    - 0 keywords de `negative` deben aparecer
    - `seniority_boost` keywords dan prioridad pero no son obligatorios
 
-6b. **Filtrar por ubicación (opcional)** usando `location_filter` de `users/{USER}/portals.yml`:
+6b. **Filtrar por ubicación (opcional)** usando `location_filter` de `portals.yml`:
    - Si el bloque `location_filter` está ausente, todas las ubicaciones pasan (comportamiento por defecto)
    - Ubicación vacía en una oferta → pasa (no penalizar datos faltantes)
    - Cualquier keyword de `block` presente → rechazar (precedencia sobre allow)
@@ -266,9 +277,10 @@ Levels are additive — they are executed in order, and results are merged and d
    - Opt-in. If the key is absent, 0, or non-positive, all ages pass (default behavior).
    - An offer is skipped only when the provider supplied a posting date (`postedAt`) AND it is older than N days.
    - Offers from providers that expose no date always pass (do not penalize missing data).
+   - The filter applies to every source, including an employer's own ATS board; there is no per-source exemption. An old posting date is not evidence that a role is closed — evergreen roles may remain open for months. To include them, increase the window or disable `max_posting_age_days` (affects all sources), then verify the specific posting before applying. CLI date-window flags still apply independently.
 
 7. **Deduplicate** against 3 sources:
-   - `scan-history.tsv` → exact URL already seen
+   - `scan-history.tsv` → exact URL already seen (except rows marked `skipped_location` or `skipped_age`, which never count as seen; see Scan History)
    - `applications.md` → normalized company + role already evaluated
    - `pipeline.md` → exact URL already in pending or processed list
 
@@ -294,15 +306,16 @@ Levels are additive — they are executed in order, and results are merged and d
    d. If expired: record in `scan-history.tsv` with status `skipped_expired` and discard.
    e. If active: continue to step 8.
 
-   **Do not interrupt the entire scan if a single URL fails.** If `browser_navigate` errors (timeout, 403, etc.), mark as `skipped_expired` and continue with the next one.
+   **Do not interrupt the entire scan if a single URL fails.** If `browser_navigate` or parser errors (timeout, 403, crash, etc.), mark as `skipped_error` and continue with the next one.
 
 8. **For each new verified offer that passes filters**:
    a. Add to the `pipeline.md` "Pending" section: `- [ ] {url} | {company} | {title}`
-   b. Record in `scan-history.tsv`: `{url}\t{date}\t{query_name}\t{title}\t{company}\tadded`
+   b. Record in `scan-history.tsv` with status `added`. Write the row with `formatScanHistoryRow` / `appendToScanHistory` from `scan.mjs` rather than composing the tab-separated line by hand — the column set has grown and will grow again, and a hand-written row is silently short.
 
 9. **Offers filtered by title**: record in `scan-history.tsv` with status `skipped_title`.
 10. **Duplicate offers**: record with status `skipped_dup`.
 11. **Expired offers (Level 3)**: record with status `skipped_expired`.
+12. **Scan errors / failures**: record in `scan-history.tsv` with status `skipped_error`.
 
 ## Extraction of Title and Company from WebSearch Results
 
@@ -318,8 +331,8 @@ Generic regex: `(.+?)(?:\s*[@|—–-]\s*|\s+at\s+)(.+?)$`
 ## Private URLs
 
 If a non-publicly accessible URL is found:
-1. Save the JD in `jds/{company}-{role-slug}.md`.
-2. Add to `pipeline.md` as: `- [ ] local:jds/{company}-{role-slug}.md | {company} | {title}`
+1. Save the JD in `users/{USER}/jds/{company}-{role-slug}.md`.
+2. Add to `pipeline.md` as: `- [ ] local:users/{USER}/jds/{company}-{role-slug}.md | {company} | {title}`
 
 ## Scan History
 
@@ -332,20 +345,37 @@ If a non-publicly accessible URL is found:
 | 3 | `portal` | `Ashby — AI PM` | Query name from `portals.yml` |
 | 4 | `title` | `PM AI` | Job title as returned by the ATS |
 | 5 | `company` | `Acme` | Company name |
-| 6 | `status` | `added` | `added`, `skipped_dup`, `skipped_title`, `skipped_expired` |
+| 6 | `status` | `added` | `added`, `skipped_dup`, `skipped_title`, `skipped_expired`, `skipped_location`, `skipped_age`, `skipped_no_apply_control`, `skipped_invalid_url`, `skipped_blocked_host`, `cooldown:{company}:{until}` |
 | 7 | `location` | `Remote — Europe` | Location string (may be empty); persisted for later auditing |
-| 8 | `jd_fingerprint` | `a3f1c8d2e4b70592` | 64-bit SimHash of the JD text (16 hex chars); empty when no usable body was available |
-| 9 | `postedAt` | `2026-02-08` | ISO date the role was originally posted (as reported by the ATS); empty when not available |
+| 8 | `fingerprint` | `a3f1c8d2e4b70592` | 64-bit SimHash of the JD text (16 hex chars); empty when no usable body was available |
+| 9 | `posted_at` | `2026-02-08` | ISO date the role was originally posted (as reported by the ATS); empty when not available |
+| 10 | `trust_score` | `70` | Trust/legitimacy score, written only when the scanner flagged the posting (score < 100); empty otherwise |
+| 11 | `trust_flags` | `no_company_site,vague_jd` | Comma-joined trust flags, written under the same condition as col 10; empty otherwise |
+| 12 | `normalized_company` | `acme` | Canonical company key (`normalizeCompanyName`) so `Acme Inc.`, `Acme, Inc.` and `ACME  Inc` all match; col 5 stays faithful to what the provider returned |
+| 13 | `requisition_id` | `ID2608-00427A` | The employer's requisition id, when the provider reads one from a dedicated ATS field (`Job.requisitionId`); empty otherwise. Company+role dedup keeps two same-titled postings apart when their requisitions differ |
+| 14 | `language` | `en-GB` | Language of the posting text as the source names it (a code or a name), when the provider reports it (`Job.language`); empty otherwise. Read by the opt-in `scan_history.dedup_include_language` |
+| 15 | `listing_key` | `listing_v1_…` | Strong local ATS identity key when the provider supplies a complete resolved identity; blank when it cannot |
+
+Columns are append-only: readers index by position, so new columns arrive at the end and older files keep their shorter rows. Never renumber or reorder. The header is written only when the file is created, so an existing file may still carry a shorter header than the rows being appended to it — that is expected, not corruption.
+
+Cells are stored with reversible spreadsheet-formula escaping: tabs and line breaks become spaces, and a cell starting with `=`, `+`, `-` or `@` — or with apostrophes followed by one of them — gets one more leading `'`, so a spreadsheet never runs it as a formula. `parseScanHistoryLine` (`lib/scan-history-columns.mjs`) strips exactly that one apostrophe, so read rows through it to get the written values back. A reader that splits lines itself sees the stored form.
+
+`skipped_location` and `skipped_age` record what `location_filter` and `max_posting_age_days` removed. They exist so a mis-aimed threshold is visible in the data rather than only as a summary counter, and they carry no dedup weight: both name a setting the user edits, so a row written under the old threshold must not suppress the same posting once it moves. Each posting gets one such row per status, not one per scan.
+
+The scanner writes the other statuses in that list itself: `skipped_no_apply_control` for a page that loaded without an Apply control, `skipped_invalid_url` and `skipped_blocked_host` for a URL the input guard rejected, and `cooldown:{company}:{until}` for a posting held back by a cooldown window until that date. `skipped_dup` and `skipped_title` come from the agent workflow above.
 
 ```tsv
-url	first_seen	portal	title	company	status	location	jd_fingerprint	postedAt
-https://...	2026-02-10	Ashby — AI PM	PM AI	Acme	added	Remote	a3f1c8d2e4b70592	2026-02-08
+url	first_seen	portal	title	company	status	location	fingerprint	posted_at	trust_score	trust_flags	normalized_company	requisition_id	language	listing_key
+https://...	2026-02-10	Ashby — AI PM	PM AI	Acme	added	Remote	a3f1c8d2e4b70592	2026-02-08			acme			listing_v1_…
+https://...	2026-02-11	ExampleCo	QA Engineer	ExampleCo	added	Hamburg, Germany		2026-02-11			exampleco	REF1234X	de	listing_v1_example
 ```
+
+The first row comes from a provider that reports no requisition id or language, so its `requisition_id` and `language` cells are empty while `listing_key` still carries the key from its resolved ATS identity; the second comes from one that reports all three.
 
 ### Filtering by posted date
 
 `first_seen` (column 2) is when **our scanner** spotted the URL — not when the
-employer actually posted it. That real posting date is column 9 (`postedAt`).
+employer actually posted it. That real posting date is column 9 (`posted_at`).
 To scope a scan to an absolute posting-date window (e.g. "only postings from
 the 17th to the 20th"), pass `--posted-after`/`--posted-before` on the CLI —
 both optional, both `YYYY-MM-DD`, both inclusive:
@@ -422,11 +452,11 @@ weekly, `--since 10` keeps a margin for a skipped run.
 
 ### Cross-listing detection
 
-The `jd_fingerprint` column exists to catch a specific double-submission hazard: the same role posted by the direct employer **and** by a recruitment agency, often with the employer name stripped from the agency listing. URL dedup and company+role dedup both miss this pair because the URLs and company names are different — but agencies rarely rewrite the requirements text, so a near-identical JD body is a reliable signal.
+The `fingerprint` column exists to catch a specific double-submission hazard: the same role posted by the direct employer **and** by a recruitment agency, often with the employer name stripped from the agency listing. URL dedup and company+role dedup both miss this pair because the URLs and company names are different — but agencies rarely rewrite the requirements text, so a near-identical JD body is a reliable signal.
 
 How it works:
 
-- When the ATS provider's list API returns a description field (e.g. Lever's `descriptionPlain`), the scanner computes a **64-bit SimHash** of the normalized text and stores it as the 8th column.
+- When the ATS provider's list API returns a description field (e.g. Lever's description, `lists` and `additionalPlain`), the scanner computes a **64-bit SimHash** of the normalized text and stores it as the 8th column.
 - SimHash is locality-sensitive: near-duplicate texts land within a few bits of each other. The scanner flags any two rows from **different companies** whose fingerprints are ≥ 92 % similar (at most 5 of 64 bits differ) and that appeared within a 90-day window.
 - The check is **warn-only**: nothing is dropped automatically. If one side is an agency, apply through ONE channel only — a double submission burns the candidate with both parties.
 - Postings without a usable description get an **empty fingerprint** and are never flagged. No body → no signal, no false positives.
@@ -490,7 +520,7 @@ Fallback: if you only have the direct ATS URL, navigate first to the company's w
 1. Intentar el patrón de su plataforma conocida
 2. Si falla, hacer un WebSearch rápido: `"{company}" careers jobs`
 3. Navegar con Playwright para confirmar que funciona
-4. **Guardar la URL encontrada en `users/{USER}/portals.yml`** para futuros scans
+4. **Guardar la URL encontrada en `portals.yml`** para futuros scans
 
 **If `careers_url` returns 404 or redirect:**
 1. Note it in the output summary.

@@ -1,6 +1,8 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
 
+import { safeEncodeURIComponent } from './_safe-url.mjs';
+
 // Arbeitsagentur (Bundesagentur für Arbeit) provider — hits the public Jobsuche
 // REST API (the same endpoint arbeitsagentur.de uses), so it lives in-process
 // alongside the other JSON-API providers (greenhouse/ashby shape). One or more
@@ -111,12 +113,14 @@ export function normalizeJob(job) {
   const title = String((job && job.stellenangebotsTitel) || '').trim();
   if (!refnr || !title) return null;
   const location = buildLocation(job && job.stellenlokationen) || 'Deutschland';
+  const encodedRefnr = safeEncodeURIComponent(refnr);
+  if (encodedRefnr === null) return null;
   const normalizedLocation = REMOTE_RE.test(title) && !NOT_REMOTE_RE.test(title)
     ? ['Remote', location].filter(Boolean).join(', ')
     : location;
   return {
     title,
-    url: DETAIL_BASE + encodeURIComponent(String(refnr)),
+    url: DETAIL_BASE + encodedRefnr,
     company: String((job && job.firma) || '').trim(),
     location: normalizedLocation,
     refnr: String(refnr),

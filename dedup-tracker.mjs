@@ -3,99 +3,90 @@
  * dedup-tracker.mjs — Remove duplicate entries from applications.md
  *
  * Groups by normalized company, then merges only rows whose full role title
- * matches exactly (case- and whitespace-normalized). Keeps entry with highest
+ * matches exactly (case- and whitespace-normalized) and whose posting URLs, when
+ * both rows carry one, do not conflict. Keeps entry with highest
  * score. If discarded entry had more advanced status, preserves that status.
  * Merges notes.
  *
- * Run: node career-ops/dedup-tracker.mjs --user <id> [--dry-run]
+ * Run: node career-ops/dedup-tracker.mjs [--dry-run]
  */
 
-import { readFileSync, copyFileSync, existsSync, mkdirSync, realpathSync } from 'fs';
-import { dirname } from 'path';
+import { readFileSync, copyFileSync, existsSync, mkdirSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
+import { roleFuzzyMatch } from './role-matcher.mjs';
+import { normalizeUrl } from './url-key.mjs';
 import {
-  ensureUserDirs,
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
-import {
-  openTrackerTransaction,
-  rebuildRow,
-  normalizeCompany,
+  openTrackerTransaction, rebuildRow, normalizeCompany,
+  loadCanonicalStates, resolveCanonicalStateId,
 } from './tracker-utils.mjs';
-import { resolveColumns, parseTrackerRow, normalizeVia } from './tracker-parse.mjs';
+import { resolveColumns, parseTrackerRow, normalizeVia, extractReqNumber } from './tracker-parse.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
 
-let userContext;
-try {
-  userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
-} catch (err) {
-  printUserContextErrorAndExit(err);
-}
+const CAREER_OPS = getCareerOpsRoot();
+// Support both layouts: data/applications.md (boilerplate) and applications.md
+// (original). CAREER_OPS_TRACKER lets tests point the script at an isolated
+// fixture so the real user tracker is never touched.
+const APPS_FILE = resolveTrackerPath(CAREER_OPS);
 
-const appsFileInput = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
-const APPS_FILE = existsSync(appsFileInput) ? realpathSync(appsFileInput) : appsFileInput;
+// ── CLI args ────────────────────────────────────────────────────────
+// Same shape as scan-ats-full.mjs (#1633/PR #1635) and reply-watch.mjs
+// (#2743): an unrecognized flag must fail fast, never silently fall through
+// to the live-run default and write to the real tracker (#2744). Shared via
+// lib/cli-flags.mjs's validateFlags() (#2775).
 const KNOWN_FLAGS = ['--dry-run', '--help', '-h'];
-const USAGE = 'Usage: node dedup-tracker.mjs --user <username> [--dry-run]';
-validateFlags(userContext.args, KNOWN_FLAGS, USAGE);
-const DRY_RUN = userContext.args.includes('--dry-run');
+const USAGE = `Usage: node dedup-tracker.mjs [--dry-run]`;
 
-if (userContext.userRoot) ensureUserDirs(userContext, ['data']);
-else mkdirSync(dirname(APPS_FILE), { recursive: true });
+const cliArgs = process.argv.slice(2);
 
-// Status advancement order (higher = more advanced in pipeline)
-// Aplicado > Rechazado because active application > terminal state
+validateFlags(cliArgs, KNOWN_FLAGS, USAGE);
+const DRY_RUN = process.argv.includes('--dry-run');
+
+// Status advancement order (higher = more advanced in pipeline), keyed by
+// states.yml id. Only the ORDER lives here. Every spelling of a state (label,
+// alias, localized form) resolves to its id through states.yml, so a new alias
+// needs no change in this file.
+// Applied > Rejected because an active application outranks a terminal state.
 const STATUS_RANK = {
-  // English canonicals (states.yml labels)
-  'skip': 0,
   'closed': 0,
+  'skip': 0,
   'discarded': 0,
   'rejected': 1,
   'evaluated': 2,
   'applied': 3,
   'responded': 4,
-  'interview': 5,
-  'offer': 6,
+  'assessment': 5,
+  'interview': 6,
+  'offer': 7,
   // Hired outranks everything: the accepted-job record must never lose a
-  // dedup contest to a repost row (aliases from templates/states.yml).
-  'hired': 7,
-  'accepted': 7,
-  'accept': 7,
-  // Spanish aliases — kept for backwards compat with existing tracker data
-  'no_aplicar': 0,
-  'no aplicar': 0,
-  'cerrada': 0,
-  'cancelada': 0,
-  'descartado': 0,
-  'descartada': 0,
-  'rechazado': 1,  // Terminal — below active states
-  'rechazada': 1,
-  'evaluada': 2,
-  'aplicado': 3,
-  'respondido': 4,
-  'entrevista': 5,
-  'oferta': 6,
-  'contratado': 7,
-  'contratada': 7,
+  // dedup contest to a repost row.
+  'hired': 8,
 };
 
-/**
- * Normalize tracker status text before ranking or comparing it.
- *
- * Existing trackers can contain bold Markdown wrappers or legacy dates appended
- * to the status cell. Dedup needs the canonical status word only, in lowercase,
- * so advanced-state protection works the same for old and new tracker rows.
- *
- * @param {string} status - Raw status cell from applications.md.
- * @returns {string} Lowercase status key with Markdown/date noise removed.
- */
-function normalizeStatus(status) {
-  return String(status ?? '')
-    .replace(/\*\*/g, '')
-    .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '')
-    .trim()
-    .toLowerCase();
+// templates/states.yml is system layer: it lives beside this script, not in the
+// data root. It is the only place a status spelling is defined, so without it
+// no row can be ranked, and a row ranked 0 is one this script may delete. Stop
+// before touching the tracker rather than rank from a partial vocabulary.
+//
+// A file that parses but does not define one of the ranked states is the same
+// hazard, only narrower: every spelling of that state resolves to nothing and
+// ranks 0. `states: []` is the limiting case, where that is every row.
+const STATES_FILE = join(dirname(fileURLToPath(import.meta.url)), 'templates', 'states.yml');
+let CANONICAL_STATES;
+try {
+  CANONICAL_STATES = loadCanonicalStates(STATES_FILE);
+  const defined = new Set(CANONICAL_STATES.map((s) => s.id.toLowerCase()));
+  const undefinedIds = Object.keys(STATUS_RANK).filter((id) => !defined.has(id));
+  if (undefinedIds.length > 0) throw new Error(`it defines no state with id ${undefinedIds.join(', ')}`);
+} catch (err) {
+  console.error(`Cannot rank statuses from ${STATES_FILE}: ${err.message}`);
+  console.error('dedup-tracker ranks every status through that file and will not guess without it. Nothing was changed.');
+  process.exit(1);
 }
+
+// Ensure the target tracker directory exists in both normal and fixture mode.
+mkdirSync(dirname(APPS_FILE), { recursive: true });
 
 /**
  * Convert a tracker status into its pipeline-advancement rank.
@@ -104,11 +95,18 @@ function normalizeStatus(status) {
  * casually overwritten or removed. Unknown statuses rank as 0 so malformed data
  * is treated conservatively rather than promoted.
  *
- * @param {string} status - Raw or normalized status value.
+ * The cell is resolved through states.yml (resolveCanonicalStateId), which also
+ * strips the bold wrappers and trailing dates legacy trackers carry. An alias
+ * ("Sent", "Aplicada", "Başvuruldu", "Mülakat"...) therefore ranks as the state
+ * the dashboard and set-status.mjs read it as. Ranking one 0 made an Applied
+ * row look like a throwaway and let a higher-scored Evaluated sibling delete it.
+ *
+ * @param {string} status - Raw status cell from applications.md.
  * @returns {number} Numeric rank from STATUS_RANK, or 0 for unknown statuses.
  */
 function statusRank(status) {
-  return STATUS_RANK[normalizeStatus(status)] || 0;
+  const id = resolveCanonicalStateId(status, CANONICAL_STATES);
+  return id !== null && Object.hasOwn(STATUS_RANK, id) ? STATUS_RANK[id] : 0;
 }
 
 /**
@@ -119,7 +117,7 @@ function statusRank(status) {
  * matches from silently deleting an active application record.
  *
  * @param {string} status - Raw status value from the tracker row.
- * @returns {boolean} True when the row is Applied, Responded, Interview, or Offer.
+ * @returns {boolean} True when the row is Applied, Responded, Assessment, Interview, or Offer.
  */
 function isAdvancedStatus(status) {
   return statusRank(status) >= STATUS_RANK.applied;
@@ -200,6 +198,41 @@ function normalizeRole(role) {
 }
 
 /**
+ * Check whether two tracker rows name two different postings.
+ *
+ * Only two present-and-different keys are evidence: a blank or placeholder URL
+ * yields no key from normalizeUrl() and is UNKNOWN, never a conflict.
+ *
+ * @param {object} a - First parsed applications.md row.
+ * @param {object} b - Second parsed applications.md row.
+ * @returns {boolean} True when both rows carry a URL and the URLs differ.
+ */
+function urlsConflict(a, b) {
+  const urlA = normalizeUrl(a.url);
+  const urlB = normalizeUrl(b.url);
+  return Boolean(urlA && urlB && urlA !== urlB);
+}
+
+/**
+ * Check whether two tracker rows carry two different requisition ids in Notes.
+ *
+ * The rule merge-tracker.mjs applies as `reqNumDiffers` (#1524): an id missing
+ * on either side is UNKNOWN, and only two present-and-different ids are evidence
+ * that the rows are distinct openings. An employer posts one title once per city
+ * or country, each copy with its own job id, and merge-tracker keeps those rows
+ * apart on purpose; deleting one here would silently reverse that decision.
+ *
+ * @param {object} a - First parsed applications.md row.
+ * @param {object} b - Second parsed applications.md row.
+ * @returns {boolean} True when both rows carry a recognizable id and they differ.
+ */
+function reqNumsConflict(a, b) {
+  const reqA = extractReqNumber(a.notes);
+  const reqB = extractReqNumber(b.notes);
+  return Boolean(reqA && reqB && reqA !== reqB);
+}
+
+/**
  * Decide whether two same-company tracker rows should be deduplicated.
  *
  * Rows merge only when they describe the same opening: either the exact same
@@ -214,11 +247,25 @@ function normalizeRole(role) {
  * status, report link, and notes unless the rows are the exact same report
  * identity.
  *
+ * Two present-and-different posting URLs veto every tier, report identity
+ * included (#4562). That is the rule merge-tracker.mjs applies (`urlDiffers`),
+ * through the same normalizeUrl(): two rows cannot be one application while
+ * naming two postings. A blank or placeholder URL yields no key and is
+ * UNKNOWN, never a conflict, so rows without URLs behave exactly as before.
+ * Two present-and-different requisition ids in Notes (`Job id 8157736` vs
+ * `Job id 8157738`, the #1524 rule) veto every tier the same way, so one title
+ * posted once per city or country keeps one row per posting.
+ * Blocking fails toward a duplicate the user can see; merging on a conflict
+ * deletes a real application.
+ *
  * @param {object} a - First parsed applications.md row.
  * @param {object} b - Second parsed applications.md row.
  * @returns {boolean} True when dedup may cluster the two rows as duplicates.
  */
 function roleMatch(a, b) {
+  if (urlsConflict(a, b)) return false;
+  if (reqNumsConflict(a, b)) return false;
+
   if (sameReportIdentity(a, b)) return true;
   if (normalizeRole(a.role) !== normalizeRole(b.role)) return false;
 
@@ -367,7 +414,12 @@ for (const [company, companyEntries] of groups) {
 
     for (let j = i + 1; j < companyEntries.length; j++) {
       if (processed.has(j)) continue;
+      // roleMatch() only compares against the seed row, so a seed with no URL
+      // would admit two rows naming different postings and one would be
+      // deleted. Check the candidate's URL and requisition id against every
+      // member already in.
       if (roleMatch(companyEntries[i], companyEntries[j])
+          && !cluster.some(member => urlsConflict(member, companyEntries[j]) || reqNumsConflict(member, companyEntries[j]))
           && (!isBlindGroup || withinBlindWindow(companyEntries[i].date, companyEntries[j].date))) {
         cluster.push(companyEntries[j]);
         processed.add(j);

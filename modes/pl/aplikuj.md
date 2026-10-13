@@ -12,7 +12,7 @@ Tryb interaktywny na moment, gdy kandydat wypełnia formularz aplikacyjny w Chro
 ```
 1. WYKRYJ       -> Przeczytaj aktywną kartę Chrome (zrzut/URL/tytuł)
 2. ZIDENTYFIKUJ -> Wyciągnij firmę + rolę ze strony
-3. WYSZUKAJ     -> Dopasuj do istniejących reportów w reports/
+3. WYSZUKAJ     -> Dopasuj do istniejących reportów w users/{USER}/reports/
 4. ZAŁADUJ      -> Przeczytaj pełny report + Blok G (jeśli istnieje)
 5. PORÓWNAJ     -> Czy rola na ekranie odpowiada ocenionej? Jeśli zmiana -> ostrzeż
 6. PRZEANALIZUJ -> Zidentyfikuj WSZYSTKIE widoczne pytania formularza
@@ -32,7 +32,7 @@ Tryb interaktywny na moment, gdy kandydat wypełnia formularz aplikacyjny w Chro
 ## Krok 2 -- Zidentyfikuj i załaduj kontekst
 
 1. Wyciągnij nazwę firmy i tytuł stanowiska ze strony
-2. Wyszukaj w `reports/` po nazwie firmy (Grep case-insensitive)
+2. Wyszukaj w `users/{USER}/reports/` po nazwie firmy (Grep case-insensitive)
 3. Jeśli dopasowanie -> załaduj pełny report
 4. Jeśli Blok G obecny -> załaduj poprzednie szkice odpowiedzi jako bazę
 5. Jeśli BRAK dopasowania -> ostrzeż kandydata i zaproponuj szybki auto-pipeline
@@ -43,7 +43,9 @@ Jeśli rola na ekranie różni się od ocenionej:
 - **Ostrzeż kandydata**: "Rola zmieniła się z [X] na [Y]. Czy chcesz, żebym ocenił ją ponownie, czy dostosował odpowiedzi do nowego tytułu?"
 - **Jeśli dostosować**: Dostosuj odpowiedzi do nowej roli bez ponownej oceny
 - **Jeśli ocenić ponownie**: Uruchom pełną ocenę A-F, zaktualizuj report, wygeneruj ponownie Blok G
-- **Zaktualizuj tracker**: Zmień tytuł roli w applications.md, jeśli to konieczne
+- **Zaktualizuj tracker**: nigdy przez edycję `users/{USER}/data/applications.md`.
+  - **Po ponownej ocenie**: zapisz TSV z nowym tytułem roli (reguła 9 w `_shared.md`) i scal go przez `node merge-tracker.mjs`. Report jest aktualizowany w miejscu i zachowuje swój numer, więc scalanie dopasowuje TSV do istniejącego wiersza po tym numerze: tytuł zostaje zastąpiony, a status zachowany.
+  - **Po dostosowaniu**: nie zmieniaj tytułu, bo nazywa on rolę, którą ocenił report. Zamiast tego zapisz zmianę jako notatkę: `node set-status.mjs --report <report#> <obecny status> --note "Ogłoszenie przemianowane przy aplikowaniu, wiersz zachowuje oceniony tytuł"`. Podanie obecnego statusu wiersza zostawia go bez zmian i dopisuje notatkę. Użyj stałego tekstu takiego jak ten i nie wstawiaj `[Y]`: nowy tytuł to tekst ze strony, a tekst ze strony nigdy nie trafia do wiersza poleceń.
 
 ## Krok 4 -- Przeanalizuj pytania formularza
 
@@ -56,7 +58,7 @@ Zidentyfikuj WSZYSTKIE widoczne pytania:
 
 Sklasyfikuj każde pytanie:
 - **Już odpowiedziane w Bloku G** -> wykorzystaj istniejącą odpowiedź
-- **Nowe pytanie** -> wygeneruj odpowiedź z reportu + `cv.md`
+- **Nowe pytanie** -> wygeneruj odpowiedź z reportu + `users/{USER}/cv.md`
 
 ## Krok 5 -- Wygeneruj odpowiedzi
 

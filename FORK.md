@@ -33,11 +33,21 @@ Use the merge-base diff to inventory fork changes. The left/right log separately
 
 ## Adopted upstream behavior and merge history
 
-This inventory incorporates upstream 1.9 through 1.26 behavior and post-1.26 fixes at `22cbe88e0a39394020a334901c0ce37b0faedfcb` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+This inventory incorporates upstream through core v1.36.0 and web v0.14.0 at `2f1a548b419e1787142e600a058e76e547a5cbee`. Older entries below describe earlier merges. The current fork keeps explicit user selection and adapts upstream data-root support around that requirement.
 
 The entries below record successive upstream merges and their conflict resolutions. Release references and validation counts belong to those historical merges. The active sections that follow define the customization requirements to preserve today.
 
 New upstream features or behavior now present:
+
+- Core v1.27 through v1.36 and web v0.14.0 are adopted across 1,555 incoming commits. Current additions include a source-backed Master Career Profile, calibration and keyword coverage, richer evaluation evidence, CV title/chronology checks, ATS and text CV variants, template packs, and ordered multi-market context. Intake and profile changes retain their explicit confirmation and provenance requirements.
+- Scanner updates include new providers, configurable field whitelists, history-derived ATS seeds, requisition/location/language-aware dedup, budgeted partial results, filtered-posting diagnostics, and dead-board recovery. `scan.mjs` retains the fork's closed-posting reopen behavior around these newer dedup decisions; different requisitions and language versions retain upstream's separate-posting behavior.
+- Batch execution adds OpenCode, Gemini, and Qwen alongside Claude and the fork's Codex backend. Upstream supplies cached system prompts, adaptive backoff, header-aware additions, and agency-confirmation holds. The fork keeps bounded workers, per-user bookkeeping, reserved report identity, and cross-artifact validation. A confirmation hold is reported separately and never becomes a completed evaluation or an automatic retry.
+- CV and document rendering adopts kinded PDF-index rows, so a report's cover letter and CV no longer evict each other. Shared renderer containment, manifest locking, page-format support, title checks, chronology checks, and template-pack validation are upstream behavior. The fork retains `cv.theme`, report-linked styled-CV filenames, relevance filtering, and its two-page/3–4-project mode defaults. An explicitly selected external template pack is now supported; the old system-template-directory-only compiler restriction is retired.
+- Dashboard updates include Assessment, source-faithful missing-score rendering, status-history metrics, dimension statistics, and canonical status writes through `set-status.mjs`. The fork keeps its OPEN-first tabs, tracker-number display/sort, listing-date DATE column, and lazy report loading. Statistics enrich report archetypes when opened rather than on every pipeline refresh. Manual status transitions retain a dated interaction note alongside the upstream ledger and follow-up behavior.
+- Web updates include scheduled scans, persisted assistant conversations, expanded analytics, inline pipeline status controls, origin/host guards, worker fencing, cost confirmation, and the upstream semantic verdict callout. These operate on the selected user's files. The fork keeps mandatory `CAREER_OPS_USER`, a userless build phase, system/data separation, Job ID display, and the Machine Summary decision-signals table.
+- Shared path and CLI handling now accepts `--user` on newly added native scripts, validates the user before data-root selection, and propagates selection to child commands. Normal data remains under `users/{USER}/`; explicit data-directory overrides require a valid selected user and are layout overrides, not user inference. `tests/user-fixture.mjs` adapts flat upstream fixtures to that same selection contract.
+- Doctor's JSON command is now read-only by default; `--init-templates` performs onboarding template initialization. This retires the earlier automatic-copy assumption. Shared state fallbacks derive from the canonical UI state list, with the fork's Closed state included, rather than maintaining another alias list in the web ACL.
+- Reviewed verification retains stable JSON finding IDs, report-file ownership, canonical posting-URL subsets, collision errors, and duplicate/orphan repair boundaries. Incoming JD-archive coverage is exposed as additional typed findings; these checks do not reinterpret a missing archive as an evaluation success.
 
 - v1.26.0 and a total of 156 upstream commits since the prior baseline are adopted. The release adds rejection-latency signals, rejection-aware invite matching, pay-transparency and minimum-wage review prompts, `join.com` and additional zero-auth providers, CV/cover safeguards, scanner path overrides, and broader Unicode-safe matching; post-release work adds intake, relevance ranking, tracker/interview drift checks, failed-scan accounting, requisition-age visibility, and extensive runtime hardening.
 - Local intake and prioritization are adopted: `intake.mjs` extracts source-annotated proposals from user documents, `rank-pipeline.mjs` provides an opt-in LLM relevance annotation, `rejection-latency.mjs` reports a descriptive courtesy signal, and `tracker-sync-check.mjs` detects interview-state drift. Their normal paths are adapted to `users/{USER}/documents/`, `users/{USER}/data/`, and `users/{USER}/config/`; none reads or writes another user's files.
@@ -478,7 +488,27 @@ Future merge notes:
 - Treat upstream voice/style additions such as `voice-dna.md` as user-layer data unless they are explicitly templates or documentation; user-specific writing voice belongs under `users/{USER}/`.
 - If upstream changes `merge-tracker.mjs` locking again, preserve the full read/modify/write critical section and atomic write, but keep `APPS_FILE` rooted in `users/{USER}/data/applications.md`; do not restore root `CAREER_OPS_TRACKER` as normal production routing.
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
-- When upstream makes script helpers import-safe for tests, keep that behavior without resolving a user at module import time; resolve the active user only when the script runtime path needs user-layer files.
+- Keep pure helper imports free of candidate-file reads and writes. Modules that bind user paths may require a selected user even on import; synthetic fixtures explicitly select a disposable user. System help and self-tests do not select a real profile.
+
+## Current merge integration notes
+
+- `path-resolver.mjs` and `lib/user-context.mjs` require a valid user before applying any data-root alias. Missing user-flag operands fail instead of reusing an inherited user. Repeated explicit flags use the last selected ID consistently.
+- Web API core commands pass `careerOpsCoreEnv()`, including status writes, PDF generation, scans, analytics, and document ingestion. Preserve any command-specific lock or provider overrides alongside that environment. `stats` and `upskill` routes request `--json` because the fork defaults to readable terminal output.
+- `scan.mjs` retains per-target HTTP request/response observation. A swallowed fetch failure must be `unverified_zero`, never a healthy empty board. Declared-field counts cover fetched postings before filtering, and imported scan writers honor explicit history/inbox lane paths.
+- `merge-tracker.mjs` updates its occupied-number set as it queues new rows, so two additions in one run cannot claim the same reserved number. Re-evaluation retains the original primary report link and its PDF manifest identity while refreshing the score and notes. Distinct requisitions with an occupied number remain pending for repair.
+- `verify-pipeline.mjs` retains broad company/role review and exact canonical-URL subsets, checks report links are files, and binds follow-up/portal checks to the selected tracker workspace. New upstream JD archive findings join the typed JSON contract and reviewed verification flow.
+- `batch/batch-output-schema.json` includes the confirmation hold fields. The worker's held example must contain every required schema field exactly once; it carries no tracker, report, or CV artifact. Batch progress parsing preserves empty TSV fields, and a fatal parallel worker stops new dispatch, drains running workers, and skips merging.
+- `modes/pdf.md` keeps primary CVs at flat report-linked HTML/PDF paths. Upstream application bundles supplement explicit comparison or reuse work, and ATS variants add `-ats` and never replace the primary PDF manifest entry. Template packs use upstream validation; the previous system-template-only restriction is retired.
+- `doctor.mjs --json` is read-only. Onboarding explicitly uses `--init-templates`; maintenance and code review do not initialize personal data. Runtime browser discovery remains necessary before interpreting a missing project-config warning as unavailable tools.
+- Core fixtures select fictional users in temporary directories. Flat upstream fixtures may use explicit data-root aliases, marker fixtures clear users-directory overrides, and user-layer fixtures do not include a developer's ignored files. Dashboard status tests account for the fork's dated interaction note while preserving all unrelated cells.
+
+## Data-root overrides after v1.36
+
+An active user is required before a data directory is selected. The default is `users/{USER}/` under the system checkout; `CAREER_OPS_USERS_DIR` can relocate that users directory. Core CLI `CAREER_OPS_ROOT` and `CAREER_OPS_DATA_DIR` select an explicit data directory for the known user. A `.career-ops-data` marker is also an explicit layout override when no users-directory override is configured. None supplies a user ID, and none enables a missing-user command.
+
+The web retains its older `CAREER_OPS_ROOT` meaning as a system-code alias. Prefer `CAREER_OPS_CODE_ROOT` for system code and `CAREER_OPS_DATA_DIR` for an unusual selected-user data layout. `careerOpsCoreEnv()` passes the selected data root and code root separately to child scripts, so a web system-root alias cannot become a child's candidate-data directory. Each selected user needs its own data directory.
+
+Files to reconcile together are `lib/user-context.mjs`, `path-resolver.mjs`, `lib/cli-flags.mjs`, `web/src/lib/user-context.mjs`, and the dashboard/batch child environments. Pure shared path helpers remain standalone so copied CLI fixtures do not gain an undeclared import dependency.
 
 ## Web user selection and system metadata
 
@@ -498,6 +528,7 @@ What this customizes:
 - Validates user IDs with the CLI's format: 1-64 characters, starting with a letter or number and continuing with letters, numbers, dots, underscores, or hyphens. Path-like IDs, including `.` and `..`, are rejected.
 - Resolves candidate files under `users/{USER}/`. `CAREER_OPS_ROOT` selects system code, and `CAREER_OPS_USERS_DIR` selects an alternate users directory; relative overrides resolve against the system checkout and the child CLI receives that same absolute directory.
 - Loads shared scripts, tracker aliases, canonical states, tracker-lock code, and matching helpers from the system checkout. The selected user's tracker determines the lock key; shared code must not be loaded from that user's data folder.
+- Keeps report Blocks A and B expanded, the displayed Job ID tied to the tracker row, and the Machine Summary decision-signals table visible alongside the upstream verdict callout.
 - Keeps production builds and unit tests independent of user selection. Server startup validates the configured user after Next loads environment files, while runtime data helpers enforce the same requirement on every access.
 
 Future merge notes:
@@ -522,11 +553,8 @@ Files:
 What this customizes:
 
 - Replaces the Claude-only worker assumption with a generic headless worker setting.
-- Adds `--cli claude|codex`, defaulting to `claude`, and supports `CAREER_OPS_BATCH_CLI` so local runs can select Codex without editing the script.
-- Makes `--parallel` optional and resolves worker count as explicit argument,
-  then `users/{USER}/config/profile.yml` `batch.parallel`, then system default
-  `1`. Values outside `1-32` fail closed, and the startup summary records the
-  resolved source.
+- Supports upstream `--cli claude|codex|opencode|gemini|qwen`, defaulting to `claude`, and supports `CAREER_OPS_BATCH_CLI` so local runs can select Codex without editing the script.
+- Makes `--parallel` optional and resolves worker count as explicit argument, then `users/{USER}/config/profile.yml` `batch.parallel`, then system default `1`. Values outside `1-32` fail closed, and the startup summary records the resolved source.
 - Keeps Claude behavior on `claude -p --dangerously-skip-permissions --append-system-prompt-file ...`.
 - Adds Codex behavior through `codex exec --dangerously-bypass-approvals-and-sandbox -C "$PROJECT_DIR"`, passing the combined resolved prompt through stdin rather than a huge argv string.
 - Requires Codex workers to write their final message through `--output-last-message` and validate it against `batch/batch-output-schema.json`.
@@ -548,20 +576,14 @@ What this customizes:
 - Preserves upstream Claude MCP isolation through `--strict-mcp-config`, while keeping Codex execution separate through the fork's schema-checked final JSON flow.
 - Injects `users/{USER}/modes/_profile.md` and `users/{USER}/config/profile.yml` into the temporary resolved worker prompt so batch scoring uses the same user-layer personalization as interactive scoring.
 - Preserves upstream `spend_tier` routing for Claude workers, but reads the tier from `users/{USER}/config/profile.yml`; direct Codex batch runs deliberately keep the Codex global model unless `--model` is explicit.
-- Treats `--model` as an explicit override for either worker CLI and adds the
-  Codex-only `--reasoning-effort minimal|low|medium|high|xhigh` override, which
-  is forwarded to every Codex batch worker as `model_reasoning_effort`.
-- Keeps direct batch invocation semantics distinct from go-runner resolution:
-  without explicit `--model` or `--reasoning-effort`, direct Codex batches use
-  Codex global defaults. `go-runner.mjs` resolves its argument/profile/global
-  hierarchy first and passes any resolved non-global values into the batch
-  invocation explicitly.
+- Treats `--model` as an explicit override for either worker CLI and adds the Codex-only `--reasoning-effort minimal|low|medium|high|xhigh` override, which is forwarded to every Codex batch worker as `model_reasoning_effort`.
+- Keeps direct batch invocation semantics distinct from go-runner resolution: without explicit `--model` or `--reasoning-effort`, direct Codex batches use Codex global defaults. `go-runner.mjs` resolves its argument/profile/global hierarchy first and passes any resolved non-global values into the batch invocation explicitly.
 - Preserves upstream pre-screen discards and their audit records under `users/{USER}/batch/logs/discard.log`; sourced helper tests fall back to the fixture-local batch directory without weakening runtime user routing.
 - Injects `users/{USER}/modes/_custom.md` after the profile context and keeps the batch CV fact gate/output command on the same `{{USER_ROOT}}/output/{REPORT_NUM}-...` artifact path.
 
 Future merge notes:
 
-- If upstream changes `batch/batch-runner.sh`, preserve the CLI abstraction unless upstream adds equivalent multi-agent worker support.
+- Upstream now supplies the CLI dispatch abstraction, prompt caching, adaptive Claude rate-limit retries, and worker timeout controls. Preserve these directly; the fork still adds per-user routing, confirmation holds, configurable parallelism, and report/artifact identity checks.
 - Keep the Codex command rooted at `PROJECT_DIR` so generated reports, tracker additions, and user-layer paths resolve the same way as normal career-ops commands.
 - Preserve the schema-checked final JSON contract for Codex workers; do not regress to parsing the free-form transcript as the main completion signal.
 - Preserve stale-state recovery and explicit missing-artifact failure reasons. They are needed because a headless worker can write partial artifacts or transcript JSON without producing the required final-message JSON.
@@ -575,12 +597,8 @@ Future merge notes:
 - Preserve the active-user requirement for `--status` and `--watch`; upstream root-batch fixtures need `CAREER_OPS_USERS_DIR` plus `--user test` in this fork.
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 - Preserve upstream rate-limit pause semantics and Claude MCP isolation. If the worker command code is refactored again, test that `paused_rate_limit` does not consume retry budget and Claude workers still include `--strict-mcp-config`.
-- Preserve optional parallel resolution as argument, profile `batch.parallel`,
-  then `1`, including the `1-32` validation and logged source. Do not restore a
-  shell-level default that masks the profile value.
-- Preserve Codex `--reasoning-effort` validation and forwarding alongside the
-  existing model override; go-runner relies on both flags to carry its resolved
-  profile values into every batch worker.
+- Preserve optional parallel resolution as argument, profile `batch.parallel`, then `1`, including the `1-32` validation and logged source. Do not restore a shell-level default that masks the profile value.
+- Preserve Codex `--reasoning-effort` validation and forwarding alongside the existing model override; go-runner relies on both flags to carry its resolved profile values into every batch worker.
 - If post-batch pipeline reconciliation is refactored, make sure the reconciler receives the user-scoped state, pipeline, and reports paths together; otherwise it can look for report files in the wrong reports directory.
 
 ## Batch Artifact Integrity And Verification Propagation
@@ -1124,9 +1142,7 @@ What this customizes:
 - Requires every delegated pipeline prompt to carry `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, an atomically reserved report number, and the loaded shared/profile/custom/pipeline instructions. The prompt states that all user-layer relative paths resolve inside `USER_ROOT`.
 - Keeps each role's extraction, evaluation, and bounded company/compensation research within the agent assigned to that role, preserving one-role-per-worker scope.
 - Starts one `batch/batch-runner.sh` invocation at a time directly from the root agent. Configured `--parallel N` workers remain bounded internal concurrency managed by that single root-owned runner.
-- Resolves optional batch concurrency consistently for both go and direct batch
-  execution: explicit `--parallel`, then active-user `batch.parallel`, then `1`.
-  The go coordinator records the effective value and source in its final JSON.
+- Resolves optional batch concurrency consistently for both go and direct batch execution: explicit `--parallel`, then active-user `batch.parallel`, then `1`. The go coordinator records the effective value and source in its final JSON.
 - Adds `test-all.mjs` assertions for the cross-file supervision contract in `AGENTS.md`, the career-ops skill, pipeline mode, and batch mode.
 
 Future merge notes:
@@ -1182,265 +1198,54 @@ Files:
 What this customizes:
 
 - Validates the verification review schema locally before a Codex call. `lib/openai-output-schema.mjs` rejects unsupported `uniqueItems` keywords, while deterministic response validation enforces unique duplicate tracker IDs and report paths. Keep API-compatible schemas and post-response semantic checks together rather than dropping the uniqueness requirement.
-- Adds an executable, user-scoped coordinator for the complete conditional `go`
-  sequence: doctor, scan, schema-constrained handoff when the latest scan has
-  items, LinkedIn unless explicitly skipped, and pipeline/batch processing only
-  when the sourcing phases increased the pending count.
-- Keeps scan, LinkedIn scan, liveness, queue synchronization, batch execution,
-  tracker merge, reconciliation, and verification deterministic and directly
-  script-driven.
-- Uses schema-constrained Codex invocations for the browser/WebSearch handoff
-  phase and a standalone read-only verification reviewer. Handoff additions are
-  cross-checked against persisted pending counts. Verification review is
-  deterministically chunked at 5 findings per one-off call. Independent
-  dependency lanes run concurrently using the shared parallel setting, while
-  overlapping tracker/report/orphan identities remain sequential and carry
-  prior lane decisions forward as binding context. The parent validates the
-  aggregate contract and overlapping duplicate keepers before any repair is considered.
-  After duplicate repair it runs an intermediate raw check and applies only
-  decisions whose exact finding fingerprint still exists, preventing a stale
-  patch from overwriting state changed by the duplicate resolver.
-- Preserves `verify-pipeline.mjs` as the broad raw detector: every error and
-  warning is still emitted. `verify-runner.mjs` filters only findings whose
-  level, stable ID, and complete canonical payload SHA-256 match a prior
-  `mark_seen` record, then reviews every remaining finding, applies supported
-  deterministic decisions, and runs the raw verifier again for up to three
-  passes.
-- Stores verified false positives, legitimate exceptions, and informational
-  findings in the append-only user ledger
-  `data/verification-reviews.jsonl`. An exact unchanged finding no longer
-  resurfaces in reviewed verification, while any changed message/details payload
-  gets a new fingerprint and is reviewed again. Raw verification never hides
-  these findings.
-- Resolves confirmed duplicate tracker/report groups through the existing
-  duplicate resolver, which validates exact candidate partitions, merges
-  tracker history, archives losing reports/output artifacts, backs up state,
-  and records `data/duplicate-resolutions.jsonl`.
-- Preserves duplicate lifecycle order as `Hired > Offer > Interview > Responded
-  > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row becomes
-  the keeper together with its existing tracker ID, report, HTML, PDF, and
-  links. Equal-status copies proven to be the same canonical posting keep the
-  most recent complete evaluation, then the highest ID, without escalating a
-  safe identity tie to human review.
-  Losing notes are merged and losing artifacts are backed up and archived. The
-  ledger records the reviewer keeper, effective lifecycle keeper, and override.
-- Adds deterministic orphan handling: restore a valid lost tracker row from a
-  matching preserved `batch/tracker-additions/merged/*.tsv` when available, or
-  reconstruct date/company/role/score/status/Via from a complete verified report
-  when the historical TSV no longer exists or its reusable batch slot now
-  contains another job. The applier revalidates the TSV row number and linked
-  report at mutation time, falls back without failing the run when provenance
-  is stale or malformed, and records the requested TSV, actual source, and
-  fallback reason in `data/verification-actions.jsonl`. An occupied report
-  number receives a fresh ID and its report plus matching HTML/PDF/TeX artifacts
-  are renamed as one backed-up transaction. Confirmed redundant/obsolete orphan
-  reports and matching output artifacts are archived. Bounded tracker patches
-  cover company, Via, canonical status, score, and report-link findings. These
-  actions use timestamped backups.
-- Makes orphan action metadata deterministic after the reviewer chooses the
-  outcome. For `archive_orphan`, `verify-runner.mjs` derives `report_file` from
-  the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot
-  omit the required object or redirect an archive to another path. Restore
-  report paths are fixed to verifier evidence and optional tracker TSV paths are
-  canonicalized from project-relative `users/{USER}/batch/...` output to the
-  user-root-relative `batch/tracker-additions/merged/*.tsv` contract before
-  semantic validation. A null TSV explicitly selects report-derived restoration;
-  the model never selects the resulting number or rename targets. The restore
-  parser also accepts the two
-  historical merged artifacts whose separators were stored as literal `\t`
-  text; current batch artifact validation continues to reject that malformed
-  representation, so this compatibility path does not weaken new writes.
-- Makes duplicate action metadata type-specific before checkpointing. Tracker
-  duplicate findings retain only `keeper_tracker_num` and
-  `duplicate_tracker_nums`; report duplicate findings retain only
-  `keeper_report_file` and `duplicate_report_files`. Redundant cross-type fields
-  are mechanically cleared, report paths are canonicalized to the exact
-  `reports/...` candidates emitted by the verifier, exact warning candidates
-  are semantically revalidated, and tracker/report plans with the same exact
-  candidate report set must still agree on canonical identity. A broader
-  report warning may contain orphaned reports beyond a tracker-backed subset;
-  its whole-group decision therefore does not override an evidence-backed
-  decision for that exact subset. This prevents a valid duplicate judgment from
-  failing late because a reviewer copied the combined identity or user-root
-  paths into both warning types.
-- Keeps each overlapping tracker/report/orphan dependency component contiguous
-  inside its review lane, so exact paired findings normally share one
-  five-finding prompt. Paired disposition or keeper conflicts retry only that
-  chunk with explicit consistency feedback. If bounded retries still disagree,
-  or either side is manual, the whole exact component becomes `manual_review`
-  rather than failing the run or applying half a resolution. When both sides
-  confirm the duplicate, the tracker-selected canonical identity mechanically
-  determines the report keeper.
-- Scopes aggregate duplicate consistency to decisions active in the current
-  pass, so exact pairs fully settled earlier cannot produce missing-decision
-  failures. When a repair creates or changes one side of an exact pair while
-  the other side still has an unchanged seen record, the runner reactivates the
-  seen counterpart and reviews both together. This prevents a one-sided action
-  from relying on stale paired judgement after tracker state changes.
-- Treats active tracker links and report contents as current identity while
-  retaining batch completion logs as historical provenance only. Orphan checks
-  use the exact linked report filename, so a tracker link cannot accidentally
-  claim every active file sharing its numeric prefix. A report-number collision
-  is resolved through those exact orphan findings: the linked file owns the old
-  identity, while each unlinked file is independently restored under a fresh ID
-  or archived. Prompt review remains required only when the evidence cannot
-  support either bounded disposition.
-- Keeps broad company/title duplicate warnings, and additionally emits exact
-  tracker/report subgroups when only a subset shares one canonical posting URL.
-  This lets prompt review resolve the proven subset and record the mixed broad
-  group as seen without merging distinct repostings.
-- Canonical posting identity removes standard source, referral, and feed
-  tracking parameters such as `src` and `feed_run`, and treats a stable terminal
-  posting UUID on one host as authoritative when its descriptive slug changes.
-  When historical evidence still produces a strict nested group covered by a
-  broader confirmed group, aggregate reconciliation keeps only the maximal mutation and
-  records both nested tracker/report findings as informational seen decisions.
-  This prevents overlapping resolver actions and guarantees that every keeper
-  belongs to the exact warning candidate set it partitions.
-- Migrates a legacy tracker lacking the Via column before prompt review, then
-  reverifies so missing per-row Via values become bounded evidence-backed
-  patches rather than a schema-wide wave of human-review decisions.
-- Allows tracker duplicate repair to proceed when a losing row already points
-  at a missing report. Removing the duplicate row remains valid; the resolver
-  no longer manufactures an implicit archive plan for a file that does not
-  exist.
-- Aggregates all semantic contract errors in a five-finding reviewer response
-  and retries only that failed chunk, passing the complete validation feedback
-  and previous response back for correction. `--review-retries N` defaults to
-  two and is bounded to zero through five. A malformed item no longer discards
-  valid independent chunk work or hides later invalid items behind the first
-  error.
-- Writes an atomic checkpoint only after a complete chunk is normalized and
-  semantically validated. Actions remain pass-atomic: no duplicate, orphan,
-  tracker, or seen-ledger mutation starts until every lane and the aggregate
-  duplicate-consistency check succeed. A fresh invocation ignores prior run
-  artifacts; `--resume-run RUN_ID` explicitly reuses only checkpoints whose
-  signature matches the active user, exact findings, and prior lane decisions.
-  Matching checkpoints are normalized and semantically revalidated under the
-  current contract when loaded, while their original decision chain remains
-  available solely for matching later checkpoints from the same historical
-  run. Each successful deterministic action phase also writes an atomic result
-  checkpoint. If duplicate repair commits but the following apply phase fails,
-  resume requires an exact match with the saved post-duplicate verification,
-  normalizes/revalidates the saved applicable decisions, retains the completed
-  duplicate result, and retries apply without prompting reviewers again.
-  After every completed apply/reverify boundary, the runner also saves the
-  exact post-review verification state. A later `--resume-run` whose current
-  findings match that checkpoint continues at the next pass and reuses the
-  already committed duplicate/apply action results, rather than replaying the
-  completed repair pass.
-  Raw/invalid reviewer outputs are never resumable decisions. Retry, checkpoint,
-  and normalization counts are exposed under `review_resilience`.
-- Keeps the prompt reviewer read-only. Only
-  `resolve-verify-warnings.mjs` and `apply-verification-review.mjs` may mutate
-  data, and both revalidate prompt output against deterministic verifier
-  evidence. Unsupported, conflicting, ambiguous, or high-severity findings use
-  `manual_review` and keep reviewed verification `partial`.
-- Keeps manual-review decisions visible in direct human runs: after the normal
-  compact summary (and any operational error), every still-active manual item is
-  repeated as `human review, job(s) #..., {finding code} → needs_human_review`.
-  This recap is non-enumerable runner state used only by the human renderer, so
-  `--json` retains its existing machine contract and stdout purity.
+- Adds an executable, user-scoped coordinator for the complete conditional `go` sequence: doctor, scan, schema-constrained handoff when the latest scan has items, LinkedIn unless explicitly skipped, and pipeline/batch processing only when the sourcing phases increased the pending count.
+- Keeps scan, LinkedIn scan, liveness, queue synchronization, batch execution, tracker merge, reconciliation, and verification deterministic and directly script-driven.
+- Uses schema-constrained Codex invocations for the browser/WebSearch handoff phase and a standalone read-only verification reviewer. Handoff additions are cross-checked against persisted pending counts. Verification review is deterministically chunked at 5 findings per one-off call. Independent dependency lanes run concurrently using the shared parallel setting, while overlapping tracker/report/orphan identities remain sequential and carry prior lane decisions forward as binding context. The parent validates the aggregate contract and overlapping duplicate keepers before any repair is considered. After duplicate repair it runs an intermediate raw check and applies only decisions whose exact finding fingerprint still exists, preventing a stale patch from overwriting state changed by the duplicate resolver.
+- Preserves `verify-pipeline.mjs` as the broad raw detector: every error and warning is still emitted. `verify-runner.mjs` filters only findings whose level, stable ID, and complete canonical payload SHA-256 match a prior `mark_seen` record, then reviews every remaining finding, applies supported deterministic decisions, and runs the raw verifier again for up to three passes.
+- Stores verified false positives, legitimate exceptions, and informational findings in the append-only user ledger `data/verification-reviews.jsonl`. An exact unchanged finding no longer resurfaces in reviewed verification, while any changed message/details payload gets a new fingerprint and is reviewed again. Raw verification never hides these findings.
+- Resolves confirmed duplicate tracker/report groups through the existing duplicate resolver, which validates exact candidate partitions, merges tracker history, archives losing reports/output artifacts, backs up state, and records `data/duplicate-resolutions.jsonl`.
+- Preserves duplicate lifecycle order as `Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row becomes the keeper together with its existing tracker ID, report, HTML, PDF, and links. Equal-status copies proven to be the same canonical posting keep the most recent complete evaluation, then the highest ID, without escalating a safe identity tie to human review. Losing notes are merged and losing artifacts are backed up and archived. The ledger records the reviewer keeper, effective lifecycle keeper, and override.
+- Adds deterministic orphan handling: restore a valid lost tracker row from a matching preserved `batch/tracker-additions/merged/*.tsv` when available, or reconstruct date/company/role/score/status/Via from a complete verified report when the historical TSV no longer exists or its reusable batch slot now contains another job. The applier revalidates the TSV row number and linked report at mutation time, falls back without failing the run when provenance is stale or malformed, and records the requested TSV, actual source, and fallback reason in `data/verification-actions.jsonl`. An occupied report number receives a fresh ID and its report plus matching HTML/PDF/TeX artifacts are renamed as one backed-up transaction. Confirmed redundant/obsolete orphan reports and matching output artifacts are archived. Bounded tracker patches cover company, Via, canonical status, score, and report-link findings. These actions use timestamped backups.
+- Makes orphan action metadata deterministic after the reviewer chooses the outcome. For `archive_orphan`, `verify-runner.mjs` derives `report_file` from the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot omit the required object or redirect an archive to another path. Restore report paths are fixed to verifier evidence and optional tracker TSV paths are canonicalized from project-relative `users/{USER}/batch/...` output to the user-root-relative `batch/tracker-additions/merged/*.tsv` contract before semantic validation. A null TSV explicitly selects report-derived restoration; the model never selects the resulting number or rename targets. The restore parser also accepts the two historical merged artifacts whose separators were stored as literal `\t` text; current batch artifact validation continues to reject that malformed representation, so this compatibility path does not weaken new writes.
+- Makes duplicate action metadata type-specific before checkpointing. Tracker duplicate findings retain only `keeper_tracker_num` and `duplicate_tracker_nums`; report duplicate findings retain only `keeper_report_file` and `duplicate_report_files`. Redundant cross-type fields are mechanically cleared, report paths are canonicalized to the exact `reports/...` candidates emitted by the verifier, exact warning candidates are semantically revalidated, and tracker/report plans with the same exact candidate report set must still agree on canonical identity. A broader report warning may contain orphaned reports beyond a tracker-backed subset; its whole-group decision therefore does not override an evidence-backed decision for that exact subset. This prevents a valid duplicate judgment from failing late because a reviewer copied the combined identity or user-root paths into both warning types.
+- Keeps each overlapping tracker/report/orphan dependency component contiguous inside its review lane, so exact paired findings normally share one five-finding prompt. Paired disposition or keeper conflicts retry only that chunk with explicit consistency feedback. If bounded retries still disagree, or either side is manual, the whole exact component becomes `manual_review` rather than failing the run or applying half a resolution. When both sides confirm the duplicate, the tracker-selected canonical identity mechanically determines the report keeper.
+- Scopes aggregate duplicate consistency to decisions active in the current pass, so exact pairs fully settled earlier cannot produce missing-decision failures. When a repair creates or changes one side of an exact pair while the other side still has an unchanged seen record, the runner reactivates the seen counterpart and reviews both together. This prevents a one-sided action from relying on stale paired judgement after tracker state changes.
+- Treats active tracker links and report contents as current identity while retaining batch completion logs as historical provenance only. Orphan checks use the exact linked report filename, so a tracker link cannot accidentally claim every active file sharing its numeric prefix. A report-number collision is resolved through those exact orphan findings: the linked file owns the old identity, while each unlinked file is independently restored under a fresh ID or archived. Prompt review remains required only when the evidence cannot support either bounded disposition.
+- Keeps broad company/title duplicate warnings, and additionally emits exact tracker/report subgroups when only a subset shares one canonical posting URL. This lets prompt review resolve the proven subset and record the mixed broad group as seen without merging distinct repostings.
+- Canonical posting identity removes standard source, referral, and feed tracking parameters such as `src` and `feed_run`, and treats a stable terminal posting UUID on one host as authoritative when its descriptive slug changes. When historical evidence still produces a strict nested group covered by a broader confirmed group, aggregate reconciliation keeps only the maximal mutation and records both nested tracker/report findings as informational seen decisions. This prevents overlapping resolver actions and guarantees that every keeper belongs to the exact warning candidate set it partitions.
+- Migrates a legacy tracker lacking the Via column before prompt review, then reverifies so missing per-row Via values become bounded evidence-backed patches rather than a schema-wide wave of human-review decisions.
+- Allows tracker duplicate repair to proceed when a losing row already points at a missing report. Removing the duplicate row remains valid; the resolver no longer manufactures an implicit archive plan for a file that does not exist.
+- Aggregates all semantic contract errors in a five-finding reviewer response and retries only that failed chunk, passing the complete validation feedback and previous response back for correction. `--review-retries N` defaults to two and is bounded to zero through five. A malformed item no longer discards valid independent chunk work or hides later invalid items behind the first error.
+- Writes an atomic checkpoint only after a complete chunk is normalized and semantically validated. Actions remain pass-atomic: no duplicate, orphan, tracker, or seen-ledger mutation starts until every lane and the aggregate duplicate-consistency check succeed. A fresh invocation ignores prior run artifacts; `--resume-run RUN_ID` explicitly reuses only checkpoints whose signature matches the active user, exact findings, and prior lane decisions. Matching checkpoints are normalized and semantically revalidated under the current contract when loaded, while their original decision chain remains available solely for matching later checkpoints from the same historical run. Each successful deterministic action phase also writes an atomic result checkpoint. If duplicate repair commits but the following apply phase fails, resume requires an exact match with the saved post-duplicate verification, normalizes/revalidates the saved applicable decisions, retains the completed duplicate result, and retries apply without prompting reviewers again. After every completed apply/reverify boundary, the runner also saves the exact post-review verification state. A later `--resume-run` whose current findings match that checkpoint continues at the next pass and reuses the already committed duplicate/apply action results, rather than replaying the completed repair pass. Raw/invalid reviewer outputs are never resumable decisions. Retry, checkpoint, and normalization counts are exposed under `review_resilience`.
+- Keeps the prompt reviewer read-only. Only `resolve-verify-warnings.mjs` and `apply-verification-review.mjs` may mutate data, and both revalidate prompt output against deterministic verifier evidence. Unsupported, conflicting, ambiguous, or high-severity findings use `manual_review` and keep reviewed verification `partial`.
+- Keeps manual-review decisions visible in direct human runs: after the normal compact summary (and any operational error), every still-active manual item is repeated as `human review, job(s) #..., {finding code} → needs_human_review`. This recap is non-enumerable runner state used only by the human renderer, so `--json` retains its existing machine contract and stdout purity.
 - Makes the parent `go` summary expose every unresolved verifier item immediately after the aggregate verification count, including its severity, stable finding code, and sanitized message. Machine-readable `--json` output remains unchanged.
-- Also repeats every other still-unresolved raw finding at the end of a direct
-  human run with its warning/error level, related tracker/report IDs, and issue
-  code. Manual items stay in their dedicated block and are excluded from the
-  general unresolved block. Both recap collections are non-enumerable and never
-  appear in `--json` output.
-- Adds an idempotent `pipeline.md` to `batch-input.tsv` synchronizer with stable
-  IDs so the resumable batch runner cannot silently miss newly scanned jobs.
-- Adds JSON output to `check-liveness.mjs` plus a deterministic pipeline wrapper
-  that moves only confirmed-expired rows and uses `set-status.mjs` for any
-  matching tracker row.
-- Exposes the complete review/action/reverify lifecycle independently as
-  `/career-ops verify`, `npm run verify -- --user {USER}`, and
-  `node verify-runner.mjs --user {USER}`. `npm run verify:raw` remains the
-  unreviewed detector. The `go` coordinator delegates its final integrity phase
-  to the same reviewed runner, so standalone and end-to-end behavior cannot
-  drift.
-- Serializes concurrent `go` and reviewed-verification runs with per-user PID
-  locks, owns child process
-  groups for stop handling, and writes phase logs under the user root. A run is complete only when the pending queue is empty and
-  no finding requires human review; otherwise it reports partial, while setup or
-  authenticated-login requirements report blocked.
-- Establishes a consistent public CLI output contract. Manual invocations stream
-  bounded operational progress to stdout and finish with only a compact summary
-  plus the actual failure text. `--json` opts into the complete machine result,
-  keeps stdout as a single parseable JSON object, and routes progress to stderr.
-  Internal orchestrators pass `--json` explicitly when parsing child results.
-  Doctor and the batch runner retain their existing compact human output and
-  persisted state artifacts.
-- Adds user-scoped run-artifact retention through
-  `npm run cleanup:runs -- --user {USER}`. It deletes timestamped directories
-  under both `data/verify-runs/` and `data/go-runs/` once they are strictly
-  older than 10 days, and refuses cleanup while another go or verify runner is
-  active for that user. The go runner applies the same cleanup at startup.
-- Compacts only terminal `completed` go and reviewed-verification runs to a
-  single `summary.json`. Failed, interrupted, partial, and blocked runs keep
-  their full diagnostic and resume artifacts until the fixed 10-day cleanup
-  removes the entire run directory.
-- Prints the reviewed verifier's run ID and artifact directory immediately after
-  acquiring its per-user lock, before the first phase starts. Interrupted runs
-  therefore expose the exact value accepted by `--resume-run`; JSON mode sends
-  these early lines to stderr so stdout remains parseable.
-- Streams zero-token target/provider start and completion,
-  handoff task activity, LinkedIn search prompts, queue deltas, batch job
-  start/completion, and one short line per reviewed finding after its
-  five-finding call completes: `reviewed X/Y, job(s) #{related IDs},
-  {issue code} → {classification}`. Tracker IDs are preferred, with report IDs
-  used for report-only and orphan findings. Full rationale, evidence, and action
-  details stay in run artifacts and the opt-in JSON result. `--quiet` retains
-  the phase-log-only behavior.
-- Registers the runner, helpers, shared library, tests, and JSON schema in the
-  updater-managed system layer so updates do not leave a partial coordinator.
-- Resolves Codex model and reasoning independently as runner argument, active
-  user `profile.yml`, then global Codex default, and forwards resolved
-  non-global values to handoff, reviewed verification, and every batch Codex
-  worker.
-- Resolves parallelism independently as runner argument, active-user
-  `batch.parallel`, then `1`, records `parallel` and `parallel_source`, and passes
-  the resolved value explicitly to the batch and reviewed-verification runners.
-  Verification uses it only for isolated read-only review lanes; deterministic
-  repair and ledger mutation remain serialized in the parent.
+- Also repeats every other still-unresolved raw finding at the end of a direct human run with its warning/error level, related tracker/report IDs, and issue code. Manual items stay in their dedicated block and are excluded from the general unresolved block. Both recap collections are non-enumerable and never appear in `--json` output.
+- Adds an idempotent `pipeline.md` to `batch-input.tsv` synchronizer with stable IDs so the resumable batch runner cannot silently miss newly scanned jobs.
+- Adds JSON output to `check-liveness.mjs` plus a deterministic pipeline wrapper that moves only confirmed-expired rows and uses `set-status.mjs` for any matching tracker row.
+- Exposes the complete review/action/reverify lifecycle independently as `/career-ops verify`, `npm run verify -- --user {USER}`, and `node verify-runner.mjs --user {USER}`. `npm run verify:raw` remains the unreviewed detector. The `go` coordinator delegates its final integrity phase to the same reviewed runner, so standalone and end-to-end behavior cannot drift.
+- Serializes concurrent `go` and reviewed-verification runs with per-user PID locks, owns child process groups for stop handling, and writes phase logs under the user root. A run is complete only when the pending queue is empty and no finding requires human review; otherwise it reports partial, while setup or authenticated-login requirements report blocked.
+- Establishes a consistent public CLI output contract. Manual invocations stream bounded operational progress to stdout and finish with only a compact summary plus the actual failure text. `--json` opts into the complete machine result, keeps stdout as a single parseable JSON object, and routes progress to stderr. Internal orchestrators pass `--json` explicitly when parsing child results. Doctor and the batch runner retain their existing compact human output and persisted state artifacts.
+- Adds user-scoped run-artifact retention through `npm run cleanup:runs -- --user {USER}`. It deletes timestamped directories under both `data/verify-runs/` and `data/go-runs/` once they are strictly older than 10 days, and refuses cleanup while another go or verify runner is active for that user. The go runner applies the same cleanup at startup.
+- Compacts only terminal `completed` go and reviewed-verification runs to a single `summary.json`. Failed, interrupted, partial, and blocked runs keep their full diagnostic and resume artifacts until the fixed 10-day cleanup removes the entire run directory.
+- Prints the reviewed verifier's run ID and artifact directory immediately after acquiring its per-user lock, before the first phase starts. Interrupted runs therefore expose the exact value accepted by `--resume-run`; JSON mode sends these early lines to stderr so stdout remains parseable.
+- Streams zero-token target/provider start and completion, handoff task activity, LinkedIn search prompts, queue deltas, batch job start/completion, and one short line per reviewed finding after its five-finding call completes: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details stay in run artifacts and the opt-in JSON result. `--quiet` retains the phase-log-only behavior.
+- Registers the runner, helpers, shared library, tests, and JSON schema in the updater-managed system layer so updates do not leave a partial coordinator.
+- Resolves Codex model and reasoning independently as runner argument, active user `profile.yml`, then global Codex default, and forwards resolved non-global values to handoff, reviewed verification, and every batch Codex worker.
+- Resolves parallelism independently as runner argument, active-user `batch.parallel`, then `1`, records `parallel` and `parallel_source`, and passes the resolved value explicitly to the batch and reviewed-verification runners. Verification uses it only for isolated read-only review lanes; deterministic repair and ledger mutation remain serialized in the parent.
 
 Future merge notes:
 
-- Preserve the strict handoff output schema and observed-state cross-check; do
-  not make agent prose a control signal.
+- Preserve the strict handoff output schema and observed-state cross-check; do not make agent prose a control signal.
 - Preserve the verification schema preflight and deterministic array-uniqueness checks. Schema compatibility changes must retain the duplicate-resolution semantic contract and its tests.
-- Preserve the read-only prompt/deterministic mutation boundary. New action
-  types must validate against raw verifier evidence, remain user-scoped,
-  acquire the appropriate lock, back up affected artifacts, append an audit
-  record, and be followed by raw re-verification.
-- Preserve lifecycle-first duplicate identity: Rejected stays between Responded
-  and Applied, the most advanced row and its original artifacts remain active,
-  and reviewer-selected identity is only an equal-status tiebreaker. Keep
-  losing-artifact backup/archive, rollback, and keeper-override ledger coverage.
-- Preserve exact-payload seen fingerprints. Never weaken them to warning code,
-  company/role, or finding ID alone; changed evidence must resurface. Keep the
-  seen ledger user-owned and append-only, and keep raw verifier output
-  unsuppressed.
-- Preserve five-finding review chunks, dependency-safe lane partitioning,
-  per-lane prior-decision context, isolated reviewer artifacts, aggregate
-  duplicate-keeper consistency, aggregated per-chunk semantic validation,
-  bounded retries, signature-checked validated checkpoints, serialized
-  pass-atomic mutations, severity-based `manual_review`, and the
-  completed-versus-partial final status contract; finding volume must not make
-  a single unconstrained prompt or silently downgrade review requirements.
-- Preserve deterministic action metadata. Reviewers may classify an orphan but
-  must not control archive paths; derive them from the verifier finding. Keep
-  normal runs fresh and checkpoint reuse explicitly opt-in through
-  `--resume-run`, with user/finding/prior-decision signature validation.
-- Preserve stable batch IDs and append-only synchronization because
-  `batch-state.tsv` references those IDs across retries and resumes.
-- Preserve human-streaming output as the default and require `--json` for machine
-  consumers. In JSON mode, keep stdout to one lossless JSON object and progress
-  on stderr; keep `--quiet` available for unattended callers that want log-only
-  phase details.
-- Keep `verify-pipeline.mjs --json` finding IDs, codes, and evidence stable
-  enough for schema-constrained review, exact fingerprints, and deterministic
-  action validation. If a raw finding payload intentionally changes, expect its
-  old seen record not to match and let it resurface for review.
+- Preserve the read-only prompt/deterministic mutation boundary. New action types must validate against raw verifier evidence, remain user-scoped, acquire the appropriate lock, back up affected artifacts, append an audit record, and be followed by raw re-verification.
+- Preserve lifecycle-first duplicate identity: Rejected stays between Responded and Applied, the most advanced row and its original artifacts remain active, and reviewer-selected identity is only an equal-status tiebreaker. Keep losing-artifact backup/archive, rollback, and keeper-override ledger coverage.
+- Preserve exact-payload seen fingerprints. Never weaken them to warning code, company/role, or finding ID alone; changed evidence must resurface. Keep the seen ledger user-owned and append-only, and keep raw verifier output unsuppressed.
+- Preserve five-finding review chunks, dependency-safe lane partitioning, per-lane prior-decision context, isolated reviewer artifacts, aggregate duplicate-keeper consistency, aggregated per-chunk semantic validation, bounded retries, signature-checked validated checkpoints, serialized pass-atomic mutations, severity-based `manual_review`, and the completed-versus-partial final status contract; finding volume must not make a single unconstrained prompt or silently downgrade review requirements.
+- Preserve deterministic action metadata. Reviewers may classify an orphan but must not control archive paths; derive them from the verifier finding. Keep normal runs fresh and checkpoint reuse explicitly opt-in through `--resume-run`, with user/finding/prior-decision signature validation.
+- Preserve stable batch IDs and append-only synchronization because `batch-state.tsv` references those IDs across retries and resumes.
+- Preserve human-streaming output as the default and require `--json` for machine consumers. In JSON mode, keep stdout to one lossless JSON object and progress on stderr; keep `--quiet` available for unattended callers that want log-only phase details.
+- Keep `verify-pipeline.mjs --json` finding IDs, codes, and evidence stable enough for schema-constrained review, exact fingerprints, and deterministic action validation. If a raw finding payload intentionally changes, expect its old seen record not to match and let it resurface for review.
 
 ## Local Maintenance Skill
 
@@ -1556,10 +1361,8 @@ On every upstream update, explicitly check whether upstream now includes:
 - Batch runner support for both Claude and Codex workers.
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
 - Cross-artifact batch validation equivalent to the fork's report/TSV/final-JSON consistency gate, confidential-employer Via requirement, bounded deterministic repair, merge-time pending-file preservation, and structured verifier failure propagation.
-- Optional profile-driven batch parallelism with argument ->
-  `batch.parallel` -> `1` precedence and bounded validation.
-- Codex model/reasoning argument -> profile -> global resolution across every
-  Codex call owned by the deterministic go coordinator.
+- Optional profile-driven batch parallelism with argument -> `batch.parallel` -> `1` precedence and bounded validation.
+- Codex model/reasoning argument -> profile -> global resolution across every Codex call owned by the deterministic go coordinator.
 - Deterministic `go-runner.mjs` orchestration with strict handoff and verification-review schemas, stable queue synchronization, duplicate resolution, orphan restoration/archive, bounded tracker patches, and human-review-preserving final status.
 - Bounded batch runs through `--limit` are now upstream baseline; preserve only the fork-specific user-scoped/Codex integration around the flag.
 - Batch status/watch progress monitoring through user-scoped batch state.

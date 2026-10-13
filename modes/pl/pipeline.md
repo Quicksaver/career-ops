@@ -1,10 +1,10 @@
 # Tryb: pipeline -- Inbox URL-i (Second Brain)
 
-Przetwarza URL-e ofert nagromadzone w `data/pipeline.md`. Kandydat dodaje URL-e, kiedy chce, a potem uruchamia `/career-ops pipeline`, by przetworzyć je wszystkie naraz.
+Przetwarza URL-e ofert nagromadzone w `users/{USER}/data/pipeline.md`. Kandydat dodaje URL-e, kiedy chce, a potem uruchamia `/career-ops pipeline`, by przetworzyć je wszystkie naraz.
 
 ## Workflow
 
-1. **Przeczytaj** `data/pipeline.md` -> znajdź itemy `- [ ]` w sekcji "Oczekujące" / "Pending" / "Pendientes"
+1. **Przeczytaj** `users/{USER}/data/pipeline.md` -> znajdź itemy `- [ ]` w sekcji "Oczekujące" / "Pending" / "Pendientes"
 2. **Dla każdego oczekującego URL-a**:
    a. Zarezerwuj następny kolejny `REPORT_NUM` atomowo, uruchamiając `node reserve-report-num.mjs` (i zwolnij sentinel, uruchamiając `node reserve-report-num.mjs --release <num>`, gdy report zostanie zapisany)
    b. **Wyciągnij ofertę** za pomocą Playwright (`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch
@@ -43,7 +43,7 @@ Przetwarza URL-e ofert nagromadzone w `data/pipeline.md`. Kandydat dodaje URL-e,
 **Przypadki szczególne:**
 - **LinkedIn**: Może wymagać logowania -> oznacz `[!]` i poproś kandydata o wklejenie tekstu
 - **PDF**: Jeśli URL wskazuje na PDF, przeczytaj go bezpośrednio narzędziem Read
-- **Prefiks `local:`**: Przeczytaj plik lokalny. Przykład: `local:jds/linkedin-pm-ai.md` -> przeczytaj `jds/linkedin-pm-ai.md`
+- **Prefiks `local:`**: Przeczytaj plik lokalny. Przykład: `local:users/{USER}/jds/linkedin-pm-ai.md` -> przeczytaj `users/{USER}/jds/linkedin-pm-ai.md`
 - **Pracuj.pl / No Fluff Jobs / Just Join IT**: Popularne polskie portale. Playwright dobrze radzi sobie z bannerami cookie
 - **Bulldogjob / LinkedIn PL**: Oferty ustrukturyzowane, dobrze czytelne maszynowo. WebFetch zwykle wystarcza
 

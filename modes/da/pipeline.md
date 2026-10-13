@@ -1,10 +1,10 @@
 # Mode: pipeline -- URL-indbakke (Second Brain)
 
-Behandler URL'er til opslag, der er samlet i `data/pipeline.md`. Kandidaten tilføjer URL'er, når han vil, og kører derefter `/career-ops pipeline` for at behandle dem alle på én gang.
+Behandler URL'er til opslag, der er samlet i `users/{USER}/data/pipeline.md`. Kandidaten tilføjer URL'er, når han vil, og kører derefter `/career-ops pipeline` for at behandle dem alle på én gang.
 
 ## Workflow
 
-1. **Læs** `data/pipeline.md` -> find `- [ ]`-elementer i sektionen "Afventer" / "Pending" / "Pendientes"
+1. **Læs** `users/{USER}/data/pipeline.md` -> find `- [ ]`-elementer i sektionen "Afventer" / "Pending" / "Pendientes"
 2. **For hver afventende URL**:
    a. Reservér det næste fortløbende `REPORT_NUM` atomisk ved at køre `node reserve-report-num.mjs` (og frigiv sentinel'en ved at køre `node reserve-report-num.mjs --release <num>`, når rapporten er skrevet)
    b. **Udtræk opslaget** med Playwright (`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch
@@ -43,7 +43,7 @@ Behandler URL'er til opslag, der er samlet i `data/pipeline.md`. Kandidaten tilf
 **Særlige tilfælde:**
 - **LinkedIn**: Kan kræve login -> markér `[!]` og bed kandidaten om at indsætte teksten
 - **PDF**: Hvis URL'en peger på en PDF, så læs den direkte med Read-værktøjet
-- **Præfikset `local:`**: Læs den lokale fil. Eksempel: `local:jds/linkedin-pm-ai.md` -> læs `jds/linkedin-pm-ai.md`
+- **Præfikset `local:`**: Læs den lokale fil. Eksempel: `local:users/{USER}/jds/linkedin-pm-ai.md` -> læs `users/{USER}/jds/linkedin-pm-ai.md`
 - **Jobindex / The Hub / LinkedIn DK**: Almindelige danske portaler. Playwright håndterer cookie-bannere godt
 - **Jobnet (Styrelsen for Arbejdsmarked)**: Strukturerede opslag, godt læsbare af maskine. WebFetch er som regel nok
 

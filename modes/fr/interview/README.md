@@ -22,12 +22,12 @@ Ces compétences supposent l'existence des fichiers suivants (valeurs par défau
 
 | Fichier | Rôle |
 |---|---|
-| `cv.md` | CV du candidat — source de vérité pour l'expérience et les points de preuve |
-| `article-digest.md` | Points de preuve condensés issus du portfolio (optionnel) |
-| `config/profile.yml` | Profil du candidat — postes visés, rémunération, narratif |
-| `modes/_profile.md` | Archétypes du candidat, narratif et critères rédhibitoires |
-| `interview-prep/story-bank.md` | Banque d'histoires STAR+R accumulées |
-| `interview-prep/question-bank.md` | Banque de questions avec suivi des lacunes (créée à la première utilisation) |
-| `interview-prep/interview-prep-guide.md` | Principes généraux d'entretien (optionnel) |
-| `interview-prep/{company}-{role}.md` | Fichier de préparation propre au poste |
-| `interview-prep/retracted-claims.md` | Affirmations que le candidat a écartées comme indéfendables — barrière stricte en entraînement comme en débriefing (format : `**"[claim]"** ([context]). Reason: [raison en une ligne + reformulation correcte le cas échéant].`) |
+| `users/{USER}/cv.md` | CV du candidat — source de vérité pour l'expérience et les points de preuve |
+| `users/{USER}/article-digest.md` | Points de preuve condensés issus du portfolio (optionnel) |
+| `users/{USER}/config/profile.yml` | Profil du candidat — postes visés, rémunération, narratif |
+| `users/{USER}/modes/_profile.md` | Archétypes du candidat, narratif et critères rédhibitoires |
+| `users/{USER}/interview-prep/story-bank.md` | Banque d'histoires STAR+R accumulées |
+| `users/{USER}/interview-prep/question-bank.md` | Banque de questions avec suivi des lacunes (créée à la première utilisation) |
+| `users/{USER}/interview-prep/interview-prep-guide.md` | Principes généraux d'entretien (optionnel) |
+| `users/{USER}/interview-prep/{company}-{role}.md` | Fichier de préparation propre au poste |
+| `users/{USER}/interview-prep/retracted-claims.md` | Affirmations que le candidat a écartées comme indéfendables — barrière stricte en entraînement comme en débriefing (format : `**"[claim]"** ([context]). Reason: [raison en une ligne + reformulation correcte le cas échéant].`) |

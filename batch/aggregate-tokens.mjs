@@ -1,16 +1,13 @@
+import { pathToFileURL, fileURLToPath } from 'url';
+import { getUserContext, printUserContextErrorAndExit, userPath } from '../lib/user-context.mjs';
+import { estimateCost } from '../utils/token-tracker.mjs';
+import { isMainModule } from '../lib/is-main-module.mjs';
 /**
  * batch/aggregate-tokens.mjs — Aggregate and display token usage for batch runs
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from '../lib/user-context.mjs';
-import { estimateCost } from '../utils/token-tracker.mjs';
 
 export function parseTokenVal(str) {
   if (!str) return 0;
@@ -243,7 +240,7 @@ function main(userContext) {
   console.log(`  ${padTotal}${formatK(grandTotalTokens)} tokens ($${grandCost.toFixed(4)})\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   try {
     main(getUserContext(process.argv.slice(2)));
   } catch (err) {

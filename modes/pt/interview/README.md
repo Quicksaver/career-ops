@@ -22,12 +22,12 @@ Estas competências pressupõem que os arquivos abaixo existam (padrões do care
 
 | Arquivo | Finalidade |
 |---|---|
-| `cv.md` | CV do candidato — fonte de verdade para experiência e pontos de prova |
-| `article-digest.md` | Pontos de prova condensados do portfolio (opcional) |
-| `config/profile.yml` | Perfil do candidato — vagas-alvo, remuneração, narrativa |
-| `modes/_profile.md` | Arquétipos, narrativa e deal-breakers do candidato |
-| `interview-prep/story-bank.md` | Histórias STAR+R acumuladas |
-| `interview-prep/question-bank.md` | Banco de perguntas com rastreamento de lacunas (criado no primeiro uso) |
-| `interview-prep/interview-prep-guide.md` | Princípios gerais de entrevista (opcional) |
-| `interview-prep/{company}-{role}.md` | Arquivo de preparação específico da vaga |
-| `interview-prep/retracted-claims.md` | Alegações que o candidato rejeitou como indefensáveis — barreira rígida na simulação e no debrief (formato: `**"[claim]"** ([context]). Reason: [one-line reason + correct framing if applicable].`) |
+| `users/{USER}/cv.md` | CV do candidato — fonte de verdade para experiência e pontos de prova |
+| `users/{USER}/article-digest.md` | Pontos de prova condensados do portfolio (opcional) |
+| `users/{USER}/config/profile.yml` | Perfil do candidato — vagas-alvo, remuneração, narrativa |
+| `users/{USER}/modes/_profile.md` | Arquétipos, narrativa e deal-breakers do candidato |
+| `users/{USER}/interview-prep/story-bank.md` | Histórias STAR+R acumuladas |
+| `users/{USER}/interview-prep/question-bank.md` | Banco de perguntas com rastreamento de lacunas (criado no primeiro uso) |
+| `users/{USER}/interview-prep/interview-prep-guide.md` | Princípios gerais de entrevista (opcional) |
+| `users/{USER}/interview-prep/{company}-{role}.md` | Arquivo de preparação específico da vaga |
+| `users/{USER}/interview-prep/retracted-claims.md` | Alegações que o candidato rejeitou como indefensáveis — barreira rígida na simulação e no debrief (formato: `**"[claim]"** ([context]). Reason: [one-line reason + correct framing if applicable].`) |

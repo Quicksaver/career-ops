@@ -1,10 +1,10 @@
 # Modo: pipeline -- Inbox de URLs (Second Brain)
 
-Processa URLs de vagas acumuladas em `data/pipeline.md`. O candidato adiciona URLs quando quiser e depois executa `/career-ops pipeline` para processar todas de uma vez.
+Processa URLs de vagas acumuladas em `users/{USER}/data/pipeline.md`. O candidato adiciona URLs quando quiser e depois executa `/career-ops pipeline` para processar todas de uma vez.
 
 ## Workflow
 
-1. **Ler** `data/pipeline.md` → buscar itens `- [ ]` na seção "Pendentes"
+1. **Ler** `users/{USER}/data/pipeline.md` → buscar itens `- [ ]` na seção "Pendentes"
 2. **Para cada URL pendente**:
    a. Reservar o próximo `REPORT_NUM` sequencial de forma atômica executando `node reserve-report-num.mjs` (e liberar o sentinel executando `node reserve-report-num.mjs --release <num>` após a gravação do relatório)
    b. **Extrair JD** usando Playwright (browser_navigate + browser_snapshot) → WebFetch → WebSearch
@@ -44,7 +44,7 @@ Processa URLs de vagas acumuladas em `data/pipeline.md`. O candidato adiciona UR
 **Casos especiais:**
 - **LinkedIn**: Pode exigir login → marcar com `[!]` e pedir ao candidato para colar o texto
 - **PDF**: Se a URL aponta para um PDF, ler diretamente com o Read tool
-- **`local:` prefix**: Ler arquivo local. Exemplo: `local:jds/linkedin-pm-ai.md` → ler `jds/linkedin-pm-ai.md`
+- **`local:` prefix**: Ler arquivo local. Exemplo: `local:users/{USER}/jds/linkedin-pm-ai.md` → ler `users/{USER}/jds/linkedin-pm-ai.md`
 - **Gupy / Greenhouse / Lever**: Plataformas comuns no Brasil. Playwright funciona bem com todas
 - **Vagas.com.br / InfoJobs / Catho**: Portais brasileiros, geralmente acessíveis via WebFetch
 - **LinkedIn BR**: Mesmas restrições do LinkedIn global — pode exigir login

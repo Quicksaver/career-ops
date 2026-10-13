@@ -22,6 +22,7 @@
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs';
 import * as yaml from 'js-yaml';
+import { safeEncodeURIComponent } from './_safe-url.mjs';
 import { FETCH_TIMEOUT_MS, fetchJsonWithRetry } from './_custom-fetch.mjs';
 const parseYaml = yaml.load;
 
@@ -2309,7 +2310,9 @@ function parseJobsChJob(job, origin, detailPathTemplate, seenUrls) {
     return null;
   }
 
-  const url = new URL(detailPathTemplate.replace('{ID}', encodeURIComponent(id)), origin).toString();
+  const encodedId = safeEncodeURIComponent(id);
+  if (encodedId === null) return null;
+  const url = new URL(detailPathTemplate.replace('{ID}', encodedId), origin).toString();
   if (seenUrls.has(url)) {
     return null;
   }

@@ -1,6 +1,6 @@
 # モード: pipeline -- URL Inbox (Second Brain)
 
-`data/pipeline.md` に保存された job URLs を処理する。ユーザーはいつでも URL を追加し、後から `/career-ops pipeline` を実行してまとめて処理する。
+`users/{USER}/data/pipeline.md` に保存された job URLs を処理する。ユーザーはいつでも URL を追加し、後から `/career-ops pipeline` を実行してまとめて処理する。
 
 ## Liveness sweep
 
@@ -18,7 +18,7 @@ Per-URL loop の前に、zero-token liveness checker で pending URLs をまと�
 
 ## Workflow
 
-1. **Read** `data/pipeline.md` → "Pending" section の `- [ ]` items を探す。最初に上の **Liveness sweep** を実行し、expired entries を落としてから続行する。
+1. **Read** `users/{USER}/data/pipeline.md` → "Pending" section の `- [ ]` items を探す。最初に上の **Liveness sweep** を実行し、expired entries を落としてから続行する。
 2. **For each surviving pending URL**:
    a. `node reserve-report-num.mjs` を実行して次の `REPORT_NUM` を atomically claim する（report が書き込まれたら `node reserve-report-num.mjs --release <num>` で sentinel を release）
    b. **Extract JD** using Playwright（browser_navigate + browser_snapshot）→ WebFetch → WebSearch
@@ -64,7 +64,7 @@ Pending lines are `- [ ] {url} | {company} | {title} | {location}`. Scanner は 
 **Special cases:**
 - **LinkedIn:** login が必要な場合あり → `[!]` と mark し、ユーザーに text paste を依頼
 - **PDF:** URL が PDF を指す場合、Read tool で直接読む
-- **`local:` prefix:** Local file を読む。Example: `local:jds/linkedin-pm-ai.md` → `jds/linkedin-pm-ai.md`
+- **`local:` prefix:** Local file を読む。Example: `local:users/{USER}/jds/linkedin-pm-ai.md` → `users/{USER}/jds/linkedin-pm-ai.md`
 - **Wantedly / Green / Findy:** 日本の主要 platforms。まず Playwright で確認
 - **doda / リクナビNEXT / マイナビ転職:** 日本の大手 job portals。Usually WebFetch または Playwright で確認
 - **ビズリーチ:** ハイクラス求人。Login が必要な場合あり

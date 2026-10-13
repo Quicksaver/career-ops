@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+import { readFileSync, existsSync, statSync } from 'fs';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { resolvePdfIndexPath, resolveWorkspaceRootFor, pathIsInside, pathIsInsideCanonical } from './tracker-utils.mjs';
+import { roleFuzzyMatch } from './role-matcher.mjs';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
 
 /**
  * find.mjs — resolve a company/role/number query to its full pipeline identity (#1431).
@@ -24,19 +33,9 @@
  * manifest data/pdf-index.tsv (written by generate-pdf.mjs).
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { dirname, resolve } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
-import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
-import { resolvePdfIndexPath } from './tracker-utils.mjs';
-import { roleFuzzyMatch } from './role-matcher.mjs';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const DATA_ROOT = getCareerOpsRoot();
 
 // "008" and "8" are the same report — zero-padded report-link form vs unpadded
 // tracker-# form (same normalization as the manifest writer in generate-pdf.mjs).
@@ -81,9 +80,14 @@ export function parseTrackerRows(text) {
 }
 
 /**
- * Parse data/pdf-index.tsv (report \t pdf \t html \t format \t date) into a
- * normalized-report# → PDF-path map. Comment lines and rows generated without
- * a report number are skipped.
+ * Parse data/pdf-index.tsv (report \t pdf \t html \t format \t date \t kind)
+ * into a normalized-report# → CV-path map. Comment lines and rows generated
+ * without a report number are skipped.
+ *
+ * Cover-letter rows are skipped too: a report carries one row per artifact
+ * kind, and this map holds one path per report, so a cover written after its
+ * CV would otherwise win and be handed back as the report's CV. A row with no
+ * kind column predates --kind and is a CV.
  *
  * @param {string} text - Full contents of pdf-index.tsv.
  * @returns {Map<string,string>}
@@ -94,9 +98,57 @@ export function parsePdfIndex(text) {
     if (!line.trim() || line.startsWith('#')) continue;
     const fields = line.split('\t');
     if (!fields[0]?.trim() || !fields[1]) continue;
+    if ((fields[5] ?? '').trim() === 'cover') continue;
     map.set(normNum(fields[0]), fields[1]);
   }
   return map;
+}
+
+/**
+ * Keep only the manifest rows whose PDF is still on disk.
+ *
+ * A row in data/pdf-index.tsv records that a PDF was generated, not that it
+ * still exists: generate-pdf.mjs evicts a row only when it regenerates, so
+ * deleting output/*.pdf leaves every row standing (#4777). Whatever sets a
+ * tracker's PDF cell from the manifest decides presence here, so
+ * merge-tracker.mjs and sync-pdf-flags.mjs cannot disagree about it.
+ *
+ * Paths resolve against the workspace root generate-pdf.mjs wrote them for and
+ * must stay inside it. A path that spells its way out is rejected before it is
+ * touched; one that only leads out through a symlink is rejected once its
+ * target is resolved. A missing file is absent. Any other stat failure (EACCES,
+ * ELOOP, EIO) means presence is unknown: the row is left out, so no flag is set
+ * from it, and `warn` hears about it. Nothing throws, so one unreadable path
+ * cannot fail a batch.
+ *
+ * @param {Map<string,string>} pdfIndex - parsePdfIndex() output.
+ * @param {string} dataRoot - The career-ops data root, getCareerOpsRoot().
+ * @param {(message: string) => void} [warn]
+ * @returns {Map<string,string>} The rows whose file exists.
+ */
+export function livePdfIndex(pdfIndex, dataRoot, warn = () => {}) {
+  const workspaceRoot = resolveWorkspaceRootFor(dataRoot);
+  const live = new Map();
+  for (const [report, pdf] of pdfIndex) {
+    const relPath = pdf.trim();
+    const absPath = resolve(workspaceRoot, relPath);
+    const leftWorkspace = () => warn(`report ${report}: ${relPath} is outside the workspace; its PDF flag is left as it is`);
+    if (!pathIsInside(absPath, workspaceRoot)) {
+      leftWorkspace();
+      continue;
+    }
+    try {
+      if (!statSync(absPath).isFile()) continue;
+    } catch (err) {
+      if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') {
+        warn(`report ${report}: cannot tell whether ${relPath} exists (${err?.code ?? err}); its PDF flag is left as it is`);
+      }
+      continue;
+    }
+    if (pathIsInsideCanonical(absPath, workspaceRoot)) live.set(report, pdf);
+    else leftWorkspace();
+  }
+  return live;
 }
 
 /**
@@ -173,7 +225,7 @@ function main() {
     return;
   }
 
-  const trackerPath = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
+  const trackerPath = resolveTrackerPath(DATA_ROOT);
   if (!existsSync(trackerPath)) {
     console.error(`Error: ${trackerPath} not found — nothing to search.`);
     process.exitCode = 1;
@@ -213,6 +265,6 @@ function main() {
   console.error(`\n${matches.length} match(es)`); // stderr so stdout stays pipeable
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+if (isMainModule(import.meta.url)) {
   main();
 }

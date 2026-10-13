@@ -127,7 +127,7 @@ function blockSuffixedTemplate() {
   // The active-user boundary intentionally permits templates only from the
   // system template tree. Create an isolated pack there and remove it in the
   // test's finally block instead of weakening that production guard.
-  const packDir = join(ROOT, 'templates', `.test-cv-2486-${basename(dir)}`);
+  const packDir = join(dir, 'template-pack');
   generatedPackDir = packDir;
   mkdirSync(packDir, { recursive: true });
   cpSync(join(ROOT, 'templates', 'cv-template.html'), join(packDir, 'cv-template.html'));

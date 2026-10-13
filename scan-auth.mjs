@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isMainModule } from './lib/is-main-module.mjs';
 
 /**
  * Authenticated Job Portal Scanner (Harness)
@@ -417,7 +418,11 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+if (isMainModule(import.meta.url)) {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    console.log('Usage: node scan-auth.mjs --user <id> <portal> [--login] [--dry-run]');
+    process.exit(0);
+  }
   main().catch(err => {
     error(err.message);
     process.exit(1);

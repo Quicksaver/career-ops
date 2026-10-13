@@ -10,9 +10,10 @@
 // Driven end-to-end in a child process rather than against an exported helper:
 // the bug is not in any single function but in the interaction between the
 // breaker, the checkpoint writer, and the exit path, and only a whole run
-// exercises all three. The child runs in a sandbox cwd (every path
-// scan-ats-full.mjs touches is relative) with a stubbed `dns.lookup`, so no
-// network is involved and the resolver's behaviour is exact:
+// exercises all three. The child runs against a sandbox data root — pointed at
+// by CAREER_OPS_ROOT, since scan-ats-full.mjs's paths follow the data root
+// rather than the cwd (#3510) — with a stubbed `dns.lookup`, so no network is
+// involved and the resolver's behaviour is exact:
 //
 //   EAI_AGAIN  — a resolver-level failure; trips the breaker  → checkpoint kept
 //   ENOTFOUND  — NXDOMAIN, an ordinary dead board; no outage  → checkpoint deleted
@@ -24,7 +25,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from 'os';
 import { join, dirname, basename } from 'path';
 import { pathToFileURL } from 'url';
-import { pass, fail, run, formatRunFailure, NODE, ROOT } from './helpers.mjs';
+import { pass, fail, run, formatRunFailure, lastRunFailure, NODE, ROOT } from './helpers.mjs';
 
 console.log('\nscan-ats-full — a resolver-outage stop keeps its checkpoint (#2283)');
 
@@ -42,6 +43,8 @@ const CHECKPOINT_REL = join('data', 'cache', 'ats-full-checkpoint.json');
  * @returns {string} Sandbox directory.
  */
 function makeSandbox() {
+  // Laid out exactly like a real data root — portals.yml at the top,
+  // data/cache/ beneath it — because that is what it is handed to the child as.
   const dir = mkdtempSync(join(tmpdir(), 'career-ops-outage-'));
   // Minimal portals.yml: main() exits early without one. The filters never
   // matter here — no board is reachable, so no posting reaches them.
@@ -106,6 +109,15 @@ function sweep(dir, dnsCode, extraArgs = []) {
 {
   const dir = makeSandbox();
   try {
+    // A history-derived Greenhouse board is present, but the directory sweep's
+    // resolver breaker must stop the run before this second network phase.
+    mkdirSync(join(dir, 'data'), { recursive: true });
+    writeFileSync(
+      join(dir, 'data', 'scan-history.tsv'),
+      'url\tfirst_seen\tportal\ttitle\tcompany\tstatus\tlocation\n'
+        + 'https://job-boards.greenhouse.io/history-co/jobs/1\t2026-09-01\tgreenhouse\tEngineer\tHistory Co\tadded\tRemote\n',
+      'utf-8',
+    );
     const out = sweep(dir, 'EAI_AGAIN');
     const cpPath = join(dir, CHECKPOINT_REL);
     let resumeAt = null;
@@ -158,6 +170,10 @@ function sweep(dir, dnsCode, extraArgs = []) {
     // A checkpoint that stored the full slice instead of the attempted part
     // would double-count the portion the first run completed.
     if (resumeAt !== null) {
+      // This second run tests checkpoint accounting, not history seeding. The
+      // history fixture above exists only to prove the outage-stopped run never
+      // starts that network phase; remove it before the clean resume.
+      rmSync(join(dir, 'data', 'scan-history.tsv'), { force: true });
       const resumed = sweep(dir, 'ENOTFOUND', ['--resume']);
       if (resumed === null) {
         fail(`--resume after an outage stop failed${formatRunFailure()}`);
@@ -179,6 +195,36 @@ function sweep(dir, dnsCode, extraArgs = []) {
   }
 }
 
+// --- a filter edited since the checkpoint refuses --resume, by name ---
+// The boards swept before the stop were filtered under the old portals.yml, so
+// finishing the sweep under a new one would mix two configurations in one run.
+{
+  const dir = makeSandbox();
+  try {
+    const out = sweep(dir, 'EAI_AGAIN');
+    const cpPath = join(dir, CHECKPOINT_REL);
+    if (out === null || !existsSync(cpPath)) {
+      fail(`filter-change arm has no outage checkpoint to resume${formatRunFailure()}`);
+    } else {
+      const before = readFileSync(cpPath, 'utf-8');
+      writeFileSync(join(dir, 'portals.yml'), 'title_filter:\n  positive:\n    - director\n    - head of\n', 'utf-8');
+      const resumed = sweep(dir, 'ENOTFOUND', ['--resume']);
+      const failure = lastRunFailure();
+      if (resumed !== null) {
+        fail('--resume ran under a title_filter edited since the checkpoint');
+      } else if (failure?.status !== 1 || !/portals\.yml title_filter changed since the checkpoint/.test(failure.stderr)) {
+        fail(`filter-change refusal unclear: status=${failure?.status} stderr=${failure?.stderr?.slice(0, 300)}`);
+      } else if (readFileSync(cpPath, 'utf-8') !== before) {
+        fail('a refused --resume rewrote the checkpoint');
+      } else {
+        pass('--resume refuses a title_filter edited since the checkpoint, names it, and keeps the checkpoint');
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // --- a sweep that merely hit dead boards still cleans up after itself ---
 {
   const dir = makeSandbox();
@@ -193,6 +239,55 @@ function sweep(dir, dnsCode, extraArgs = []) {
       fail(`a completed sweep reported stoppedByOutage=${JSON.parse(out).stoppedByOutage}`);
     } else {
       pass('a completed sweep still deletes its checkpoint and reports no outage stop');
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// --- retired boards are reported separately, not as scanned companies ---
+{
+  const dir = makeSandbox();
+  try {
+    writeFileSync(
+      join(dir, 'data', 'dead-boards.tsv'),
+      `ats\tboard\tmisses\tlast_checked\ngreenhouse\thttps://job-boards.greenhouse.io/sandbox-co-0\t3\t${new Date().toISOString()}\n`,
+      'utf-8',
+    );
+    const out = sweep(dir, 'ENOTFOUND');
+    if (out === null) {
+      fail(`retired-board count sweep did not complete${formatRunFailure()}`);
+    } else {
+      const result = JSON.parse(out);
+      if (result.companiesScanned === COMPANIES - 1 && result.retiredBoardsSkipped === 1) {
+        pass(`retired boards are excluded from companiesScanned (${result.companiesScanned}) and reported separately`);
+      } else {
+        fail(`retired-board counts are wrong: companiesScanned=${result.companiesScanned}, retiredBoardsSkipped=${result.retiredBoardsSkipped}`);
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// --- dead-board cache failures do not discard the sweep ---
+{
+  const dir = makeSandbox();
+  try {
+    // Force saveDeadBoards() to fail at its temporary-file write. The scanner
+    // should keep its matches and summary even when this optional cache cannot
+    // be persisted.
+    mkdirSync(join(dir, 'data', 'dead-boards.tsv.tmp'));
+    const out = sweep(dir, 'ENOTFOUND');
+    if (out === null) {
+      fail(`dead-board cache failure aborted the sweep${formatRunFailure()}`);
+    } else if (
+      JSON.parse(out).companiesScanned === COMPANIES
+      && !existsSync(join(dir, 'data', 'dead-boards.tsv'))
+    ) {
+      pass('dead-board cache failure is best-effort and does not abort the sweep');
+    } else {
+      fail(`dead-board cache failure changed the scan count: ${JSON.parse(out).companiesScanned}`);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

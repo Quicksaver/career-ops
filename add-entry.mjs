@@ -1,4 +1,12 @@
 #!/usr/bin/env node
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { pathToFileURL, fileURLToPath } from 'url';
+import { normalizeTextKey } from './tracker-parse.mjs';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { join, dirname } from 'path';
+import { getCareerOpsRoot } from './path-resolver.mjs';
+import { validateFlags } from './lib/cli-flags.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
 /**
  * add-entry.mjs — Deterministic dedup + insertion for `/career-ops add`.
  *
@@ -39,16 +47,9 @@
  * files so tests never touch a real user CV.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { pathToFileURL } from 'url';
-import { normalizeTextKey } from './tracker-parse.mjs';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
 
 const KNOWN_FLAGS = ['--dry-run', '--stdin', '--json', '--help', '-h'];
+
 
 const USAGE = `Usage:
   node add-entry.mjs <payload.json> [--dry-run]
@@ -138,15 +139,15 @@ export function insertIntoCvSection(md, section, entry) {
 
 // article-digest.md is a sequence of `## <name> -- <tagline>` blocks separated
 // by `---`. Dedup on the name (the heading text before the dash), matched by
-// normalized equality or prefix so "## FraudShield -- Detection" matches the key
-// "FraudShield" without a short key colliding on unrelated heading text.
+// normalized equality so "## FraudShield -- Detection" matches the key
+// "FraudShield" without a short key colliding on other project names.
 export function articleDigestHasEntry(md, dedupKey) {
   const key = normalizeKey(dedupKey);
   if (!key) return false;
   for (const m of md.matchAll(/^##\s+(.*\S)\s*$/gm)) {
     const name = m[1].split(/\s+[—–-]{1,2}\s+/)[0];
     const n = normalizeKey(name);
-    if (n === key || n.startsWith(key)) return true;
+    if (n === key) return true;
   }
   return false;
 }
@@ -306,6 +307,6 @@ async function main() {
 }
 
 // Only run main() when invoked directly, not when imported by tests.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   main();
 }

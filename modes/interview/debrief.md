@@ -18,10 +18,10 @@ After a real interview, capture what was asked, assess what landed and what didn
 2. **Interviewer name and role** — informs next round prediction
 3. **Round outcome** (if known) — moved forward / rejected / pending
 4. **Next round details** (if known) — format, interviewers, timeline
-5. **Question bank** at `interview-prep/question-bank.md` — update with real data
-6. **Story bank** at `interview-prep/story-bank.md` — add new stories if surfaced
-7. **CV** at `cv.md` + `article-digest.md` (if present) — to ground suggested answers in real experience
-8. **Retracted claims** at `interview-prep/retracted-claims.md` (if present) — hard gate; never use a retracted claim in a suggested answer even if the candidate said it in the interview
+5. **Question bank** at `users/{USER}/interview-prep/question-bank.md` — update with real data
+6. **Story bank** at `users/{USER}/interview-prep/story-bank.md` — add new stories if surfaced
+7. **CV** at `users/{USER}/cv.md` + `users/{USER}/article-digest.md` (if present) — to ground suggested answers in real experience
+8. **Retracted claims** at `users/{USER}/interview-prep/retracted-claims.md` (if present) — hard gate; never use a retracted claim in a suggested answer even if the candidate said it in the interview
 9. **Role-specific prep file** — append debrief notes; correct in place any existing fact the interview directly contradicts (see Step 1b)
 
 ---
@@ -74,7 +74,7 @@ When correcting in place, use a strikethrough-plus-correction format so the hist
 
 **Resolve inference tags on contradiction or confirmation.** If the original line carried an inference marker — `[inferred from JD]`, or prose noting the source was an expired/inaccessible posting — and the interview either confirms or corrects it, resolve the tag rather than leaving a now-settled fact permanently marked as uncertain: replace the marker with the confirmed fact and its real source (the interview/call itself), using the same strikethrough-plus-correction shape when the value changed, or a plain edit to drop the marker and cite the new source when the value was merely confirmed as-is.
 
-This step never touches `interview-prep/retracted-claims.md` or the story bank — those stay reserved for the candidate's own claims, not for facts about the role. It also never rewrites Step 4's "Gaps to Close" additions; a contradicted fact is corrected at its original location, not logged as a gap.
+This step never touches `users/{USER}/interview-prep/retracted-claims.md` or the story bank — those stay reserved for the candidate's own claims, not for facts about the role. It also never rewrites Step 4's "Gaps to Close" additions; a contradicted fact is corrected at its original location, not logged as a gap.
 
 ---
 
@@ -97,7 +97,7 @@ Be direct. If they missed the core concept the question was testing, say so. If 
 
 ## Step 3 — Update Question Bank
 
-For each question debriefed, update `interview-prep/question-bank.md`:
+For each question debriefed, update `users/{USER}/interview-prep/question-bank.md`:
 - Change status to ✅ / 🟡 / 🔴 based on real performance
 - Add gap notes from the debrief
 - Add any new questions that appeared and weren't in the bank yet
@@ -113,7 +113,7 @@ For each 🔴 gap identified:
 1. **Explain the correct answer** — clear, concise, with a worked example (code, calculation, diagram) where it helps
 2. **Connect to a real story** if possible — "you actually have this in your [existing story from the story bank] — here's how to use it"
 3. **Add to role-specific prep file** under a "Gaps to Close Before Round N" section
-4. **Add to `interview-prep/interview-prep-guide.md`** (if the candidate maintains one) when it's a reusable principle that applies beyond this role
+4. **Add to `users/{USER}/interview-prep/interview-prep-guide.md`** (if the candidate maintains one) when it's a reusable principle that applies beyond this role
 
 ---
 
@@ -123,7 +123,7 @@ Sometimes a real interview surfaces a story the candidate hadn't prepared. If th
 
 > "You mentioned [X] in your answer — that sounds like it could become a proper STAR+R story. Want to build it out now while it's fresh?"
 
-If yes, build it out as a STAR+R story (Situation, Task, Action, Result, Reflection) and append it to `interview-prep/story-bank.md`.
+If yes, build it out as a STAR+R story (Situation, Task, Action, Result, Reflection) and append it to `users/{USER}/interview-prep/story-bank.md` as a `### ` block in the exact format of `templates/story-bank.template.md` (create the file from that template if it is missing). Keep the labels in English, always include `**A (Action):**`, and add no `**Provenance:**` line.
 
 ---
 
@@ -160,7 +160,7 @@ Be honest. A probability range with clear reasoning is more useful than false co
 
 ## Step 8 — Save Debrief
 
-Append to `interview-prep/{company-slug}-{role-slug}.md`:
+Append to `users/{USER}/interview-prep/{company-slug}-{role-slug}.md`:
 
 ```markdown
 ## Round [N] Debrief — [YYYY-MM-DD]
@@ -193,7 +193,7 @@ Append to `interview-prep/{company-slug}-{role-slug}.md`:
 
 ## Step 9 — Write Session Transcript
 
-After the debrief, also write a machine-readable session transcript to `interview-prep/sessions/{company-slug}-{role-slug}-{round}-{YYYY-MM-DD}.md`. This is a structured record of the round for downstream analysis modes; the speaker-labelled turns let a consumer read either side without re-inferring who spoke. The full contract lives in `interview-prep/sessions/README.md`.
+After the debrief, also write a machine-readable session transcript to `users/{USER}/interview-prep/sessions/{company-slug}-{role-slug}-{round}-{YYYY-MM-DD}.md`. This is a structured record of the round for downstream analysis modes; the speaker-labelled turns let a consumer read either side without re-inferring who spoke. The full contract lives in `users/{USER}/interview-prep/sessions/README.md`.
 
 **Check the `input_source` marker set in Step 1.** If `input_source: transcript`, skip reconstruction: don't regenerate the transcript from Step 1/Step 2 output — that would be a lossier copy of the real source it came from. Instead, save the original transcript directly, lightly normalized to match the schema below (speaker labels, front-matter, competency tags from the Step 2 assessment). If `input_source: recall`, reconstruct the transcript from Step 1/Step 2 output as before — recall never has a verbatim original to preserve.
 
@@ -232,10 +232,10 @@ Rules for the transcript:
 
 - **Debrief immediately.** Memory of interview details degrades fast — within hours, specific questions and reactions are forgotten. Run this skill the same day.
 - **Don't soften gaps.** A 🔴 gap that gets called 🟡 out of kindness will show up again in the next round.
-- **Never put invented claims in the candidate's mouth.** Correct/complete answers may draw on general domain knowledge, but any suggested personal claim or metric must come from what the candidate said, `cv.md`, `article-digest.md`, or the story bank.
-- **Retracted claims are a hard gate.** If a claim appears in `interview-prep/retracted-claims.md`, never suggest the candidate use it — even if they said it in the real interview. Flag it: "That claim is in your retracted list — it's not defensible under pressure. Here's a version that doesn't depend on it."
-- **Record new retractions.** If the debrief reveals a claim the candidate used in the real interview that they now agree isn't defensible, offer to append it to `interview-prep/retracted-claims.md`: `**"[claim]"** ([context]). Reason: [one-line reason + correct framing if applicable].`
-- **Extract vocabulary gaps explicitly.** If the candidate used an imprecise term where a precise one exists, add it to `interview-prep/interview-prep-guide.md` under the vocabulary section (if the candidate maintains one).
+- **Never put invented claims in the candidate's mouth.** Correct/complete answers may draw on general domain knowledge, but any suggested personal claim or metric must come from what the candidate said, `users/{USER}/cv.md`, `users/{USER}/article-digest.md`, or the story bank.
+- **Retracted claims are a hard gate.** If a claim appears in `users/{USER}/interview-prep/retracted-claims.md`, never suggest the candidate use it — even if they said it in the real interview. Flag it: "That claim is in your retracted list — it's not defensible under pressure. Here's a version that doesn't depend on it."
+- **Record new retractions.** If the debrief reveals a claim the candidate used in the real interview that they now agree isn't defensible, offer to append it to `users/{USER}/interview-prep/retracted-claims.md`: `**"[claim]"** ([context]). Reason: [one-line reason + correct framing if applicable].`
+- **Extract vocabulary gaps explicitly.** If the candidate used an imprecise term where a precise one exists, add it to `users/{USER}/interview-prep/interview-prep-guide.md` under the vocabulary section (if the candidate maintains one).
 - **One gap = one fix.** Don't overwhelm with a full study plan for every gap. Prioritize the 1–2 most likely to be tested in the next round.
 - **Celebrate what worked.** Debrief isn't only about gaps. Name what was strong — it reinforces the right behaviour and builds confidence for the next round.
 - **Contradicted facts get corrected in place, not appended around.** If the interview directly contradicts a specific fact the prep file already states (location, comp, team size, stack, reporting line), edit that line — strikethrough the old value, bold the confirmed one, note when/how it was confirmed (see Step 1b). Don't leave a wrong claim standing untouched with a caveat bolted on below it.

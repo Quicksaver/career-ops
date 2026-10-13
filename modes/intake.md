@@ -1,5 +1,7 @@
 # Mode: intake — Multi-Source Profile Intake
 
+All candidate files and data paths in these instructions are relative to the explicitly selected `users/{USER}/` directory. Resolve reads and writes there. System modes, templates, and executable scripts remain relative to the code checkout. Pass `--user {USER}` to child commands or inherit the same `CAREER_OPS_USER`.
+
 ## Purpose
 
 A thin profile produces a generic tailored CV. This mode populates
@@ -9,7 +11,7 @@ reference letters — instead of asking them to fill everything in by hand
 (#1723).
 
 Pattern credit: [MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search)'s
-`documents/` intake + idempotent `/setup` merge, adapted to career-ops'
+`users/{USER}/documents/` intake + idempotent `/setup` merge, adapted to career-ops'
 user-layer contract.
 
 Division of labor: `intake.mjs` does everything deterministic (enumerate
@@ -22,11 +24,11 @@ confirm.**
 
 - `users/{USER}/documents/` — intake folder (user layer, gitignored): `cv/`, `linkedin/`,
   `diplomas/`, `references/`
-- `users/{USER}/config/profile.yml`, `users/{USER}/cv.md`, `users/{USER}/modes/_profile.md` — merge targets
+- `config/profile.yml`, `cv.md`, `modes/_profile.md` — merge targets
 - `users/{USER}/data/intake-state.json` — fingerprints of already-ingested sources
   (written by `intake.mjs --commit`, user layer)
 
-> **Symlinks inside `documents/` are followed.** Linking a master CV that lives
+> **Symlinks inside `users/{USER}/documents/` are followed.** Linking a master CV that lives
 > elsewhere is the point, so the scan reads through the link rather than
 > skipping it. That also means a link pointing at a large or shared tree — a
 > whole home folder, a synced drive — puts everything under it in scope for
@@ -77,7 +79,7 @@ Rules (non-negotiable):
 - Extract facts only — reformulate wording, **never fabricate** skills,
   titles, dates, or achievements that the source doesn't state.
 - Every proposed addition is **source-annotated**: note which document it
-  came from (e.g. `# source: documents/diplomas/msc-transcript.pdf`).
+  came from (e.g. `# source: users/{USER}/documents/diplomas/msc-transcript.pdf`).
 - **Never silently overwrite.** If a proposal conflicts with an existing
   value (different job title for the same period, different degree date),
   show both side by side and let the user pick.

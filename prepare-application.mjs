@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import { readFileSync, existsSync, statSync } from 'fs';
+import { basename, resolve, dirname, relative, isAbsolute } from 'path';
+import { fileURLToPath } from 'url';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 
 /**
  * prepare-application.mjs — ATS auto-fill for Greenhouse, Ashby, and Lever.
@@ -18,16 +23,9 @@
  *   Lever       jobs.(eu.)?lever.co / lever.co
  */
 
-import { readFileSync, existsSync, statSync } from 'fs';
-import { basename, resolve, dirname, relative, isAbsolute } from 'path';
-import { fileURLToPath } from 'url';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const DATA_ROOT = getCareerOpsRoot();
 
 const ALLOWED_HOSTS = new Set([
   'boards.greenhouse.io',
@@ -61,8 +59,8 @@ if (!applyUrl || !pdfPath) {
 
 // ── PDF validation ────────────────────────────────────────────────────
 
-const outputDir = userPath(userContext, 'output');
-const absPdf    = resolve(userContext.userRoot, pdfPath);
+const outputDir = resolve(DATA_ROOT, 'output');
+const absPdf    = resolve(DATA_ROOT, pdfPath);
 
 const relPdf = relative(outputDir, absPdf);
 if (relPdf === '' || relPdf.startsWith('..') || isAbsolute(relPdf)) {
@@ -139,7 +137,7 @@ function detectAts(url) {
 // ── Profile reader ────────────────────────────────────────────────────
 
 function readProfile() {
-  const profilePath = userPath(userContext, 'config/profile.yml');
+  const profilePath = resolve(DATA_ROOT, 'config/profile.yml');
   if (!existsSync(profilePath)) return {};
   const raw = readFileSync(profilePath, 'utf-8');
 

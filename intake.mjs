@@ -40,15 +40,15 @@ import {
 } from 'fs';
 import { dirname, extname, join, relative, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
+import { writeFileAtomic } from './tracker-utils.mjs';
+import { isNestedCheckout } from './lib/mjs-files.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-let DOCS_DIR = process.env.CAREER_OPS_DOCUMENTS_DIR || join(ROOT, 'documents');
-let STATE_FILE = process.env.CAREER_OPS_INTAKE_STATE || join(ROOT, 'data', 'intake-state.json');
+const DATA_ROOT = getCareerOpsRoot();
+const DOCS_DIR = process.env.CAREER_OPS_DOCUMENTS_DIR || join(DATA_ROOT, 'documents');
+const STATE_FILE = process.env.CAREER_OPS_INTAKE_STATE || join(DATA_ROOT, 'data', 'intake-state.json');
 
 // The four intake folders from the issue spec. Files directly under
 // documents/ are picked up too — the folders are guidance, not a gate.
@@ -106,9 +106,30 @@ function defaultProbe(candidate) {
     // Bounded like extract() below: a wedged binary must not hang every run.
     execFileSync(candidate.name, candidate.probeArgs, { stdio: 'pipe', timeout: 5_000 });
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    return probeRan(err);
   }
+}
+
+/**
+ * Given whatever execFileSync threw from a version probe, did the binary
+ * actually run? Pure and exported so the self-test can cover every error shape
+ * without needing a real binary on PATH.
+ *
+ * A nonzero exit is NOT proof of absence. Poppler's pdftotext exits 0 on `-v`,
+ * but Xpdf's — the Glyph & Cog build shipped by xpdfreader.com and by
+ * MSYS2/mingw64 — prints its version and exits 99. Reading that as "not
+ * installed" silently skipped every PDF on a machine where extraction worked
+ * perfectly, and the scan summary blamed a missing extractor.
+ *
+ * What separates present-but-grumpy from absent is whether the process ran at
+ * all: execFileSync sets `status` to the exit code when it did, and leaves it
+ * null with code ENOENT / EACCES / ETIMEDOUT when the binary is missing,
+ * unrunnable, or wedged. A wedged binary stays excluded on purpose — extract()
+ * would hit the same timeout on every source.
+ */
+export function probeRan(err) {
+  return typeof err?.status === 'number';
 }
 
 export function sha256(text) {
@@ -132,13 +153,45 @@ export function computeDelta(state, sources) {
   });
 }
 
+/**
+ * Raised when the ingest ledger exists and cannot be trusted.
+ *
+ * Its own class so the CLI boundary can report it as a one-line message the way
+ * every other expected failure in this file does, while a genuine bug still
+ * arrives as a stack trace.
+ */
+class StateError extends Error {
+  constructor(message) { super(message); this.name = 'StateError'; }
+}
+
 function loadState() {
+  // Absent is a first run — an empty ledger is correct.
   if (!existsSync(STATE_FILE)) return { ingested: {} };
+  let parsed;
   try {
-    return JSON.parse(readFileSync(STATE_FILE, 'utf-8')) || { ingested: {} };
-  } catch {
-    return { ingested: {} };
+    parsed = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+  } catch (err) {
+    // Existing and unreadable is NOT a first run. Returning an empty ledger
+    // makes every already-ingested document look new, so intake re-proposes
+    // additions the user has already reviewed — and the review is the whole
+    // human-in-the-loop step this mode exists for. Saying so costs one message;
+    // hiding it costs the user's trust in the proposals.
+    throw new StateError(
+      `${STATE_FILE} is not valid JSON (${String(err.message).split('\n')[0]}) — `
+      + 'fix or delete it; deleting means already-ingested documents are proposed again.',
+    );
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new StateError(`${STATE_FILE} does not contain a JSON object — fix or delete it.`);
+  }
+  // Absent is an empty ledger and `{}` is right. Present but not an object is
+  // the same silent reset one level down — it was replaced with `{}` and then
+  // written back by commitState, so every reviewed document looked new again.
+  if (parsed.ingested === undefined || parsed.ingested === null) parsed.ingested = {};
+  else if (typeof parsed.ingested !== 'object' || Array.isArray(parsed.ingested)) {
+    throw new StateError(`${STATE_FILE} has an "ingested" that is not an object — fix or delete it.`);
+  }
+  return parsed;
 }
 
 function listSourceFiles() {
@@ -184,7 +237,7 @@ function listSourceFiles() {
     realDirs.add(real);
     for (const entry of readDir(dir)) {
       if (entry.name.startsWith('.')) continue;
-      if (entry.isDirectory()) claimRealDirs(join(dir, entry.name));
+      if (entry.isDirectory() && !isNestedCheckout(join(dir, entry.name))) claimRealDirs(join(dir, entry.name));
     }
   };
   claimRealDirs(DOCS_DIR);
@@ -223,6 +276,10 @@ function listSourceFiles() {
           try { target = realpathSync(abs); } catch { continue; }
           if (realDirs.has(target)) continue;
         }
+        // A repository someone cloned into documents/ is not a document they
+        // dropped in: every source file in it would be offered as intake
+        // material for the profile (#3762).
+        if (isNestedCheckout(abs)) continue;
         walk(abs);
       } else if (isFile) out.push(abs);
     }
@@ -317,7 +374,10 @@ function commitState(result, only = []) {
     count += 1;
   }
   mkdirSync(dirname(STATE_FILE), { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + '\n', 'utf-8');
+  // Atomic for the same reason as hired-share's: a truncating write that is
+  // interrupted leaves unparseable JSON, which is the condition the loader
+  // above now refuses to silently paper over.
+  writeFileAtomic(STATE_FILE, JSON.stringify(state, null, 2) + '\n');
   return count;
 }
 
@@ -359,6 +419,18 @@ function runSelfTest() {
     detectPdfExtractor(() => true)?.name, 'pdftotext');
   eq('ladder degrades to null', detectPdfExtractor(() => false), null);
 
+  // A version probe that exits nonzero is not proof the binary is absent:
+  // Xpdf's pdftotext prints its version and exits 99. Only a process that never
+  // ran counts as missing.
+  eq('exit 99 (Xpdf -v) counts as present', probeRan({ status: 99 }), true);
+  eq('exit 1 counts as present', probeRan({ status: 1 }), true);
+  eq('exit 0 counts as present', probeRan({ status: 0 }), true);
+  eq('ENOENT counts as absent', probeRan({ code: 'ENOENT', status: null }), false);
+  eq('EACCES counts as absent', probeRan({ code: 'EACCES', status: null }), false);
+  eq('timeout counts as absent',
+    probeRan({ code: 'ETIMEDOUT', status: null, signal: 'SIGTERM' }), false);
+  eq('missing error object counts as absent', probeRan(undefined), false);
+
   const state = { ingested: { 'cv/master.md': { hash: sha256('old') } } };
   const delta = computeDelta(state, [
     { path: 'cv/master.md', hash: sha256('old') },
@@ -377,29 +449,15 @@ function runSelfTest() {
   process.exit(failed > 0 ? 1 : 0);
 }
 
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isMain = isMainModule(import.meta.url);
 
 // A function, not a bare `if (isMain)` block, so the success paths can `return`
 // instead of calling process.exit(0). `--text` writes a whole CV to stdout and
 // is meant to be piped; process.exit() is synchronous and can truncate a pipe
 // write that hasn't drained. Falling off the end leaves exitCode at 0.
 function main() {
-  let args = process.argv.slice(2);
+  const args = process.argv.slice(2);
   if (args.includes('--self-test')) runSelfTest();
-
-  let userContext;
-  try {
-    userContext = getUserContext(args, {
-      requireUser: !process.env.CAREER_OPS_DOCUMENTS_DIR && !process.env.CAREER_OPS_INTAKE_STATE,
-    });
-  } catch (err) {
-    printUserContextErrorAndExit(err);
-  }
-  args = userContext.args;
-  if (userContext.userId) {
-    DOCS_DIR = process.env.CAREER_OPS_DOCUMENTS_DIR || userPath(userContext, 'documents');
-    STATE_FILE = process.env.CAREER_OPS_INTAKE_STATE || userPath(userContext, 'data/intake-state.json');
-  }
 
   ensureScaffold();
   const textIdx = args.indexOf('--text');
@@ -461,4 +519,16 @@ function main() {
   else console.log(JSON.stringify(result, null, 2));
 }
 
-if (isMain) main();
+if (isMain) {
+  // Only StateError. Every other expected failure in main() already prints one
+  // line and exits 1; a ledger this function cannot trust is the one that
+  // reaches here as a throw, because it is raised deep inside extractAll().
+  // Anything else is a bug in this script and keeps its stack trace.
+  try {
+    main();
+  } catch (err) {
+    if (!(err instanceof StateError)) throw err;
+    console.error(err.message);
+    process.exit(1);
+  }
+}

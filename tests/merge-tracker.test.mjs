@@ -1,10 +1,11 @@
+import { userFixtureEnv } from './user-fixture.mjs';
 // tests/merge-tracker.test.mjs — regression coverage for status validation.
 //
 // `validateStatus` is not exported and importing merge-tracker.mjs runs the CLI
 // (top-level lock + merge), so this exercises the real merge path as a CLI
 // integration test via the CAREER_OPS_TRACKER / CAREER_OPS_ADDITIONS env
 // overrides the script already supports for test isolation.
-import { pass, fail, NODE, ROOT } from './helpers.mjs';
+import { pass, fail, NODE, ROOT, isolatedBatchStatePath } from './helpers.mjs';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { execFileSync } from 'child_process';
@@ -65,7 +66,7 @@ function runMergeDetailed(additions, opts = {}) {
         // separator-row fixture below deliberately triggers a loud failure,
         // and its error text would otherwise land in the suite's own log.
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, CAREER_OPS_TRACKER: tracker, CAREER_OPS_ADDITIONS: addsDir },
+        env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: tracker, CAREER_OPS_ADDITIONS: addsDir, CAREER_OPS_BATCH_STATE: isolatedBatchStatePath(addsDir) }, false),
       });
     } catch (e) {
       output = String(e.stdout ?? '') + String(e.stderr ?? '');
@@ -211,6 +212,54 @@ try {
     pass('equal-scored re-evaluation writes through without a superseded marker');
   } else {
     fail(`equal-score re-eval mishandled: ${sameRow.trim()} | ${same.output.trim()}`);
+  }
+
+  // --- Unscoreable re-evals must NOT overwrite a real score (#2803) -----------
+  // parseScore() maps every documented no-score sentinel (N/A / — / -, AGENTS.md
+  // #1799) to 0, so a re-eval that failed to fetch used to read as a genuine
+  // zero, trip the downgrade path above, and overwrite the real score with the
+  // sentinel — unrecoverably, since the tracker is gitignored and no .bak is
+  // written. "No score" is not "scored zero": the row must be left untouched.
+  const NA_SEED = '| 4 | 2026-06-01 | DoorDash | Senior Associate, Finance & Strategy | 4.0/5 | Evaluated | ❌ | '
+    + '[4](../reports/4-dd.md) | good |\n';
+  for (const sentinel of ['N/A', '—', '-']) {
+    // The re-eval carries a DIFFERENT report number ([9]) so the assertion can
+    // prove the row keeps its own report link rather than adopting the re-eval's.
+    const r = runMergeDetailed({
+      '9-dd.tsv': `9\t2026-06-25\tDoorDash\tSenior Associate, Finance & Strategy\tEvaluated\t${sentinel}\t❌\t[9](reports/9-dd.md)\tfetch failed\n`,
+    }, { rows: NA_SEED });
+    const row = r.tracker.split('\n').find(l => /DoorDash/.test(l)) || '';
+    const scoreKept = /\|\s*4\.0\/5\s*\|/.test(row);
+    const reportKept = /\[4\]\(/.test(row) && !/\[9\]/.test(row);
+    const skippedCleanly = /⏭️1 skipped/.test(r.output)
+      && !/🔄1 updated/.test(r.output) && !/DOWNGRADE/.test(r.output);
+    if (scoreKept && reportKept && skippedCleanly) {
+      pass(`an unscoreable "${sentinel}" re-eval keeps the score and report link, and is skipped (#2803)`);
+    } else {
+      fail(`"${sentinel}" re-eval mishandled — row: ${row.trim()} | out: ${r.output.trim()}`);
+    }
+  }
+
+  // The guard only fires when a real score would be lost. A sentinel re-eval of a
+  // row that is itself unscored has nothing to lose, so it still writes through
+  // and refreshes the row (date/notes/report) rather than being skipped — the
+  // documented sentinel contract for backfilled rows (#1799) is preserved.
+  const NOSCORE_SEED = '| 6 | 2026-06-01 | Globex | Data Eng | N/A | Evaluated | ❌ | '
+    + '[6](../reports/6-globex.md) | pending eval |\n';
+  const naOntoNa = runMergeDetailed({
+    '6-globex.tsv': '6\t2026-06-25\tGlobex\tData Eng\tEvaluated\tN/A\t❌\t[6](reports/6-globex.md)\trefetch, still no score\n',
+  }, { rows: NOSCORE_SEED });
+  const naOntoNaRow = naOntoNa.tracker.split('\n').find(l => /Globex/.test(l)) || '';
+  const wroteThrough = /🔄1 updated/.test(naOntoNa.output) && !/⏭️1 skipped/.test(naOntoNa.output);
+  // Counters alone can lie — assert the row actually took the re-eval's date,
+  // report and notes (keeping the existing note first, per mergeNotes #2483).
+  const refreshed = /\|\s*2026-06-25\s*\|/.test(naOntoNaRow)
+    && /\[6\]\((?:\.\.\/)?reports\/6-globex\.md\)/.test(naOntoNaRow)
+    && /pending eval\. Re-eval 2026-06-25.*refetch, still no score/.test(naOntoNaRow);
+  if (wroteThrough && refreshed) {
+    pass('a sentinel re-eval of an already-unscored row writes through, refreshing date/report/notes (nothing to lose)');
+  } else {
+    fail(`sentinel re-eval of an unscored row was mishandled: ${naOntoNaRow.trim()} | ${naOntoNa.output.trim()}`);
   }
 } catch (e) {
   fail(`merge-tracker.mjs tests crashed: ${e.message}`);
@@ -404,6 +453,132 @@ try {
   fail(`merge-tracker placeholder-notes tests crashed: ${e.message}`);
 }
 
+// ── #4275: a one-sided req number must not be treated as proof of a duplicate ─
+// The #1524 guard only refused to merge when BOTH sides had an extractable
+// req number and they disagreed. An existing row written before req numbers
+// were consistently captured has none, so a new addition for a genuinely
+// different posting — with a req number, at the same company, with a
+// fuzzy-matching title — fell through to "not proven distinct" and merged
+// into the old row, silently overwriting its date/score/report/notes.
+//
+// The fix is direction-sensitive (see merge-tracker.mjs comment at the guard):
+// only the addition-has/existing-lacks direction is blocked. The reverse
+// direction is exercised separately below and by the pre-existing "downgrade"
+// tests above (SEED row carries "Req R5639", the re-eval TSV's notes don't
+// repeat it) — that must keep merging, since it's the ordinary re-evaluation
+// shape, not a masked duplicate.
+console.log('\nmerge-tracker.mjs — one-sided req number blocks the merge (#4275)');
+try {
+  // Case: existing row has NO req number, new addition HAS one — this is the
+  // exact shape that silently corrupted a tracker row before this fix.
+  const NO_REQ_ROW =
+    '| 1 | 2026-01-01 | Acme | Administrative Assistant | 3.5/5 | Applied | ✅ | ' +
+    '[1](reports/001-acme-2026-01-01.md) | on-site, general admin support |\n';
+  const oneSided = runMergeDetailed({
+    '002-acme.tsv': '2\t2026-01-15\tAcme\tAdministrative Assistant\tEvaluated\t3.2/5\t✅\t[2](reports/002-acme-2026-01-15.md)\treq ADMIN-4471, different department\n',
+  }, { rows: NO_REQ_ROW });
+  const oneSidedRows = dataRows(oneSided.tracker);
+  if (oneSidedRows.length === 2) {
+    pass('addition with a req number does not merge into a req-less existing row');
+  } else {
+    fail(`one-sided req number (addition has one, existing row does not) still merged: ${oneSidedRows.join(' // ')}`);
+  }
+
+  // Mirror direction: existing row HAS a req number, new addition has NONE.
+  // This is the common re-evaluation shape (fresh commentary, no restated req
+  // number) and must still merge — the guard is intentionally asymmetric.
+  const HAS_REQ_ROW =
+    '| 1 | 2026-01-01 | Acme | Administrative Assistant | 3.5/5 | Applied | ✅ | ' +
+    '[1](reports/001-acme-2026-01-01.md) | req ADMIN-1001, first posting |\n';
+  const oneSidedReverse = runMergeDetailed({
+    '002-acme.tsv': '2\t2026-01-15\tAcme\tAdministrative Assistant\tEvaluated\t3.9/5\t✅\t[2](reports/002-acme-2026-01-15.md)\tre-scored, JD refreshed\n',
+  }, { rows: HAS_REQ_ROW });
+  const reverseRows = dataRows(oneSidedReverse.tracker);
+  if (reverseRows.length === 1 && /3\.9\/5/.test(reverseRows[0]) && /ADMIN-1001/.test(reverseRows[0])) {
+    pass('addition with no req number still merges into a row that has one (ordinary re-eval)');
+  } else {
+    fail(`re-eval regressed: addition with no req number failed to merge into a row that has one: ${reverseRows.join(' // ')}`);
+  }
+
+  // Control: both sides carry the SAME req number — this is a genuine
+  // re-evaluation of one posting and must still merge, not double up.
+  const SAME_REQ_ROW =
+    '| 1 | 2026-01-01 | Acme | Administrative Assistant | 3.5/5 | Applied | ✅ | ' +
+    '[1](reports/001-acme-2026-01-01.md) | req ADMIN-4471, first pass |\n';
+  const sameReq = runMergeDetailed({
+    '002-acme.tsv': '2\t2026-01-15\tAcme\tAdministrative Assistant\tEvaluated\t4.0/5\t✅\t[2](reports/002-acme-2026-01-15.md)\treq ADMIN-4471, re-scored\n',
+  }, { rows: SAME_REQ_ROW });
+  const sameReqRows = dataRows(sameReq.tracker);
+  if (sameReqRows.length === 1 && /4\.0\/5/.test(sameReqRows[0])) {
+    pass('matching req numbers on both sides still merge as one re-evaluated row');
+  } else {
+    fail(`same req number on both sides failed to merge as a re-evaluation: ${sameReqRows.join(' // ')}`);
+  }
+
+  // Control: NEITHER side has a req number — the guard steps aside and the
+  // existing fuzzy-match-only behavior (same company + fuzzy title = duplicate)
+  // is unchanged.
+  const NEITHER_REQ_ROW =
+    '| 1 | 2026-01-01 | Acme | Administrative Assistant | 3.5/5 | Applied | ✅ | ' +
+    '[1](reports/001-acme-2026-01-01.md) | on-site, general admin support |\n';
+  const neitherReq = runMergeDetailed({
+    '002-acme.tsv': '2\t2026-01-15\tAcme\tAdministrative Assistant\tEvaluated\t4.0/5\t✅\t[2](reports/002-acme-2026-01-15.md)\tre-scored, still no req number\n',
+  }, { rows: NEITHER_REQ_ROW });
+  const neitherReqRows = dataRows(neitherReq.tracker);
+  if (neitherReqRows.length === 1 && /4\.0\/5/.test(neitherReqRows[0])) {
+    pass('no req number on either side falls back to fuzzy-match-only, unchanged');
+  } else {
+    fail(`no-req-number fallback behavior regressed: ${neitherReqRows.join(' // ')}`);
+  }
+} catch (e) {
+  fail(`merge-tracker one-sided req-number tests crashed: ${e.message}`);
+}
+
+// ── #4538: entry-number matching must respect conflicting req IDs ───────────
+// Tier 2 (same tracker number + company) runs before the fuzzy tier. Without
+// the shared conflict guard it overwrites the first posting before tier 3 can
+// see that the two notes identify different requisitions.
+console.log('\nmerge-tracker.mjs — entry-number match rejects different req IDs (#4538)');
+try {
+  const REQ_ROW =
+    '| 5 | 2026-01-01 | Acme | Administrative Assistant | 3.5/5 | Applied | ✅ | ' +
+    '[1](reports/001-acme-2026-01-01.md) | req JR-10423, first posting |\n';
+
+  const differentReqs = runMergeDetailed({
+    '002-acme.tsv': '5\t2026-01-15\tAcme\tAdministrative Assistant\tEvaluated\t3.9/5\t✅\t[2](reports/002-acme-2026-01-15.md)\treq JR-10424, second posting\n',
+  }, { rows: REQ_ROW });
+  const distinctRows = dataRows(differentReqs.tracker);
+  const original = distinctRows.find((row) => /^\|\s*5\s*\|/.test(row)) || '';
+  const addition = distinctRows.find((row) => /^\|\s*6\s*\|/.test(row)) || '';
+  if (distinctRows.length === 1 && differentReqs.exitCode === 1 && /JR-10423/.test(original) && /refusing to renumber/.test(differentReqs.output)) {
+    pass('a distinct requisition cannot steal an existing reserved tracker number');
+  } else {
+    fail(`reserved requisition collision was not left pending: ${differentReqs.output}`);
+  }
+
+  const sameReq = runMergeDetailed({
+    '002-acme.tsv': '5\t2026-01-15\tAcme\tAdministrative Assistant\tEvaluated\t3.9/5\t✅\t[2](reports/002-acme-2026-01-15.md)\treq JR-10423, re-scored\n',
+  }, { rows: REQ_ROW });
+  const sameReqRows = dataRows(sameReq.tracker);
+  if (sameReqRows.length === 1 && /3\.9\/5/.test(sameReqRows[0]) && /JR-10423/.test(sameReqRows[0])) {
+    pass('same req ID on both sides still matches by entry number');
+  } else {
+    fail(`same req ID entry-number re-evaluation did not merge: ${sameReqRows.join(' // ')}`);
+  }
+
+  const unknownReq = runMergeDetailed({
+    '002-acme.tsv': '5\t2026-01-15\tAcme\tAdministrative Assistant\tEvaluated\t3.9/5\t✅\t[2](reports/002-acme-2026-01-15.md)\tre-scored, req ID not restated\n',
+  }, { rows: REQ_ROW });
+  const unknownReqRows = dataRows(unknownReq.tracker);
+  if (unknownReqRows.length === 1 && /3\.9\/5/.test(unknownReqRows[0]) && /JR-10423/.test(unknownReqRows[0])) {
+    pass('a missing req ID remains unknown and does not block an entry-number match');
+  } else {
+    fail(`missing req ID changed entry-number matching: ${unknownReqRows.join(' // ')}`);
+  }
+} catch (e) {
+  fail(`merge-tracker #4538 tests crashed: ${e.message}`);
+}
+
 // ── #2394: a tracker with no separator row dropped everything, silently ─────
 // The insert point comes from SEPARATOR_ROW_RE. With no match, insertIdx
 // stayed -1, the splice was skipped with no else, and the run went on to write
@@ -581,4 +756,185 @@ try {
   }
 } catch (e) {
   fail(`merge-tracker same-run num collision tests crashed: ${e.message}`);
+}
+
+// ── PDF-flag synchronization integration ────────────────────────────────────
+console.log('\nmerge-tracker.mjs — PDF-flag synchronization');
+try {
+  const seed = '| 1 | 2026-01-01 | Acme | Eng | 4.0/5 | Evaluated | ❌ | [1](reports/1-acme.md) | |\n';
+  
+  // Create a custom workspace to inject a pdf-index.tsv
+  const work = mkdtempSync(join(tmpdir(), 'cops-merge-pdf-sync-'));
+  try {
+    const tracker = join(work, 'applications.md');
+    const addsDir = join(work, 'adds');
+    const pdfIndex = join(work, 'pdf-index.tsv');
+    
+    mkdirSync(addsDir, { recursive: true });
+    writeFileSync(tracker, TRACKER_HEADER + seed);
+    writeFileSync(pdfIndex, '# report\tpdf\thtml\tformat\tdate\n1\toutput/1.pdf\toutput/1.html\ta4\t2026-01-01\n');
+    // A manifest row only counts while its PDF is on disk (#4777).
+    mkdirSync(join(work, 'output'), { recursive: true });
+    writeFileSync(join(work, 'output', '1.pdf'), '%PDF-1.4\n');
+    
+    // Normal run should trigger sync and flip the PDF flag
+    const result = execFileSync(NODE, [join(ROOT, 'merge-tracker.mjs')], {
+      encoding: 'utf-8',
+      env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: tracker, CAREER_OPS_ADDITIONS: addsDir, CAREER_OPS_PDF_INDEX: pdfIndex }, false),
+    });
+    
+    const trackerContent = readFileSync(tracker, 'utf-8');
+    if (/\|\s*✅\s*\|\s*\[1\]/.test(trackerContent)) {
+      pass('merge-tracker invokes sync-pdf-flags after a real merge');
+    } else {
+      fail(`merge-tracker did not sync PDF flags: row is ${trackerContent.split('\n').find(l => /Acme/.test(l))}`);
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+
+  // Dry-run should skip the sync
+  const workDry = mkdtempSync(join(tmpdir(), 'cops-merge-pdf-sync-dry-'));
+  try {
+    const tracker = join(workDry, 'applications.md');
+    const addsDir = join(workDry, 'adds');
+    const pdfIndex = join(workDry, 'pdf-index.tsv');
+    
+    mkdirSync(addsDir, { recursive: true });
+    writeFileSync(tracker, TRACKER_HEADER + seed);
+    writeFileSync(pdfIndex, '# report\tpdf\thtml\tformat\tdate\n1\toutput/1.pdf\toutput/1.html\ta4\t2026-01-01\n');
+    // The PDF is on disk, so without --dry-run this row would flip. That makes
+    // the unchanged ❌ below a statement about dry-run and not about a missing file.
+    mkdirSync(join(workDry, 'output'), { recursive: true });
+    writeFileSync(join(workDry, 'output', '1.pdf'), '%PDF-1.4\n');
+    
+    // Create a pending addition so the merge has something to "dry-run"
+    writeFileSync(join(addsDir, '2-globex.tsv'), '2\t2026-01-02\tGlobex\tEng\tEvaluated\t4.0/5\t❌\t[2](reports/2.md)\t\n');
+    
+    execFileSync(NODE, [join(ROOT, 'merge-tracker.mjs'), '--dry-run'], {
+      encoding: 'utf-8',
+      env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: tracker, CAREER_OPS_ADDITIONS: addsDir, CAREER_OPS_PDF_INDEX: pdfIndex }, false),
+    });
+    
+    const trackerContent = readFileSync(tracker, 'utf-8');
+    if (/\|\s*❌\s*\|\s*\[1\]/.test(trackerContent)) {
+      pass('merge-tracker skips sync-pdf-flags on dry-run');
+    } else {
+      fail(`merge-tracker incorrectly synced PDF flags on dry-run: row is ${trackerContent.split('\n').find(l => /Acme/.test(l))}`);
+    }
+  } finally {
+    rmSync(workDry, { recursive: true, force: true });
+  }
+
+  // A manifest row outlives its file: generate-pdf.mjs evicts a row only on
+  // re-generation, so deleting output/*.pdf leaves every row standing (#4777).
+  // Each of merge-tracker's three readers of the manifest must treat that row
+  // as absent, or the flag it was corrected from comes straight back. Every
+  // case runs twice on the same fixture, once with the PDF on disk and once
+  // without, so the ❌ cannot pass because the manifest went unread.
+  const pdfCellOf = (trackerText, rowPrefix) => {
+    const row = trackerText.split('\n').find((l) => l.startsWith(rowPrefix)) || '';
+    return { row: row.trim(), pdf: (row.split('|')[7] || '').trim() };
+  };
+  const runManifestMerge = ({ rows, manifest, additions = {}, pdfs = [] }) => {
+    const workGone = mkdtempSync(join(tmpdir(), 'cops-merge-pdf-gone-'));
+    try {
+      const tracker = join(workGone, 'applications.md');
+      const addsDir = join(workGone, 'adds');
+      const pdfIndex = join(workGone, 'pdf-index.tsv');
+      mkdirSync(addsDir, { recursive: true });
+      mkdirSync(join(workGone, 'output'), { recursive: true });
+      writeFileSync(tracker, TRACKER_HEADER + rows);
+      writeFileSync(pdfIndex, '# report\tpdf\thtml\tformat\tdate\n' + manifest);
+      for (const [name, line] of Object.entries(additions)) writeFileSync(join(addsDir, name), line);
+      for (const pdf of pdfs) writeFileSync(join(workGone, 'output', pdf), '%PDF-1.4\n');
+      execFileSync(NODE, [join(ROOT, 'merge-tracker.mjs')], {
+        encoding: 'utf-8',
+        env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: tracker, CAREER_OPS_ADDITIONS: addsDir, CAREER_OPS_PDF_INDEX: pdfIndex, CAREER_OPS_BATCH_STATE: isolatedBatchStatePath(addsDir) }, false),
+      });
+      return readFileSync(tracker, 'utf-8');
+    } finally {
+      rmSync(workGone, { recursive: true, force: true });
+    }
+  };
+
+  // Reader 1: the flag sync over existing rows.
+  const goneRow = {
+    rows: '| 7 | 2026-01-04 | Acme | Engineer | 4.2/5 | Evaluated | ❌ | [12](reports/012-acme-2026-01-04.md) | ok |\n',
+    manifest: '012\toutput/cv-acme.pdf\toutput/cv-acme.html\tletter\t2026-01-04\n',
+  };
+  const goneRowPresent = pdfCellOf(runManifestMerge({ ...goneRow, pdfs: ['cv-acme.pdf'] }), '| 7 ');
+  const goneRowAbsent = pdfCellOf(runManifestMerge(goneRow), '| 7 ');
+  if (goneRowPresent.pdf === '✅' && goneRowAbsent.pdf === '❌') {
+    pass('merge-tracker leaves a corrected ❌ alone when the manifest row\'s PDF is gone (#4777)');
+  } else {
+    fail(`merge-tracker flag sync ignored the PDF on disk: with file "${goneRowPresent.row}", without "${goneRowAbsent.row}"`);
+  }
+
+  // Reader 2: the new-row path, which sets the flag as an addition is merged.
+  const goneAddition = {
+    rows: '',
+    manifest: '041\toutput/cv-umbrella.pdf\toutput/cv-umbrella.html\tletter\t2026-01-07\n',
+    additions: { '001-umbrella.tsv': '1\t2026-01-07\tUmbrella\tEngineer\t4.1/5\tEvaluated\t❌\t[41](reports/041-umbrella-2026-01-07.md)\tok\n' },
+  };
+  const goneAdditionPresent = pdfCellOf(runManifestMerge({ ...goneAddition, pdfs: ['cv-umbrella.pdf'] }), '| 1 ');
+  const goneAdditionAbsent = pdfCellOf(runManifestMerge(goneAddition), '| 1 ');
+  if (goneAdditionPresent.pdf === '✅' && goneAdditionAbsent.pdf === '❌') {
+    pass('a newly merged row stays ❌ when its manifest row\'s PDF is gone (#4777)');
+  } else {
+    fail(`new-row merge ignored the PDF on disk: with file "${goneAdditionPresent.row}", without "${goneAdditionAbsent.row}"`);
+  }
+
+  // Reader 3: the duplicate-update path, where a re-eval replaces the report
+  // link and the flag has to describe the new report (#2594).
+  const goneReeval = {
+    rows: '| 3 | 2026-01-04 | Acme | Backend Engineer, Payments | 4.5/5 | Evaluated | ✅ | [1](reports/001-acme-2026-01-04.md) | first |\n',
+    manifest: '1\toutput/acme-1.pdf\t\t\t2026-01-04\n2\toutput/acme-2.pdf\t\t\t2026-02-01\n',
+    additions: { '002-acme.tsv': '2\t2026-02-01\tAcme\tBackend Engineer, Payments\tEvaluated\t3.9/5\t❌\t[2](reports/002-acme-2026-02-01.md)\tre-eval\n' },
+  };
+  const goneReevalPresent = pdfCellOf(runManifestMerge({ ...goneReeval, pdfs: ['acme-1.pdf', 'acme-2.pdf'] }), '| 3 ');
+  const goneReevalAbsent = pdfCellOf(runManifestMerge({ ...goneReeval, pdfs: ['acme-1.pdf'] }), '| 3 ');
+  if (/\[1\]/.test(goneReevalPresent.row) && goneReevalPresent.pdf === '✅'
+    && /\[1\]/.test(goneReevalAbsent.row) && goneReevalAbsent.pdf === '✅') {
+    pass('re-evaluation retains the primary report and its existing PDF identity');
+  } else {
+    fail(`re-eval ignored the new report's PDF on disk: with file "${goneReevalPresent.row}", without "${goneReevalAbsent.row}"`);
+  }
+} catch (e) {
+  fail(`merge-tracker PDF-flag sync tests crashed: ${e.message}`);
+}
+
+// ── One-sided level + two-sided vocabulary (#4058) ──────────────────────────
+// roleFuzzyMatch() used to merge two materially different same-employer roles
+// when they shared reordered qualifiers, each title had a unique token, and
+// only one side stated a level. Both rows below carry no posting URL and
+// different report/entry numbers, so the company + fuzzy-role tier decides —
+// asserting on the rows proves the fix where the bug lived.
+console.log('\nmerge-tracker.mjs — one-sided level keeps distinct roles apart (#4058)');
+try {
+  const ROLE_A = 'Front Desk Assistant (Summer Housing)';
+  const ROLE_B = 'Administrative Assistant II (Housing Front Desk)';
+  const SEED_4058 = `| 1 | 2026-09-01 | Acme Health | ${ROLE_A} | 4.0/5 | Evaluated | ❌ | [1](reports/1-acme.md) | |\n`;
+
+  const split = runMergeDetailed({
+    '2-acme.tsv': `2\t2026-09-09\tAcme Health\t${ROLE_B}\tEvaluated\t4.1/5\t❌\t[2](reports/2-acme.md)\t\n`,
+  }, { rows: SEED_4058 });
+  const splitRows = dataRows(split.tracker);
+  if (splitRows.length === 2) {
+    pass('merge-tracker keeps a one-sided-level, two-vocabulary role pair as two rows (#4058)');
+  } else {
+    fail(`merge-tracker collapsed the #4058 pair: ${splitRows.join(' // ')}`);
+  }
+
+  const repost = runMergeDetailed({
+    '2-acme.tsv': `2\t2026-09-09\tAcme Health\t${ROLE_A}\tEvaluated\t4.1/5\t❌\t[2](reports/2-acme.md)\t\n`,
+  }, { rows: SEED_4058 });
+  const repostRows = dataRows(repost.tracker);
+  if (repost.exitCode === 0 && repost.killedBy === null && repostRows.length === 1) {
+    pass('merge-tracker still merges a true same-role repost to one row (#4058 control)');
+  } else {
+    fail(`merge-tracker same-role repost control failed: exit=${repost.exitCode} killedBy=${repost.killedBy ?? 'none'} rows=${repostRows.length}: ${repostRows.join(' // ')} | ${repost.output.trim()}`);
+  }
+} catch (e) {
+  fail(`merge-tracker #4058 tests crashed: ${e.message}`);
 }

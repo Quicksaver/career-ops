@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+import { chromium } from 'playwright';
+import { resolve, dirname, extname, relative, isAbsolute } from 'path';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
 
 /**
  * img-to-pdf.mjs — Screenshot/image -> single-page PDF via Playwright
@@ -24,12 +31,6 @@
  * the script errors out rather than silently clobbering a PDF.
  */
 
-import { chromium } from 'playwright';
-import { resolve, dirname, extname, relative, isAbsolute } from 'path';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
 
 const MIME_TYPES = {
   '.png': 'image/png',
@@ -136,7 +137,7 @@ export async function convertImageToPdf(inputPath, outputPath) {
       await page.waitForFunction(() => {
         const img = document.getElementById('career-ops-img');
         return !!img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
-      }, { timeout: 10000 });
+      }, undefined, { timeout: 10000 });
     } catch (err) {
       throw new Error(`Image failed to decode within 10s (unreadable or corrupt file?): ${inputPath}`);
     }
@@ -272,7 +273,7 @@ async function main() {
   }
 }
 
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+const isMain = isMainModule(import.meta.url);
 if (isMain) {
   main();
 }

@@ -27,35 +27,15 @@ import { join, dirname, relative, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { load as yamlLoad } from 'js-yaml';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
+import { validateFlags } from './lib/cli-flags.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-let USER_ROOT = CAREER_OPS;
-let REPORTS_DIR = join(CAREER_OPS, 'reports');
-let APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
-let CV_FILE = join(CAREER_OPS, 'cv.md');
-let PROFILE_FILE = join(CAREER_OPS, 'config/profile.yml');
+import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 
-function configureUserContext(rawArgs) {
-  let userContext;
-  try {
-    userContext = getUserContext(rawArgs);
-  } catch (err) {
-    printUserContextErrorAndExit(err);
-  }
-  USER_ROOT = userContext.userRoot;
-  REPORTS_DIR = userPath(userContext, 'reports');
-  APPS_FILE = userPath(userContext, 'data/applications.md');
-  CV_FILE = userPath(userContext, 'cv.md');
-  PROFILE_FILE = userPath(userContext, 'config/profile.yml');
-  return userContext.args;
-}
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const CAREER_OPS = getCareerOpsRoot();
+const APPS_FILE = resolveTrackerPath(CAREER_OPS);
+const CV_FILE = join(CAREER_OPS, 'cv.md');
+const PROFILE_FILE = join(CAREER_OPS, 'config/profile.yml');
 
 // Canonical reports-root containment. A tracker link resolves to a candidate
 // path; accept it only if it stays inside the repo's reports/ directory. Two
@@ -70,11 +50,11 @@ function configureUserContext(rawArgs) {
 // errors rethrow, matching readTextIfExists. Identical to the guard in
 // analyze-patterns.mjs so both sites behave the same.
 function withinReports(candidate) {
-  const repoRelative = relative(USER_ROOT, candidate).split(sep).join('/');
+  const repoRelative = relative(CAREER_OPS, candidate).split(sep).join('/');
   if (!repoRelative.startsWith('reports/') || repoRelative.includes('..')) return false;
   let realRoot;
   try {
-    realRoot = realpathSync(REPORTS_DIR);
+    realRoot = realpathSync(join(CAREER_OPS, 'reports'));
   } catch (err) {
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false;
     throw err;
@@ -106,7 +86,12 @@ function readTextIfExists(path) {
 // older runs non-comparable. The upskill mode's diff-vs-previous section only
 // compares reports with the same schema_version, so a regex change can't
 // masquerade as "gap closed".
-export const SCHEMA_VERSION = 1;
+// v2 (2026-08-30): the marketing/GTM vocabulary block in skill-extract.mjs and
+// the company-name exclusion below both change WHICH skills a report yields, so
+// a v1 gap list and a v2 one are not comparable — a gap "appearing" in v2 may
+// simply be a word the v1 vocabulary could not see, and a gap "closing" may be
+// an employer name that v1 mistook for a skill.
+export const SCHEMA_VERSION = 2;
 
 // Reports below this global score count as "low fit" — the population whose
 // gaps matter most. Matches the apply threshold in Ethical Use (CLAUDE.md).
@@ -116,6 +101,7 @@ const LOW_FIT_SCORE = 4.0;
 // upskill, jd-skill-gap, and analyze-patterns share ONE source of truth. Re-
 // exported here so existing importers of extractSkills keep working unchanged.
 import { extractSkills } from './skill-extract.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
 export { extractSkills };
 
 // --- Known-skills text assembly ---
@@ -211,7 +197,7 @@ export function stripMarkdownComments(raw) {
  * aggregate and targeted paths cannot drift — the drift class #1896 exists to
  * prevent.
  *
- * @param {string} cvRaw       raw active-user CV markdown
+ * @param {string} cvRaw       raw active-user cv.md
  * @param {string} profileRaw  raw config/profile.yml
  * @param {(err: Error) => void} [onProfileParseFailure]  forwarded to yamlValueText
  * @returns {string}
@@ -325,24 +311,59 @@ export function parseReportGaps(content) {
 }
 
 /**
+ * Normalized lookup key for a company name. Lowercased and whitespace-collapsed
+ * so a tracker cell (`  Snowflake `) matches an extracted skill token
+ * (`Snowflake`).
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function companyKey(name) {
+  return String(name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
  * Pure aggregation over parsed reports. Exported for self-testing.
  *
  * @param {Array<{num:number|string, score:number|null, gapText:string}>} reports
  * @param {Set<string>} knownSkills — canonical names already in cv/profile
+ * @param {Set<string>} [companyNames] — normalized names of companies the user
+ *   has evaluated (see companyKey). A skill token that IS one of them is an
+ *   employer being cited, not a skill being demanded.
  */
-export function aggregateGaps(reports, knownSkills) {
+export function aggregateGaps(reports, knownSkills, companyNames = new Set()) {
   const scored = reports.filter(r => Number.isFinite(r.score));
   const lowFit = scored.filter(r => r.score < LOW_FIT_SCORE);
   const totalLowFit = lowFit.length;
 
+  // Accept either an already-normalized set or raw tracker cells.
+  const companyLookup = new Set([...companyNames].map(companyKey).filter(Boolean));
+
   const bySkill = new Map();
   const excludedCounts = new Map();
+  const companyCounts = new Map();
 
   for (const report of reports) {
     const skills = extractSkills(report.gapText);
     for (const skill of skills) {
       if (knownSkills.has(skill)) {
         excludedCounts.set(skill, (excludedCounts.get(skill) || 0) + 1);
+        continue;
+      }
+      // A company from the user's OWN pipeline appearing in gap prose is
+      // almost always provenance, not demand — a report logging a recurring
+      // gap names the sibling companies where it was logged before ("4th
+      // occurrence: <company>, <company>, now here"), and the extractor cannot
+      // tell that from a JD asking for the tool of the same name.
+      //
+      // Checked AFTER known-skills so a company that is also a genuine known
+      // skill stays in the bucket that says "you already have this". Counted
+      // and reported rather than dropped: this module's own history (see the
+      // known-skills header above) is that a silent suppression is
+      // indistinguishable from "never appeared", which is what made the
+      // original bug expensive.
+      if (companyLookup.has(companyKey(skill))) {
+        companyCounts.set(skill, (companyCounts.get(skill) || 0) + 1);
         continue;
       }
       if (!bySkill.has(skill)) {
@@ -377,7 +398,11 @@ export function aggregateGaps(reports, knownSkills) {
     .map(([skill, reports]) => ({ skill, reports }))
     .sort((a, b) => b.reports - a.reports);
 
-  return { gaps, excludedAsKnown, totalLowFit };
+  const excludedAsCompanyName = [...companyCounts.entries()]
+    .map(([skill, reports]) => ({ skill, reports }))
+    .sort((a, b) => b.reports - a.reports);
+
+  return { gaps, excludedAsKnown, excludedAsCompanyName, totalLowFit };
 }
 
 /**
@@ -420,6 +445,13 @@ function analyze(minReports) {
   let reportsRead = 0;
   let reportsWithMachineSummary = 0;
   const parsedReports = [];
+  // Every company the user has evaluated, linked report or not — a row with no
+  // report still names an employer that can turn up in someone else's gap prose.
+  // '?' is the tracker's locale-invariant marker for an unknown end employer
+  // (see AGENTS.md) and names nothing, so it is skipped.
+  const companyNames = new Set(
+    rows.map(r => companyKey(r.company)).filter(name => name && name !== '?')
+  );
 
   for (const row of rows) {
     const linkMatch = (row.report || '').match(/\]\(([^)]+)\)/);
@@ -429,7 +461,7 @@ function analyze(minReports) {
     // (see merge-tracker.mjs); resolve against it, with a root-relative fallback.
     // The read is attempted directly instead of probing with existsSync first,
     // which costs a full stat per report and races with the read (#2385).
-    const candidates = new Set([join(dirname(APPS_FILE), linkMatch[1]), join(USER_ROOT, linkMatch[1])]);
+    const candidates = new Set([join(dirname(APPS_FILE), linkMatch[1]), join(CAREER_OPS, linkMatch[1])]);
     let content = null;
     for (const p of candidates) {
       if (!withinReports(p)) continue;
@@ -464,7 +496,8 @@ function analyze(minReports) {
   );
   const knownSkills = extractSkills(knownText);
 
-  const { gaps, excludedAsKnown, totalLowFit } = aggregateGaps(parsedReports, knownSkills);
+  const { gaps, excludedAsKnown, excludedAsCompanyName, totalLowFit } =
+    aggregateGaps(parsedReports, knownSkills, companyNames);
 
   return {
     schema_version: SCHEMA_VERSION,
@@ -476,9 +509,11 @@ function analyze(minReports) {
       lowFitReports: totalLowFit,
       lowFitScoreThreshold: LOW_FIT_SCORE,
       knownSkillCount: knownSkills.size,
+      trackedCompanyCount: companyNames.size,
     },
     gaps,
     excludedAsKnown,
+    excludedAsCompanyName,
     knownSkills: [...knownSkills].sort(),
   };
 }
@@ -504,6 +539,12 @@ function printSummary(result) {
   if (result.excludedAsKnown.length > 0) {
     console.log('');
     console.log(`Excluded (already in cv.md/profile): ${result.excludedAsKnown.map(e => e.skill).join(', ')}`);
+  }
+  // Printed, never silent: if one of these is genuinely a tool the user needs
+  // rather than an employer they cited, this line is how they find out.
+  if (result.excludedAsCompanyName?.length > 0) {
+    console.log('');
+    console.log(`Excluded (company in your tracker, not a skill): ${result.excludedAsCompanyName.map(e => e.skill).join(', ')}`);
   }
 }
 
@@ -860,17 +901,45 @@ async function validateUrlSecurity(urlString) {
 //     rejects a discovered suite for.
 //
 // Same shape as the other CLIs in this repo (add-entry.mjs, detect-reposts.mjs,
-// contacts.mjs, check-table-freshness.mjs, ...): compare import.meta.url against
-// argv[1]. Node resolves the ESM entry through realpath while pathToFileURL does
-// not, so invoking this file through a SYMLINK reads as "not main" and prints
-// nothing — the same edge contacts.test.mjs documents on macOS. Every caller
-// (test-all.mjs, the modes, package scripts) uses the real path, and matching the
-// repo convention is worth more here than covering a path nothing takes.
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+// contacts.mjs, check-table-freshness.mjs, ...), and now literally the same code:
+// lib/is-main-module.mjs. The hand-rolled comparison this comment used to describe
+// accepted a real defect — reached through a SYMLINK the two sides never matched,
+// so the CLI printed nothing and exited 0 — on the premise that every caller uses
+// the real path. That premise did not hold (#3170): a symlinked checkout, a ~/bin
+// shim and macOS's own tmpdir all take it. The helper realpaths both sides.
+const isMain = isMainModule(import.meta.url);
+
+// An unrecognized or mistyped flag (e.g. `--min-report` for `--min-reports`)
+// used to fall through silently: the aggregate branch just ran with its
+// default MIN_REPORTS, reporting a gap map for a threshold nobody asked for.
+// Handled via lib/cli-flags.mjs's validateFlags() (#2775), same shape as
+// doctor.mjs (#2874) — checked before --self-test/--url-text/--min-reports
+// are read, and before --help, so `--help --bogus` still errors.
+const KNOWN_FLAGS = ['--json', '--min-reports', '--summary', '--url-text', '--self-test', '--help', '-h'];
+
+// Only --min-reports and --url-text take their value as the next argv token.
+const VALUE_FLAGS = ['--min-reports', '--url-text'];
+
+const USAGE = `Usage:
+  node upskill.mjs                        # aggregate skill-gap map (JSON)
+  node upskill.mjs --summary              # human-readable table
+  node upskill.mjs --min-reports <n>      # minimum scored reports required (default 5)
+  node upskill.mjs --url-text <url|path>  # targeted gap analysis vs one JD (URL or local file)
+  node upskill.mjs <url>                  # same as --url-text <url>
+  node upskill.mjs --self-test            # run the pure-function self-tests
+  node upskill.mjs --help                 # show this message`;
 
 if (isMain) {
-  const rawArgs = process.argv.slice(2);
-  const args = rawArgs.includes('--self-test') ? rawArgs : configureUserContext(rawArgs);
+  const args = process.argv.slice(2);
+  // requireOperand: neither value flag caught a MISSING operand on its own, so
+  // this is the shared guard's case, not an own-validator exemption.
+  // `--min-reports --summary` read '--summary' as the count, parseInt gave NaN
+  // and the aggregate branch silently fell back to 5 — a gap map for a threshold
+  // nobody asked for, at exit 0. `--url-text --help` printed usage and exited 0
+  // before the "provide a valid URL" check below could run (#2961). The
+  // non-numeric fallback (`--min-reports abc` → 5) is separate behaviour and is
+  // deliberately left alone here.
+  validateFlags(args, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS, requireOperand: true });
   if (args.includes('--self-test')) runSelfTest();
 
   // ====== SECURE TARGETED MODE PHASE 2a IMPLEMENTATION ======
@@ -961,13 +1030,9 @@ if (isMain) {
         }
       }
 
-      // Assemble known skills only from the active user's factual sources.
+      // Candidate evidence is restricted to the active user's CV and profile.
       const profileRaw = readOptionalText(PROFILE_FILE);
       const cvRaw = readOptionalText(CV_FILE);
-      if (!cvRaw) {
-        console.error(`Fatal: Active user's CV not found or unreadable at ${CV_FILE}`);
-        process.exit(1);
-      }
 
       const { gaps: gapList, excludedAsKnown, knownSkills } =
         computeTargetedGaps(
@@ -975,20 +1040,13 @@ if (isMain) {
           knownSkillsText(cvRaw, profileRaw, warnProfileUnparseable),
         );
 
-      const targetedResult = {
+      console.log(JSON.stringify({
         mode: 'targeted',
         source: inputSource,
         gaps: gapList.map(skill => ({ skill })),
         excludedAsKnown: excludedAsKnown.map(skill => ({ skill })),
         knownSkills,
-      };
-      if (args.includes('--json')) console.log(JSON.stringify(targetedResult, null, 2));
-      else {
-        console.log('TARGETED UPSKILL GAP CHECK');
-        console.log(`Source: ${inputSource}`);
-        console.log(`New gaps: ${gapList.length ? gapList.join(', ') : 'none'}`);
-        console.log(`Already supported: ${excludedAsKnown.length ? excludedAsKnown.join(', ') : 'none'}`);
-      }
+      }, null, 2));
 
       process.exit(0);
     })().catch((err) => {
@@ -1014,10 +1072,10 @@ if (isMain) {
     })();
 
     const result = analyze(MIN_REPORTS);
-    if (args.includes('--json')) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
+    if (!args.includes('--json')) {
       printSummary(result);
+    } else {
+      console.log(JSON.stringify(result, null, 2));
     }
   }
 }

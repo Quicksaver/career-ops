@@ -1,5 +1,7 @@
 # Mode: followup -- Follow-up Cadence Tracker
 
+All candidate files and data paths in these instructions are relative to the explicitly selected `users/{USER}/` directory. Resolve reads and writes there. System modes, templates, and executable scripts remain relative to the code checkout. Pass `--user {USER}` to child commands or inherit the same `CAREER_OPS_USER`.
+
 > **Read `users/{USER}/voice-dna.md` (if present) and apply it to every generated email/LinkedIn draft.** This mode is standalone — it does NOT load `_shared.md`, so read `users/{USER}/voice-dna.md` directly. Follow-up drafts are conversational, so apply the full guardrail: banned words/phrases/patterns, no em-dashes, no negative parallelisms (§3-4) AND conversational voice — contractions, varied rhythm, direct "I"/"you" (§1-2). Never drop or soften a real metric from `cv.md` for style.
 
 ## Purpose
@@ -13,11 +15,11 @@ elapsed-time cadence case — see `confirmed_time_noshow` in `modes/email.md`
 
 ## Inputs
 
-- `users/{USER}/data/applications.md` — Application tracker
-- `users/{USER}/data/follow-ups.md` — Follow-up history (created on first use)
+- `data/applications.md` — Application tracker
+- `data/follow-ups.md` — Follow-up history (created on first use)
 - `users/{USER}/reports/` — Evaluation reports (for context in drafts)
 - `users/{USER}/config/profile.yml` — User profile (name, identity)
-- `users/{USER}/cv.md` — CV for proof points in drafts
+- `cv.md` — CV for proof points in drafts
 
 ## Step 1 — Run Cadence Script
 
@@ -33,7 +35,7 @@ Parse the JSON output. It contains:
 |-----|----------|
 | `metadata` | Analysis date, total tracked, actionable count, overdue/urgent/cold/waiting counts |
 | `entries` | Per-application: company, role, status, days since application, follow-up count, urgency, next follow-up date, extracted contacts, report path |
-| `cadenceConfig` | Cadence rules (applied: 7 days, responded: 3 days, interview: 1 day) |
+| `cadenceConfig` | Cadence rules (applied: 7 days, responded/assessment: 3 days, interview: 1 day) |
 
 If no actionable entries, tell the user:
 > "No active applications to follow up on. Apply to some roles first with `/career-ops` and come back when they're aging."
@@ -77,13 +79,15 @@ Use visual indicators:
 - **waiting (X days)** — on track, follow-up scheduled
 - **COLD** — 2+ follow-ups sent, suggest closing
 
+`Assessment` is a lifecycle stage distinct from `Interview`. It uses the responded cadence: the first check-in is due after 1 day, then every 3 days while no newer follow-up is logged. Use the assessment log (`data/assessments.tsv`) for platform, subject, score, and completion details.
+
 ## Step 3 — Generate Follow-up Drafts
 
 For each **overdue** or **urgent** entry only:
 
 1. Read the linked report (`reportPath` from JSON) for company context
-2. Read `users/{USER}/cv.md` for proof points
-3. Read `users/{USER}/config/profile.yml` for candidate name and identity
+2. Read `cv.md` for proof points
+3. Read `config/profile.yml` for candidate name and identity
 
 **Agency-mediated applications (#1596):** when the entry's `via` field is set (the cadence JSON emits `via: null` for direct applications), the chase target is the **agency contact** (recruiter named in the notes/contacts), not the company — the recruiter owns the client relationship and has their own incentive to respond. Reference the role by the agency's framing.
 
@@ -99,7 +103,7 @@ When `via` is set but the employer IS known, use the framework below unchanged e
 Generate a 3-4 sentence email:
 
 1. **Sentence 1:** Reference the specific role + when you applied. Be specific — mention the company name and role title.
-2. **Sentence 2:** One concrete value-add from the report's Block B match or a proof point from `users/{USER}/cv.md`. Quantify if possible.
+2. **Sentence 2:** One concrete value-add from the report's Block B match or a proof point from `cv.md`. Quantify if possible.
 3. **Sentence 3:** Soft ask + availability. Offer a specific time window ("this week" or "next Tuesday").
 4. **Sentence 4 (optional):** Brief mention of a relevant recent project or achievement.
 
@@ -110,7 +114,7 @@ Generate a 3-4 sentence email:
 - Reference something specific to THAT company (from report Block A)
 - Keep under 150 words
 - Include a subject line
-- Use the candidate's name from `users/{USER}/config/profile.yml`
+- Use the candidate's name from `config/profile.yml`
 
 **Example tone:**
 > Subject: Re: Senior PHP/Laravel Developer — IxDF
@@ -169,7 +173,7 @@ For each draft, show:
 
 After the user reviews and says they've sent a follow-up, record it:
 
-1. If `users/{USER}/data/follow-ups.md` doesn't exist, create it (this exact header — the same one the web UI writes; `followup-cadence.mjs` parses these columns):
+1. If `data/follow-ups.md` doesn't exist, create it (this exact header — the same one the web UI writes; `followup-cadence.mjs` parses these columns):
 
    ```markdown
    # Follow-ups
@@ -188,7 +192,7 @@ After the user reviews and says they've sent a follow-up, record it:
    - `contact` = who it was sent to
    - `notes` = brief note (e.g., "First follow-up, referenced Barbeiro.app")
 
-3. Optionally update the Notes column in `users/{USER}/data/applications.md` with "Follow-up {N} sent {YYYY-MM-DD}"
+3. Optionally add "Follow-up {N} sent {YYYY-MM-DD}" to the row's notes with `node set-status.mjs --report {report#} {current status} --note "Follow-up {N} sent {YYYY-MM-DD}"`. Passing the row's current status leaves it unchanged and appends the note; do not edit `data/applications.md` by hand
 
 **IMPORTANT:** Only record follow-ups the user confirms they actually sent. Never record a draft as sent.
 
@@ -232,6 +236,7 @@ After showing all drafts, summarize:
 |--------|----------------|------------|-------------|
 | Applied | 7 days after application | Every 7 days | 2 (then mark cold) |
 | Responded | 1 day (urgent reply) | Every 3 days | No limit |
+| Assessment | 1 day (assessment invite/submission) | Every 3 days | No limit |
 | Interview | 1 day after (thank-you) | Every 3 days | No limit |
 
 These defaults can be overridden via `node followup-cadence.mjs --user {USER} --applied-days N`.

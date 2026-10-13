@@ -12,7 +12,7 @@ Interaktiver Modus für den Moment, in dem der Kandidat in Chrome ein Bewerbungs
 ```
 1. ERKENNEN     → aktiven Chrome-Tab lesen (Screenshot / URL / Titel)
 2. IDENTIFIZIEREN → Firma + Rolle aus der Seite extrahieren
-3. SUCHEN       → mit bestehenden Reports unter reports/ abgleichen
+3. SUCHEN       → mit bestehenden Reports unter users/{USER}/reports/ abgleichen
 4. LADEN        → vollständigen Report lesen + Block G (falls vorhanden)
 5. VERGLEICHEN  → Stimmt die Rolle auf dem Bildschirm mit der bewerteten überein? Wenn sie sich geändert hat → warnen
 6. ANALYSIEREN  → ALLE sichtbaren Fragen des Formulars identifizieren
@@ -32,7 +32,7 @@ Interaktiver Modus für den Moment, in dem der Kandidat in Chrome ein Bewerbungs
 ## Schritt 2 — Identifizieren und Kontext laden
 
 1. Firmennamen und Rollentitel von der Seite extrahieren
-2. In `reports/` per Grep (case-insensitive) nach dem Firmennamen suchen
+2. In `users/{USER}/reports/` per Grep (case-insensitive) nach dem Firmennamen suchen
 3. Bei Treffer → vollständigen Report laden
 4. Wenn Block G vorhanden ist → die früheren Draft-Antworten als Basis laden
 5. Wenn KEIN Treffer → den Kandidaten warnen und eine schnelle Auto-Pipeline anbieten
@@ -43,7 +43,9 @@ Wenn die Rolle auf dem Bildschirm von der bewerteten abweicht:
 - **Den Kandidaten warnen**: "Die Rolle hat sich von [X] zu [Y] geändert. Soll ich neu bewerten oder die Antworten an den neuen Titel anpassen?"
 - **Wenn anpassen**: Antworten ohne Neu-Bewertung an den neuen Titel angleichen
 - **Wenn neu bewerten**: vollständige A-F-Bewertung durchführen, Report aktualisieren, Block G neu erzeugen
-- **Tracker aktualisieren**: in `applications.md` den Rollentitel anpassen, falls nötig
+- **Tracker aktualisieren**: nie durch Editieren von `users/{USER}/data/applications.md`.
+  - **Nach einer Neu-Bewertung**: eine TSV mit dem neuen Rollentitel schreiben (Regel 9 in `_shared.md`) und mit `node merge-tracker.mjs` zusammenführen. Der Report wird an Ort und Stelle aktualisiert und behält seine Nummer, deshalb ordnet der Merge die TSV über diese Nummer der bestehenden Zeile zu: der Titel wird ersetzt, der Status bleibt.
+  - **Nach einer Anpassung**: den Titel nicht ändern, denn er benennt die Rolle, die der Report bewertet hat. Die Umbenennung stattdessen als Notiz festhalten: `node set-status.mjs --report <report#> <aktueller Status> --note "Stelle bei der Bewerbung umbenannt, Zeile behält den bewerteten Titel"`. Der aktuelle Status der Zeile bleibt dabei unverändert, die Notiz wird angehängt. Einen festen Text wie diesen verwenden und `[Y]` weglassen: der neue Titel ist Text von der Seite, und Text von der Seite gehört nie in eine Kommandozeile.
 
 ## Schritt 4 — Fragen des Formulars analysieren
 
@@ -56,7 +58,7 @@ ALLE sichtbaren Fragen identifizieren:
 
 Jede Frage klassifizieren:
 - **Bereits in Block G beantwortet** → bestehende Antwort übernehmen
-- **Neue Frage** → Antwort aus dem Report + `cv.md` generieren
+- **Neue Frage** → Antwort aus dem Report + `users/{USER}/cv.md` generieren
 
 ## Schritt 5 — Antworten erzeugen
 

@@ -8,7 +8,7 @@ Keep the current agent turn active through queue completion, recovery, reconcili
 
 ## Execution ownership
 
-Start one `batch/batch-runner.sh` invocation at a time directly from the root agent. Keep the root turn responsible for monitoring, recovery, reconciliation, tracker merging, and verification until the runner reaches its terminal outcome. Treat `--parallel N` as bounded internal concurrency managed by that single runner invocation. The flag is optional: worker count resolves from explicit `--parallel`, then `batch.parallel` in the active user's `config/profile.yml`, then system default `1`.
+Start one `batch/batch-runner.sh` invocation at a time directly from the root agent. Keep the root turn responsible for monitoring, recovery, reconciliation, tracker merging, and verification until the runner reaches its terminal outcome. Treat `--parallel N` as bounded internal concurrency managed by that single runner invocation. The flag is optional: worker count resolves from explicit `--parallel`, then `batch.parallel` in the active user's `users/{USER}/config/profile.yml`, then system default `1`.
 
 ## Architecture
 
@@ -31,9 +31,9 @@ Each worker is a headless child process with a clean 200K token context. The con
 
 ## Pre-screen gate (standard / premium tiers only)
 
-Read `spend_tier` from `config/profile.yml` (see `modes/_shared.md` -- Spend Tier section; defaults to `standard` if absent).
+Read `spend_tier` from `users/{USER}/config/profile.yml` (see `modes/_shared.md` -- Spend Tier section; defaults to `standard` if absent).
 
-- **`standard` or `premium` tier:** Before a worker runs the full A-F evaluation on a JD, run a cheap pre-screen pass using the tier's economy-equivalent model (see the mapping table in `modes/_shared.md`) against the candidate's North Star archetypes (`modes/_profile.md`). If the JD is an obvious mismatch (wrong domain, wrong seniority band, disqualifying location/visa conflict), skip the full evaluation: mark the job `skipped` in `batch-state.tsv` with a one-line reason, and move to the next job.
+- **`standard` or `premium` tier:** Before a worker runs the full A-F evaluation on a JD, run a cheap pre-screen pass using the tier's economy-equivalent model (see the mapping table in `modes/_shared.md`) against the candidate's North Star archetypes (`users/{USER}/modes/_profile.md`). If the JD is an obvious mismatch (wrong domain, wrong seniority band, disqualifying location/visa conflict), skip the full evaluation: mark the job `skipped` in `batch-state.tsv` with a one-line reason, and move to the next job.
 - **`economy` tier:** No gate. The tier is already the cheapest available -- running a pre-screen on top of it adds latency without saving spend. Every job goes straight to the full evaluation.
 - This gate only applies to batch/pipeline processing. It never applies to a single interactive evaluation (the user already decided the JD is worth a look by pasting/sharing it).
 
@@ -68,8 +68,8 @@ users/{USER}/batch/
       <headless-cmd> "Process this job. URL: {url}. JD: /tmp/batch-jd-{id}.txt. Report: {num}. ID: {id}"
       ```
 
-   e. Update `users/{USER}/batch/batch-state.tsv` (completed/failed + score + report_num)
-   f. Log to `users/{USER}/batch/logs/{report_num}-{id}.log`
+   e. Handle `needs_confirmation` before any completion: follow **Agency confirmation handoff** in `modes/_shared.md`. The worker writes no tracker, report, or CV; the parent asks its question with the posting URL, releases the unused reservation, and resumes only after the user's explicit answer for that posting. Other jobs may continue. Update `batch-state.tsv` (completed/failed/needs_confirmation + score + report_num); a held item has no score or report artifact.
+   f. Log to `logs/{report_num}-{id}.log`
    g. Chrome: go back → next job
 5. **Pagination**: If no more jobs → click "Next" → repeat
 6. **End**: Merge `users/{USER}/batch/tracker-additions/` → `users/{USER}/data/applications.md` + summary
@@ -91,7 +91,7 @@ node reserve-report-num.mjs --count 8
 # stdout: 042-049  → worker 1 gets 042, worker 2 gets 043, ...
 ```
 
-Each number is backed by a sentinel file in `reports/`, so concurrent reservations from other windows cannot collide. After all reports are written, release leftovers in one call:
+Each number is backed by a sentinel file in `users/{USER}/reports/`, so concurrent reservations from other windows cannot collide. After all reports are written, release leftovers in one call:
 
 ```bash
 node reserve-report-num.mjs --release 042-049
@@ -130,13 +130,19 @@ id	url	status	started_at	completed_at	report_num	score	error	retries
 5	https://...	paused_rate_limit	2026-...	2026-...	005	-	session limit; paused	1
 ```
 
-Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`, `rate_limited`, and `paused_rate_limit`. `rate_limited` is an intermediate non-completed state emitted while the runner waits before retrying; if the run is interrupted there, a later non-`--retry-failed` run treats it as pending work.
+Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`, `needs_confirmation`, `rate_limited`, and `paused_rate_limit`. `needs_confirmation` is batch coordination state, never a tracker lifecycle status. `rate_limited` is an intermediate non-completed state emitted while the runner waits before retrying; if the run is interrupted there, a later non-`--retry-failed` run treats it as pending work.
 
 `paused_rate_limit` means a worker hit a Claude session/usage limit. The runner stops scheduling new offers, preserves the retry count, and resumes only when explicitly called with `--resume-paused`.
 
 ## Resumability
 
-- If it crashes → re-run → reads `users/{USER}/batch/batch-state.tsv` → skip completed jobs
+**Agency confirmation (#4359):** every worker dispatch includes the **Agency confirmation handoff** contract (already included in `batch/batch-prompt.md`). The standalone runner records `needs_confirmation`, prints the question, and leaves the item held without consuming retries or merging artifacts for it. Ordinary reruns, `--retry-failed`, and `--resume-paused` never resume this state. Show held items separately in summaries; they are neither failures nor completed evaluations.
+
+The standalone script cannot ask a human or authenticate a conversational answer. Bring its URL and question (full worker payload in the job log) to the parent session. The parent asks the user; after an explicit answer identifying/confirming the agency or correcting the posting to direct, process that URL interactively through `auto-pipeline`, or dispatch a fresh worker with the exact answer and URL. Reserve a fresh report number and re-check the normal gates. Only after successful artifact creation/merge may the parent mark the batch item completed with the actual report number and score. If the user declines or cannot identify the agency, leave it held. Never change it back to pending just to retry without the answer.
+
+**Close the held batch row after interactive completion:** wait until `batch-runner.sh` has exited (do not edit state while it or its workers run). Re-read `batch/batch-state.tsv`, locate the single row matching BOTH the held `id` and exact `url`, and verify the new report's URL and the merged tracker row match that posting. The parent then updates only that row: `status=completed`, `completed_at=<current UTC ISO8601>`, `report_num=<actual new report number>`, `score=<actual numeric score>`, `error=-`; preserve `id`, `url`, `started_at`, and `retries`. Preserve all other rows and the header, and replace the state file atomically using a temporary sibling file. If the row is missing, ambiguous, no longer held, or the artifacts do not match, stop and inspect instead of guessing. Run `batch/batch-runner.sh --status` to verify completion, then `node reconcile-pipeline.mjs` to move the now-completed URL out of Pending. No new consent flag is required: the explicit answer belongs in the parent conversation, and this state update happens only after the confirmed work actually finishes.
+
+- If it crashes → re-run → reads `batch-state.tsv` → skip completed jobs
 - Lock file (`batch-runner.pid`) prevents double execution
 - Each worker is independent: failure in job #47 does not affect the others
 

@@ -1,3 +1,4 @@
+import { userFixtureEnv } from '../user-fixture.mjs';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -110,7 +111,7 @@ try {
   try {
     execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs')], {
       cwd: ROOT,
-      env: { ...process.env, CAREER_OPS_TRACKER: applications, CAREER_OPS_ADDITIONS: additions, CAREER_OPS_REPORTS: reports },
+      env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: applications, CAREER_OPS_ADDITIONS: additions, CAREER_OPS_REPORTS: reports }, false),
       stdio: 'pipe',
     });
   } catch (error) {
@@ -144,12 +145,12 @@ try {
   }
   const largeJson = execFileSync(process.execPath, [join(ROOT, 'verify-pipeline.mjs'), '--json'], {
     cwd: ROOT,
-    env: { ...process.env, CAREER_OPS_TRACKER: flushTracker, CAREER_OPS_REPORTS: flushReports, CAREER_OPS_ADDITIONS: flushAdditions },
+    env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: flushTracker, CAREER_OPS_REPORTS: flushReports, CAREER_OPS_ADDITIONS: flushAdditions }, false),
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
   });
   const parsedLargeJson = JSON.parse(largeJson);
-  if (largeJson.length > 65536 && parsedLargeJson.counts.warnings === 700) {
+  if (largeJson.length > 65536 && parsedLargeJson.warnings.filter(item => item.code === 'orphan_report').length === 700 && parsedLargeJson.counts.warnings >= 700) {
     pass('verify-pipeline flushes warning-heavy JSON larger than 64 KiB');
   } else {
     fail(`large verifier JSON was incomplete: bytes=${largeJson.length} warnings=${parsedLargeJson.counts?.warnings}`);

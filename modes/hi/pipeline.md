@@ -1,10 +1,10 @@
 # Mode: pipeline -- URL Inbox (Second Brain)
 
-`data/pipeline.md` में accumulated offer URLs process करता है। Candidate जब चाहे URLs add करता है और फिर एक बार में सब process करने के लिए `/career-ops pipeline` run करता है।
+`users/{USER}/data/pipeline.md` में accumulated offer URLs process करता है। Candidate जब चाहे URLs add करता है और फिर एक बार में सब process करने के लिए `/career-ops pipeline` run करता है।
 
 ## Workflow
 
-1. **पढ़ें** `data/pipeline.md` → "Pending" / "En attente" / "Pendientes" / "Offen" / "लंबित" section में `- [ ]` items ढूंढें
+1. **पढ़ें** `users/{USER}/data/pipeline.md` → "Pending" / "En attente" / "Pendientes" / "Offen" / "लंबित" section में `- [ ]` items ढूंढें
 2. **हर pending URL के लिए**:
    a. `node reserve-report-num.mjs` run करके atomically अगला `REPORT_NUM` reserve करें (और report लिखने के बाद `node reserve-report-num.mjs --release <num>` run करके sentinel release करें)
    b. **Offer extract करें** Playwright से (`browser_navigate` + `browser_snapshot`) → WebFetch → WebSearch
@@ -43,7 +43,7 @@
 **Special cases:**
 - **LinkedIn**: Login require हो सकता है → `[!]` mark करें और candidate से text paste करने को कहें
 - **PDF**: यदि URL PDF की तरफ point करे, Read tool से directly पढ़ें
-- **`local:` prefix**: Local file पढ़ें। Example: `local:jds/naukri-pm-ai.md` → `jds/naukri-pm-ai.md` पढ़ें
+- **`local:` prefix**: Local file पढ़ें। Example: `local:users/{USER}/jds/naukri-pm-ai.md` → `users/{USER}/jds/naukri-pm-ai.md` पढ़ें
 - **Naukri.com / Instahyre / Cutshort**: Common Indian job portals। Playwright usually cookie banners handle करता है
 - **LinkedIn India / Wellfound India**: Well-structured pages। WebFetch often sufficient
 

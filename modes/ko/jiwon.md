@@ -12,7 +12,7 @@
 ```text
 1. DETECT      -> 활성 Chrome 탭 읽기 (스크린샷/URL/title)
 2. IDENTIFY    -> 페이지에서 회사 + 역할 추출
-3. SEARCH      -> reports/ 안의 기존 report와 매칭
+3. SEARCH      -> users/{USER}/reports/ 안의 기존 report와 매칭
 4. LOAD        -> 전체 report + 블록 G(있다면) 읽기
 5. COMPARE     -> 화면의 역할이 평가한 역할과 같은지 확인. 바뀌었다면 알림
 6. ANALYZE     -> 화면에 보이는 모든 지원서 질문 식별
@@ -32,7 +32,7 @@
 ## Step 2 -- context 식별 및 불러오기
 
 1. 페이지에서 회사명과 역할명을 추출합니다.
-2. `reports/`에서 회사명으로 검색합니다 (case-insensitive grep).
+2. `users/{USER}/reports/`에서 회사명으로 검색합니다 (case-insensitive grep).
 3. 매칭되는 report가 있으면 전체 report를 불러옵니다.
 4. 블록 G가 있으면 이전 답변 초안을 base로 불러옵니다.
 5. 매칭되는 report가 없으면 후보자에게 알리고 빠른 auto-pipeline 실행을 제안합니다.
@@ -43,7 +43,9 @@
 - **후보자에게 알림**: "역할이 [X]에서 [Y]로 바뀐 것 같습니다. 새 역할로 다시 평가할까요, 아니면 새 title에 맞춰 답변만 조정할까요?"
 - **조정 선택 시**: 재평가 없이 새 역할에 맞춰 답변을 조정합니다.
 - **재평가 선택 시**: 전체 A-F 평가를 실행하고, report를 업데이트하고, 블록 G를 다시 생성합니다.
-- **tracker 업데이트**: 필요한 경우 `applications.md`의 역할명을 수정합니다.
+- **tracker 업데이트**: `users/{USER}/data/applications.md`를 직접 수정하지 않습니다.
+  - **재평가한 경우**: 새 역할명을 담은 TSV를 `batch/tracker-additions/`에 쓰고 `node merge-tracker.mjs`로 병합합니다. report는 같은 파일에서 업데이트되어 번호가 유지되므로, 병합은 그 번호로 TSV를 기존 row와 매칭합니다: 역할명은 교체되고 status는 유지됩니다.
+  - **조정한 경우**: 역할명을 바꾸지 않습니다. 역할명은 report가 평가한 역할을 가리키기 때문입니다. 변경 사실은 note로 기록합니다: `node set-status.mjs --report <report#> <현재 status> --note "지원 시점에 공고 제목이 변경됨, row는 평가한 역할명을 유지"`. row의 현재 status를 그대로 전달하면 status는 바뀌지 않고 note만 추가됩니다. note는 이처럼 고정된 문구로 쓰고 `[Y]`는 넣지 않습니다. 새 역할명은 페이지에서 온 텍스트이며, 페이지의 텍스트는 command line에 넣지 않습니다.
 
 ## Step 4 -- 지원서 질문 분석
 
@@ -56,7 +58,7 @@
 
 각 질문을 분류합니다.
 - **이미 블록 G에서 답변한 질문** -> 기존 답변을 가져와 조정
-- **새 질문** -> report + `cv.md`를 바탕으로 답변 생성
+- **새 질문** -> report + `users/{USER}/cv.md`를 바탕으로 답변 생성
 
 ## Step 5 -- 답변 생성
 
@@ -74,7 +76,7 @@
 - **근무 가능 지역 / 출근 가능 여부** -> 실제 가능한 지역과 출근 빈도를 명확히 작성
 - **비자 / 근무 자격** -> 사실에 맞게 간결히 답변
 - **언어 능력** -> 실제 수준에 맞춰 작성. 필요하면 CEFR 또는 비즈니스/실무 가능 수준으로 표현
-- **포트폴리오 / GitHub / 블로그** -> `profile.yml`, `cv.md`, `article-digest.md`에 있는 검증된 링크만 사용
+- **포트폴리오 / GitHub / 블로그** -> `profile.yml`, `users/{USER}/cv.md`, `users/{USER}/article-digest.md`에 있는 검증된 링크만 사용
 
 **출력 형식:**
 
@@ -103,7 +105,7 @@ Notes:
 ## Step 6 -- 지원 후 처리 (선택)
 
 후보자가 지원서를 제출했다고 확인하면:
-1. tracker status 변경은 `data/applications.md`를 직접 수정하지 않습니다. `batch/tracker-additions/`에 `Applied` 상태의 TSV update를 쓰고 `node merge-tracker.mjs`로 병합합니다.
+1. 정식 CLI로 status를 `Applied`로 변경합니다: `node set-status.mjs --report <report#> Applied` (`users/{USER}/data/applications.md` 표를 직접 수정하지 않습니다). TSV 병합은 기존 row의 status를 바꾸지 않습니다.
 2. 최종 답변을 report의 블록 G에 업데이트합니다.
 3. 다음 단계로 `/career-ops contacto`를 제안해 hiring manager 또는 recruiter에게 LinkedIn outreach를 할 수 있게 합니다.
 

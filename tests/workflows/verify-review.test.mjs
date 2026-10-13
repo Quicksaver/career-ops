@@ -32,16 +32,16 @@ writeFileSync(trackerPath, [
 ].join('\n'));
 writeFileSync(join(reportsDir, '001-existing-2026-01-01.md'), [
   '# Evaluation: Existing — Engineer', '', '**URL:** https://example.com/jobs/1', '',
-  '## Machine Summary', '```yaml', 'company: Existing', 'role: Engineer', 'score: 4.0', '```', '',
+  '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Existing', 'role: Engineer', 'score: 4.0', '```', '',
 ].join('\n'));
 writeFileSync(join(reportsDir, '010-restorable-2026-01-02.md'), [
   '# Evaluation: Restorable — Backend Engineer', '', '**URL:** https://example.com/jobs/10', '',
-  '## Machine Summary', '```yaml', 'company: Restorable', 'role: Backend Engineer', 'score: 3.8', '```', '',
+  '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Restorable', 'role: Backend Engineer', 'score: 3.8', '```', '',
 ].join('\n'));
 writeFileSync(join(mergedDir, '7.tsv'), '010\t2026-01-02\tRestorable\tBackend Engineer\tEvaluated\t3.8/5\t❌\t[010](reports/010-restorable-2026-01-02.md)\trestore fixture\n');
 writeFileSync(join(reportsDir, '011-archive-me-2026-01-03.md'), [
   '# Evaluation: Archive Me — Engineer', '', '**URL:** https://example.com/jobs/11', '',
-  '## Machine Summary', '```yaml', 'company: Archive Me', 'role: Engineer', 'score: 2.0', '```', '',
+  '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Archive Me', 'role: Engineer', 'score: 2.0', '```', '',
 ].join('\n'));
 writeFileSync(join(outputDir, '011-archive-me-2026-01-03.pdf'), 'fixture\n');
 
@@ -564,7 +564,7 @@ try {
   writeFileSync(join(reportsDir, '012-legacy-tabs-2026-01-02.md'), [
     '# Evaluation: Legacy Tabs — Backend Engineer', '',
     '**URL:** https://example.com/jobs/12', '',
-    '## Machine Summary', '```yaml', 'company: Legacy Tabs',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Legacy Tabs',
     'role: Backend Engineer', 'score: 3.1', '```', '',
   ].join('\n'));
   writeFileSync(join(mergedDir, '8.tsv'), [
@@ -598,7 +598,7 @@ try {
   writeFileSync(join(reportsDir, '013-stale-tsv-2026-01-04.md'), [
     '# Evaluation: Stale TSV — Systems Engineer', '',
     '**Date:** 2026-01-04', '**URL:** https://example.com/jobs/stale-tsv', '',
-    '## Machine Summary', '```yaml', 'company: Stale TSV',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Stale TSV',
     'role: Systems Engineer', 'score: 3.4', 'final_decision: Apply', '```', '',
   ].join('\n'));
   writeFileSync(join(mergedDir, '9.tsv'), [
@@ -640,7 +640,7 @@ try {
   writeFileSync(join(reportsDir, '001-collision-distinct-2026-01-05.md'), [
     '# Evaluation: Collision Distinct — Platform Engineer', '',
     '**Date:** 2026-01-05', '**URL:** https://example.com/jobs/collision-distinct', '',
-    '## Machine Summary', '```yaml', 'company: Collision Distinct',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Collision Distinct',
     'role: Platform Engineer', 'score: 2.6', 'final_decision: Skip', '```', '',
   ].join('\n'));
   writeFileSync(join(outputDir, '001-collision-distinct-2026-01-05.pdf'), 'fixture\n');
@@ -776,7 +776,7 @@ try {
     writeFileSync(join(reportsDir, reportFile), [
       `# Evaluation: Chunk Company ${num} — Engineer ${num}`, '',
       `**URL:** https://example.com/jobs/${num}`, '',
-      '## Machine Summary', '```yaml', `company: Chunk Company ${num}`,
+      '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', `company: Chunk Company ${num}`,
       `role: Engineer ${num}`, 'score: 3.0', '```', '',
     ].join('\n'));
   }
@@ -968,7 +968,7 @@ try {
   writeFileSync(join(viaRoot, 'reports/001-via-agency-2026-01-01.md'), [
     '# Evaluation: Via Agency — Backend Engineer', '',
     '**URL:** https://example.com/jobs/via-agency', '',
-    '## Machine Summary', '```yaml', 'company: "?"', 'company_confidential: true',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: "?"', 'company_confidential: true',
     'via: Via Agency', 'role: Backend Engineer', 'score: 3.0', '```', '',
   ].join('\n'));
   const viaRunnerEnv = {
@@ -1008,7 +1008,7 @@ try {
   writeFileSync(join(reportsDir, retryReport), [
     '# Evaluation: Retry Company — Engineer', '',
     '**URL:** https://example.com/jobs/26', '',
-    '## Machine Summary', '```yaml', 'company: Retry Company',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Retry Company',
     'role: Engineer', 'score: 3.0', '```', '',
   ].join('\n'));
   writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| 26 | 2026-01-04 | Retry Company | Engineer | **3.0/5** | Evaluated | — | [26](../reports/${retryReport}) | retry fixture |\n`);
@@ -1036,7 +1036,7 @@ try {
     writeFileSync(join(reportsDir, reportFile), [
       `# Evaluation: Checkpoint Company ${num} — Engineer ${num}`, '',
       `**URL:** https://example.com/jobs/${num}`, '',
-      '## Machine Summary', '```yaml', `company: Checkpoint Company ${num}`,
+      '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', `company: Checkpoint Company ${num}`,
       `role: Engineer ${num}`, 'score: 3.0', '```', '',
     ].join('\n'));
   }
@@ -1087,7 +1087,7 @@ try {
     writeFileSync(join(reportsDir, reportFile), [
       '# Evaluation: Paired Duplicate — Backend Engineer', '',
       '**URL:** https://example.com/jobs/shared-posting', '',
-      '## Machine Summary', '```yaml', 'company: Paired Duplicate',
+      '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Paired Duplicate',
       'role: Backend Engineer', 'score: 3.0', '```', '',
     ].join('\n'));
     writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| ${num} | 2026-01-06 | Paired Duplicate | Backend Engineer | 3.0/5 | SKIP | — | [${num}](../reports/${reportFile}) | duplicate fixture |\n`);
@@ -1114,7 +1114,7 @@ try {
     writeFileSync(join(reportsDir, reportFile), [
       '# Evaluation: Paired Retry — Backend Engineer', '',
       '**URL:** https://example.com/jobs/shared-retry-posting', '',
-      '## Machine Summary', '```yaml', 'company: Paired Retry',
+      '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Paired Retry',
       'role: Backend Engineer', 'score: 3.0', '```', '',
     ].join('\n'));
     writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| ${num} | 2026-01-06 | Paired Retry | Backend Engineer | 3.0/5 | SKIP | — | [${num}](../reports/${reportFile}) | retry duplicate fixture |\n`);
@@ -1145,7 +1145,7 @@ try {
   writeFileSync(join(reportsDir, resumeReportFile), [
     '# Evaluation: Resume Orphan — Backend Engineer', '',
     '**URL:** https://example.com/jobs/resume-orphan', '',
-    '## Machine Summary', '```yaml', 'company: Resume Orphan',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Resume Orphan',
     'role: Backend Engineer', 'score: 3.0', '```', '',
   ].join('\n'));
   const callsBeforeApplyResume = readFileSync(callCount, 'utf-8').trim().split(/\r?\n/).filter(Boolean).length;
@@ -1185,7 +1185,7 @@ try {
   writeFileSync(join(reportsDir, manualReport), [
     '# Evaluation: Manual Review — Engineer', '',
     '**URL:** https://example.com/jobs/27', '',
-    '## Machine Summary', '```yaml', 'company: Manual Review',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', 'company: Manual Review',
     'role: Engineer', 'score: 3.0', '```', '',
   ].join('\n'));
   writeFileSync(trackerPath, `${readFileSync(trackerPath, 'utf-8').trimEnd()}\n| 27 | 2026-01-04 | Manual Review | Engineer | **3.0/5** | Evaluated | — | [27](../reports/${manualReport}) | manual fixture |\n`);
@@ -1235,7 +1235,7 @@ try {
     writeFileSync(join(reportsDir, reportFile), [
       `# Evaluation: Interrupt Company ${num} — Engineer ${num}`, '',
       `**URL:** https://example.com/jobs/${num}`, '',
-      '## Machine Summary', '```yaml', `company: Interrupt Company ${num}`,
+      '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', `company: Interrupt Company ${num}`,
       `role: Engineer ${num}`, 'score: 3.0', '```', '',
     ].join('\n'));
   }

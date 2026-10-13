@@ -22,6 +22,9 @@ const copyIntoFixture = (relativePath) => {
 
 for (const relativePath of [
   'ollama-eval.mjs',
+  'path-resolver.mjs',
+  'pipeline-lock.mjs',
+  'lib/cli-flags.mjs',
   'profile-language.mjs',
   'reserve-report-num.mjs',
   'tracker-aliases.json',
@@ -29,6 +32,16 @@ for (const relativePath of [
   'tracker-utils.mjs',
   'lib/user-context.mjs',
   'lib/context-budget.mjs',
+  // ollama-eval builds its tracker-addition row with the shared helpers
+  // (#3796), so the fixture has to carry the module they were consolidated
+  // into -- same reason pipeline-lock.mjs is on this list.
+  'lib/tracker-addition.mjs',
+  // reserve-report-num.mjs's main-guard comes from lib/is-main-module.mjs
+  // (#3170), so a fixture that carries it has to carry the helper too.
+  'lib/is-main-module.mjs',
+  // ollama-eval dates its report with localToday() rather than the UTC day,
+  // so the fixture has to carry that helper for the module to load at all.
+  'lib/local-today.mjs',
   'utils/token-tracker.mjs',
 ]) {
   copyIntoFixture(relativePath);

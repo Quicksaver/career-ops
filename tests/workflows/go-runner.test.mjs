@@ -121,7 +121,7 @@ try {
   ].join('\n') + '\n');
   const reportBody = (role, artifact) => [
     `# Evaluation: Acme — ${role}`, '', `Artifact source: ${artifact}`, '',
-    '## Machine Summary', '```yaml', `role: ${role}`, '```', '',
+    '## Job Description (archived verbatim)', 'We need an engineer to maintain distributed services, review changes, and support reliable application delivery.', '', '## Machine Summary', '```yaml', `role: ${role}`, '```', '',
   ].join('\n');
   writeFileSync(join(warningRoot, 'reports/001-acme-2026-01-01.md'), reportBody('Engineer', 'unused keeper'));
   writeFileSync(join(warningRoot, 'reports/002-acme-2026-01-02.md'), reportBody('Engineer', 'used application'));

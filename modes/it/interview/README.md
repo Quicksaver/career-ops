@@ -22,12 +22,12 @@ Queste competenze presuppongono l'esistenza dei seguenti file (valori predefinit
 
 | File | Scopo |
 |---|---|
-| `cv.md` | CV del candidato — fonte di verità per l'esperienza e i punti di prova |
-| `article-digest.md` | Punti di prova sintetizzati dal portfolio (opzionale) |
-| `config/profile.yml` | Profilo del candidato — ruoli target, compenso, narrativa |
-| `modes/_profile.md` | Archetipi del candidato, narrativa e fattori escludenti |
-| `interview-prep/story-bank.md` | Storie STAR+R accumulate |
-| `interview-prep/question-bank.md` | Banca delle domande con tracciamento delle lacune (creata al primo utilizzo) |
-| `interview-prep/interview-prep-guide.md` | Principi generali per il colloquio (opzionale) |
-| `interview-prep/{company}-{role}.md` | File di preparazione specifico per il ruolo |
-| `interview-prep/retracted-claims.md` | Affermazioni che il candidato ha ritirato in quanto non difendibili — sbarramento rigido durante pratica e debriefing (formato: `**"[claim]"** ([context]). Reason: [motivo di una riga + eventuale framing corretto].`) |
+| `users/{USER}/cv.md` | CV del candidato — fonte di verità per l'esperienza e i punti di prova |
+| `users/{USER}/article-digest.md` | Punti di prova sintetizzati dal portfolio (opzionale) |
+| `users/{USER}/config/profile.yml` | Profilo del candidato — ruoli target, compenso, narrativa |
+| `users/{USER}/modes/_profile.md` | Archetipi del candidato, narrativa e fattori escludenti |
+| `users/{USER}/interview-prep/story-bank.md` | Storie STAR+R accumulate |
+| `users/{USER}/interview-prep/question-bank.md` | Banca delle domande con tracciamento delle lacune (creata al primo utilizzo) |
+| `users/{USER}/interview-prep/interview-prep-guide.md` | Principi generali per il colloquio (opzionale) |
+| `users/{USER}/interview-prep/{company}-{role}.md` | File di preparazione specifico per il ruolo |
+| `users/{USER}/interview-prep/retracted-claims.md` | Affermazioni che il candidato ha ritirato in quanto non difendibili — sbarramento rigido durante pratica e debriefing (formato: `**"[claim]"** ([context]). Reason: [motivo di una riga + eventuale framing corretto].`) |

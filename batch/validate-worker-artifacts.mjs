@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import { basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import * as yaml from 'js-yaml';
-import { normalizeVia } from '../tracker-parse.mjs';
+import { normalizeVia, looksLikeTsvHeaderRow, resolveTsvColumns } from '../tracker-parse.mjs';
 
 function clean(value) {
   const text = value == null ? '' : String(value).trim();
@@ -32,6 +32,16 @@ export function parseMachineSummary(reportContent) {
 
 export function parseTrackerAddition(content) {
   const lines = content.split(/\r?\n/).filter(line => line.trim() !== '');
+  const header = lines[0]?.split('\t');
+  if (looksLikeTsvHeaderRow(header)) {
+    const { map, missing, duplicates } = resolveTsvColumns(header);
+    if (missing.length || duplicates.length) throw new Error('tracker addition has an invalid header');
+    if (lines.length !== 2) throw new Error('headered tracker addition must contain exactly one data row');
+    const parts = lines[1].split('\t');
+    if (parts.length !== header.length) throw new Error('tracker addition width disagrees with its header');
+    const at = name => clean(parts[map[name]]);
+    return { line: lines[1], parts, headered: true, num: at('num'), company: at('company'), role: at('role'), score: at('score'), via: at('via') };
+  }
   if (lines.length !== 1) throw new Error(`tracker addition must contain exactly one non-empty line (found ${lines.length})`);
   const parts = lines[0].split('\t');
   if (parts.length < 9) throw new Error(`tracker addition must contain at least 9 tab-separated columns (found ${parts.length})`);
@@ -92,7 +102,7 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
     errors.push('Machine Summary via contains a tab or newline');
   }
 
-  if (reportVia && !tracker.via && repair && errors.length === 0) {
+  if (reportVia && !tracker.via && !tracker.headered && repair && errors.length === 0) {
     trackerContent = `${tracker.line}\tvia=${reportVia}\n`;
     writeFileSync(trackerPath, trackerContent, 'utf8');
     tracker = parseTrackerAddition(trackerContent);

@@ -2,6 +2,8 @@
 /** @typedef {import('./_types.js').Provider} Provider */
 
 import { decodeEntities } from './_html-entities.mjs';
+import { sleep } from './_http.mjs';
+import { countryName } from './_country.mjs';
 
 // Agentic Engineering Jobs provider — queries the site's public, documented
 // REST API instead of scraping HTML. The previous scraper parsed
@@ -51,17 +53,9 @@ function assertAgenticUrl(url) {
   return url;
 }
 
-const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
-
-export function countryName(code) {
-  if (typeof code !== 'string' || !/^[A-Za-z]{2}$/.test(code)) return '';
-  try {
-    const name = regionNames.of(code.toUpperCase());
-    return name && name !== code.toUpperCase() ? name : '';
-  } catch {
-    return '';
-  }
-}
+// countryName lives in _country.mjs (shared with gem.mjs); re-exported here
+// because this provider's tests import it from this module.
+export { countryName };
 
 export function stripHtml(html) {
   if (typeof html !== 'string' || !html) return '';
@@ -124,13 +118,12 @@ export default {
   },
 
   async fetch(_entry, ctx) {
-    const wait = (ms) => (ctx.sleep ? ctx.sleep(ms) : new Promise((r) => setTimeout(r, ms)));
     const jobs = [];
     const seen = new Set();
     let total = null;
 
     for (let page = 1; page <= MAX_PAGES; page++) {
-      if (page > 1) await wait(PAGE_DELAY_MS);
+      if (page > 1) await sleep(PAGE_DELAY_MS, ctx);
       const url = assertAgenticUrl(`${API_BASE}/jobs?page=${page}`);
       const json = await ctx.fetchJson(url, { redirect: 'error', headers: { accept: 'application/json' } });
       if (!json || !Array.isArray(json.data)) {

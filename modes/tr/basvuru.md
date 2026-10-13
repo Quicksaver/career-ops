@@ -12,7 +12,7 @@ Aday bir başvuru formunu doldururken çalışan etkileşimli mod. Ekrandakileri
 ```
 1. TESPİT ET      → Aktif sekmeyi oku (ekran görüntüsü / URL / sayfa başlığı)
 2. TANI KOY       → Sayfadan şirket adını ve rolü çıkar
-3. RAPORU BUL     → reports/ klasöründe bu ilana ait raporu ara
+3. RAPORU BUL     → users/{USER}/reports/ klasöründe bu ilana ait raporu ara
 4. YÜKLE          → Tam raporu oku (önceki değerlendirme + Blok G varsa)
 5. KARŞILAŞTIR    → Ekrandaki rol raporla eşleşiyor mu? Farklıysa adayı uyar
 6. FORMU ANALİZ ET → Görünen tüm alanları ve soruları tespit et
@@ -27,12 +27,12 @@ Aday bir başvuru formunu doldururken çalışan etkileşimli mod. Ekrandakileri
 **Playwright olmadan:** Adaydan şunları iste:
 - Formun ekran görüntüsünü paylaşması (Read aracı görselleri okuyabilir)
 - Soruları metin olarak yapıştırması
-- Şirket adı + rol başlığını söylemesi (ardından `reports/` klasöründe arama yapılır)
+- Şirket adı + rol başlığını söylemesi (ardından `users/{USER}/reports/` klasöründe arama yapılır)
 
 ## Adım 2 — Bağlamı Tespit Et ve Yükle
 
 1. Sayfadan şirket adını ve rol başlığını çıkar
-2. `reports/` klasöründe şirket adına göre Grep yap (büyük/küçük harf duyarsız)
+2. `users/{USER}/reports/` klasöründe şirket adına göre Grep yap (büyük/küçük harf duyarsız)
 3. Eşleşme bulunursa → tam raporu yükle
 4. Blok G varsa → önceki taslak yanıtları temel olarak al
 5. Eşleşme bulunamazsa → adayı bilgilendirip hızlı auto-pipeline öner
@@ -43,7 +43,9 @@ Ekrandaki rol önceki değerlendirmedekinden farklıysa:
 - **Adayı uyar:** "Rol [X]'den [Y]'ye değişmiş görünüyor. Yeniden değerlendireyim mi, yoksa yanıtları yeni başlığa uyarlayayım mı?"
 - **Uyarlama:** Yeniden değerlendirmeden yanıtları yeni role göre ayarla
 - **Yeniden değerlendirme:** Tam A-F değerlendirmesi yap, raporu güncelle, Blok G'yi yeniden üret
-- **Takipçiyi güncelle:** Gerekirse `applications.md`'deki rol başlığını düzelt
+- **Takipçiyi güncelle:** asla `users/{USER}/data/applications.md` dosyasını düzenleyerek değil.
+  - **Yeniden değerlendirmeden sonra:** yeni rol başlığını içeren bir TSV'yi `batch/tracker-additions/` altına yaz ve `node merge-tracker.mjs` ile birleştir. Rapor yerinde güncellenir ve numarasını korur; birleştirme TSV'yi bu numarayla mevcut satırla eşleştirir: başlık değişir, durum korunur.
+  - **Uyarlamadan sonra:** başlığı değiştirme, çünkü raporun değerlendirdiği rolü adlandırır. Değişikliği not olarak kaydet: `node set-status.mjs --report <report#> <mevcut durum> --note "İlan başlığı başvuru sırasında değişmişti, satır değerlendirilen başlığı korur"`. Satırın mevcut durumunu vermek durumu değiştirmez, notu ekler. Bunun gibi sabit bir metin kullan ve `[Y]`'yi nota koyma: yeni başlık sayfadan gelen metindir ve sayfadan gelen metin asla komut satırına yazılmaz.
 
 ## Adım 4 — Form Alanlarını Analiz Et
 
@@ -56,7 +58,7 @@ Görünen tüm alanları tespit et:
 
 Her soruyu sınıflandır:
 - **Blok G'de zaten yanıtlanmış** → mevcut yanıtı uyarla
-- **Yeni soru** → rapor + `cv.md`'den yanıt üret
+- **Yeni soru** → rapor + `users/{USER}/cv.md`'den yanıt üret
 
 ## Adım 5 — Yanıtları Üret
 

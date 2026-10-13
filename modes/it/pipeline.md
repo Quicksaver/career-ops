@@ -1,10 +1,10 @@
 # Modalità: pipeline -- Inbox degli URL (Second Brain)
 
-Elabora gli URL degli annunci accumulati in `data/pipeline.md`. Il candidato aggiunge gli URL quando vuole, poi esegue `/career-ops pipeline` per elaborarli tutti in una volta.
+Elabora gli URL degli annunci accumulati in `users/{USER}/data/pipeline.md`. Il candidato aggiunge gli URL quando vuole, poi esegue `/career-ops pipeline` per elaborarli tutti in una volta.
 
 ## Workflow
 
-1. **Leggere** `data/pipeline.md` -> trovare gli elementi contrassegnati come `- [ ]` nella sezione "In attesa" / "Pending" / "Pendientes" / "En attente"
+1. **Leggere** `users/{USER}/data/pipeline.md` -> trovare gli elementi contrassegnati come `- [ ]` nella sezione "In attesa" / "Pending" / "Pendientes" / "En attente"
 2. **Per ogni URL in attesa**:
    a. Riservare il prossimo `REPORT_NUM` sequenziale eseguendo `node reserve-report-num.mjs` (liberare la prenotazione con `node reserve-report-num.mjs --release <num>` una volta scritto il report)
    b. **Estrarre l'annuncio** con Playwright (`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch
@@ -43,7 +43,7 @@ Elabora gli URL degli annunci accumulati in `data/pipeline.md`. Il candidato agg
 **Casi particolari:**
 - **LinkedIn:** può richiedere login -> contrassegnare come `[!]` e chiedere al candidato di incollare il testo dell'annuncio
 - **PDF:** se l'URL punta a un PDF, leggerlo direttamente con il Read tool
-- **Prefisso `local:`:** legge un file locale. Esempio: `local:jds/linkedin-pm-ai.md` -> legge `jds/linkedin-pm-ai.md`
+- **Prefisso `local:`:** legge un file locale. Esempio: `local:users/{USER}/jds/linkedin-pm-ai.md` -> legge `users/{USER}/jds/linkedin-pm-ai.md`
 - **Indeed IT / LinkedIn IT:** portali molto diffusi in Italia. Playwright gestisce bene i cookie banner.
 
 ## Numerazione automatica

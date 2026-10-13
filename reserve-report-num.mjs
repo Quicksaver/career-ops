@@ -8,27 +8,14 @@
  * the tracker. The tracker scan and sentinel creation run under the same lock
  * as tracker writers, while O_CREAT|O_EXCL keeps claims atomic across processes.
  *
- *   node reserve-report-num.mjs --user <username>
- *   # stdout: 035           (zero-padded, 3 digits)
+ * Usage:
+ *   node reserve-report-num.mjs
+ *   node reserve-report-num.mjs --count 8
+ *   node reserve-report-num.mjs --release 035
+ *   node reserve-report-num.mjs --release 042-049
+ *   node reserve-report-num.mjs --gc
  *
- *   node reserve-report-num.mjs --user <username> --count 8
- *   # stdout: 042-049       (reserves a contiguous range — for multi-agent
- *   #                        fan-outs: reserve first, hand each parallel
- *   #                        worker its own number. On collision the whole
- *   #                        range restarts past the taken slot, so skipped
- *   #                        numbers become permanent gaps — expected, not
- *   #                        corruption. Range protection follows the normal
- *   #                        sentinel TTL: reserve right before spawning.)
- *
- *   node reserve-report-num.mjs --user <username> --release 035
- *   node reserve-report-num.mjs --user <username> --release 042-049
- *   # Deletes the sentinel(s) (call after writing the real report(s)).
- *
- *   node reserve-report-num.mjs --user <username> --gc
- *   # Removes all stale sentinels older than MAX_SENTINEL_AGE_MS.
- *   # Called automatically by verify-pipeline.mjs.
- *
- * The script exits with code 0 on success, non-zero on fatal error.
+ * Unrecognized arguments are rejected (exit 1, nothing reserved).
  */
 
 import {
@@ -38,23 +25,29 @@ import {
 import { randomUUID } from 'crypto';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 import {
   extractTrackerReportNumbers, parseTrackerRow, resolveColumns,
 } from './tracker-parse.mjs';
 import {
   acquireTrackerLock, canonicalizeTrackerPath, resolveTrackerPath, trackerLockDirFor,
 } from './tracker-utils.mjs';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+const ROOT = getCareerOpsRoot();
 const MAX_SENTINEL_AGE_MS = 4 * 60 * 60 * 1000;
 const MAX_RETRIES = 50;
 const MAX_COUNT = 50;
 const RESERVATION_TOKEN = Symbol('career-ops-report-reservation-token');
+const USAGE_LINES = [
+  'Usage: node reserve-report-num.mjs [--count <1-N>] [--release <NNN>[-<MMM>]] [--gc]',
+  '',
+  '  (no flags)                Reserve 1 report number (default)',
+  `  --count <1-${MAX_COUNT}>            Reserve N report numbers, printed as a range`,
+  '  --release <NNN>[-<MMM>]  Release a previously reserved number or range',
+  '  --gc                      Garbage-collect stale reservation sentinels',
+  '',
+];
 
 /** Format a report ID with a minimum width of three digits. */
 export function formatReportNumber(num) {
@@ -67,7 +60,6 @@ export function formatReportNumber(num) {
 function reportsDirFor(options = {}) {
   return resolve(options.reportsDir
     || process.env.CAREER_OPS_REPORTS_DIR
-    || process.env.CAREER_OPS_REPORTS
     || join(options.rootDir || ROOT, 'reports'));
 }
 
@@ -75,6 +67,36 @@ function trackerPathFor(options = {}) {
   return options.trackerPath
     ? canonicalizeTrackerPath(options.trackerPath)
     : resolveTrackerPath(options.rootDir || ROOT);
+}
+
+function batchStateFileFor(options = {}) {
+  return resolve(options.batchStateFile
+    || process.env.CAREER_OPS_BATCH_STATE
+    || join(options.rootDir || ROOT, 'batch/batch-state.tsv'));
+}
+
+// Mirrors merge-tracker.mjs's loadFailedReportNumbers: a report number the
+// batch runner itself recorded as "failed" must not be handed out again, or
+// the two scripts disagree by construction — this script re-issues the
+// number, then merge-tracker.mjs refuses to merge a tracker line for it.
+function occupiedFromFailedBatchState(batchStateFile) {
+  const failed = new Set();
+  if (!existsSync(batchStateFile)) return failed;
+  for (const line of readFileSync(batchStateFile, 'utf-8').split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith('id\t')) continue;
+    const cols = line.split('\t');
+    if (cols.length < 6) continue;
+    const status = cols[2];
+    const reportNum = cols[5];
+    if (status === 'failed' && reportNum && reportNum !== '-') {
+      // Digits only, positive, safe: parseInt would accept "12abc" and
+      // 9007199254740992, and an unsafe number in the occupied set makes
+      // reserveReportNumbers throw "No safe report-number range remains".
+      const n = /^\d+$/.test(reportNum) ? Number(reportNum) : NaN;
+      if (Number.isSafeInteger(n) && n > 0) failed.add(n);
+    }
+  }
+  return failed;
 }
 
 // A bare date file is not a report. `scan-ats-full.mjs --md-out reports/` writes
@@ -118,9 +140,10 @@ function occupiedFromTracker(trackerPath) {
   return occupied;
 }
 
-function collectOccupied(reportsDir, trackerPath) {
+function collectOccupied(reportsDir, trackerPath, batchStateFile) {
   const occupied = occupiedFromReports(reportsDir);
   for (const num of occupiedFromTracker(trackerPath)) occupied.add(num);
+  for (const num of occupiedFromFailedBatchState(batchStateFile)) occupied.add(num);
   return occupied;
 }
 
@@ -193,6 +216,7 @@ export async function reserveReportNumbers(count = 1, options = {}) {
 
   const reportsDir = reportsDirFor(options);
   const trackerPath = trackerPathFor(options);
+  const batchStateFile = batchStateFileFor(options);
   mkdirSync(reportsDir, { recursive: true });
 
   const lock = await acquireTrackerLock(trackerLockDirFor(trackerPath), {
@@ -204,7 +228,7 @@ export async function reserveReportNumbers(count = 1, options = {}) {
   });
 
   try {
-    let occupied = collectOccupied(reportsDir, trackerPath);
+    let occupied = collectOccupied(reportsDir, trackerPath, batchStateFile);
     let base = highestNumber(occupied) + 1;
     const token = randomUUID();
 
@@ -229,7 +253,7 @@ export async function reserveReportNumbers(count = 1, options = {}) {
       }
 
       for (const num of claimed) releaseSlot(reportsDir, num, { token });
-      occupied = collectOccupied(reportsDir, trackerPath);
+      occupied = collectOccupied(reportsDir, trackerPath, batchStateFile);
       base = Math.max(failedAt + 1, highestNumber(occupied) + 1);
     }
   } finally {
@@ -317,25 +341,30 @@ export async function gcStaleReportReservations(options = {}) {
 }
 
 async function runCli() {
-  const reportsOverride = process.env.CAREER_OPS_REPORTS_DIR || process.env.CAREER_OPS_REPORTS || '';
-  let userContext;
-  try {
-    userContext = getUserContext(process.argv.slice(2), { requireUser: !reportsOverride });
-  } catch (err) {
-    printUserContextErrorAndExit(err);
+  const args = process.argv.slice(2);
+  const [cmd, arg] = args;
+  const options = {};
+
+  if (cmd === '--help' || cmd === '-h') {
+    process.stdout.write(USAGE_LINES.join('\n'));
+    return 0;
   }
-  const [cmd, arg] = userContext.args;
-  const options = reportsOverride
-    ? { reportsDir: reportsOverride }
-    : {
-        reportsDir: userPath(userContext, 'reports'),
-        trackerPath: userPath(userContext, 'data/applications.md'),
-      };
+
+  // Each command takes a fixed number of arguments. Anything else (an unknown
+  // word, `--count=3`, a stray extra argument) would fall through to the
+  // reserve-1 path and claim a number the caller did not ask for.
+  const argCounts = new Map([['--count', 2], ['--release', 2], ['--gc', 1]]);
+  const allowed = cmd === undefined ? 0 : argCounts.get(cmd);
+  const offending = allowed === undefined ? cmd : args[allowed];
+  if (offending !== undefined) {
+    process.stderr.write(`reserve-report-num: unrecognized argument: ${offending}\n${USAGE_LINES.join('\n')}`);
+    return 1;
+  }
 
   if (cmd === '--release') {
     const match = (arg || '').match(/^(\d+)(?:-(\d+))?$/);
     if (!match) {
-      process.stderr.write('Usage: node reserve-report-num.mjs --user <username> --release <NNN>[-<MMM>]\n');
+      process.stderr.write('Usage: node reserve-report-num.mjs --release <NNN>[-<MMM>]\n');
       return 1;
     }
     const start = parseInt(match[1], 10);
@@ -383,15 +412,6 @@ async function runCli() {
   }
 }
 
-function isDirectInvocation() {
-  if (!process.argv[1]) return false;
-  try {
-    return realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
-  }
-}
-
-if (isDirectInvocation()) {
+if (isMainModule(import.meta.url)) {
   process.exitCode = await runCli();
 }

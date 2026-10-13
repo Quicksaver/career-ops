@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname, basename } from 'path';
+import { fileURLToPath } from 'url';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 /**
  * openai-tailor.mjs — OpenAI-compatible CV Tailoring for career-ops
  *
@@ -16,14 +21,7 @@
  *   OPENAI_MODEL (or --model)   — the model id
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
-import { join, dirname, basename } from 'path';
-import { fileURLToPath } from 'url';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
+import * as yaml from 'js-yaml';
 
 try {
   const { config } = await import('dotenv');

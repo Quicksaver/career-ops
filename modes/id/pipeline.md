@@ -1,10 +1,10 @@
 # Mode: pipeline -- Inbox URL (Second Brain)
 
-Memproses URL lowongan yang menumpuk di `data/pipeline.md`. Kandidat menambahkan URL kapan pun ia mau lalu menjalankan `/career-ops pipeline` untuk memproses semuanya sekaligus.
+Memproses URL lowongan yang menumpuk di `users/{USER}/data/pipeline.md`. Kandidat menambahkan URL kapan pun ia mau lalu menjalankan `/career-ops pipeline` untuk memproses semuanya sekaligus.
 
 ## Alur kerja
 
-1. **Baca** `data/pipeline.md` -> temukan item `- [ ]` di bagian "Menunggu" / "Pending" / "Pendientes"
+1. **Baca** `users/{USER}/data/pipeline.md` -> temukan item `- [ ]` di bagian "Menunggu" / "Pending" / "Pendientes"
 2. **Untuk setiap URL yang menunggu**:
    a. Pesan `REPORT_NUM` urut berikutnya secara atomik dengan menjalankan `node reserve-report-num.mjs` (dan lepas sentinel dengan menjalankan `node reserve-report-num.mjs --release <num>` setelah report ditulis)
    b. **Ekstrak lowongan** dengan Playwright (`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch
@@ -43,7 +43,7 @@ Memproses URL lowongan yang menumpuk di `data/pipeline.md`. Kandidat menambahkan
 **Kasus khusus:**
 - **LinkedIn**: Bisa memerlukan login -> tandai `[!]` dan minta kandidat menempelkan teksnya
 - **PDF**: Jika URL menunjuk ke PDF, baca langsung dengan Read tool
-- **Prefiks `local:`**: Baca file lokal. Contoh: `local:jds/linkedin-pm-ai.md` -> baca `jds/linkedin-pm-ai.md`
+- **Prefiks `local:`**: Baca file lokal. Contoh: `local:users/{USER}/jds/linkedin-pm-ai.md` -> baca `users/{USER}/jds/linkedin-pm-ai.md`
 - **Glints / Jobstreet / Kalibrr**: Portal Indonesia yang umum. Playwright menangani cookie banner dengan baik
 - **LinkedIn ID / Indeed ID**: Lowongan terstruktur, mudah dibaca mesin. WebFetch biasanya cukup
 

@@ -14,12 +14,19 @@
     "pdf",
     "report",
     "tracker",
-    "error"
+    "error",
+    "question",
+    "reason",
+    "url"
   ],
   "properties": {
     "status": {
       "type": "string",
-      "enum": ["completed", "failed"]
+      "enum": [
+        "completed",
+        "failed",
+        "needs_confirmation"
+      ]
     },
     "id": {
       "type": "string"
@@ -34,28 +41,70 @@
       "type": "string"
     },
     "score": {
-      "type": ["number", "null"]
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "legitimacy": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "via": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "company_confidential": {
-      "type": ["boolean", "null"]
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "pdf": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "report": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "tracker": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "error": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "question": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "url": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   }
 }

@@ -1,15 +1,16 @@
+import { userFixtureEnv } from './user-fixture.mjs';
 // tests/mark-pdf-ready.test.mjs — regression coverage for mark-pdf-ready.mjs (#2172).
 //
 // mark-pdf-ready.mjs is the canonical write path for the tracker's PDF column
 // (❌→✅), used by the web dashboard's "pdf" mode after the backend confirms a
-// successful render. Same sandboxing pattern as set-status-tests.mjs /
-// tracker-columns-tests.mjs: a throwaway tracker via the CAREER_OPS_TRACKER /
+// successful render. Same sandboxing pattern as tests/set-status.test.mjs /
+// tracker-columns.test.mjs: a throwaway tracker via the CAREER_OPS_TRACKER /
 // CAREER_OPS_TRACKER_LOCK env overrides tracker-utils.mjs already respects.
 //
 // Auto-discovered by test-all.mjs (tests/**/*.test.mjs, #1440) — imported
 // in-process alongside every other discovered suite, so this file must NEVER
 // exit the process itself; only pass()/fail() from ./helpers.mjs.
-import { pass, fail, NODE, ROOT } from './helpers.mjs';
+import { pass, fail, NODE, ROOT, directoryDenyBinds } from './helpers.mjs';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'fs';
@@ -34,12 +35,12 @@ function readTracker(sandbox) {
 
 // Run mark-pdf-ready.mjs against a sandboxed tracker. Returns { code, stdout, stderr }.
 function runMarkPdfReady(args, sandbox, extraEnv = {}) {
-  const env = {
+  const env = userFixtureEnv({
     ...process.env,
     CAREER_OPS_TRACKER: sandbox.tracker,
     CAREER_OPS_TRACKER_LOCK: sandbox.lock,
     ...extraEnv,
-  };
+  }, false);
   try {
     const stdout = execFileSync(NODE, [join(ROOT, 'mark-pdf-ready.mjs'), ...args], {
       cwd: ROOT, env, encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'],
@@ -405,6 +406,10 @@ const TRACKER_DUP_REPORT = `# Applications Tracker
 {
   if (process.platform !== 'win32' && process.getuid?.() === 0) {
     pass('write-failure: skipped (running as root — directory permissions are not enforced)');
+  } else if (process.platform === 'win32' && !directoryDenyBinds()) {
+    // Same escape hatch as root above. This suite mirrors set-status-tests.mjs's
+    // write-failure test, and mirrored its Windows blind spot with it (#3423).
+    pass('write-failure: skipped (an icacls write-deny does not bind this token - elevated shell)');
   } else {
     // Given the tracker's directory is readable but not writable
     const dir = mkdtempSync(join(tmpdir(), 'co-markpdf-wf-'));
@@ -415,7 +420,7 @@ const TRACKER_DUP_REPORT = `# Applications Tracker
     const lock = join(dir, 'career-ops-merge-tracker-wf.lock');
     // On Windows, directory read-only bits don't block file creation — deny
     // write-data/append-data for Everyone (*S-1-1-0) via icacls instead
-    // (mirrors set-status-tests.mjs's write-failure test).
+    // (mirrors tests/set-status.test.mjs's write-failure test).
     const denyWrite = () => process.platform === 'win32'
       ? execFileSync('icacls', [roDir, '/deny', '*S-1-1-0:(WD,AD)'])
       : chmodSync(roDir, 0o555);

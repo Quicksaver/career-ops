@@ -17,19 +17,20 @@ type Catalog struct {
 	LoadingPreview string
 
 	// Tabs & filters
-	TabAll       string
-	TabOpen      string
-	TabEvaluated string
-	TabApplied   string
-	TabInterview string
-	TabOffer     string
-	TabHired     string
-	TabClosed    string
-	TabResponded string
-	TabTop       string
-	TabSkip      string
-	TabRejected  string
-	TabDiscarded string
+	TabAll        string
+	TabOpen       string
+	TabEvaluated  string
+	TabApplied    string
+	TabInterview  string
+	TabOffer      string
+	TabHired      string
+	TabClosed     string
+	TabResponded  string
+	TabTop        string
+	TabSkip       string
+	TabRejected   string
+	TabDiscarded  string
+	TabAssessment string
 
 	// Table column headers
 	ColFit      string
@@ -66,22 +67,57 @@ type Catalog struct {
 	WeeklyTitle     string
 	ActiveInfo      string
 
+	// Stats screen
+	StatsTitle             string
+	StatsSummary           string
+	StatsStrategicInsights string
+	FitQualityDistribution string
+	SeniorityMix           string
+	QualityBreakdown       string
+	MeetQualityBar         string
+	SalaryBandDist         string
+	ArchetypeTitle         string
+	WorkModeTitle          string
+	LocationTitle          string
+	PayTitle               string
+	ColArchetype           string
+	ColCount               string
+	ColAvgScore            string
+	PayCount               string
+	PayAvg                 string
+	PayMedian              string
+	PayMax                 string
+	PaySourceSplit         string
+	InsightVolumeFit       string
+	InsightVolumePrimary   string
+	InsightWorkMode        string
+	InsightPayBenchmark    string
+
+	// Seniority levels
+	SeniorityExecutive      string
+	SeniorityStaffPrincipal string
+	SeniorityLeadManager    string
+	SenioritySenior         string
+	SeniorityMidLevel       string
+	SeniorityJuniorEntry    string
+
 	// Relative dates
 	TimeToday     string
 	TimeYesterday string
 	TimeDaysAgo   string
 
 	// Status display names
-	StatusEvaluated string
-	StatusApplied   string
-	StatusResponded string
-	StatusInterview string
-	StatusOffer     string
-	StatusRejected  string
-	StatusDiscarded string
-	StatusSkip      string
-	StatusHired     string
-	StatusClosed    string
+	StatusEvaluated  string
+	StatusApplied    string
+	StatusResponded  string
+	StatusInterview  string
+	StatusOffer      string
+	StatusRejected   string
+	StatusDiscarded  string
+	StatusSkip       string
+	StatusHired      string
+	StatusClosed     string
+	StatusAssessment string
 
 	// Additional UI strings
 	NoData        string
@@ -104,6 +140,7 @@ type Catalog struct {
 	HelpColumns    string
 	HelpView       string
 	HelpProgress   string
+	HelpStats      string
 	HelpQuit       string
 	HelpScroll     string
 	HelpPage       string
@@ -141,6 +178,7 @@ type Catalog struct {
 	SortLocation string
 	SortPay      string
 	SortLast     string
+	SortPosted   string
 	ViewGrouped  string
 	ViewFlat     string
 }
@@ -164,6 +202,8 @@ func (c *Catalog) SortModeLabel(mode string) string {
 		return c.SortPay
 	case "last":
 		return c.SortLast
+	case "posted":
+		return c.SortPosted
 	default:
 		return mode
 	}
@@ -194,6 +234,8 @@ func (c *Catalog) StatusLabel(norm string) string {
 		return c.StatusHired
 	case "responded":
 		return c.StatusResponded
+	case "assessment":
+		return c.StatusAssessment
 	case "applied":
 		return c.StatusApplied
 	case "evaluated":
@@ -235,6 +277,31 @@ func (c *Catalog) FormatTimeAgo(dateStr string) string {
 	}
 }
 
+// PieChartSectionTitle formats a section title with the standard pie chart icon.
+func PieChartSectionTitle(title string) string {
+	return "🎯 " + title
+}
+
+// SeniorityLabel returns the localized display label for a seniority category.
+func (c *Catalog) SeniorityLabel(s string) string {
+	switch s {
+	case "Executive":
+		return c.SeniorityExecutive
+	case "Staff / Principal":
+		return c.SeniorityStaffPrincipal
+	case "Lead / Manager":
+		return c.SeniorityLeadManager
+	case "Senior":
+		return c.SenioritySenior
+	case "Mid-Level":
+		return c.SeniorityMidLevel
+	case "Junior / Entry":
+		return c.SeniorityJuniorEntry
+	default:
+		return s
+	}
+}
+
 // En is the static English translation catalog.
 var En = Catalog{
 	// Screen banners & general
@@ -244,19 +311,20 @@ var En = Catalog{
 	LoadingPreview: "Loading preview...",
 
 	// Tabs & filters
-	TabAll:       "ALL",
-	TabOpen:      "OPEN",
-	TabEvaluated: "EVALUATED",
-	TabApplied:   "APPLIED",
-	TabInterview: "INTERVIEW",
-	TabOffer:     "OFFER",
-	TabHired:     "HIRED",
-	TabClosed:    "CLOSED",
-	TabResponded: "RESPONDED",
-	TabTop:       "TOP ≥4",
-	TabSkip:      "SKIP",
-	TabRejected:  "REJECTED",
-	TabDiscarded: "DISCARDED",
+	TabAll:        "ALL",
+	TabOpen:       "OPEN",
+	TabEvaluated:  "EVALUATED",
+	TabApplied:    "APPLIED",
+	TabInterview:  "INTERVIEW",
+	TabOffer:      "OFFER",
+	TabHired:      "HIRED",
+	TabClosed:     "CLOSED",
+	TabResponded:  "RESPONDED",
+	TabTop:        "TOP ≥4",
+	TabSkip:       "SKIP",
+	TabRejected:   "REJECTED",
+	TabDiscarded:  "DISCARDED",
+	TabAssessment: "ASSESSMENT",
 
 	// Table column headers
 	ColFit:      "FIT",
@@ -286,12 +354,46 @@ var En = Catalog{
 
 	// Progress screen
 	ProgressTitle:   "SEARCH PROGRESS",
-	ProgressSummary: "%d evaluated | %.1f avg score",
+	ProgressSummary: "%d tracked | %.1f avg score",
 	FunnelTitle:     "Pipeline Funnel",
 	ScoresTitle:     "Score Distribution",
 	RatesTitle:      "Conversion Rates",
 	WeeklyTitle:     "Weekly Activity",
 	ActiveInfo:      "%d active applications | %d total offers",
+
+	// Stats screen
+	StatsTitle:             "SEARCH STATS",
+	StatsSummary:           "%d evaluated | %d archetypes",
+	StatsStrategicInsights: "STRATEGIC INSIGHTS",
+	FitQualityDistribution: "Fit Quality Distribution",
+	SeniorityMix:           "Seniority Mix",
+	QualityBreakdown:       "Quality Breakdown:",
+	MeetQualityBar:         "✓ %.0f%% meet ≥4.0 bar",
+	SalaryBandDist:         "Salary Band Distribution:",
+	ArchetypeTitle:         "By Archetype",
+	WorkModeTitle:          "By Work Mode",
+	LocationTitle:          "By Location",
+	PayTitle:               "Pay Range (posted top, $)",
+	ColArchetype:           "ARCHETYPE",
+	ColCount:               "COUNT",
+	ColAvgScore:            "AVG FIT",
+	PayCount:               "Data points: ",
+	PayAvg:                 "Avg: ",
+	PayMedian:              "Median: ",
+	PayMax:                 "Max: ",
+	PaySourceSplit:         "%d posted, %d estimated",
+	InsightVolumeFit:       "Primary volume in %s (%d roles, %.0f%%) · Highest fit in %s (%.1f/5 avg fit)",
+	InsightVolumePrimary:   "Primary archetype is %s (%d roles, %.0f%% of evaluated pipeline)",
+	InsightWorkMode:        "Workplace distribution: %.0f%% of roles operate as %s",
+	InsightPayBenchmark:    "Compensation benchmark: Median top pay is $%.0fK (peak $%.0fK) across %d data points",
+
+	// Seniority levels
+	SeniorityExecutive:      "Executive",
+	SeniorityStaffPrincipal: "Staff / Principal",
+	SeniorityLeadManager:    "Lead / Manager",
+	SenioritySenior:         "Senior",
+	SeniorityMidLevel:       "Mid-Level",
+	SeniorityJuniorEntry:    "Junior / Entry",
 
 	// Relative dates
 	TimeToday:     "today",
@@ -299,16 +401,17 @@ var En = Catalog{
 	TimeDaysAgo:   "%dd ago",
 
 	// Status display names
-	StatusEvaluated: "Evaluated",
-	StatusApplied:   "Applied",
-	StatusResponded: "Responded",
-	StatusInterview: "Interview",
-	StatusOffer:     "Offer",
-	StatusRejected:  "Rejected",
-	StatusDiscarded: "Discarded",
-	StatusSkip:      "SKIP",
-	StatusHired:     "Hired",
-	StatusClosed:    "Closed",
+	StatusEvaluated:  "Evaluated",
+	StatusApplied:    "Applied",
+	StatusResponded:  "Responded",
+	StatusInterview:  "Interview",
+	StatusOffer:      "Offer",
+	StatusRejected:   "Rejected",
+	StatusDiscarded:  "Discarded",
+	StatusSkip:       "SKIP",
+	StatusHired:      "Hired",
+	StatusClosed:     "Closed",
+	StatusAssessment: "Assessment",
 
 	// Additional UI strings
 	NoData:        "No data",
@@ -331,6 +434,7 @@ var En = Catalog{
 	HelpColumns:    " columns  ",
 	HelpView:       " view  ",
 	HelpProgress:   " progress  ",
+	HelpStats:      " stats  ",
 	HelpQuit:       " quit",
 	HelpScroll:     " scroll  ",
 	HelpPage:       " page  ",
@@ -368,6 +472,7 @@ var En = Catalog{
 	SortLocation: "location",
 	SortPay:      "pay",
 	SortLast:     "last",
+	SortPosted:   "posted",
 	ViewGrouped:  "grouped",
 	ViewFlat:     "flat",
 }
@@ -381,19 +486,20 @@ var Tr = Catalog{
 	LoadingPreview: "Önizleme yükleniyor...",
 
 	// Tabs & filters
-	TabAll:       "TÜMÜ",
-	TabOpen:      "AÇIK",
-	TabEvaluated: "DEĞERLENDİRİLDİ",
-	TabApplied:   "BAŞVURULDU",
-	TabInterview: "MÜLAKAT",
-	TabOffer:     "TEKLİF",
-	TabHired:     "İŞE ALINDI",
-	TabClosed:    "KAPANDI",
-	TabResponded: "YANIT VERİLDİ",
-	TabTop:       "EN İYİ ≥4",
-	TabSkip:      "UYGUN DEĞİL",
-	TabRejected:  "REDDEDİLDİ",
-	TabDiscarded: "İPTAL",
+	TabAll:        "TÜMÜ",
+	TabOpen:       "AÇIK",
+	TabEvaluated:  "DEĞERLENDİRİLDİ",
+	TabApplied:    "BAŞVURULDU",
+	TabInterview:  "MÜLAKAT",
+	TabOffer:      "TEKLİF",
+	TabHired:      "İŞE ALINDI",
+	TabClosed:     "KAPANDI",
+	TabResponded:  "YANIT VERİLDİ",
+	TabTop:        "EN İYİ ≥4",
+	TabSkip:       "UYGUN DEĞİL",
+	TabRejected:   "REDDEDİLDİ",
+	TabDiscarded:  "İPTAL",
+	TabAssessment: "DEĞERLENDİRME",
 
 	// Table column headers
 	ColFit:      "UYUM",
@@ -423,12 +529,46 @@ var Tr = Catalog{
 
 	// Progress screen
 	ProgressTitle:   "TAKİP İLERLEMESİ",
-	ProgressSummary: "%d değerlendirildi | %.1f ort. puan",
+	ProgressSummary: "%d takipte | %.1f ort. puan",
 	FunnelTitle:     "Pipeline Hunisi",
 	ScoresTitle:     "Puan Dağılımı",
 	RatesTitle:      "Dönüşüm Oranları",
 	WeeklyTitle:     "Haftalık Aktivite",
 	ActiveInfo:      "%d aktif başvuru | %d toplam teklif",
+
+	// Stats screen
+	StatsTitle:             "TAKİP İSTATİSTİKLERİ",
+	StatsSummary:           "%d değerlendirildi | %d arketip",
+	StatsStrategicInsights: "STRATEJİK İÇGÖRÜLER",
+	FitQualityDistribution: "Uyum Kalitesi Dağılımı",
+	SeniorityMix:           "Kıdem Dağılımı",
+	QualityBreakdown:       "Kalite Dağılımı:",
+	MeetQualityBar:         "✓ %%%.0f ≥4.0 barajını geçiyor",
+	SalaryBandDist:         "Maaş Aralığı Dağılımı:",
+	ArchetypeTitle:         "Arketipe Göre",
+	WorkModeTitle:          "Çalışma Şekline Göre",
+	LocationTitle:          "Konuma Göre",
+	PayTitle:               "Ücret Aralığı (ilan üst sınırı, $)",
+	ColArchetype:           "ARKETİP",
+	ColCount:               "SAYI",
+	ColAvgScore:            "ORT. UYUM",
+	PayCount:               "Veri noktası: ",
+	PayAvg:                 "Ort: ",
+	PayMedian:              "Medyan: ",
+	PayMax:                 "Maks: ",
+	PaySourceSplit:         "%d ilan, %d tahmini",
+	InsightVolumeFit:       "En yüksek hacim %s alanında (%d ilan, %%%.0f) · En yüksek uyum %s alanında (ort. %.1f/5)",
+	InsightVolumePrimary:   "Ana arketip %s (%d ilan, değerlendirilen hattın %%%.0f'i)",
+	InsightWorkMode:        "Çalışma yeri dağılımı: ilanların %%%.0f'i %s olarak çalışıyor",
+	InsightPayBenchmark:    "Ücret karşılaştırması: medyan üst maaş $%.0fK (en yüksek $%.0fK) — %d veri noktası",
+
+	// Seniority levels
+	SeniorityExecutive:      "Yönetici",
+	SeniorityStaffPrincipal: "Kıdemli Uzman / Lider",
+	SeniorityLeadManager:    "Takım Lideri / Müdür",
+	SenioritySenior:         "Kıdemli",
+	SeniorityMidLevel:       "Orta Seviye",
+	SeniorityJuniorEntry:    "Başlangıç / Giriş",
 
 	// Relative dates
 	TimeToday:     "bugün",
@@ -436,16 +576,17 @@ var Tr = Catalog{
 	TimeDaysAgo:   "%d gün önce",
 
 	// Status display names
-	StatusEvaluated: "Değerlendirildi",
-	StatusApplied:   "Başvuruldu",
-	StatusResponded: "Yanıt Verildi",
-	StatusInterview: "Mülakat",
-	StatusOffer:     "Teklif",
-	StatusRejected:  "Reddedildi",
-	StatusDiscarded: "İptal Edildi",
-	StatusSkip:      "Uygun Değil",
-	StatusHired:     "İşe Alındı",
-	StatusClosed:    "Kapandı",
+	StatusEvaluated:  "Değerlendirildi",
+	StatusApplied:    "Başvuruldu",
+	StatusResponded:  "Yanıt Verildi",
+	StatusInterview:  "Mülakat",
+	StatusOffer:      "Teklif",
+	StatusRejected:   "Reddedildi",
+	StatusDiscarded:  "İptal Edildi",
+	StatusSkip:       "Uygun Değil",
+	StatusHired:      "İşe Alındı",
+	StatusClosed:     "Kapandı",
+	StatusAssessment: "Değerlendirme",
 
 	// Additional UI strings
 	NoData:        "Veri yok",
@@ -468,6 +609,7 @@ var Tr = Catalog{
 	HelpColumns:    " sütunlar  ",
 	HelpView:       " görünüm  ",
 	HelpProgress:   " ilerleme  ",
+	HelpStats:      " istatistik  ",
 	HelpQuit:       " çıkış",
 	HelpScroll:     " kaydır  ",
 	HelpPage:       " sayfa  ",
@@ -505,6 +647,7 @@ var Tr = Catalog{
 	SortLocation: "konum",
 	SortPay:      "ücret",
 	SortLast:     "son",
+	SortPosted:   "yayın",
 	ViewGrouped:  "gruplu",
 	ViewFlat:     "düz",
 }
@@ -518,19 +661,20 @@ var Es = Catalog{
 	LoadingPreview: "Cargando vista previa...",
 
 	// Tabs & filters
-	TabAll:       "TODAS",
-	TabOpen:      "ABIERTAS",
-	TabEvaluated: "EVALUADAS",
-	TabApplied:   "APLICADAS",
-	TabInterview: "ENTREVISTA",
-	TabOffer:     "OFERTA",
-	TabHired:     "CONTRATADAS",
-	TabClosed:    "CERRADAS",
-	TabResponded: "RESPONDIDAS",
-	TabTop:       "TOP ≥4",
-	TabSkip:      "OMITIR",
-	TabRejected:  "RECHAZADAS",
-	TabDiscarded: "DESCARTADAS",
+	TabAll:        "TODAS",
+	TabOpen:       "ABIERTAS",
+	TabEvaluated:  "EVALUADAS",
+	TabApplied:    "APLICADAS",
+	TabInterview:  "ENTREVISTA",
+	TabOffer:      "OFERTA",
+	TabHired:      "CONTRATADAS",
+	TabClosed:     "CERRADAS",
+	TabResponded:  "RESPONDIDAS",
+	TabTop:        "TOP ≥4",
+	TabSkip:       "OMITIR",
+	TabRejected:   "RECHAZADAS",
+	TabDiscarded:  "DESCARTADAS",
+	TabAssessment: "PRUEBA",
 
 	// Table column headers
 	ColFit:      "AJUSTE",
@@ -560,12 +704,46 @@ var Es = Catalog{
 
 	// Progress screen
 	ProgressTitle:   "PROGRESO DE BÚSQUEDA",
-	ProgressSummary: "%d evaluadas | %.1f puntuación media",
+	ProgressSummary: "%d en seguimiento | %.1f puntuación media",
 	FunnelTitle:     "Embudo del proceso",
 	ScoresTitle:     "Distribución de puntuaciones",
 	RatesTitle:      "Tasas de conversión",
 	WeeklyTitle:     "Actividad semanal",
 	ActiveInfo:      "%d solicitudes activas | %d ofertas totales",
+
+	// Stats screen
+	StatsTitle:             "ESTADÍSTICAS DE BÚSQUEDA",
+	StatsSummary:           "%d evaluadas | %d arquetipos",
+	StatsStrategicInsights: "INSIGHTS ESTRATÉGICOS",
+	FitQualityDistribution: "Distribución de Calidad de Ajuste",
+	SeniorityMix:           "Mix de Antigüedad",
+	QualityBreakdown:       "Desglose de Calidad:",
+	MeetQualityBar:         "✓ %.0f%% supera el umbral de ≥4.0",
+	SalaryBandDist:         "Distribución por Rangos Salariales:",
+	ArchetypeTitle:         "Por Arquetipo",
+	WorkModeTitle:          "Por Modalidad",
+	LocationTitle:          "Por Ubicación",
+	PayTitle:               "Rango salarial (tope publicado, $)",
+	ColArchetype:           "ARQUETIPO",
+	ColCount:               "CANTIDAD",
+	ColAvgScore:            "AJUSTE PROM",
+	PayCount:               "Puntos de datos: ",
+	PayAvg:                 "Prom: ",
+	PayMedian:              "Mediana: ",
+	PayMax:                 "Máx: ",
+	PaySourceSplit:         "%d publicados, %d estimados",
+	InsightVolumeFit:       "Mayor volumen en %s (%d puestos, %.0f%%) · Mayor ajuste en %s (ajuste prom. %.1f/5)",
+	InsightVolumePrimary:   "Arquetipo principal: %s (%d puestos, %.0f%% del flujo evaluado)",
+	InsightWorkMode:        "Distribución laboral: el %.0f%% de los puestos opera como %s",
+	InsightPayBenchmark:    "Referencia salarial: La mediana de salario máximo es $%.0fK (pico $%.0fK) en %d puntos de datos",
+
+	// Seniority levels
+	SeniorityExecutive:      "Ejecutivo",
+	SeniorityStaffPrincipal: "Staff / Principal",
+	SeniorityLeadManager:    "Líder / Manager",
+	SenioritySenior:         "Senior",
+	SeniorityMidLevel:       "Nivel Medio",
+	SeniorityJuniorEntry:    "Junior / Inicial",
 
 	// Relative dates
 	TimeToday:     "hoy",
@@ -573,16 +751,17 @@ var Es = Catalog{
 	TimeDaysAgo:   "hace %dd",
 
 	// Status display names
-	StatusEvaluated: "Evaluada",
-	StatusApplied:   "Aplicada",
-	StatusResponded: "Respondida",
-	StatusInterview: "Entrevista",
-	StatusOffer:     "Oferta",
-	StatusRejected:  "Rechazada",
-	StatusDiscarded: "Descartada",
-	StatusSkip:      "OMITIR",
-	StatusHired:     "Contratada",
-	StatusClosed:    "Cerrada",
+	StatusEvaluated:  "Evaluada",
+	StatusApplied:    "Aplicada",
+	StatusResponded:  "Respondida",
+	StatusInterview:  "Entrevista",
+	StatusOffer:      "Oferta",
+	StatusRejected:   "Rechazada",
+	StatusDiscarded:  "Descartada",
+	StatusSkip:       "OMITIR",
+	StatusHired:      "Contratada",
+	StatusClosed:     "Cerrada",
+	StatusAssessment: "Prueba",
 
 	// Additional UI strings
 	NoData:        "Sin datos",
@@ -605,6 +784,7 @@ var Es = Catalog{
 	HelpColumns:    " columnas  ",
 	HelpView:       " vista  ",
 	HelpProgress:   " progreso  ",
+	HelpStats:      " estadísticas  ",
 	HelpQuit:       " salir",
 	HelpScroll:     " desplazar  ",
 	HelpPage:       " página  ",
@@ -642,6 +822,7 @@ var Es = Catalog{
 	SortLocation: "ubicación",
 	SortPay:      "salario",
 	SortLast:     "último",
+	SortPosted:   "publicado",
 	ViewGrouped:  "agrupado",
 	ViewFlat:     "plano",
 }
@@ -649,37 +830,63 @@ var Es = Catalog{
 // Current points to the active language catalog. Defaults to English (&En).
 var Current = &En
 
+// languages is the single source of truth for which languages exist, in the
+// order ToggleLang cycles them. SetLang, GetLang and ToggleLang all read it, so
+// adding a language is one entry here rather than three separate edits that can
+// drift — which is how ToggleLang came to be unable to reach Spanish.
+//
+// Order matters twice: it is the cycle order, and SetLang matches by prefix in
+// this order. "en" before "es" is harmless since neither is a prefix of the
+// other, but a future code that is a prefix of another must come after it.
+var languages = []struct {
+	code    string
+	catalog *Catalog
+}{
+	{"en", &En},
+	{"tr", &Tr},
+	{"es", &Es},
+}
+
 // SetLang sets the active catalog based on language code prefix
 // (e.g., "tr", "tr_TR" -> &Tr; "es", "es_ES" -> &Es; anything else -> &En).
 func SetLang(lang string) {
 	l := strings.ToLower(strings.TrimSpace(lang))
-	switch {
-	case strings.HasPrefix(l, "tr"):
-		Current = &Tr
-	case strings.HasPrefix(l, "es"):
-		Current = &Es
-	default:
-		Current = &En
+	for _, entry := range languages {
+		if strings.HasPrefix(l, entry.code) {
+			Current = entry.catalog
+			return
+		}
 	}
+	Current = &En
 }
 
-// ToggleLang switches Current between &En and &Tr.
+// ToggleLang advances Current to the next language in `languages`, wrapping.
+//
+// It used to flip between &En and &Tr, with every other catalog falling into
+// the else branch and landing on English. Spanish was added after that was
+// written, so a user who started the dashboard in Spanish pressed the key the
+// help bar advertises as "lang" and could not get back — the toggle could only
+// ever reach English and Turkish. Cycling makes every supported language
+// reachable from every other one.
 func ToggleLang() {
-	if Current == &En {
-		Current = &Tr
-	} else {
-		Current = &En
+	for i, entry := range languages {
+		if Current == entry.catalog {
+			Current = languages[(i+1)%len(languages)].catalog
+			return
+		}
 	}
+	// Current points at a catalog outside the list: land somewhere defined
+	// rather than leaving it unchanged, so the key always does something.
+	Current = &En
 }
 
-// GetLang returns the active language code ("tr" if Current == &Tr, "es" if
-// Current == &Es, else "en").
+// GetLang returns the active language code, or "en" when Current points at a
+// catalog that is not in `languages`.
 func GetLang() string {
-	if Current == &Tr {
-		return "tr"
-	}
-	if Current == &Es {
-		return "es"
+	for _, entry := range languages {
+		if Current == entry.catalog {
+			return entry.code
+		}
 	}
 	return "en"
 }

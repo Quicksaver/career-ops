@@ -74,7 +74,7 @@ Run the cold-start check before starting:
 node doctor.mjs --user {USER} --json
 ```
 
-If onboarding is needed, stop and follow the onboarding flow. If `modes/_profile.md` is the only missing file, seed it from `modes/_profile.template.md` as described in `AGENTS.md`, then continue only if the remaining required setup is complete.
+If onboarding is needed, stop and follow the onboarding flow. If `users/{USER}/modes/_profile.md` is the only missing file, seed it from `modes/_profile.template.md` as described in `AGENTS.md`, then continue only if the remaining required setup is complete.
 
 ## Counters
 

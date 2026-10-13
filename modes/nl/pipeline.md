@@ -45,7 +45,7 @@ Processen bieden URL's aan die zijn verzameld in `users/{USER}/data/pipeline.md`
 **Speciale gevallen:**
 - **LinkedIn**: Mogelijk is een login vereist -> benadruk `[!]` en vraag de kandidaat om de tekst te plakken
 - **PDF**: als de URL naar een PDF verwijst, kunt u deze direct lezen met de Leestool
-- **Prefix `local:`**: Lees het lokale bestand. Voorbeeld: `local:jds/linkedin-pm-ai.md` -> lees `jds/linkedin-pm-ai.md`
+- **Prefix `local:`**: Lees het lokale bestand. Voorbeeld: `local:users/{USER}/jds/linkedin-pm-ai.md` -> lees `users/{USER}/jds/linkedin-pm-ai.md`
 - **Indeed NL/BE, Nationale Vacaturebank, Intermediair, Jobat, StepStone, VDAB en Werkenvoor.be**: veelgebruikte bronnen voor Nederlandstalige vacatures. Gebruik Playwright voor dynamische pagina's en cookiebanners
 
 ## Automatische nummering

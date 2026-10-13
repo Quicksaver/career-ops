@@ -1,6 +1,6 @@
 # モード: oubo -- 応募ライブアシスタント
 
-> Free-text answers と cover-letter fields には `voice-dna.md`（存在する場合）を適用する。Full guardrail、conversational voice included（Tier 1 + Tier 2）。`_writing.md` → Voice DNA を参照。
+> Free-text answers と cover-letter fields には `users/{USER}/voice-dna.md`（存在する場合）を適用する。Full guardrail、conversational voice included（Tier 1 + Tier 2）。`_writing.md` → Voice DNA を参照。
 
 候補者が Chrome で応募フォームを入力しているときの interactive mode。画面上の内容を読み、事前評価済みの求人 context を読み込み、フォームの各質問に personalized responses を生成する。
 
@@ -14,7 +14,7 @@
 ```text
 1. DETECT      → Read active Chrome tab (screenshot/URL/title)
 2. IDENTIFY    → Extract company + role from the page
-3. SEARCH      → Match against existing reports in reports/
+3. SEARCH      → Match against existing reports in users/{USER}/reports/
 4. LOAD        → Read full report + Section G (if it exists)
 5. PREFLIGHT   → Confirm posting liveness + company/role match before drafting
 6. ANALYZE     → Identify ALL visible form questions
@@ -38,7 +38,7 @@ Application answers を生成する前に、form が意図した active job を�
 
 この preflight が解決するまで Step 6 に進まない。
 
-**Applying to several roles in one sitting?** この preflight は目の前の単一 form を確認する。Multi-role session の前、特に scanner entries が `**Verification:** unconfirmed (batch mode)` と marked されている場合は、`pipeline` mode の **Liveness sweep** を先に実行する（`node check-liveness.mjs --file <urls>`）。これにより `data/pipeline.md` から dead postings がまとめて落ち、expired role の tab を開かずに済む。
+**Applying to several roles in one sitting?** この preflight は目の前の単一 form を確認する。Multi-role session の前、特に scanner entries が `**Verification:** unconfirmed (batch mode)` と marked されている場合は、`pipeline` mode の **Liveness sweep** を先に実行する（`node check-liveness.mjs --file <urls>`）。これにより `users/{USER}/data/pipeline.md` から dead postings がまとめて落ち、expired role の tab を開かずに済む。
 
 ## Step 1 -- Detect the job
 
@@ -52,7 +52,7 @@ Application answers を生成する前に、form が意図した active job を�
 ## Step 2 -- Identify and search for context
 
 1. Page から company name と role title を抽出
-2. `reports/` を company name で検索（case-insensitive grep）
+2. `users/{USER}/reports/` を company name で検索（case-insensitive grep）
 3. Match があれば full report を load
 4. Section G があれば previous draft answers を base として load
 5. Match がなければ notify し、quick auto-pipeline の実行を提案
@@ -63,7 +63,9 @@ Application answers を生成する前に、form が意図した active job を�
 - **Notify the candidate:** "The role has changed from [X] to [Y]. Do you want me to re-evaluate or adapt the responses to the new title?"
 - **If adapt:** Candidate が mismatch を明示的に accept した後に限り、re-evaluate せず新しい role に responses を adjust
 - **If re-evaluate:** Full A-F evaluation を実行し、report を update し、Section G を regenerate
-- **Update tracker:** 必要に応じて `applications.md` の role title を変更
+- **Update tracker:** `users/{USER}/data/applications.md` は直接編集しない。
+  - **Re-evaluate した場合:** 新しい role title を入れた TSV を書き（`_shared.md` の rule 9）、`node merge-tracker.mjs` でマージする。Report は同じファイルを update するので番号は変わらず、merge はその番号で TSV を既存の行に対応づける：title は置き換わり、status は維持される。
+  - **Adapt した場合:** title は変更しない。Report が evaluate した role を示すものだから。変更があったことは note として記録する：`node set-status.mjs --report <report#> <現在の status> --note "Posting retitled at apply time, row keeps the evaluated title"`。行の現在の status を渡せば status は変わらず、note だけが追記される。Note はこのような固定の文言にし、`[Y]` は入れない。新しい title はページ由来のテキストであり、ページ由来のテキストは command line に渡さない。
 
 ## Step 6 -- Analyze form questions
 
@@ -76,16 +78,16 @@ Visible questions をすべて特定する：
 
 各 question を分類する：
 - **Already answered in Section G** → 既存 response を adapt
-- **New question** → report + `cv.md` から response を generate
+- **New question** → report + `users/{USER}/cv.md` から response を generate
 
 各 field について、application form contract を preserve する：
 - `field_type`: `text`, `textarea`, `select`, `radio`, `checkbox`, `number`, `file`, or `unknown`
 - `required`: `yes`, `no`, or `unknown`
 - `limit`: exact character/word limit if visible; otherwise `unknown`
 - `options`: visible options for select/radio/checkbox fields
-- `needs_candidate_confirmation`: `yes` for legal, demographic, work authorization, visa, relocation, salary, disability, veteran, sponsorship, background-check, or self-identification questions unless the answer is explicitly present in `config/profile.yml`
+- `needs_candidate_confirmation`: `yes` for legal, demographic, work authorization, visa, relocation, salary, disability, veteran, sponsorship, background-check, or self-identification questions unless the answer is explicitly present in `users/{USER}/config/profile.yml`
 
-Legal、demographic、work-authorization、visa/sponsorship、salary、disability、veteran、background-check、relocation、self-identification fields の回答を捏造してはならない。回答が `config/profile.yml` または visible context に明示されていない場合は、`needs_candidate_confirmation` として mark し、候補者に確認するための最も安全な質問を出す。
+Legal、demographic、work-authorization、visa/sponsorship、salary、disability、veteran、background-check、relocation、self-identification fields の回答を捏造してはならない。回答が `users/{USER}/config/profile.yml` または visible context に明示されていない場合は、`needs_candidate_confirmation` として mark し、候補者に確認するための最も安全な質問を出す。
 
 ## Step 7 -- Generate responses
 

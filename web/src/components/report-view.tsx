@@ -1,29 +1,37 @@
+import { parseMachineSummarySignals } from "@/lib/machine-summary.mjs";
 import Link from "next/link";
 import { ArrowLeft, FileText, ExternalLink, ChevronDown } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { Application } from "@/lib/career-ops";
 import { Badge } from "@/components/ui/badge";
-import { scoreTone, scoreNum, legitimacyTone, parseReport } from "@/lib/format";
-import { cleanHeading, splitSections } from "@/lib/report-sections.mjs";
+import { scoreTone, legitimacyTone, parseReport } from "@/lib/format";
+import {
+  APPLY_LINE,
+  applyCtaQuiet,
+  applyLineLabel,
+  cleanHeading,
+  isLeadSection,
+  isVerdictHeading,
+  splitSections,
+  verdictReason,
+} from "@/lib/report-sections.mjs";
+import { isStarTableHeader, parsePipeTable } from "@/lib/report-tables.mjs";
 import { StatusSelect } from "@/components/status-select";
 import { CompanyLogo } from "@/components/company-logo";
 import { ScoreMethodology } from "@/components/score-methodology";
 import { GeneratePdfButton } from "@/components/generate-pdf-button";
 import { ApplyButton } from "@/components/apply-button";
 import { DeleteFromTracker } from "@/components/delete-from-tracker";
-import { parseMachineSummarySignals } from "@/lib/machine-summary.mjs";
+import { ReportMarkdown } from "@/components/report-markdown";
+import { KeywordCoverage } from "@/components/keyword-coverage";
+import { CompanyEvidence } from "@/components/company-evidence";
+import { companyPresentation } from "@/lib/company-presentation.mjs";
+import { PageFrame } from "@/components/page-frame";
 
-// Progressive disclosure of the report. The core writes prose blocks
-// "## A) Role Summary", "## B) Match with CV", through "## F) Interview Plan",
-// C–G + machine artifacts (Machine Summary YAML, Application Answers, submit
-// log). A mainstream user deciding "should I apply?" needs the Machine Summary
-// verdict + fit; the rest is depth-on-demand. We lead with the decision table,
-// keep A/B expanded, collapse C–G as content, and drop machine artifacts to a dimmer
-// "Technical" tier — and strip the bare "F)" author-letters from headings
-// (native <details>, no client JS — this stays a server component).
-
-type Section = { heading: string; letter: string | null; content: string };
+// Progressive disclosure of the report. Current oferta.md writes letter F as
+// Interview Plan (STAR+R), not a verdict — never promote by letter (#3416).
+// The score + 4.0 apply line + legitimacy live in one Peak-End callout (#4203).
+// Blocks A and B stay open in this fork. Other sections are collapsed,
+// and machine artifacts stay in the Technical tier.
 
 type MachineSummarySignals = NonNullable<ReturnType<typeof parseMachineSummarySignals>>;
 type SignalListKey = "hardStops" | "softGaps" | "topStrengths";
@@ -75,15 +83,22 @@ function DecisionSignalsTable({ signals }: { signals: MachineSummarySignals }) {
   );
 }
 
-// Machine artifacts (collapsed because they're for devs, not the mainstream) vs
-// human content C–G (collapsed only for length) — ux's "honest for devs" tier.
+
 function isMachine(heading: string): boolean {
   return /machine summary|submitted|submit[-\s]?log/i.test(heading);
 }
 
-// A one-line teaser for a collapsed content section — drops the interaction cost
-// of "what's in here?" without defeating the collapse.
+function httpUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  return /^https?:\/\//i.test(url) ? url : undefined;
+}
+
 function preview(md: string): string {
+  const table = parsePipeTable(md);
+  if (table && isStarTableHeader(table.header)) {
+    const n = table.rows.length;
+    return `${n} interview stor${n === 1 ? "y" : "ies"}`;
+  }
   const text = md
     .replace(/^#+\s.*$/gm, "")
     .replace(/```[\s\S]*?```/g, "")
@@ -99,6 +114,9 @@ export function ReportView({
   app,
   report,
   canDelete = false,
+  pdfReadyFromIndex = false,
+  coverReady = false,
+  backHref = "/pipeline",
 }: {
   id: string;
   app: Application | null;
@@ -107,19 +125,33 @@ export function ReportView({
    *  the raw .md filename is a dev artifact, not header content. */
   file?: string | null;
   canDelete?: boolean;
+  pdfReadyFromIndex?: boolean;
+  /** A tailored cover letter for THIS application exists in output/ (resolved by
+   *  the page, see resolveTailoredCover). View only — covers are never generated
+   *  from here. */
+  coverReady?: boolean;
+  backHref?: string;
 }) {
+  const signals = report ? parseMachineSummarySignals(report) : null;
   const meta = report ? parseReport(report) : null;
   const field = (label: string) => meta?.fields.find((f) => f.label === label)?.value;
   const score = app?.score || field("Score");
   const date = app?.date || field("Date");
   const archetype = field("Archetype");
   const url = field("URL");
-  const machineSignals = report ? parseMachineSummarySignals(report) : null;
+  const decision = field("Decision");
+  const line = applyLineLabel(score ?? "");
+  const recommended = line === "Recommended";
+  const quietApply = applyCtaQuiet({ score, legitimacy: meta?.legitimacy });
+  const applyUrl = httpUrl(url);
+  const pdfReady = (app?.pdf ?? "").includes("✅") || pdfReadyFromIndex;
+  const company = app ? companyPresentation(app) : null;
+  const companyName = company?.label ?? app?.company ?? meta?.title ?? id;
 
   return (
-    <div className="mx-auto max-w-[96rem] px-6 py-8">
+    <PageFrame className="max-w-3xl xl:max-w-5xl 2xl:max-w-[1600px]">
       <Link
-        href="/pipeline"
+        href={backHref}
         className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-brand"
       >
         <ArrowLeft className="size-4" /> Pipeline
@@ -128,26 +160,26 @@ export function ReportView({
       <header className="mt-5">
         <p className="font-mono text-xs uppercase tracking-[0.18em] text-faint">#{id}</p>
         <div className="mt-2 flex items-center gap-3">
-          <CompanyLogo name={app?.company ?? meta?.title ?? `Report #${id}`} size={40} />
+          <CompanyLogo name={company?.logoName ?? meta?.title ?? `Report #${id}`} size={40} />
           <h1 className="font-display text-3xl tracking-tight text-landing">
-            {app?.company ?? meta?.title ?? `Report #${id}`}
+            {company?.label ?? meta?.title ?? `Report #${id}`}
           </h1>
         </div>
         {app?.role && <p className="mt-1 text-muted">{app.role}</p>}
 
         <div className="mt-4 flex flex-wrap items-center gap-2.5">
-          {score && <Badge tone={scoreTone(score)}>{score}</Badge>}
-          {/* Verdict-first: the score's apply/don't-apply call (4.0 is the line,
-              per the public methodology) as a <2s-scannable chip. */}
-          {(() => {
-            const n = scoreNum(score ?? "");
-            if (Number.isNaN(n)) return null;
-            return n >= 4.0 ? <Badge tone="good">Recommended</Badge> : <Badge tone="muted">Below the apply line</Badge>;
-          })()}
-          {meta?.legitimacy && <Badge tone={legitimacyTone(meta.legitimacy)}>{meta.legitimacy}</Badge>}
           {app && <StatusSelect n={id} current={app.status} />}
-          <GeneratePdfButton n={id} company={app?.company ?? meta?.title ?? id} pdfReady={(app?.pdf ?? "").includes("✅")} />
-          <ApplyButton n={id} url={url && url.startsWith("http") ? url : undefined} company={app?.company ?? meta?.title ?? id} pdfReady={(app?.pdf ?? "").includes("✅")} />
+          <GeneratePdfButton n={id} company={app?.company ?? meta?.title ?? id} pdfReady={pdfReady} />
+          {coverReady && (
+            <a
+              href={`/api/cover-pdf?application=${encodeURIComponent(id)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 dark:text-emerald-400 max-sm:min-h-[44px]"
+            >
+              <FileText className="size-3.5" /> View cover
+            </a>
+          )}
         </div>
 
         {app && canDelete && (
@@ -156,13 +188,13 @@ export function ReportView({
           </div>
         )}
 
-        {(archetype || date || (url && url.startsWith("http"))) && (
+        {(archetype || date || applyUrl) && (
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
             {archetype && <span className="max-w-full truncate">{archetype}</span>}
             {date && <span className="tabular-nums text-faint">{date}</span>}
-            {url && url.startsWith("http") && (
+            {applyUrl && (
               <a
-                href={url}
+                href={applyUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center justify-center gap-1 text-brand hover:underline max-sm:min-h-[44px]"
@@ -174,42 +206,73 @@ export function ReportView({
         )}
       </header>
 
+      {signals && <DecisionSignalsTable signals={signals} />}
       {report ? (
         <>
           {(() => {
             const { intro, sections } = splitSections(meta?.body ?? report);
-            // Tolerant fallback: unrecognized layout → render the whole body as
-            // before, so an old/odd report never loses content.
+            const verdictSection = sections.find((s) => isVerdictHeading(s.heading));
+            const rest = sections.filter((s) => s !== verdictSection);
+            const machine = rest.filter((s) => isMachine(s.heading));
+            const mainSections = rest.filter((s) => !isMachine(s.heading));
+            const reason = verdictReason({
+              report,
+              intro,
+              verdictContent: verdictSection?.content,
+            });
+            const verdictClass = recommended
+              ? "border-brand/25 bg-brand-soft/50"
+              : "border-border bg-surface/50";
+            const callout = (
+              <div className={`rounded-2xl border px-5 py-5 ${verdictClass}`}>
+                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Verdict</p>
+                <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
+                  {score ? (
+                    <p className="font-display text-4xl tabular-nums tracking-tight text-landing">{score}</p>
+                  ) : (
+                    <p className="text-sm text-muted">No score on this report.</p>
+                  )}
+                  <p className="pb-1 text-xs text-muted">Apply line is {APPLY_LINE.toFixed(1)}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {score && <Badge tone={scoreTone(score)}>{score}</Badge>}
+                  {line && <Badge tone={recommended ? "good" : "muted"}>{line}</Badge>}
+                  {decision && <Badge tone="info">{decision}</Badge>}
+                  {meta?.legitimacy && <Badge tone={legitimacyTone(meta.legitimacy)}>{meta.legitimacy}</Badge>}
+                </div>
+                {reason && <p className="mt-4 text-[15px] font-medium leading-relaxed text-foreground">{reason}</p>}
+                <div className="mt-4">
+                  <ApplyButton
+                    n={id}
+                    url={applyUrl}
+                    company={companyName}
+                    pdfReady={pdfReady}
+                    quiet={quietApply}
+                  />
+                </div>
+              </div>
+            );
             if (sections.length === 0) {
               return (
-                <article className="report-prose mt-8">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{meta?.body ?? report}</ReactMarkdown>
-                </article>
+                <div className="mt-8 max-w-4xl">
+                  {callout}
+                  <article className="report-prose mt-6">
+                    <ReportMarkdown>{meta?.body ?? report}</ReportMarkdown>
+                  </article>
+                </div>
               );
             }
-            // Machine-summary signals lead as the decision. A/B stay expanded
-            // (fit detail); C–G, including F's Interview Plan, collapse in their
-            // natural report order. Machine artifacts remain in the dimmer
-            // "Technical" tier so the raw data stays available to developers.
-            const machine = sections.filter((s) => isMachine(s.heading));
-            const mainSections = sections.filter((s) => !isMachine(s.heading));
-            const anyAB = mainSections.some((s) => s.letter === "A" || s.letter === "B");
             return (
-              <div className="mt-8">
-                {intro && (
-                  <article className="report-prose">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{intro}</ReactMarkdown>
-                  </article>
-                )}
-
-                {machineSignals && <DecisionSignalsTable signals={machineSignals} />}
+              <div className="mt-8 max-w-4xl">
+                {callout}
 
                 {mainSections.map((s, i) => {
-                  const expanded = s.letter === "A" || s.letter === "B" || (s.letter !== "F" && !anyAB && i === 0);
+                  const expanded = s.letter === "A" || isLeadSection(s);
                   if (expanded) {
                     return (
                       <article key={i} className="report-prose mt-6">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{`## ${cleanHeading(s.heading)}\n\n${s.content}`}</ReactMarkdown>
+                        <h2>{cleanHeading(s.heading)}</h2>
+                        <ReportMarkdown>{s.content}</ReportMarkdown>
                       </article>
                     );
                   }
@@ -221,7 +284,7 @@ export function ReportView({
                         <ChevronDown className="ml-auto size-4 shrink-0 text-faint transition-transform group-open:rotate-180" />
                       </summary>
                       <div className="report-prose border-t border-border px-4 py-3">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.content}</ReactMarkdown>
+                        <ReportMarkdown>{s.content}</ReportMarkdown>
                       </div>
                     </details>
                   );
@@ -240,8 +303,8 @@ export function ReportView({
                           {cleanHeading(s.heading)}
                           <ChevronDown className="ml-auto size-4 shrink-0 text-faint transition-transform group-open:rotate-180" />
                         </summary>
-                        <div className="report-prose border-t border-border/60 px-4 py-3 opacity-80">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.content}</ReactMarkdown>
+                        <div className="report-prose border-t border-border/60 px-4 py-3">
+                          <ReportMarkdown>{s.content}</ReportMarkdown>
                         </div>
                       </details>
                     ))}
@@ -250,6 +313,15 @@ export function ReportView({
               </div>
             );
           })()}
+          {/* After the report body: the reader has just decided whether the
+              offer is worth applying to, and this answers the next question —
+              whether the CV they would send reads as a match for it. */}
+          <KeywordCoverage reportId={id} />
+          {/* Then the company itself. Only with a tracker row: the card is keyed
+              on a company name, and a report with no row has none to look up —
+              guessing one from the report would surface another company's
+              history. */}
+          {app?.company && <CompanyEvidence company={app.company} />}
           <ScoreMethodology />
         </>
       ) : (
@@ -258,6 +330,6 @@ export function ReportView({
           No report file found for #{id} in <code className="text-foreground">reports/</code>.
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 }

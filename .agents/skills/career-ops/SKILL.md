@@ -8,7 +8,7 @@ description: >-
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | verify | scan | scan-handoff | scan-auth | discover | deep | pdf | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | offer-prep | titles | upskill | followup | reply-watch | outcome | update]"
+argument-hint: "[go | verify | scan-handoff | scan-auth | scan | discover | deep | pdf | ats | text | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | triage | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | master-profile | intake | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | calibrate | offer-prep | titles | upskill | followup | reply-watch | outcome | update]"
 license: MIT
 ---
 
@@ -16,10 +16,15 @@ license: MIT
 
 career-ops is a multi-CLI job-search command center. The routing below is shared across supported agent CLIs even when the invocation surface differs.
 
+## Project Root Resolution
+
+Before reading any repo-relative path, derive `PROJECT_ROOT` from this loaded `SKILL.md`: start at the skill file's directory and walk upward until the nearest directory containing both `AGENTS.md` and `modes/`. Resolve every path in this router (`modes/`, `config/`, `users/{USER}/data/`, scripts, templates, and output paths) against `PROJECT_ROOT`, never against the process's current working directory. This is required even when the checkout itself is nested (for example `Development\\career-ops`) or the command starts from a subdirectory. If those two sentinels cannot be found, stop and locate the career-ops checkout before reading or writing files.
+
 ## Invocation Notes
 
 - CLIs with slash-command registration can expose this router as `/career-ops`.
-- In Cursor, this skill lives at `.cursor/skills/career-ops/` and is auto-discovered; ask for a mode by name, or paste a JD/URL to trigger auto-pipeline.
+- In Cursor, this skill lives at `.agents/skills/career-ops/` and is auto-discovered; ask for a mode by name, or paste a JD/URL to trigger auto-pipeline.
+- In Pi, this skill is auto-discovered from `.agents/skills/career-ops/` and exposed as `/skill:career-ops`; `AGENTS.md` loads from the repo root as project context, so there is no wrapper file. Headless Pi workers use `pi -p "prompt"`. Project skill discovery follows Pi's per-folder trust decision: `/trust` applies to future Pi processes, so restart `pi` before invoking `/skill:career-ops` (`-a` trusts a single run and needs no restart).
 - Interactive Codex sessions use `codex` in the repo root. Slash commands are not guaranteed in Codex, so ask Codex to run the same mode by name if `/career-ops` is unavailable.
 - Headless Codex workers use `codex exec "prompt"`.
 - The routing semantics below stay the same regardless of whether the entrypoint is a slash command or a natural-language prompt.
@@ -56,7 +61,7 @@ Valid user IDs use letters, numbers, dots, underscores, or hyphens. Do not accep
 
 After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 
-- Read/write user-layer files only inside `USER_ROOT` (`cv.md`, `config/profile.yml`, `modes/_profile.md`, `modes/_custom.md`, `article-digest.md`, `portals.yml`, `data/`, `reports/`, `output/`, `interview-prep/`, `jds/`, `writing-samples/`, and user batch state).
+- Read/write user-layer files only inside `USER_ROOT` (`users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, `users/{USER}/modes/_custom.md`, `users/{USER}/article-digest.md`, `users/{USER}/portals.yml`, `users/{USER}/data/`, `users/{USER}/reports/`, `users/{USER}/output/`, `users/{USER}/interview-prep/`, `users/{USER}/jds/`, `users/{USER}/writing-samples/`, and user batch state).
 - Read system-layer files from the repo root (`modes/_shared.md`, mode files, scripts, templates, providers, dashboard, docs).
 - Remove the explicit user token or `--user` flag from the invocation before mode routing. Example: `/career-ops scan <username>` routes as mode `scan` with `ACTIVE_USER=<username>`.
 - When running scripts, pass `--user {ACTIVE_USER}` or set `CAREER_OPS_USER={ACTIVE_USER}`.
@@ -91,12 +96,15 @@ Determine the mode from `$mode`:
 | `deep` | `deep` |
 | `interview-prep` | `interview-prep` |
 | `interview` | `interview` |
+| `master-profile` | `master-profile` |
+| `intake` | `intake` |
 | `eu-swe` | `regional/eu-swe` |
-| `eu-fintech` | `regional/eu-fintech` |
 | `interview/plan` | `interview/plan` |
 | `interview/practice` | `interview/practice` |
 | `interview/debrief` | `interview/debrief` |
 | `pdf` | `pdf` |
+| `ats` | `ats` |
+| `text` | `text` |
 | `latex` | `latex` |
 | `latex-tex` | `latex-tex` |
 | `email` | `email` |
@@ -115,8 +123,10 @@ Determine the mode from `$mode`:
 | `scan-handoff` | `scan-handoff` |
 | `scan-auth` | `scan-auth` |
 | `discover` | `discover` |
+| `triage` | `triage` |
 | `batch` | `batch` |
 | `patterns` | `patterns` |
+| `calibrate` | `calibrate` |
 | `offer-prep` | `offer-prep` |
 | `titles` | `titles` |
 | `upskill` | `upskill` |
@@ -138,11 +148,11 @@ If `$mode` is not a sub-command AND doesn't look like a JD, show discovery.
 Before executing any mode, read `users/{ACTIVE_USER}/config/profile.yml` if it exists and resolve:
 
 - `language.output` → ISO language code for human-facing output. Default: `en`.
-- `language.modes_dir` → optional market-mode directory. This controls market vocabulary and local evaluation rules only.
+- `language.modes_dir` → optional market-mode directory. This controls market vocabulary and local evaluation rules only. It may be a single string (one declared market, the historical default) or a list of declared candidate markets for a candidate genuinely running parallel campaigns in more than one market at once (#3793), e.g. `modes_dir: [modes/de, modes/zh]`. When a list is given, the FIRST entry is primary and supplies the evaluation-mode file (Block A-F rules can only run from one market's file at a time); EVERY declared market's `_shared.md` is loaded into context. `modes` itself is a valid declared candidate for markets without a localized directory; when first it supplies `modes/oferta.md`, and its baseline `modes/_shared.md` is loaded once. Per posting, judge which declared market actually applies from the JD's own MARKET signals (hiring-entity jurisdiction, currency, benefits/legal vocabulary) — never from the JD's language alone. If genuinely ambiguous, an interactive session asks and stops before persistence; an unattended worker uses the primary market and records that fallback in the report header or Block G.
 
 Inject this directive after loading the mode instructions and before producing any user-visible content:
 
-> Write all human-facing output in `{language.output}` regardless of the language of these instructions or of the job description. This includes reports, tracker notes, PDFs, cover letters, outreach, interview prep, form answers, and summaries. If `language.modes_dir` supplies market-specific vocabulary, keep the market logic but explain terms in `{language.output}` when needed.
+> Write all human-facing output in `{language.output}` regardless of the language of these instructions or of the job description. This includes reports, tracker notes, PDFs, cover letters, outreach, interview prep, form answers, and summaries. If `language.modes_dir` supplies market-specific vocabulary (one market, or several declared at once), keep the market logic but explain terms in `{language.output}` when needed.
 
 `language.output` is authoritative for prose. `modes_dir` is market context; it must not force the prose language.
 
@@ -179,14 +189,17 @@ Available commands:
   /career-ops deep      → Deep research prompt about company
   /career-ops interview-prep → Generate company-specific interview prep doc
   /career-ops interview    → Interactive profile/CV onboarding interview
+  /career-ops master-profile → Import, review, and validate your Master Career Profile
+  /career-ops intake    → Build or enrich your profile from users/{USER}/documents/ (master CV, LinkedIn export; nothing written without confirm)
   /career-ops eu-swe    → Calibrate a European SWE application before CV/apply/interview
-  /career-ops eu-fintech → Scan 21 EU fintech portals for Product Manager roles (zero-token)
   /career-ops interview/plan → Time-blocked prep plan for an upcoming interview
   /career-ops interview/practice → Practice interview, one question at a time with feedback
   /career-ops interview/debrief → Post-interview debrief: close gaps, predict next round
   /career-ops pdf       → PDF only, ATS-optimized CV
+  /career-ops ats       → ATS-friendliness check of a generated CV (score + fixable issues)
+  /career-ops text      → Tailored markdown CV (mirrors users/{USER}/cv.md, no PDF)
   /career-ops latex     → Export CV as LaTeX/Overleaf .tex
-  /career-ops latex-tex → Tailor your own resume.tex in place (opt-in; cv.md stays default)
+  /career-ops latex-tex → Tailor your own resume.tex in place (opt-in; users/{USER}/cv.md stays default)
   /career-ops cover     → Cover letter: standalone JD paste or /career-ops cover {slug}
   /career-ops email     → Formal application email draft (draft-only; never sends, submits, or clicks)
   /career-ops add       → Add a project/paper/role to your CV (fetch + preview + confirm)
@@ -201,9 +214,11 @@ Available commands:
   /career-ops scan      → Scan portals and discover new offers
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
   /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
-  /career-ops discover  → Resolve a company list to scannable ATS boards + append to portals.yml (zero-token)
+  /career-ops discover  → Resolve a company list to scannable ATS boards + append to users/{USER}/portals.yml (zero-token)
+  /career-ops triage    → Fast first-pass go/no-go score from modes/_brief.md (writes no files)
   /career-ops batch     → Batch processing with parallel workers
   /career-ops patterns  → Analyze rejection patterns and improve targeting
+  /career-ops calibrate → Check whether evaluation scores predict your real outcomes (advisory only)
   /career-ops offer-prep → Read a received offer/contract with the candidate: clause walk + lawyer questions (not legal advice)
   /career-ops titles    → Suggest adjacent job titles from your CV to broaden the search
   /career-ops upskill   → Aggregate skill-gap analysis from your evaluated reports
@@ -225,21 +240,25 @@ After determining the mode, load the necessary files before executing:
 
 If `users/{ACTIVE_USER}/modes/_custom.md` exists, read it after `users/{ACTIVE_USER}/modes/_profile.md` and before the selected mode file. It contains user house rules and procedural preferences. It may override workflow/style defaults, but it never adds factual claims about the candidate.
 
+Resolve `language.modes_dir` before applying the path shorthand below. With no setting, use `modes`. With a scalar directory, preserve the existing behavior: use that directory's `_shared.md` and localized mode file when it provides one. With a list, load every declared directory's `_shared.md` exactly once (including the baseline `modes/_shared.md` when `modes` appears), but use only the FIRST entry's evaluation-mode file for Blocks A-F; later entries contribute context, never a competing evaluation file. User-layer `_profile.md` and `_custom.md` remain under `modes/`.
+
 ### Modes that require `_shared.md` + their mode file
 
-Read `modes/_shared.md` + `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`.
+Read the resolved shared context (default `modes/_shared.md`) + `users/{ACTIVE_USER}/modes/_profile.md` (if exists) + `users/{ACTIVE_USER}/modes/_custom.md` (if exists) + the resolved selected mode file (default `modes/{mode}.md`). For an A-F evaluation, that selected file is the primary directory's evaluation mode; do not also load an evaluation file from a secondary directory.
 
-Applies to: `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `contacto`, `apply`, `pipeline`, `scan`, `scan-handoff`, `go`, `batch`
-
-For `scan-handoff`, also read `modes/scan.md` before `modes/scan-handoff.md` because the handoff mode reuses scan filtering, deduplication, liveness, and pipeline-writing rules.
-
-For `go`, also read `modes/scan.md`, `modes/scan-handoff.md`, `modes/scan-auth.md`, and `modes/pipeline.md` because the shorthand coordinates those modes conditionally.
+Applies to: `go`, `scan-handoff`, `scan-auth`, `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `text`, `contacto`, `apply`, `pipeline`, `scan`, `batch`
 
 ### Standalone modes with profile and custom context
 
 Read `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`, plus any user-layer files the mode names from `users/{ACTIVE_USER}/`.
 
-Applies to: `tracker`, `agent-inbox`, `verify`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `reply-watch`, `outcome`, `cover`, `email`, `add`, `offer-prep`, `scan-auth`, `discover`
+Applies to: `verify`, `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `master-profile`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `reply-watch`, `outcome`, `cover`, `email`, `add`, `offer-prep`, `discover`, `intake`, `ats`, `calibrate`
+
+### Modes that load only their mode file
+
+Read `modes/{mode}.md` only. Do not preload `_shared.md`, `_profile.md` or `_custom.md`: the mode file names the one context file it reads and the ones it must not. Values it takes from `users/{USER}/config/profile.yml` (`language.output`, `pipeline.triage_threshold`) are resolved here and injected; the mode never reads that file itself.
+
+Applies to: `triage`
 
 ### Execution ownership for long-running modes
 
@@ -260,7 +279,7 @@ re-verification. Unresolved findings stay user-facing. Keep the
 current turn active while the runner executes and apply the same
 quiet-monitoring and stop semantics.
 Duplicate resolution preserves lifecycle order as `Hired > Offer > Interview >
-Responded > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row
+Assessment > Responded > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row
 becomes the keeper together with its existing report/CV artifacts;
 reviewer-selected identity breaks equal-status ties only. The resolver backs up
 and archives losing artifacts and records any keeper override in the duplicate

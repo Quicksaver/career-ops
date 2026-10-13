@@ -3,7 +3,7 @@
 //
 // The request was POSTed to the OpenAI-compatible /v1/chat/completions route,
 // which ignores the `options` object and has no num_ctx equivalent, so NEITHER
-// temperature: 0.4 NOR num_ctx: 32768 reached the model — every eval ran at the
+// temperature: 0.4 NOR num_ctx reached the model — every eval ran at the
 // server default temperature and a 2048-token context that silently truncated
 // the prompt. This drives the real CLI against a mock Ollama that captures the
 // request, asserting the endpoint and the params, and that the native response
@@ -24,15 +24,13 @@ const server = createServer((req, res) => {
   req.on('end', () => {
     captured.path = req.url;
     try { captured.body = JSON.parse(raw); } catch { captured.body = null; }
-    // Native /api/chat shape (NOT OpenAI choices[]).
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      model: 'test',
-      message: { role: 'assistant', content: 'Evaluation.\nVERDICT: 4/5 — solid fit' },
-      done: true,
-      prompt_eval_count: 1234,
-      eval_count: 56,
-    }));
+    // Native /api/chat shape (NOT OpenAI choices[]). Since #3921 the request sets
+    // stream:true, so the reply is newline-delimited JSON rather than one body.
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
+    res.end([
+      { model: 'test', message: { role: 'assistant', content: 'Evaluation.\nVERDICT: 4/5 — solid fit' }, done: false },
+      { model: 'test', message: { role: 'assistant', content: '' }, done: true, prompt_eval_count: 1234, eval_count: 56 },
+    ].map((c) => JSON.stringify(c)).join('\n') + '\n');
   });
 });
 

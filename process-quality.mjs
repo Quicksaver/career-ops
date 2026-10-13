@@ -2,48 +2,72 @@
 /**
  * process-quality.mjs — Recruiting-Process Friction Aggregator for career-ops
  *
- * Parses users/{USER}/data/active-interviews.md, extracts inline `[process-friction]` tags
+ * Parses data/active-interviews.md, extracts inline `[process-friction]` tags
  * from the Notes column, and aggregates them per company into a friction
  * signal — independent of company/role fit (#960) and interviewer red-flag
  * behavior (#1232). This tracks a third, distinct axis: is the *recruiting
  * process itself* (scheduling, communication clarity, tooling) well-run?
  *
  * Tagging convention (candidate-authored, in the Notes column of
- * users/{USER}/data/active-interviews.md):
+ * data/active-interviews.md):
  *   [process-friction]                          — friction occurred, no detail
  *   [process-friction: <short reason>]           — friction occurred, with detail
  *
  * This is a company/process-level signal only — never tied to a named
  * individual recruiter. See issue #1466.
  *
- * Run: node process-quality.mjs --user <username>             (human-readable table)
- *      node process-quality.mjs --user <username> --json      (machine-readable result)
- *      node process-quality.mjs --user <username> --min-threshold 2  (min total interviews per company to report)
+ * Example friction patterns (illustrative, NOT an enforced taxonomy — the
+ * tag stays free-text; tag anything that fits the spirit even if it doesn't
+ * match one of these verbatim):
+ *   [process-friction: call scheduled for a rejection with no info beyond what email would convey]
+ *   [process-friction: prescreen repeated info already given in a prior round]
+ *   [process-friction: interview rescheduled 2+ times same week]
+ *   [process-friction: no confirmation after stated timeline passed]
+ *
+ * Run: node process-quality.mjs             (JSON to stdout)
+ *      node process-quality.mjs --summary   (human-readable table)
+ *      node process-quality.mjs --min-threshold 2  (min total interviews per company to report)
  *      node process-quality.mjs --file path/to/active-interviews.md  (override the data path; test isolation)
  *      node process-quality.mjs --self-test
  *
- * Issue #1466 — github.com/santifer/career-ops
+ * Issue #1466 — github.com/career-ops-hq/career-ops
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { pathToFileURL } from 'url';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
-import { flagValue, hasFlag } from './lib/cli-flags.mjs';
+import { join, dirname } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { getCareerOpsRoot } from './path-resolver.mjs';
+import { flagValue, validateFlags, safeIntFlag } from './lib/cli-flags.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
+import { isPlaceholderCompany } from './lib/placeholder-cell.mjs';
+
+const CAREER_OPS = getCareerOpsRoot();
+const DEFAULT_ACTIVE_INTERVIEWS_PATH = existsSync(join(CAREER_OPS, 'data/active-interviews.md'))
+  ? join(CAREER_OPS, 'data/active-interviews.md')
+  : join(CAREER_OPS, 'active-interviews.md');
 
 const FRICTION_TAG = /\[process-friction(?::\s*([^\]]+))?\]/i;
 
 // --- CLI args ---
-const rawArgs = process.argv.slice(2);
-const selfTestMode = rawArgs.includes('--self-test');
-const args = rawArgs;
-const minThresholdValue = flagValue(args, '--min-threshold');
-const rawMinThreshold = minThresholdValue !== undefined
-  ? parseInt(minThresholdValue, 10)
-  : 1;
+const args = process.argv.slice(2);
+const summaryMode = !args.includes('--json');
+const selfTestMode = args.includes('--self-test');
+// --file overrides the data path — mirrors validate-portals.mjs / verify-portals.mjs's
+// --file convention. Primarily for test isolation: it lets tests point at a
+// controlled temp path instead of depending on whatever data/active-interviews.md
+// happens to exist (or not) in the caller's real workspace.
+const fileFlagValue = flagValue(args, '--file');
+const ACTIVE_INTERVIEWS_PATH = fileFlagValue !== undefined
+  ? fileFlagValue
+  : DEFAULT_ACTIVE_INTERVIEWS_PATH;
+// safeIntFlag, not parseInt: this file had NO shape check, so unlike
+// detect-reposts it did not even fall back — `--min-threshold
+// 999999999999999999999` was ACCEPTED and reported as `"minThreshold": 1e+21`,
+// the exact "metadata reports a value that is not the one in effect" failure
+// detect-reposts.mjs documents isSafeInteger as existing to prevent (#2982).
+// "abc" and "-5" already fell back to 1 via the clamp below; "3.5" silently
+// became 3. All of them now take the documented fallback.
+const rawMinThreshold = safeIntFlag(flagValue(args, '--min-threshold'), 1);
 // Clamped here (not just inside aggregateProcessQuality) so printSummary's
 // displayed threshold always matches the threshold actually applied.
 const MIN_THRESHOLD = Number.isFinite(rawMinThreshold) && rawMinThreshold >= 0 ? rawMinThreshold : 1;
@@ -132,6 +156,10 @@ export function extractFriction(row) {
   return { hasFriction: true, reason: (match[1] || '').trim() };
 }
 
+// Local alias so the call sites below read unchanged; the definition moved to
+// lib/placeholder-cell.mjs, which was one of two identical copies.
+const isPlaceholder = isPlaceholderCompany;
+
 // --- Core aggregation ---
 //
 // Groups rows by company (case-insensitive, trimmed), counts total
@@ -152,11 +180,32 @@ export function aggregateProcessQuality(rows, minThreshold = 1) {
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
     const company = companyKey(row);
-    if (!company) continue;
 
-    const dedupeKey = company.toLowerCase();
+    // `?` is the documented marker for an undisclosed end employer (#1596), not
+    // a company name. Grouping on it merged every unrelated employer into ONE
+    // row and reported a friction rate averaged across all of them — the number
+    // a user acts on ("this company wastes my time") computed over companies
+    // they never dealt with. merge-tracker already refuses that merge; this
+    // aggregate has to refuse it too.
+    //
+    // The channel is what distinguishes those rows, so it becomes the bucket.
+    // A row naming neither employer nor channel supports no per-company claim
+    // at all and is dropped rather than given one.
+    let label = company;
+    if (isPlaceholder(company)) {
+      const via = findColumn(row, 'via').trim();
+      if (!via || isPlaceholder(via)) continue;
+      // The prefix is ALWAYS `?`, never the cell's own spelling. isPlaceholder
+      // accepts `?`, `—`, `-` and an empty cell, and every one of them means the
+      // same thing — but keeping them verbatim keys `— (via Hays)` apart from
+      // `? (via Hays)`, splitting one channel's totals. That is this function's
+      // own bug in miniature, so it gets the same answer: normalize, then group.
+      label = `? (via ${via})`;
+    }
+
+    const dedupeKey = label.toLowerCase();
     if (!byCompany.has(dedupeKey)) {
-      byCompany.set(dedupeKey, { company, total: 0, frictionCount: 0, reasons: [] });
+      byCompany.set(dedupeKey, { company: label, total: 0, frictionCount: 0, reasons: [] });
     }
     const entry = byCompany.get(dedupeKey);
     entry.total += 1;
@@ -187,7 +236,7 @@ export function aggregateProcessQuality(rows, minThreshold = 1) {
   return results;
 }
 
-function loadActiveInterviews(path) {
+function loadActiveInterviews(path = ACTIVE_INTERVIEWS_PATH) {
   if (!existsSync(path)) return [];
   return parseActiveInterviews(readFileSync(path, 'utf-8'));
 }
@@ -299,40 +348,48 @@ function runSelfTest() {
 }
 
 // --- Run (CLI only; guarded so the module is safely importable for tests) ---
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+const KNOWN_FLAGS = ['--json', '--file', '--min-threshold', '--summary', '--self-test', '--help', '-h'];
+const VALUE_FLAGS = ['--file', '--min-threshold'];
+
+const USAGE = `Usage:
+  node process-quality.mjs                        # JSON report
+  node process-quality.mjs --summary              # human-readable table
+  node process-quality.mjs --file <path>          # a different active-interviews.md
+  node process-quality.mjs --min-threshold <N>    # minimum rounds before a company is reported (default 1)
+  node process-quality.mjs --self-test            # run the built-in fixtures
+  node process-quality.mjs --help                 # show this message`;
+
+if (isMainModule(import.meta.url)) {
+  // Inside the main-module guard, not at import time: rejection-latency.mjs
+  // imports parseActiveInterviews from here, so a top-level check would judge
+  // the IMPORTER's argv and reject its flags as unrecognized (#2919).
+  //
+  // A mistyped --file was previously ignored, so the script silently reported
+  // on data/active-interviews.md instead of the path that was asked for.
+  //
+  // requireOperand: without it, `--file --min-threshold` reads --min-threshold
+  // as the file path and `--min-threshold --summary` parses to NaN and falls
+  // back to the default of 1 — both silently, at exit 0 (#3087). Neither flag
+  // has a more specific missing-value message of its own.
+  validateFlags(args, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS, requireOperand: true });
+
   if (selfTestMode) {
     runSelfTest();
   }
 
-  let userContext = null;
-  try {
-    userContext = getUserContext(rawArgs, { requireUser: !hasFlag(rawArgs, '--file') });
-  } catch (err) {
-    printUserContextErrorAndExit(err);
-  }
-  const cliArgs = userContext?.args ?? rawArgs;
-  const cliJsonMode = cliArgs.includes('--json');
-  const cliMinThresholdValue = flagValue(cliArgs, '--min-threshold');
-  const cliRawMinThreshold = cliMinThresholdValue !== undefined
-    ? parseInt(cliMinThresholdValue, 10)
-    : 1;
-  const cliMinThreshold = Number.isFinite(cliRawMinThreshold) && cliRawMinThreshold >= 0 ? cliRawMinThreshold : 1;
-  const cliFileValue = flagValue(cliArgs, '--file');
-  const activeInterviewsPath = cliFileValue !== undefined
-    ? cliFileValue
-    : userPath(userContext, 'data/active-interviews.md');
+  const rows = loadActiveInterviews();
+  const signals = aggregateProcessQuality(rows, MIN_THRESHOLD);
 
-  const rows = loadActiveInterviews(activeInterviewsPath);
-  const signals = aggregateProcessQuality(rows, cliMinThreshold);
-
-  if (cliJsonMode) {
+  if (summaryMode) {
+    printSummary(signals);
+  } else {
     console.log(JSON.stringify({
       metadata: {
-        minThreshold: cliMinThreshold,
+        minThreshold: MIN_THRESHOLD,
         totalRows: rows.length,
         companies: signals.length,
       },
       signals,
     }, null, 2));
-  } else printSummary(signals);
+  }
 }

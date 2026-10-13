@@ -27,9 +27,9 @@ Do not generate a generic or placeholder cover letter under any circumstances.
 
 Read `users/{USER}/config/profile.yml` for:
 - `candidate.name`, `email`, `phone`, `location`, `linkedin`, `github`
-- `candidate.credentials` (derive from cv.md Education + Certifications if not in profile.yml)
+- `candidate.credentials` (derive from users/{USER}/cv.md Education + Certifications if not in profile.yml)
 - `cover_letter.notice_period_days` (default: omit if key absent)
-- `cover_letter.primary_domain` (default: infer from cv.md if absent)
+- `cover_letter.primary_domain` (default: infer from users/{USER}/cv.md if absent)
 - `cover_letter.language_learning` (default: empty list if absent)
 
 Read `users/{USER}/cv.md` for:
@@ -117,7 +117,7 @@ Wait for confirmation or corrections before proceeding.
 
 **Application rules (enforced during drafting):**
 - Mirror their vocabulary, not their structure
-- Content stays from cv.md — only vocabulary shifts
+- Content stays from users/{USER}/cv.md — only vocabulary shifts
 - Fit naturally or don't use — if a keyword can't be woven in, flag it post-generation
 - Apply to: opening, profile intro, achievements (vocabulary only), problems section
 - Do NOT apply to: why-this-role angle (user's own words), closing
@@ -194,13 +194,13 @@ Wait for all four answers before proceeding to Step 7.
 
 ---
 
-## Step 7 — Achievement selection (from cv.md only)
+## Step 7 — Achievement selection (from users/{USER}/cv.md only)
 
-Select 4-5 achievement bullets from `cv.md` only (`article-digest.md` may be read for context but is not a source of achievement bullets):
-1. Read all bullet points across all roles in cv.md
+Select 4-5 achievement bullets from `users/{USER}/cv.md` only (`users/{USER}/article-digest.md` may be read for context but is not a source of achievement bullets):
+1. Read all bullet points across all roles in users/{USER}/cv.md
 2. Score each against the JD's top 3-4 required competencies
 3. Pick the 4-5 highest-scoring, with at least one metric per bullet
-4. Use the exact wording and metrics from cv.md — never paraphrase or invent
+4. Use the exact wording and metrics from users/{USER}/cv.md — never paraphrase or invent
 5. Apply keyword mirroring from Step 4 to the vocabulary around each bullet (not the metrics)
 
 Format: `**Bold lead phrase,** one sentence of impact with metric.` This describes the *rendered* bullet only — the `lead` value in the JSON payload (Step 9) must be a bare phrase with no trailing punctuation; `generate-cover-letter.mjs` appends the comma automatically when building the bullet.
@@ -228,7 +228,7 @@ Address the named hiring manager if known, e.g. "Dear Jane Smith,". Omit if no n
 Why applying + functional summary. Derived from Angle A. Uses JD mirror vocabulary.
 
 [Profile introduction — 1 paragraph]
-Years of experience, current/most recent role, domain. Read from cv.md summary.
+Years of experience, current/most recent role, domain. Read from users/{USER}/cv.md summary.
 Tone matches user's choice from Step 6D.
 
 [Achievements — 4-5 bullets]
@@ -258,7 +258,7 @@ End the draft with: "How does this read? Once you approve I'll generate the PDF.
 
 `_writing.md` → Professional Writing & ATS Compatibility is the base: its cliché
 list, em-dash rule, sentence variation and specifics-over-abstractions guidance
-apply here in full, and `voice-dna.md` §3 supersedes that list when the user has
+apply here in full, and `users/{USER}/voice-dna.md` §3 supersedes that list when the user has
 the file. The rules below are what this mode adds on top — letter-specific
 contracts, plus the bans that are stricter than the shared list.
 
@@ -288,8 +288,8 @@ Only after explicit user approval.
 
 Before rendering, run the shared fact validator against the assembled cover
 letter HTML. It checks metric-like claims plus explicitly asserted employers,
-titles, and tools against `cv.md`, `article-digest.md`, and the optional
-`config/cv-facts.json` allowlist. The validator returns a stable `pass`, `warn`,
+titles, and tools against `users/{USER}/cv.md`, `users/{USER}/article-digest.md`, and the optional
+`users/{USER}/config/cv-facts.json` allowlist. The validator returns a stable `pass`, `warn`,
 or `block` verdict. Advisory `warn_phrases` do not stop PDF generation; a
 `block` verdict does, so add the missing evidence or obtain a verified
 allowlist exception first.

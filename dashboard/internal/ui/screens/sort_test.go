@@ -76,3 +76,46 @@ func TestSortByPayLocationAndLastContact(t *testing.T) {
 			pm.filtered[0].Company, pm.filtered[len(pm.filtered)-1].Company)
 	}
 }
+
+// The date sort orders by what the DATE column shows: the ledger's latest
+// transition when there is one, else the tracker date.
+func TestSortByDateUsesListingOrTrackerDate(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "OldEvalRecentChange", Status: "Evaluated", Date: "2026-05-01", StatusDate: "2026-06-20"},
+		{Company: "NewEvalNoChange", Status: "Evaluated", Date: "2026-06-10"},
+		{Company: "MidEvalMidChange", Status: "Evaluated", Date: "2026-05-15", StatusDate: "2026-06-15"},
+		{Company: "NoDates", Status: "Evaluated"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
+	pm.sortMode = sortDate
+	pm.applyFilterAndSort()
+
+	wantOrder := []string{"NewEvalNoChange", "MidEvalMidChange", "OldEvalRecentChange", "NoDates"}
+	for i, w := range wantOrder {
+		if pm.filtered[i].Company != w {
+			t.Fatalf("date sort: position %d = %s, want %s", i, pm.filtered[i].Company, w)
+		}
+	}
+}
+
+func TestSortByPosted(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "Old", Status: "Evaluated", PostedOn: "2026-05-01"},
+		{Company: "NoDate", Status: "Evaluated", PostedOn: ""},
+		{Company: "Fresh", Status: "Evaluated", PostedOn: "2026-08-20"},
+		{Company: "Mid", Status: "Evaluated", PostedOn: "2026-07-10"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
+	pm.sortMode = sortPosted
+	pm.applyFilterAndSort()
+
+	// Freshest posting first; rows with no posted date sink to the bottom.
+	wantOrder := []string{"Fresh", "Mid", "Old", "NoDate"}
+	for i, w := range wantOrder {
+		if pm.filtered[i].Company != w {
+			t.Fatalf("posted sort: position %d = %s, want %s", i, pm.filtered[i].Company, w)
+		}
+	}
+}

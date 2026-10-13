@@ -7,7 +7,7 @@
  * reply-watch.mjs already classifies employer replies (Interview / Responded /
  * Need Action / Rejected / Offer / Auto-confirmation / Noise / Unknown), matches
  * them to tracker rows, and prompts before touching data/applications.md — but
- * its only input is users/{USER}/data/reply-candidates.json, and the only planned way to
+ * its only input is data/reply-candidates.json, and the only planned way to
  * populate that file is a Gmail scanner (#1583, unbuilt, requires OAuth
  * inbox-read access). This script is the alternative for anyone who doesn't
  * want to grant any tool mailbox access but is willing to paste an email's
@@ -15,16 +15,16 @@
  *
  * This script does ONE job: normalize raw pasted (or file-provided) email text
  * into the exact candidate object shape reply-watch.mjs expects, and append it
- * to the active user's data/reply-candidates.json. It does NOT classify the reply — classification
+ * to data/reply-candidates.json. It does NOT classify the reply — classification
  * stays reply-watch.mjs's job. reply-matcher.mjs's classifyReply() derives its
  * verdict from `subject` + `body_snippet` text directly; `signal` is only ever
  * used as a supplementary confidence boost (`cand.signal || ''`), never a hard
  * dependency — so leaving `signal: null` here is safe. This script never runs
- * reply-watch.mjs itself and never touches the active user's applications.md.
+ * reply-watch.mjs itself and never touches data/applications.md.
  *
  * Usage:
- *   node paste-reply.mjs --user <username>                  # interactive
- *   node paste-reply.mjs --user <username> --file email.txt # file input
+ *   node paste-reply.mjs                  # interactive: prompts for subject, from, body
+ *   node paste-reply.mjs --file email.txt # read subject/from/body from a file
  *   node paste-reply.mjs --help
  *
  * --file format (header lines optional, blank line separates headers from body):
@@ -38,20 +38,22 @@
  *
  * Env:
  *   CAREER_OPS_REPLY_CANDIDATES  override the output JSON path (used by tests;
- *                                 otherwise the active user's path is required)
+ *                                 defaults to data/reply-candidates.json under
+ *                                 the data root, matching reply-watch.mjs's default)
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
-import {
-  getUserContext,
-  printUserContextErrorAndExit,
-  userPath,
-} from './lib/user-context.mjs';
+import { writeFileAtomic } from './tracker-utils.mjs';
+import { withPipelineLock } from './pipeline-lock.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
 
-const CANDIDATES_OVERRIDE = process.env.CAREER_OPS_REPLY_CANDIDATES || '';
+const DATA_ROOT = getCareerOpsRoot();
+export const CANDIDATES_PATH = process.env.CAREER_OPS_REPLY_CANDIDATES
+  || path.join(DATA_ROOT, 'data', 'reply-candidates.json');
 
 
 /**
@@ -110,34 +112,43 @@ export function normalizeCandidate({ subject, from, body }) {
 /**
  * Append a candidate to the candidates JSON file, creating the file/array if
  * missing, without disturbing any existing entries. Exported for direct unit
- * testing. Returns the total candidate count after the append.
+ * testing. Resolves to the total candidate count after the append.
  */
-export function appendCandidate(candidate, candidatesPath = CANDIDATES_OVERRIDE) {
-  if (!candidatesPath) {
-    throw new Error('No reply candidates path selected; run the CLI with --user <username>.');
-  }
-  let candidates = [];
-  if (fs.existsSync(candidatesPath)) {
-    let parsed;
-    try {
-      parsed = JSON.parse(fs.readFileSync(candidatesPath, 'utf-8'));
-    } catch (e) {
-      throw new Error(`Could not parse existing candidates file at ${candidatesPath}: ${e.message}`);
+export async function appendCandidate(candidate, candidatesPath = CANDIDATES_PATH) {
+  // The append is a read-modify-write of the whole array, so it is serialized
+  // behind the repo's shared lock (#4920). Unlocked, two overlapping runs —
+  // an agent pasting several replies as parallel tool calls — both read the
+  // same array and the later rename silently discarded the earlier entry.
+  // The read is INSIDE the lock for that reason: a snapshot taken before it
+  // is exactly the stale view that loses an entry.
+  //
+  // timeoutMs matches agent-inbox.mjs's add(), for the reason spelled out
+  // there (#2825): bursty writers on a retry-lottery lock need more than the
+  // shared 8s default, or the loss comes back as a LockTimeoutError.
+  return withPipelineLock(candidatesPath, () => {
+    let candidates = [];
+    if (fs.existsSync(candidatesPath)) {
+      let parsed;
+      try {
+        parsed = JSON.parse(fs.readFileSync(candidatesPath, 'utf-8'));
+      } catch (e) {
+        throw new Error(`Could not parse existing candidates file at ${candidatesPath}: ${e.message}`);
+      }
+      if (!Array.isArray(parsed)) {
+        throw new Error(`Existing candidates file at ${candidatesPath} is not a JSON array`);
+      }
+      candidates = parsed;
+    } else {
+      fs.mkdirSync(path.dirname(candidatesPath), { recursive: true });
     }
-    if (!Array.isArray(parsed)) {
-      throw new Error(`Existing candidates file at ${candidatesPath} is not a JSON array`);
-    }
-    candidates = parsed;
-  } else {
-    fs.mkdirSync(path.dirname(candidatesPath), { recursive: true });
-  }
-  candidates.push(candidate);
-  // Write-then-rename so an interrupted write (crash, signal, disk full)
-  // can never leave the real candidates file truncated/corrupted.
-  const tmpPath = `${candidatesPath}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(candidates, null, 2), 'utf-8');
-  fs.renameSync(tmpPath, candidatesPath);
-  return candidates.length;
+    candidates.push(candidate);
+    // Write-then-rename so an interrupted write (crash, signal, disk full)
+    // can never leave the real candidates file truncated/corrupted — through
+    // writeFileAtomic's per-write temp name, not a fixed `<file>.tmp` that a
+    // writer outside this lock could rename out from under us.
+    writeFileAtomic(candidatesPath, JSON.stringify(candidates, null, 2));
+    return candidates.length;
+  }, { timeoutMs: 30_000 });
 }
 
 // Collect subject/from/body from stdin via a single readline.Interface and a
@@ -150,7 +161,7 @@ export function appendCandidate(candidate, candidatesPath = CANDIDATES_OVERRIDE)
 // callback when the input isn't a real TTY — confirmed directly against this
 // Node build, not assumed. A single 'line' listener with manual state
 // tracking works identically on both TTY and piped/non-interactive stdin.
-function collectInteractive() {
+export function collectInteractive() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   let stage = 'subject';
   let subject = '';
@@ -184,8 +195,8 @@ function printHelp() {
   console.log(`paste-reply.mjs — manual/no-Gmail input into the reply-watch.mjs pipeline (#1802)
 
 Usage:
-  node paste-reply.mjs --user <username>                  interactive input
-  node paste-reply.mjs --user <username> --file <path>    file input
+  node paste-reply.mjs                  interactive: prompts for subject, from, body
+  node paste-reply.mjs --file <path>    read subject/from/body from a file
   node paste-reply.mjs --help
 
 --file format:
@@ -196,28 +207,19 @@ Usage:
 
 If no Subject:/From: header lines are found, the whole file is treated as the body.
 
-Appends one normalized candidate to users/{USER}/data/reply-candidates.json (creates it if
+Appends one normalized candidate to data/reply-candidates.json (creates it if
 missing; never overwrites or removes existing entries). Run
-\`node reply-watch.mjs --user {USER}\` afterward to classify it and review tracker updates —
-this script never runs reply-watch.mjs or touches the tracker itself.`);
+\`node reply-watch.mjs\` afterward to classify it and review tracker updates —
+this script never runs reply-watch.mjs or touches data/applications.md itself.`);
 }
 
 async function main() {
-  const rawArgs = process.argv.slice(2);
+  const args = process.argv.slice(2);
 
-  if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+  if (args.includes('--help') || args.includes('-h')) {
     printHelp();
     return;
   }
-
-  let userContext;
-  try {
-    userContext = getUserContext(rawArgs, { requireUser: !CANDIDATES_OVERRIDE });
-  } catch (err) {
-    printUserContextErrorAndExit(err);
-  }
-  const args = userContext.args;
-  const candidatesPath = CANDIDATES_OVERRIDE || userPath(userContext, 'data/reply-candidates.json');
 
   const fileIdx = args.indexOf('--file');
   let input;
@@ -243,7 +245,7 @@ async function main() {
   }
 
   const candidate = normalizeCandidate(input);
-  const total = appendCandidate(candidate, candidatesPath);
+  const total = await appendCandidate(candidate);
 
   const preview = candidate.body_snippet.length > 80
     ? `${candidate.body_snippet.slice(0, 80)}…`
@@ -254,14 +256,13 @@ async function main() {
   console.log(`  from:         ${candidate.from || '(none)'}`);
   console.log(`  subject:      ${candidate.subject || '(none)'}`);
   console.log(`  body_snippet: ${preview || '(none)'}`);
-  console.log(`\n${candidatesPath} now has ${total} candidate(s).`);
-  const userFlag = userContext.userId ? ` --user ${userContext.userId}` : '';
-  console.log(`Next: run \`node reply-watch.mjs${userFlag}\` to classify and review this reply.`);
+  console.log(`\ndata/reply-candidates.json now has ${total} candidate(s).`);
+  console.log('Next: run `node reply-watch.mjs` to classify and review this reply.');
 }
 
 // Only run when executed directly (`node paste-reply.mjs`), not when imported
 // for unit testing (e.g. `import(pathToFileURL(SCRIPT).href)` in tests).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   main().catch((err) => {
     console.error('Fatal:', err);
     process.exit(1);

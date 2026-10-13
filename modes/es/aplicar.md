@@ -12,7 +12,7 @@ Modo interactivo para el momento en que el candidato rellena un formulario de ca
 ```
 1. DETECTAR     -> Leer la pestaña activa de Chrome (captura/URL/título)
 2. IDENTIFICAR  -> Extraer empresa + rol desde la página
-3. BUSCAR       -> Hacer match con los reports existentes en reports/
+3. BUSCAR       -> Hacer match con los reports existentes en users/{USER}/reports/
 4. CARGAR       -> Leer el report completo + Bloque G (si existe)
 5. COMPARAR     -> ¿El rol en pantalla coincide con el evaluado? Si cambió -> avisar
 6. ANALIZAR     -> Identificar TODAS las preguntas visibles del formulario
@@ -32,7 +32,7 @@ Modo interactivo para el momento en que el candidato rellena un formulario de ca
 ## Paso 2 -- Identificar y cargar el contexto
 
 1. Extraer el nombre de la empresa y el título del puesto desde la página
-2. Buscar en `reports/` por nombre de empresa (Grep case-insensitive)
+2. Buscar en `users/{USER}/reports/` por nombre de empresa (Grep case-insensitive)
 3. Si hay match -> cargar el report completo
 4. Si hay Bloque G -> cargar los borradores de respuestas previos como base
 5. Si NO hay match -> avisar al candidato y proponer un auto-pipeline rápido
@@ -43,7 +43,9 @@ Si el rol en pantalla difiere del evaluado:
 - **Avisar al candidato**: "El rol ha cambiado de [X] a [Y]. ¿Quieres que reevalúe o que adapte las respuestas al nuevo título?"
 - **Si adaptar**: Ajustar las respuestas al nuevo rol sin reevaluar
 - **Si reevaluar**: Lanzar la evaluación completa A-F, actualizar el report, regenerar el Bloque G
-- **Actualizar el tracker**: Modificar el título del rol en applications.md si es necesario
+- **Actualizar el tracker**: nunca editando `users/{USER}/data/applications.md`.
+  - **Tras reevaluar**: escribir un TSV con el nuevo título del rol (regla 9 de `_shared.md`) y fusionarlo con `node merge-tracker.mjs`. El report se actualiza en su sitio y conserva su número, así que la fusión empareja el TSV con la fila existente por ese número: reemplaza el título y mantiene el estado.
+  - **Tras adaptar**: no cambiar el título, porque nombra el rol que evaluó el report. Anotar el cambio como nota con `node set-status.mjs --report <report#> <estado actual> --note "Oferta retitulada al postular, la fila conserva el título evaluado"`. Pasar el estado actual de la fila lo deja igual y añade la nota. Usar un texto fijo como este y no incluir `[Y]`: el nuevo título es texto de la página, y el texto de la página nunca va en una línea de comandos.
 
 ## Paso 4 -- Analizar las preguntas del formulario
 
@@ -56,7 +58,7 @@ Identificar TODAS las preguntas visibles:
 
 Clasificar cada pregunta:
 - **Ya respondida en el Bloque G** -> retomar la respuesta existente
-- **Pregunta nueva** -> generar la respuesta desde el report + `cv.md`
+- **Pregunta nueva** -> generar la respuesta desde el report + `users/{USER}/cv.md`
 
 ## Paso 5 -- Generar las respuestas
 

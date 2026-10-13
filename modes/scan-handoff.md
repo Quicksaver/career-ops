@@ -10,7 +10,7 @@ Agent/WebSearch handoff: N companies not handled by zero-token providers
 
 ## Scope
 
-This mode does not rerun `node scan.mjs`. It resumes from the latest saved handoff artifact and covers companies whose `portals.yml` entries requested `scan_method: websearch` but had no zero-token provider.
+This mode does not rerun `node scan.mjs`. It resumes from the latest saved handoff artifact and covers companies whose `users/{USER}/portals.yml` entries requested `scan_method: websearch` but had no zero-token provider.
 
 ## Untrusted External Content (CRITICAL)
 

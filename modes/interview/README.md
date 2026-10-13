@@ -22,12 +22,12 @@ These skills assume the following files exist (career-ops defaults):
 
 | File | Purpose |
 |---|---|
-| `cv.md` | Candidate CV — source of truth for experience and proof points |
-| `article-digest.md` | Compact proof points from portfolio (optional) |
-| `config/profile.yml` | Candidate profile — target roles, compensation, narrative |
-| `modes/_profile.md` | Candidate archetypes, narrative, and deal-breakers |
-| `interview-prep/story-bank.md` | Accumulated STAR+R stories |
-| `interview-prep/question-bank.md` | Question bank with gap tracking (created on first use) |
-| `interview-prep/interview-prep-guide.md` | General interview principles (optional) |
-| `interview-prep/{company}-{role}.md` | Role-specific prep file |
-| `interview-prep/retracted-claims.md` | Claims the candidate has rejected as indefensible — hard gate in practice and debrief (format: `**"[claim]"** ([context]). Reason: [one-line reason + correct framing if applicable].`) |
+| `users/{USER}/cv.md` | Candidate CV — source of truth for experience and proof points |
+| `users/{USER}/article-digest.md` | Compact proof points from portfolio (optional) |
+| `users/{USER}/config/profile.yml` | Candidate profile — target roles, compensation, narrative |
+| `users/{USER}/modes/_profile.md` | Candidate archetypes, narrative, and deal-breakers |
+| `users/{USER}/interview-prep/story-bank.md` | Accumulated STAR+R stories |
+| `users/{USER}/interview-prep/question-bank.md` | Question bank with gap tracking (created on first use) |
+| `users/{USER}/interview-prep/interview-prep-guide.md` | General interview principles (optional) |
+| `users/{USER}/interview-prep/{company}-{role}.md` | Role-specific prep file |
+| `users/{USER}/interview-prep/retracted-claims.md` | Claims the candidate has rejected as indefensible — hard gate in practice and debrief (format: `**"[claim]"** ([context]). Reason: [one-line reason + correct framing if applicable].`) |

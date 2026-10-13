@@ -1,10 +1,10 @@
 # Режим: pipeline — Черга URL (Second Brain)
 
-Обробляє URL вакансій з `data/pipeline.md`. Користувач додає URL коли завгодно, потім запускає `/career-ops pipeline` для обробки.
+Обробляє URL вакансій з `users/{USER}/data/pipeline.md`. Користувач додає URL коли завгодно, потім запускає `/career-ops pipeline` для обробки.
 
 ## Workflow
 
-1. **Прочитати** `data/pipeline.md` → знайти `- [ ]` в секції "Очікуючі" (або "Pendientes" / "Pending" — pipeline.md може містити заголовки будь-якою мовою)
+1. **Прочитати** `users/{USER}/data/pipeline.md` → знайти `- [ ]` в секції "Очікуючі" (або "Pendientes" / "Pending" — pipeline.md може містити заголовки будь-якою мовою)
 2. **Для кожного URL**:
    a. Зарезервувати наступний `REPORT_NUM` атомарно, запустивши `node reserve-report-num.mjs` (та звільнити маркер, запустивши `node reserve-report-num.mjs --release <num>` після запису звіту)
    b. **🚦 Playwright verification gate (обов'язково):** `browser_navigate` → `browser_snapshot`. Визначити: title + description + Apply button = active; тільки footer/navbar без JD = closed/inactive. **Якщо inactive** → позначити `- [!] URL — Вакансія закрита/неактивна`, пропустити цей URL, перейти до наступного.
@@ -47,7 +47,7 @@
 - **Djinni.co**: Може вимагати логін → позначити `[!]`, попросити вставити текст
 - **LinkedIn**: Може вимагати логін → позначити `[!]`, попросити вставити текст
 - **PDF**: Якщо URL на PDF — прочитати через Read tool
-- **`local:` префікс**: Читати локальний файл. Приклад: `local:jds/company-role.md`
+- **`local:` префікс**: Читати локальний файл. Приклад: `local:users/{USER}/jds/company-role.md`
 
 ## Нумерація
 

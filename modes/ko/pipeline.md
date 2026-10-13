@@ -1,10 +1,10 @@
 # 모드: pipeline -- URL Inbox (Second Brain)
 
-`data/pipeline.md`에 쌓인 채용 공고 URL을 처리합니다. 후보자는 원할 때 URL을 추가하고, 이후 `/career-ops pipeline`을 실행해 한 번에 처리합니다.
+`users/{USER}/data/pipeline.md`에 쌓인 채용 공고 URL을 처리합니다. 후보자는 원할 때 URL을 추가하고, 이후 `/career-ops pipeline`을 실행해 한 번에 처리합니다.
 
 ## Workflow
 
-1. **읽기** `data/pipeline.md` -> "대기" / "Pending" / "Pendientes" 섹션의 `- [ ]` item 찾기
+1. **읽기** `users/{USER}/data/pipeline.md` -> "대기" / "Pending" / "Pendientes" 섹션의 `- [ ]` item 찾기
 2. **각 대기 URL에 대해**:
    a. `node reserve-report-num.mjs`를 실행해 다음 sequential `REPORT_NUM`을 atomic하게 예약합니다(report 작성 후 `node reserve-report-num.mjs --release <num>`으로 sentinel 해제).
    b. **공고 추출**: Playwright(`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch
@@ -43,7 +43,7 @@
 **특수 케이스:**
 - **LinkedIn**: login이 필요할 수 있음 -> `[!]`로 표시하고 후보자에게 공고 text를 붙여넣어 달라고 요청
 - **PDF**: URL이 PDF를 가리키면 Read tool로 직접 읽기
-- **`local:` prefix**: 로컬 파일 읽기. 예: `local:jds/linkedin-pm-ai.md` -> `jds/linkedin-pm-ai.md` 읽기
+- **`local:` prefix**: 로컬 파일 읽기. 예: `local:users/{USER}/jds/linkedin-pm-ai.md` -> `users/{USER}/jds/linkedin-pm-ai.md` 읽기
 - **원티드 / 리멤버 / 잡코리아 / 사람인 / LinkedIn KR**: 한국 시장에서 자주 쓰는 portal. cookie banner나 login wall이 있으면 Playwright로 먼저 확인
 
 ## 자동 번호 부여

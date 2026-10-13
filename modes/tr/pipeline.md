@@ -1,10 +1,10 @@
 # Mod: pipeline — İlan Gelen Kutusu
 
-`data/pipeline.md` dosyasına biriktirilen iş ilanı URL'lerini işler. İstediğin zaman URL ekle, hazır olduğunda `/career-ops pipeline` komutunu çalıştır.
+`users/{USER}/data/pipeline.md` dosyasına biriktirilen iş ilanı URL'lerini işler. İstediğin zaman URL ekle, hazır olduğunda `/career-ops pipeline` komutunu çalıştır.
 
 ## İş Akışı
 
-1. **Oku** `data/pipeline.md` → "Bekleyenler" bölümündeki `- [ ]` satırlarını bul
+1. **Oku** `users/{USER}/data/pipeline.md` → "Bekleyenler" bölümündeki `- [ ]` satırlarını bul
 2. **Her bekleyen URL için:**
    a. Sıradaki `REPORT_NUM` değerini atomik olarak rezerve etmek üzere `node reserve-report-num.mjs` komutunu çalıştır (ve rapor yazıldıktan sonra `node reserve-report-num.mjs --release <num>` çalıştırarak sentineli serbest bırak)
    b. **İlan içeriğini çek:** Playwright (browser_navigate + browser_snapshot) → WebFetch → WebSearch. **Playwright kullanılmadıysa** (toplu/headless mod veya yedek yola düşüldüyse) rapor başlığına `**Doğrulama:** doğrulanmamış (toplu mod)` etiketini ekle.
@@ -45,7 +45,7 @@
 - **Yenibiris.com:** Playwright ile çalışır.
 - **LinkedIn:** Giriş gerektirebilir → `[!]` olarak işaretle, adaydan ilan metnini yapıştırmasını iste.
 - **PDF linki:** URL doğrudan bir PDF'e işaret ediyorsa Read aracıyla oku.
-- **`local:` öneki:** Yerel dosyayı oku. Örnek: `local:jds/kariyer-backend.md` → `jds/kariyer-backend.md` oku.
+- **`local:` öneki:** Yerel dosyayı oku. Örnek: `local:users/{USER}/jds/kariyer-backend.md` → `users/{USER}/jds/kariyer-backend.md` oku.
 
 ## Rapor Numaralandırma
 

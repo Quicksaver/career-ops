@@ -1,10 +1,10 @@
 # Modo: pipeline -- Bandeja de URLs (Second Brain)
 
-Procesa las URLs de ofertas acumuladas en `data/pipeline.md`. El candidato añade URLs cuando quiere y luego lanza `/career-ops pipeline` para procesarlas todas de una vez.
+Procesa las URLs de ofertas acumuladas en `users/{USER}/data/pipeline.md`. El candidato añade URLs cuando quiere y luego lanza `/career-ops pipeline` para procesarlas todas de una vez.
 
 ## Workflow
 
-1. **Leer** `data/pipeline.md` -> encontrar los ítems `- [ ]` en la sección "Pendientes" / "Pending" / "En attente"
+1. **Leer** `users/{USER}/data/pipeline.md` -> encontrar los ítems `- [ ]` en la sección "Pendientes" / "Pending" / "En attente"
 2. **Para cada URL pendiente**:
    a. Reservar el siguiente `REPORT_NUM` secuencial de forma atómica ejecutando `node reserve-report-num.mjs` (y liberar el sentinel ejecutando `node reserve-report-num.mjs --release <num>` una vez escrito el report)
    b. **Extraer la oferta** con Playwright (`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch
@@ -43,7 +43,7 @@ Procesa las URLs de ofertas acumuladas en `data/pipeline.md`. El candidato añad
 **Casos especiales:**
 - **LinkedIn**: Puede requerir inicio de sesión -> marcar `[!]` y pedir al candidato que pegue el texto
 - **PDF**: Si la URL apunta a un PDF, leerlo directamente con la herramienta Read
-- **Prefijo `local:`**: Leer el archivo local. Ejemplo: `local:jds/linkedin-pm-ai.md` -> leer `jds/linkedin-pm-ai.md`
+- **Prefijo `local:`**: Leer el archivo local. Ejemplo: `local:users/{USER}/jds/linkedin-pm-ai.md` -> leer `users/{USER}/jds/linkedin-pm-ai.md`
 - **InfoJobs / Indeed ES / LinkedIn ES**: Portales hispanohablantes habituales. Playwright gestiona bien los banners de cookies
 - **Infojobs.es / Tecnoempleo / Computrabajo**: Bien estructurados, generalmente legibles por máquina. WebFetch suele ser suficiente
 

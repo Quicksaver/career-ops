@@ -48,6 +48,8 @@ var (
 	// "City ST" / "City, ST" with a strict two-letter US state code so prose like
 	// "Sams AI" or "Kerin Colby DONE" can't false-positive.
 	reCityState = regexp.MustCompile(`\b([A-Z][A-Za-z.'-]+(?: [A-Z][A-Za-z.'-]+){0,2}),? (A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\b`)
+	// Explicit "Location: <value>" in notes; the value ends at ";" or a newline.
+	reLocationLabel = regexp.MustCompile(`(?i)\blocation:\s*([^;\n]+)`)
 	// International cities, checked only when no US "City, ST" matches, so
 	// European/other non-US roles still surface a Location. Cities only (not bare
 	// country names) to avoid prose false-positives like "Portugal eligible" or
@@ -96,10 +98,16 @@ func buildMoneySpanRegex(currencies []string) *regexp.Regexp {
 			suffixParts = append(suffixParts, q)
 		}
 	}
+	// Left boundary guard (RE2 has no lookbehind) on the amount-first branch
+	// only: stops "G18 EUR" / "IC4 EUR" level codes from being read as tiny
+	// money spans that shadow the real amount later in the string (#4600).
+	// A currency-first span is anchored by its token, so it still matches
+	// right after a letter ("US$120K", "年収¥8M"). Real span: group 1
+	// (currency first) or group 2 (amount first).
 	pattern := fmt.Sprintf(
-		`~?(?:(?:%s)\s*\d[\d,]*(?:\.\d+)?[KkMmBb]?`+
-			`(?:\s*[-–]\s*(?:%s)?\d[\d,]*(?:\.\d+)?[KkMmBb]?)?`+
-			`|\d[\d,]*(?:\.\d+)?[KkMmBb]?`+
+		`(~?(?:%s)\s*\d[\d,]*(?:\.\d+)?[KkMmBb]?`+
+			`(?:\s*[-–]\s*(?:%s)?\d[\d,]*(?:\.\d+)?[KkMmBb]?)?)`+
+			`|(?:^|[^\p{L}\p{N}])(~?\d[\d,]*(?:\.\d+)?[KkMmBb]?`+
 			`(?:\s*[-–]\s*\d[\d,]*(?:\.\d+)?[KkMmBb]?)?`+
 			`\s+(?:%s))`,
 		strings.Join(prefixParts, "|"),
@@ -160,20 +168,39 @@ func latestISODate(current, text string) string {
 // LastContact from the application's Notes and Status (plus Role for work-mode
 // keywords).
 func deriveNoteFields(app *model.CareerApplication) {
-	lower := strings.ToLower(app.Role + " " + app.Notes)
+	lower := strings.ToLower(app.Role + " " + app.Notes + " " + app.Location)
 
-	// Location: first "City, ST" in the notes, falling back to the role title
-	// (some tracker rows carry the city there, e.g. "... — Charlotte, NC"). When
-	// no US "City, ST" is present, fall back to an international city/country so
-	// European and other non-US roles still show a Location.
-	if m := reCityState.FindStringSubmatch(app.Notes); m != nil {
-		app.Location = m[1] + ", " + m[2]
-	} else if m := reCityState.FindStringSubmatch(app.Role); m != nil {
-		app.Location = m[1] + ", " + m[2]
-	} else if m := reCityIntl.FindString(app.Notes); m != "" {
-		app.Location = m
-	} else if m := reCityIntl.FindString(app.Role); m != "" {
-		app.Location = m
+	// Location: an explicit value (tracker Location column, already set by the
+	// reader, then a "Location: ..." segment in the notes ending at ";" or a
+	// newline) is kept whatever the town. Otherwise infer the first "City, ST" in
+	// the notes, falling back to the role title (some tracker rows carry the city
+	// there, e.g. "... — Charlotte, NC"). When no US "City, ST" is present, fall
+	// back to an international city/country so European and other non-US roles
+	// still show a Location.
+	if app.Location == "" {
+		if m := reLocationLabel.FindStringSubmatch(app.Notes); m != nil {
+			app.Location = CanonicalizeLocation(m[1])
+		}
+	}
+	if app.Location == "" {
+		if m := reCityState.FindStringSubmatch(app.Notes); m != nil {
+			app.Location = CanonicalizeLocation(m[1] + ", " + m[2])
+		}
+	}
+	if app.Location == "" {
+		if m := reCityState.FindStringSubmatch(app.Role); m != nil {
+			app.Location = CanonicalizeLocation(m[1] + ", " + m[2])
+		}
+	}
+	if app.Location == "" {
+		if m := reCityIntl.FindString(app.Notes); m != "" {
+			app.Location = CanonicalizeLocation(m)
+		}
+	}
+	if app.Location == "" {
+		if m := reCityIntl.FindString(app.Role); m != "" {
+			app.Location = CanonicalizeLocation(m)
+		}
 	}
 
 	// Work mode: hybrid beats remote ("Remote/hybrid" means office days exist);
@@ -199,12 +226,17 @@ func deriveNoteFields(app *model.CareerApplication) {
 	// (e.g. "$170K min floor") only when no range exists. Skip money spans
 	// that are actually funding/valuation figures ("$600M valuation", "$70M
 	// Series C") — they describe the company, not compensation.
+	// Submatch group 1 or 2: the real span, without reMoneySpan's boundary guard.
 	var matches []string
-	for _, idx := range reMoneySpan.FindAllStringIndex(app.Notes, -1) {
-		if reFundingContext.MatchString(app.Notes[idx[1]:]) {
+	for _, m := range reMoneySpan.FindAllStringSubmatchIndex(app.Notes, -1) {
+		start, end := m[2], m[3]
+		if start < 0 {
+			start, end = m[4], m[5]
+		}
+		if reFundingContext.MatchString(app.Notes[end:]) {
 			continue
 		}
-		matches = append(matches, app.Notes[idx[0]:idx[1]])
+		matches = append(matches, app.Notes[start:end])
 	}
 	for _, mm := range matches {
 		if strings.ContainsAny(mm, "-–") {

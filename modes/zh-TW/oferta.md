@@ -26,7 +26,7 @@
 
 ## 維度 B — 履歷匹配分析 (Match with CV)
 
-讀取 `cv.md`。建立一個對照表格，把 JD 中的各項硬性／軟性條件一一對應到履歷中的具體行號與量化敘述上。
+讀取 `users/{USER}/cv.md`。建立一個對照表格，把 JD 中的各項硬性／軟性條件一一對應到履歷中的具體行號與量化敘述上。
 
 **針對不同職缺原型的分析側重點：**
 - **AI 前線交付 (FDE)** → 側重交付速度、全端開發及直接面對客戶的成果。
@@ -144,7 +144,7 @@
 
 在**反思**欄中，務必提煉出學到的核心教訓，或如果重來一次會怎麼改進。這對展現資深度至關重要——資淺的候選人只描述過程，資深的候選人能提煉方法論。
 
-**故事庫同步：** 若存在 `interview-prep/story-bank.md`，檢查這些故事是否已在故事庫中。若不存在，將其附加進去，以便隨著評估逐步建立一個隨時可調用的「黃金面試故事庫」。
+**故事庫同步：** 若存在 `users/{USER}/interview-prep/story-bank.md`，檢查這些故事是否已在故事庫中。若不存在，將其附加進去，以便隨著評估逐步建立一個隨時可調用的「黃金面試故事庫」。
 
 **依原型包裝故事：**
 - **FDE** → 強調極限交付時程、應對客戶緊急多變的需求。
@@ -189,9 +189,29 @@
 
 ---
 
+## 結論 (lead)
+
+在 Block G 之後、`## Risk Summary` 之前寫入 `## 結論 (lead)` 區塊。它回答讀者打開報告時唯一想問的問題：我該投遞嗎？
+
+**衍生，絕不自行判斷。** `## Machine Summary` 中的 `final_decision` 是唯一事實來源。本區塊以一句話複述同一判斷，絕不引入另一個判斷——若兩者不一致，以欄位為準，本區塊即為缺陷。粗體的判斷即該欄位的值：Apply、Consider、Research first 或 Skip。
+
+**`(lead)` 標記承擔實際作用，且刻意與語言無關。** 網頁報告檢視憑該標記（而非標題詞或區塊字母）將對應區塊提升為頁首重點，因此譯文保留各自的名詞與同一括註：`## 結論 (lead)`、`## Verdict (lead)`。切勿翻譯 `(lead)`，也不要為本區塊編字母——它不屬於 A–H 序列。
+
+**不引入新判斷。** 寫到此處時全部輸入均已齊備。給出判斷，外加一條源自報告已確立內容的理由；不要重新評分，不要補充證據。
+
+區塊格式：
+
+```markdown
+## 結論 (lead)
+
+**Apply.** 核心能力軸高度匹配且無硬性阻斷，維度 G 為 High Confidence。
+```
+
+---
+
 ## Risk Summary (Block G 之後)
 
-在 Block G 之後、Block H 之前，以 `## Risk Summary` 區塊收尾報告本文 —— 每個風險訊號一列，順序固定 —— 讓候選人真正關心的問題（「這家公司值得加入嗎？」）在一個畫面內得到解答，而不必自己去拼湊 Block A、Block G 與外部檔案。
+在緊接 Block G 的 `## 結論 (lead)` 區塊之後、Block H 之前，以 `## Risk Summary` 區塊收尾報告本文 —— 每個風險訊號一列，順序固定 —— 讓候選人真正關心的問題（「這家公司值得加入嗎？」）在一個畫面內得到解答，而不必自己去拼湊 Block A、Block G 與外部檔案。
 
 **只做彙整，不產生新判斷。** 每一列都引用來源訊號已經得出的結論。摘要絕不重新評分、重新加權或推翻原判斷 —— 如果某一列看起來有問題，應當修正來源訊號，而不是改這裡。
 
@@ -204,7 +224,7 @@
 | Posting legitimacy | Block G 的評級 | `✅ High Confidence`；Proceed with Caution / Suspicious 渲染為 `⚠️ {tier} — {一句話原因}` |
 | Employment classification | Block G 內的僱用性質訊號 | 檢查已執行且無異常時 `✅ clear`；標記觸發時 `⚠️ contractor-style language: "{引用原文}"`；無法執行時 `— not evaluated` |
 | Culture screen | Block A 的文化篩查欄位 | `✅ pass`，或 `⚠️ caution — {證據}` / `⚠️ fail — {證據}`；未做篩查時 `— not evaluated` |
-| Interview red flags | `users/{USER}/interview-prep/{company-slug}-redflags.md`（來自 `interview-redflag` 模式） | **交叉參照，不是複製：** 檔案存在時寫出其目前警告等級並附相對連結 —— `[{level}](../interview-prep/{company-slug}-redflags.md)`（相對於 `reports/`）；否則 `— no interview sessions yet` |
+| Interview red flags | `users/{USER}/interview-prep/{company-slug}-redflags.md`（來自 `interview-redflag` 模式） | **交叉參照，不是複製：** 檔案存在時寫出其目前警告等級並附相對連結 —— `[{level}](../interview-prep/{company-slug}-redflags.md)`（相對於 `users/{USER}/reports/`）；否則 `— no interview sessions yet` |
 | AI claims vs. infrastructure | Block G 中的 AI／基礎設施一致性檢查（若存在） | 本報告包含該檢查時鏡射其結論（`✅ consistent` / `⚠️ {發現}`）；否則 `— not evaluated`。該檢查一旦存在此列自動啟用，無順序相依 |
 
 區塊格式：
@@ -227,7 +247,7 @@
 
 ### 1. 儲存報告 markdown 檔案
 
-將完整的評估內容儲存到本機路徑 `reports/{###}-{company-slug}-{YYYY-MM-DD}.md`。
+將完整的評估內容儲存到本機路徑 `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-DD}.md`。
 
 - `{###}` = 依序遞增的 3 位數字（如 001, 002）
 - `{company-slug}` = 公司英文名或拼音縮寫，全小寫，空格用連字號 `-` 取代
@@ -268,6 +288,9 @@
 ## G) 職缺真實性評估
 (此處填入維度 G 的詳細訊號分析)
 
+## 結論 (lead)
+(一句話給出投或不投的判斷 —— 複述 `final_decision`，見上文結論一節)
+
 ## Risk Summary
 (每個風險訊號一列，順序固定 —— 見上文 Risk Summary 一節)
 
@@ -282,7 +305,7 @@
 
 ### 2. 登錄到 Tracker 紀錄簿
 
-在 `data/applications.md` 的末尾追加這筆紀錄：
+將這筆紀錄登記到 tracker：寫入 TSV 檔（`_shared.md` 的規則 9），再以 `node merge-tracker.mjs` 合併；嚴禁直接在 `users/{USER}/data/applications.md` 中手動新增資料列。欄位：
 - 依序遞增的 ID 編號
 - 日期
 - 公司名稱
@@ -290,4 +313,4 @@
 - 評分（如 4.2/5）
 - 狀態（一律填寫為 `Evaluated`）
 - PDF 狀態（預設為 ❌）
-- 報告連結：根目錄相對路徑 `[###](reports/###-company-YYYY-MM-DD.md)`（注意：合併腳本會自動格式化）
+- 報告連結：根目錄相對路徑 `[###](users/{USER}/reports/###-company-YYYY-MM-DD.md)`（注意：合併腳本會自動格式化）

@@ -1,6 +1,6 @@
 # Modalità: interview/plan — Pianificatore di Preparazione al Colloquio
 
-Data una descrizione del lavoro (JD) e la data/ora del colloquio, costruisci un piano di preparazione strutturato per blocchi di tempo e personalizzato sulle lacune specifiche del candidato.
+Data una descrizione del lavoro (JD) e la users/{USER}/data/ora del colloquio, costruisci un piano di preparazione strutturato per blocchi di tempo e personalizzato sulle lacune specifiche del candidato.
 
 ---
 
@@ -10,10 +10,10 @@ Data una descrizione del lavoro (JD) e la data/ora del colloquio, costruisci un 
 2. **Data e ora del colloquio** (obbligatorio) — per calcolare le ore disponibili
 3. **Nome e ruolo dell'intervistatore** (se noto) — dà forma alla profondità e al tono della preparazione. Spesso i round successivi (panel / onsite) indicano più intervistatori contemporaneamente — forniti direttamente dall'utente o copiati da un invito a calendario / un'email di programmazione. Quando è nominato più di un panelist, vedi la nota Intel Panel al Passo 2.
 4. **Tipo di round** (se noto) — conoscitivo, tecnico/specifico di dominio, design/studio di un caso, comportamentale (panel)
-5. **CV** in `cv.md` + `article-digest.md` (se presente) — per leggere l'esperienza, le competenze, i punti di prova
-6. **Profilo** in `config/profile.yml` + `modes/_profile.md` — per leggere la narrativa, gli archetipi e gli obiettivi
-7. **Banca delle storie** in `interview-prep/story-bank.md` — storie STAR+R esistenti
-8. **Banca delle domande** in `interview-prep/question-bank.md` — lacune esistenti (se il file esiste)
+5. **CV** in `users/{USER}/cv.md` + `users/{USER}/article-digest.md` (se presente) — per leggere l'esperienza, le competenze, i punti di prova
+6. **Profilo** in `users/{USER}/config/profile.yml` + `users/{USER}/modes/_profile.md` — per leggere la narrativa, gli archetipi e gli obiettivi
+7. **Banca delle storie** in `users/{USER}/interview-prep/story-bank.md` — storie STAR+R esistenti
+8. **Banca delle domande** in `users/{USER}/interview-prep/question-bank.md` — lacune esistenti (se il file esiste)
 9. **Compenso dichiarato in precedenza** — se il tracker# è noto, esegui `node salary-gap.mjs --stated-for <tracker#>` (zero token). Qualsiasi precedente osservazione in `stated` è una cifra per la quale il candidato si è già impegnato in un round precedente con un intervistatore specifico — inseriscilo nel riferimento rapido del Passo 4, affinché il candidato sia coerente invece di rinegoziare accidentalmente.
 
 ---
@@ -70,11 +70,11 @@ Calibra il piano per il tipo di round in programma. Prepararsi eccessivamente pe
 
 Calcola le ore a disposizione da adesso all'orario del colloquio. Dividi il tempo in blocchi:
 
-Prima di dimensionare i blocchi, controlla `interview-prep/question-bank.md` (se esiste). Ogni domanda contrassegnata 🔴 proveniente da un round precedente è una lacuna comprovata — le viene assegnato un blocco dedicato indipendentemente dalla classifica dell'analisi del CV contro la JD. I dati reali di prestazione sono superiori al rischio presunto.
+Prima di dimensionare i blocchi, controlla `users/{USER}/interview-prep/question-bank.md` (se esiste). Ogni domanda contrassegnata 🔴 proveniente da un round precedente è una lacuna comprovata — le viene assegnato un blocco dedicato indipendentemente dalla classifica dell'analisi del CV contro la JD. I dati reali di prestazione sono superiori al rischio presunto.
 
 **Controllo della ricerca — prima di redigere il Blocco 4.** Il Blocco 4 associa le storie alle "probabili tipologie di domande", ma non farlo affidandoti a intuizioni, dal momento che domande reali riportate possono trovarsi ad un click di distanza:
 
-1. **Prima controlla se esistono ricerche con fonti già eseguite.** Se `interview-prep/{company-slug}-{role-slug}.md` esiste già (da un'esecuzione passata di `interview-prep`), leggi le domande con fonti riportate dal Passo 1/Passo 3 e riutilizzale direttamente — non ripetere mai ricerche per lavori che sono già stati compiuti e citati.
+1. **Prima controlla se esistono ricerche con fonti già eseguite.** Se `users/{USER}/interview-prep/{company-slug}-{role-slug}.md` esiste già (da un'esecuzione passata di `interview-prep`), leggi le domande con fonti riportate dal Passo 1/Passo 3 e riutilizzale direttamente — non ripetere mai ricerche per lavori che sono già stati compiuti e citati.
 2. **Se non esiste alcun file di ricerca precedente, esegui direttamente `interview-prep.md` e le sue query WebSearch per il "Passo 1 — Ricerca"**, circoscritte al pubblico di questo round specifico (recruiter/HR, hiring manager, oppure panel peer/tecnico — vedi il Passo 2 sopra) invece di eseguire la ricerca estensiva per tutta l'azienda.
 3. **Usa la medesima disciplina di tagging di `interview-prep.md`:** le domande citano la loro fonte; ciò che non viene trovato si classifica come `[dedotto dalla JD]` — non inventare una terza etichetta o un formato di citazione diverso (vedi "Convenzioni sui tag" in `interview-prep.md`).
 4. **Se la ricerca davvero non produce alcun risultato** (azienda poco nota, nessun resoconto pubblico di colloqui), indicalo esplicitamente nell'output del piano e procedi con l'inferenza di pattern da JD/profilo — questo è lo stesso principio "parziale-ma-onesto" applicato già in `interview-prep.md` per scarse informazioni (non si usa la mentalità del "tutto o niente").
@@ -151,7 +151,7 @@ Alla fine del piano, realizza un riferimento rapido di una pagina che il candida
 
 ## Passo 5 — Salvataggio Output
 
-Salva il piano su `interview-prep/{company-slug}-{role-slug}.md`. Se il file non esiste, crealo (includendo l'intestazione `## Prep Plan`). Se il file esiste già, inserisci il nuovo piano immediatamente sotto l'intestazione `## Prep Plan` preesistente, assicurandoti che rimanga all'interno di quella sezione e non venga accodato indiscriminatamente alla fine del documento.
+Salva il piano su `users/{USER}/interview-prep/{company-slug}-{role-slug}.md`. Se il file non esiste, crealo (includendo l'intestazione `## Prep Plan`). Se il file esiste già, inserisci il nuovo piano immediatamente sotto l'intestazione `## Prep Plan` preesistente, assicurandoti che rimanga all'interno di quella sezione e non venga accodato indiscriminatamente alla fine del documento.
 
 ---
 
@@ -163,5 +163,5 @@ Salva il piano su `interview-prep/{company-slug}-{role-slug}.md`. Se il file non
 - **Un argomento per ogni blocco.** Mescolare più materie nello stesso lasso di tempo abbassa i livelli di assimilazione.
 - **Prevedi sempre pause per il riposo.** Un candidato riposato supererà di gran lunga nelle performance un candidato che tenta di studiare in extremis.
 - **Non inventare mai informazioni sull'azienda.** Se non si possiede una ricerca documentata, dichiaralo palesemente — senza mai inventarsi claims legati alla cultura o dettagli tecnici concernenti l'azienda.
-- **Effettua un controllo in presenza di domande reali documentate precedentemente al Blocco 4.** Riutilizza `interview-prep/{company-slug}-{role-slug}.md` qualora già esista; altrimenti, esegui il Passo 1 di `interview-prep.md` che esegue le query per circoscrivere l'oggetto per il round in corso. Mantieni un'adeguata disciplina di tagging così come specificato nel documento di origine `interview-prep.md` — le medesime diciture vanno usate per fonti con-citazione o mediante inserimenti con classificazione come `[dedotto dalla JD]` qualora le risposte non producessero concreti riscontri documentati. Questa si qualifica quindi quale l'equivalente controparte proattiva di quanto indicato in precedenza come: "Non inventare mai informazioni sull'azienda": verificare dati reali disponibili anziché fare ricorso al meccanismo basato sull'inferenza deduttiva.
-- **Non generare mai pretese che il candidato non ha.** La frase "ancora" così come gli spunti di riflessione prima di arrivare alla sessione previsti dal Quick-Reference (Passo 4) dovranno basarsi scrupolosamente attorno a quelle che si dimostrano le informazioni effettive attinenti alle competenze in mano al candidato, in `cv.md`, `article-digest.md`, oppure nel catalogo della story bank. Non costruire narrazioni che farebbero appello a misurazioni od esperienze in ambiti laddove non si riscontrano credenziali adeguate. Se si trovasse un attributo contenuto in `interview-prep/retracted-claims.md`, l'istruzione impone il vincolo che esclude nel modo più perentorio qualsiasi tipo di inserimento nei testi.
+- **Effettua un controllo in presenza di domande reali documentate precedentemente al Blocco 4.** Riutilizza `users/{USER}/interview-prep/{company-slug}-{role-slug}.md` qualora già esista; altrimenti, esegui il Passo 1 di `interview-prep.md` che esegue le query per circoscrivere l'oggetto per il round in corso. Mantieni un'adeguata disciplina di tagging così come specificato nel documento di origine `interview-prep.md` — le medesime diciture vanno usate per fonti con-citazione o mediante inserimenti con classificazione come `[dedotto dalla JD]` qualora le risposte non producessero concreti riscontri documentati. Questa si qualifica quindi quale l'equivalente controparte proattiva di quanto indicato in precedenza come: "Non inventare mai informazioni sull'azienda": verificare dati reali disponibili anziché fare ricorso al meccanismo basato sull'inferenza deduttiva.
+- **Non generare mai pretese che il candidato non ha.** La frase "ancora" così come gli spunti di riflessione prima di arrivare alla sessione previsti dal Quick-Reference (Passo 4) dovranno basarsi scrupolosamente attorno a quelle che si dimostrano le informazioni effettive attinenti alle competenze in mano al candidato, in `users/{USER}/cv.md`, `users/{USER}/article-digest.md`, oppure nel catalogo della story bank. Non costruire narrazioni che farebbero appello a misurazioni od esperienze in ambiti laddove non si riscontrano credenziali adeguate. Se si trovasse un attributo contenuto in `users/{USER}/interview-prep/retracted-claims.md`, l'istruzione impone il vincolo che esclude nel modo più perentorio qualsiasi tipo di inserimento nei testi.

@@ -2,7 +2,8 @@ import path from "node:path";
 
 /** Resolve system code independently of the selected user's data. */
 export function careerOpsSystemRoot() {
-  return process.env.CAREER_OPS_ROOT?.trim() || path.resolve(process.cwd(), "..");
+  const configured = process.env.CAREER_OPS_CODE_ROOT?.trim() || process.env.CAREER_OPS_ROOT?.trim();
+  return configured ? path.resolve(configured) : path.resolve(process.cwd(), "..");
 }
 
 /** Require the same user-ID format as the core CLI resolver. */
@@ -23,10 +24,12 @@ export function careerOpsUsersRoot() {
 }
 
 export function careerOpsRoot() {
-  return path.join(careerOpsUsersRoot(), careerOpsUserId());
+  const id = careerOpsUserId();
+  const data = process.env.CAREER_OPS_DATA_DIR?.trim();
+  return data ? path.resolve(careerOpsSystemRoot(), data) : path.join(careerOpsUsersRoot(), id);
 }
 
 /** @returns {NodeJS.ProcessEnv} */
 export function careerOpsCoreEnv() {
-  return { ...process.env, CAREER_OPS_USER: careerOpsUserId(), CAREER_OPS_USERS_DIR: careerOpsUsersRoot() };
+  return { ...process.env, CAREER_OPS_USER: careerOpsUserId(), CAREER_OPS_USERS_DIR: careerOpsUsersRoot(), CAREER_OPS_CODE_ROOT: careerOpsSystemRoot(), CAREER_OPS_ROOT: careerOpsRoot(), CAREER_OPS_DATA_DIR: careerOpsRoot() };
 }

@@ -1,13 +1,13 @@
 # {Your Name} — Triage Brief
 
 <!-- ============================================================
-     THIS FILE IS YOURS. Copy it to `modes/_brief.md` (doctor.mjs
-     auto-copies it on first run) and fill in the placeholders.
+     THIS FILE IS YOURS. Copy it to `modes/_brief.md` and fill in the placeholders.
+     Onboarding can copy it with `node doctor.mjs --json --init-templates`.
      It is USER LAYER — never auto-updated by `node update-system.mjs`.
 
      PURPOSE: Compact context for first-pass triage agents
      (`modes/triage.md`). It replaces reading the full evaluation
-     stack — cv.md + _shared.md + _profile.md + profile.yml +
+     stack — users/{USER}/cv.md + _shared.md + _profile.md + profile.yml +
      oferta.md (tens of thousands of tokens) — with a single small
      read (~1.5–2K tokens). Full context is still used in full eval.
 
@@ -15,7 +15,7 @@
      batch triage. Include only what changes a go/no-go decision:
      archetypes, comp floor, location policy, hard disqualifiers,
      and your strongest proof points. Leave the deep narrative,
-     negotiation scripts, and STAR stories in _profile.md / cv.md.
+     negotiation scripts, and STAR stories in _profile.md / users/{USER}/cv.md.
      ============================================================ -->
 
 ## Identity
@@ -68,7 +68,7 @@ hard gaps you cannot bridge — be specific so triage can pattern-match them.
 
 ## Quick Scoring Guide
 
-Bands are relative to `triage_threshold` (`config/profile.yml → pipeline.triage_threshold`,
+Bands are relative to `triage_threshold` (`users/{USER}/config/profile.yml → pipeline.triage_threshold`,
 default **3.5**), matching the verdict table in `modes/triage.md` — so a score at or
 above the threshold is PASS, and only the band below it is MARGINAL.
 
