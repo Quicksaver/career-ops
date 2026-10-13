@@ -1,13 +1,15 @@
 # Fork Customizations
 
-This file documents what this fork changes relative to `upstream/main` so future upstream updates can be merged without losing local behavior, and so local changes can be retired when upstream makes them redundant.
+This file documents what this fork changes relative to its incorporated upstream base so future upstream updates can be merged without losing local behavior, and so local changes can be retired when upstream makes them redundant. The active customization sections describe current behavior; the adopted-upstream section records merge history rather than additional fork patches.
 
 Generated from:
 
-- Upstream ref: `upstream/main` at `22cbe88e0a39394020a334901c0ce37b0faedfcb`
-- Fork ref: current `main` at `1d506a458242bb763dcd43b410fef50de0d37c17`, before this inventory refresh
-- Relationship baseline after merge, before this inventory refresh: upstream-only commits `0`, fork-only commits `200`
-- Diff-size baseline after merge, before this inventory refresh: `336 files changed, 23897 insertions(+), 4629 deletions(-)`
+- Incorporated upstream base: `22cbe88e0a39394020a334901c0ce37b0faedfcb`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Fork commit snapshot: `main` at `66f1c3f3`, before this inventory update and the web user-selection fix.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `201`.
+- Diff size against the incorporated base at that snapshot: `336 files changed, 23905 insertions(+), 4629 deletions(-)`.
+
+The refs and counts describe the committed snapshot above. The behavior notes also include the changes in this update. Refresh the snapshot after the next upstream merge.
 
 ## Merge Policy
 
@@ -21,16 +23,19 @@ After each upstream merge, re-run this inventory:
 
 ```bash
 git fetch upstream main
-git diff --stat upstream/main..main
-git diff --name-status upstream/main..main
+base=$(git merge-base main upstream/main)
+git diff --stat "$base"..main
+git diff --name-status "$base"..main
 git log --oneline --left-right --cherry-pick upstream/main...main
 ```
 
-Then update this file if a customization is added, removed, or made redundant.
+Use the merge-base diff to inventory fork changes. The left/right log separately shows incoming upstream work and outgoing fork commits. Then update this file if a customization is added, removed, or made redundant.
 
-## New Upstream Baseline Adopted In This Merge
+## Adopted upstream behavior and merge history
 
 This inventory incorporates upstream 1.9 through 1.26 behavior and post-1.26 fixes at `22cbe88e0a39394020a334901c0ce37b0faedfcb` as the new baseline, with fork-specific routing restored where upstream still assumed a single root user.
+
+The entries below record successive upstream merges and their conflict resolutions. Release references and validation counts belong to those historical merges. The active sections that follow define the customization requirements to preserve today.
 
 New upstream features or behavior now present:
 
@@ -475,6 +480,32 @@ Future merge notes:
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
 - When upstream makes script helpers import-safe for tests, keep that behavior without resolving a user at module import time; resolve the active user only when the script runtime path needs user-layer files.
 
+## Web user selection and system metadata
+
+Files:
+
+- `web/src/lib/user-context.mjs`
+- `web/src/lib/career-ops.ts`
+- `web/next.config.mjs`
+- `web/src/lib/core/tracker-lock.ts`
+- `web/src/lib/core/text-key.ts`
+- `web/tests/lib/user-context.test.mjs`
+- `web/README.md`
+
+What this customizes:
+
+- Requires `CAREER_OPS_USER` for development and production servers and for every candidate-data root or child-process environment. Missing or invalid IDs fail with configuration guidance before data access; they never select the legacy root layout.
+- Validates user IDs with the CLI's format: 1-64 characters, starting with a letter or number and continuing with letters, numbers, dots, underscores, or hyphens. Path-like IDs, including `.` and `..`, are rejected.
+- Resolves candidate files under `users/{USER}/`. `CAREER_OPS_ROOT` selects system code, and `CAREER_OPS_USERS_DIR` selects an alternate users directory; relative overrides resolve against the system checkout and the child CLI receives that same absolute directory.
+- Loads shared scripts, tracker aliases, canonical states, tracker-lock code, and matching helpers from the system checkout. The selected user's tracker determines the lock key; shared code must not be loaded from that user's data folder.
+- Keeps production builds and unit tests independent of user selection. Server startup validates the configured user after Next loads environment files, while runtime data helpers enforce the same requirement on every access.
+
+Future merge notes:
+
+- Preserve required user selection across the web app and CLI. Adapt new upstream readers and writers to the selected user instead of adding a single-root fallback.
+- Keep shared metadata and module loading on the system root while routing candidate data and lock targets through the user root.
+- Keep regression coverage for missing/invalid users, path traversal, separate users, alternate users roots, child-process environment parity, and data-independent builds.
+
 ## Batch Runner Multi-CLI Processing
 
 The fork makes the batch runner usable with Codex as well as Claude, and adds smaller resumable processing controls for long pipeline runs.
@@ -512,6 +543,7 @@ What this customizes:
 - Preserves upstream `awk`-based score arithmetic and malicious-score-safe status summaries; keep these in future merges so batch status rendering does not depend on `bc` and does not interpolate untrusted score text into shell arithmetic.
 - Copies `local:jds/...` input rows from `users/{USER}/jds/...` into the temporary JD file passed to the worker. Missing local JD files intentionally become an empty temporary file so the worker can fail or recover using the URL/context path consistently.
 - Logs the selected CLI and limit at run start so batch logs show which worker backend handled the run.
+- Includes `remaining N` in each offer-start progress line. This counts selected offers that have not yet been launched, after the current launch; it excludes workers already running and does not promise that those workers have completed.
 - Preserves upstream session/rate-limit handling: Claude workers can pause a batch with `paused_rate_limit`, resume through `--resume-paused`, and avoid consuming retry budget when a session/rate limit is detected.
 - Preserves upstream Claude MCP isolation through `--strict-mcp-config`, while keeping Codex execution separate through the fork's schema-checked final JSON flow.
 - Injects `users/{USER}/modes/_profile.md` and `users/{USER}/config/profile.yml` into the temporary resolved worker prompt so batch scoring uses the same user-layer personalization as interactive scoring.
@@ -605,7 +637,6 @@ Files:
 - `providers/_custom.mjs`
 - `providers/_custom-fetch.mjs`
 - `providers/pcsx.mjs`
-- `providers/landingjobs.mjs`
 - `providers/swissdevjobs.mjs`
 - `providers/germantechjobs.mjs`
 - `providers/devitjobs.mjs`
@@ -617,7 +648,6 @@ Files:
 - `providers/euremotejobs.mjs`
 - `providers/remoteineurope.mjs`
 - `providers/workingnomads.mjs`
-- `providers/nodesk.mjs`
 - `providers/englishjobs.mjs`
 - `providers/jobsinenglish.mjs`
 - `providers/jobsch.mjs`
@@ -629,7 +659,7 @@ Files:
 
 What this customizes:
 
-- Adds structured parsers/fetchers for PCSX, Landing.jobs, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, NoDesk, RustJobs.dev, and related English Jobs boards.
+- Adds active structured parsers/fetchers for PCSX, DevITJobs-family boards, DEVjobs.de, jobs.ch, Jobs in English Denmark, Make it in Germany, EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice, Remote in Europe, RustJobs.dev, and related English Jobs boards. Landing.jobs and NoDesk now use unchanged upstream first-party modules; legacy parser functions in `_custom.mjs` are not active fork adapters for those boards.
 - Upstream now also supplies first-party Workable, SmartRecruiters, Recruitee, SolidJobs, Workday, RemoteOK, Remotive, IBM, Working Nomads, Arbeitsagentur, Jobstreet, Glints, BambooHR, and Breezy provider modules. Keep those upstream modules separate from the custom provider layer instead of duplicating them in `providers/_custom.mjs`.
 - Working Nomads is partly retired from the fork's custom-provider dispatcher: the provider module is now direct/upstream-style, while local config compatibility for `api`, inferred location, `api_params.q/category/location/tags`, and `published_within_days` remains in `providers/workingnomads.mjs`.
 - Arbeitsagentur remains an upstream-style provider module, but the fork adds local normalization that prefixes remote-titled postings with `Remote, ...`, avoids doing so for explicit no-remote/no-homeoffice titles, and uses `Deutschland` when the API omits a location. This keeps location filtering useful for nationwide/remote Germany scans without letting `NO REMOTE` titles slip through as remote.
@@ -644,7 +674,7 @@ What this customizes:
 Future merge notes:
 
 - If upstream adds one of these providers, compare behavior before keeping both. Prefer upstream modules when they produce equivalent fields and filtering; otherwise keep only the missing compatibility layer, as done for Working Nomads filters in this merge.
-- If upstream adds a shared retry helper, consider replacing `providers/_custom-fetch.mjs` and reducing local tests to compatibility coverage. Upstream's Ashby-specific timeout/backoff is not yet a full replacement for the custom helper because the fork uses the helper across several custom structured providers.
+- The incorporated upstream base already supplies shared JSON/text retry helpers in `providers/_http.mjs`. The fork helper remains wired into `_custom.mjs` and differs in transport and policy: it owns its fetch/timeout, defaults to four attempts and a 10-second timeout, retries only HTTP 408/425/429/500/502/503/504 plus selected network errors, and accepts injectable fetch, sleep, and randomness. Upstream wraps context-provided transports, retries 429 and all 5xx statuses plus status-less errors except refused redirects, and honors bounded Retry-After values. Compare these differences before replacing the custom helper; the existence of shared upstream retry is already baseline behavior.
 - Keep upstream Workable, SmartRecruiters, Recruitee, IBM, Arbeitsagentur, Jobstreet, Glints, BambooHR, and Breezy tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
 - Preserve the Arbeitsagentur remote/no-remote normalization unless upstream adds an equivalent signal in the provider output or scan filtering layer.
 - Keep Agentic Engineering Jobs on the upstream REST API path unless that API is removed; do not restore the retired HTML parser without a verified API failure and equivalent live-board regression evidence.
@@ -843,7 +873,7 @@ Files:
 
 What this customizes:
 
-- Removes the root `npm run dashboard` wrapper and `run-dashboard.sh`.
+- Requires dashboard builds and runs to use the per-user binary layout. The old root wrapper's removal is already incorporated upstream behavior, rather than an active fork delta.
 - Dashboard binaries are built into `users/{USER}/`, e.g. `cd dashboard && go build -o ../users/{USER}/career-dashboard .`.
 - Cross-compiled dashboard binaries are also written into `users/{USER}/`, e.g. Windows x64 uses `GOOS=windows GOARCH=amd64 go build -o ../users/{USER}/career-dashboard.exe .`.
 - The dashboard infers the user folder from its own location or the current directory, so the per-user binary runs without `--path`; `--path` remains available for unusual layouts.
@@ -865,6 +895,7 @@ What this customizes:
 - Treats dashboard status changes as job-ad interactions for the `CONTACT` column: status cells remain canonical, while the dashboard appends a dated `Status changed to ...` note and derives `CONTACT` from the latest note/status ISO date or the tracker date fallback.
 - Renders the selected dashboard row as one continuous highlight by applying the selection background to every cell, separator, and trailing fill area instead of wrapping the already-styled row after composition.
 - Removes passive dashboard/viewer background fills from the dashboard title, status summary, help row, job viewer title/footer, fenced code blocks, and inline code so background highlighting is reserved for actual interactive selections.
+- Rewrites a report's displayed `**Batch ID:**` header to `**Job ID:**` with the selected tracker row's number in the dashboard viewer. The underlying report file retains its original batch provenance; the displayed ID is the canonical user-facing tracker identity.
 - Preserves upstream derived fields, shared sort comparator, and new dashboard sort modes, but keeps the listing-date sort on the fork's `dashboardDate()` fallback so reports/scan-history listing dates win when available.
 - Adds a `#id` sort mode to the dashboard sort cycle; it orders tracker rows numerically by ID with the newest/highest IDs first.
 - Preserves upstream customizable columns / column picker behavior and cross-platform default-app open helpers while keeping user-root normalization for report/PDF targets.
@@ -1125,13 +1156,18 @@ Files:
 - `lib/codex-config.mjs`
 - `lib/go-summary.mjs`
 - `lib/verification-review.mjs`
+- `lib/openai-output-schema.mjs`
+- `lib/duplicate-lifecycle.mjs`
 - `lib/parallel-config.mjs`
 - `lib/pipeline-queue.mjs`
+- `lib/run-artifacts.mjs`
+- `cleanup-runs.mjs`
 - `schemas/go-handoff-output.schema.json`
 - `schemas/verify-review-output.schema.json`
 - `modes/verify.md`
 - `tests/workflows/verify-review.test.mjs`
 - `tests/workflows/go-runner.test.mjs`
+- `tests/workflows/run-cleanup.test.mjs`
 - `package.json`
 - `update-system.mjs`
 - `config/profile.example.yml`
@@ -1145,6 +1181,7 @@ Files:
 
 What this customizes:
 
+- Validates the verification review schema locally before a Codex call. `lib/openai-output-schema.mjs` rejects unsupported `uniqueItems` keywords, while deterministic response validation enforces unique duplicate tracker IDs and report paths. Keep API-compatible schemas and post-response semantic checks together rather than dropping the uniqueness requirement.
 - Adds an executable, user-scoped coordinator for the complete conditional `go`
   sequence: doctor, scan, schema-constrained handoff when the latest scan has
   items, LinkedIn unless explicitly skipped, and pipeline/batch processing only
@@ -1370,6 +1407,7 @@ Future merge notes:
 
 - Preserve the strict handoff output schema and observed-state cross-check; do
   not make agent prose a control signal.
+- Preserve the verification schema preflight and deterministic array-uniqueness checks. Schema compatibility changes must retain the duplicate-resolution semantic contract and its tests.
 - Preserve the read-only prompt/deterministic mutation boundary. New action
   types must validate against raw verifier evidence, remain user-scoped,
   acquire the appropriate lock, back up affected artifacts, append an audit
@@ -1428,12 +1466,11 @@ The fork expands ignored local/user artifacts.
 Files:
 
 - `.gitignore`
-- `interview-prep/story-bank.md`
 
 What this customizes:
 
-- Ignores `data/scan-summary-*.md`, `interview-prep/*`, `article-digest.md`, and `.vscode/`.
-- Removes the tracked `interview-prep/story-bank.md` document so interview prep remains user-layer data.
+- Adds ignores for `users/`, all legacy root `interview-prep/*`, `voice-dna.md`, and `.scan-auth/`. Scan-summary, article-digest, and editor-folder ignores already exist in the incorporated upstream base; duplicate ignore lines are historical residue, not additional behavior.
+- The old tracked root story bank was already removed upstream. Keep user story banks under `users/{USER}/interview-prep/story-bank.md`; the deletion itself is retired as a fork patch.
 
 Future merge notes:
 
@@ -1497,14 +1534,20 @@ Future merge notes:
 - Treat documentation conflicts as a signal to check whether the underlying customization still exists.
 - Remove local documentation lines when the corresponding code customization is removed.
 
+## Retired fork patches
+
+- Landing.jobs and NoDesk adapters now use unchanged upstream first-party provider modules. Legacy functions retained in `_custom.mjs` do not make those modules active customizations.
+- Agentic Engineering Jobs uses the upstream REST API provider. The old HTML-card parser and its markup-specific tests are retired; remaining comment/format differences in that module add no runtime behavior.
+- The root story-bank deletion and dashboard wrapper removal are already incorporated upstream behavior. Preserve per-user story-bank ownership and dashboard binary placement rather than carrying those historical deletions as independent patches.
+- Shared provider retry/backoff is already upstream behavior. Only the custom helper's remaining transport/policy differences need compatibility review.
+
 ## Redundancy Checklist For Future Upstream Updates
 
 On every upstream update, explicitly check whether upstream now includes:
 
 - Any provider currently implemented in `providers/_custom.mjs`.
 - Any fork provider adapter now covered by upstream first-party modules such as RemoteOK, Remotive, IBM, or Working Nomads. Working Nomads is already on the upstream-style module path; only the fork's local filter compatibility should remain unless upstream adds equivalent filters.
-- Upstream Agentic Engineering Jobs parsing for the current `/jobs/{slug}` anchor-card markup, including accurate work-model/country/date extraction and duplicate/taxonomy-link handling.
-- A shared retry/backoff helper for provider fetches.
+- Compatibility differences between the existing upstream shared retry helpers and `providers/_custom-fetch.mjs`, including transport injection, timeout, attempt count, retryable errors, and Retry-After handling.
 - Report-numbered CV artifact naming.
 - Deterministic HTML CV rendering that preserves active-user containment, selected system templates, supported local/data-image photos, and report-linked artifact names.
 - Config-driven CV theme tokens.
@@ -1517,9 +1560,7 @@ On every upstream update, explicitly check whether upstream now includes:
   `batch.parallel` -> `1` precedence and bounded validation.
 - Codex model/reasoning argument -> profile -> global resolution across every
   Codex call owned by the deterministic go coordinator.
-- Deterministic `go-runner.mjs` orchestration with strict handoff/final-triage
-  schemas, stable queue synchronization, structured verification, duplicate-only
-  repair, and human-review-preserving final status.
+- Deterministic `go-runner.mjs` orchestration with strict handoff and verification-review schemas, stable queue synchronization, duplicate resolution, orphan restoration/archive, bounded tracker patches, and human-review-preserving final status.
 - Bounded batch runs through `--limit` are now upstream baseline; preserve only the fork-specific user-scoped/Codex integration around the flag.
 - Batch status/watch progress monitoring through user-scoped batch state.
 - User-scoped `spend_tier`, pre-screen discard logs, CV fact validation, salary/funnel/stats/upskill analytics, reply matching, invite matching, and canonical status updates.

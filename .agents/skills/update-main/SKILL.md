@@ -5,15 +5,15 @@ name: update-main
 
 **This skill does not require a user profile selection.**
 
-Study @CUSTOMIZED.md. Treat it as the current inventory of fork-specific behavior, conflict-prone files, and customizations that may become redundant when upstream adds equivalent features.
+Study @FORK.md. Treat it as the current inventory of fork-specific behavior, conflict-prone files, and customizations that may become redundant when upstream adds equivalent features.
 
-Keep `CUSTOMIZED.md` readable for humans: do not hard-wrap prose lines; let editors wrap long lines visually. Keep headings, lists, tables, and code blocks structurally formatted.
+Keep `FORK.md` readable for humans: do not hard-wrap prose lines; let editors wrap long lines visually. Keep headings, lists, tables, and code blocks structurally formatted.
 
 Fetch and merge `main` branch from `upstream` remote onto current branch, preserving this fork's intentional customizations without blocking new upstream behavior.
 
 Remember incoming changes have been purposefully merged, the ongoing branch work is accessory and any conflicts should be resolved by working our changes around the incoming ones as necessary.
 
-Update `CUSTOMIZED.md` before finishing:
+Update `FORK.md` before finishing:
 
 - Update the generated-from refs, ahead/behind counts, and diff size.
 - Add new fork customizations introduced by the merge or conflict resolution.

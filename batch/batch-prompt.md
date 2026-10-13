@@ -566,7 +566,7 @@ Failure:
 4. Recommend compensation below the user's stated floor.
 5. Generate a PDF before reading the JD.
 6. Put user-private data into system-layer files.
-7. Modify shared system files (`batch/`, `modes/`, `templates/`, root scripts, `AGENTS.md`, or `CUSTOMIZED.md`); the worker may write only reports, output, and tracker additions inside `{{USER_ROOT}}`.
+7. Modify shared system files (`batch/`, `modes/`, `templates/`, root scripts, `AGENTS.md`, or `FORK.md`); the worker may write only reports, output, and tracker additions inside `{{USER_ROOT}}`.
 8. Share the candidate's phone number in generated messages.
 
 ### Always

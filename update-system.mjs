@@ -317,7 +317,7 @@ const SYSTEM_PATHS = [
   'docs/',
   'writing-samples/README.md',
   'VERSION',
-  'CUSTOMIZED.md',
+  'FORK.md',
   'DATA_CONTRACT.md',
   'MANIFESTO.md',
   'manifesto.mjs',

@@ -16,10 +16,13 @@ Requires Node 22+ (see [Tests](#tests) — `npm test`'s glob discovery needs it)
 ```bash
 cd web
 npm ci
+# Add CAREER_OPS_USER=<username> to web/.env.local before starting.
 npm run dev
 ```
 
-Open http://localhost:3000. In this fork, set `CAREER_OPS_USER=<username>` so the app reads the same active user folder as the CLI. Without that variable, it falls back to the upstream single-root layout for compatibility.
+Replace `<username>` with the career-ops user you want to use before running the server. For an existing `.env.local`, add or update `CAREER_OPS_USER` in that file. The web app requires a valid user ID, matching the CLI's 1-64-character format. Missing or invalid IDs stop development and production servers with an actionable error. All candidate files resolve under that user's folder.
+
+Open http://localhost:3000.
 
 ## What works today
 
@@ -60,4 +63,4 @@ npx tsc --noEmit     # typecheck
 npm run build        # production build
 ```
 
-Set `CAREER_OPS_ROOT=/path/to/checkout` in `web/.env.local` to point the app at a different career-ops system checkout. Set `CAREER_OPS_USER=<username>` to select `users/<username>`; set `CAREER_OPS_USERS_DIR=/path/to/users` only for non-standard user roots or tests.
+Set `CAREER_OPS_ROOT=/path/to/checkout` in `web/.env.local` to point the app at a different career-ops system checkout. `CAREER_OPS_USER=<username>` is required to select `users/<username>`; set `CAREER_OPS_USERS_DIR=/path/to/users` only for non-standard user roots or tests. Relative users-directory overrides resolve against the system checkout, as they do in the CLI. System scripts, tracker aliases, canonical states, tracker locks, and matching helpers continue to load from the system checkout. Production builds and unit tests can run without a selected user; starting a server or accessing candidate data requires one.

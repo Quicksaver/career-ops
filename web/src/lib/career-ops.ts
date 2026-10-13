@@ -5,40 +5,8 @@ import { parseApplications } from "@/lib/tracker-table.mjs";
 // One definition of the `{n}-RESERVED.md` convention, shared with
 // run-cli-support.mjs — see report-files.mjs for why it lives there.
 import { isReservedReportFile } from "@/lib/report-files.mjs";
-
-/**
- * Resolve the career-ops system checkout. In this fork, user data is not kept
- * beside scripts at the repository root; it lives under users/{CAREER_OPS_USER}.
- * CAREER_OPS_ROOT can still point the web app at another checkout.
- */
-export function careerOpsSystemRoot(): string {
-  const env = process.env.CAREER_OPS_ROOT?.trim();
-  if (env) return env;
-  return path.resolve(process.cwd(), "..");
-}
-
-export function careerOpsUserId(): string | null {
-  const id = process.env.CAREER_OPS_USER?.trim();
-  return id && /^[A-Za-z0-9._-]+$/.test(id) ? id : null;
-}
-
-export function careerOpsUsersRoot(): string {
-  const env = process.env.CAREER_OPS_USERS_DIR?.trim();
-  if (env) return env;
-  return path.join(/* turbopackIgnore: true */ careerOpsSystemRoot(), "users");
-}
-
-export function careerOpsRoot(): string {
-  const userId = careerOpsUserId();
-  return userId ? path.join(careerOpsUsersRoot(), userId) : careerOpsSystemRoot();
-}
-
-export function careerOpsCoreEnv(): NodeJS.ProcessEnv {
-  const userId = careerOpsUserId();
-  return userId
-    ? { ...process.env, CAREER_OPS_USER: userId, CAREER_OPS_USERS_DIR: careerOpsUsersRoot() }
-    : process.env;
-}
+import { careerOpsRoot, careerOpsSystemRoot } from "@/lib/user-context.mjs";
+export { careerOpsRoot, careerOpsSystemRoot, careerOpsUserId, careerOpsUsersRoot, careerOpsCoreEnv } from "@/lib/user-context.mjs";
 
 /**
  * Absolute path to a core root script (e.g. doctor, verify-portals). The `.mjs`
@@ -62,8 +30,9 @@ export function trackerCanDelete(): boolean {
 }
 
 function read(rel: string): string | null {
+  const root = careerOpsRoot();
   try {
-    return fs.readFileSync(path.join(careerOpsRoot(), rel), "utf8");
+    return fs.readFileSync(path.join(root, rel), "utf8");
   } catch {
     return null;
   }
@@ -201,9 +170,10 @@ export function doctorState(): {
   hasCv: boolean;
   hasData: boolean;
 } {
+  const root = careerOpsRoot();
   const has = (rel: string) => {
     try {
-      return fs.existsSync(path.join(careerOpsRoot(), rel));
+      return fs.existsSync(path.join(root, rel));
     } catch {
       return false;
     }

@@ -1,3 +1,6 @@
+import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_SERVER } from "next/constants.js";
+import { careerOpsUserId } from "./src/lib/user-context.mjs";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Two lockfiles exist on purpose (repo root + web/), so Next would infer the
@@ -10,4 +13,9 @@ const nextConfig = {
   ...(process.env.BUILD_DIST ? { distDir: process.env.BUILD_DIST } : {}),
 };
 
-export default nextConfig;
+export default function config(phase) {
+  if (phase === PHASE_DEVELOPMENT_SERVER || phase === PHASE_PRODUCTION_SERVER) {
+    careerOpsUserId();
+  }
+  return nextConfig;
+}
