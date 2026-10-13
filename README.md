@@ -227,7 +227,7 @@ npx playwright install chromium   # only needed for PDF generation
 # (Playwright's own docs list the required libraries per platform).
 
 # 2. Pick a local user id (all personal data stays in users/<username>/)
-export CAREER_OPS_USER=<username>
+export CAREER_OPS_USER='<username>'
 
 # 3. Check setup
 npm run doctor -- --user <username>       # Validates all prerequisites
@@ -591,7 +591,7 @@ To separate your personal data from the code (making it easier to switch branche
 
 1. **Environment Variables:** Set the `CAREER_OPS_ROOT` or `CAREER_OPS_DATA_DIR` environment variable:
    ```bash
-   export CAREER_OPS_USER=<username>
+   export CAREER_OPS_USER='<username>'
    export CAREER_OPS_ROOT=~/my-career-data
    ```
 2. **Marker File:** With no `CAREER_OPS_USERS_DIR` override, create a `.career-ops-data` file in the repository root containing the selected user's data directory. A marker does not select a user.

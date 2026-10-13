@@ -4,12 +4,12 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `22cbe88e0a39394020a334901c0ce37b0faedfcb`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Fork commit snapshot: `main` at `66f1c3f3`, before this inventory update and the web user-selection fix.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `201`.
-- Diff size against the incorporated base at that snapshot: `336 files changed, 23905 insertions(+), 4629 deletions(-)`.
+- Incorporated upstream base: `8aafd1252c14d08b00f0c4e8c2f7f778db80bce9`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Fork commit snapshot: `main` at `530bd23b`, after the v1.36 merge and the final upstream signature update, before this inventory reference refresh.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `204`.
+- Diff size against the incorporated base at that snapshot: `621 files changed, 24125 insertions(+), 5764 deletions(-)`.
 
-The refs and counts describe the committed snapshot above. The behavior notes also include the changes in this update. Refresh the snapshot after the next upstream merge.
+The refs and counts describe the committed snapshot above. This final documentation commit refreshes the inventory references; it adds one fork commit beyond that snapshot. Refresh these values after the next upstream merge.
 
 ## Merge Policy
 
@@ -33,13 +33,13 @@ Use the merge-base diff to inventory fork changes. The left/right log separately
 
 ## Adopted upstream behavior and merge history
 
-This inventory incorporates upstream through core v1.36.0 and web v0.14.0 at `2f1a548b419e1787142e600a058e76e547a5cbee`. Older entries below describe earlier merges. The current fork keeps explicit user selection and adapts upstream data-root support around that requirement.
+This inventory incorporates upstream through core v1.36.0 and web v0.14.0 at `8aafd1252c14d08b00f0c4e8c2f7f778db80bce9`. Older entries below describe earlier merges. The current fork keeps explicit user selection and adapts upstream data-root support around that requirement.
 
 The entries below record successive upstream merges and their conflict resolutions. Release references and validation counts belong to those historical merges. The active sections that follow define the customization requirements to preserve today.
 
 New upstream features or behavior now present:
 
-- Core v1.27 through v1.36 and web v0.14.0 are adopted across 1,555 incoming commits. Current additions include a source-backed Master Career Profile, calibration and keyword coverage, richer evaluation evidence, CV title/chronology checks, ATS and text CV variants, template packs, and ordered multi-market context. Intake and profile changes retain their explicit confirmation and provenance requirements.
+- Core v1.27 through v1.36 and web v0.14.0 are adopted across 1,556 incoming commits. Current additions include a source-backed Master Career Profile, calibration and keyword coverage, richer evaluation evidence, CV title/chronology checks, ATS and text CV variants, template packs, and ordered multi-market context. Intake and profile changes retain their explicit confirmation and provenance requirements.
 - Scanner updates include new providers, configurable field whitelists, history-derived ATS seeds, requisition/location/language-aware dedup, budgeted partial results, filtered-posting diagnostics, and dead-board recovery. `scan.mjs` retains the fork's closed-posting reopen behavior around these newer dedup decisions; different requisitions and language versions retain upstream's separate-posting behavior.
 - Batch execution adds OpenCode, Gemini, and Qwen alongside Claude and the fork's Codex backend. Upstream supplies cached system prompts, adaptive backoff, header-aware additions, and agency-confirmation holds. The fork keeps bounded workers, per-user bookkeeping, reserved report identity, and cross-artifact validation. A confirmation hold is reported separately and never becomes a completed evaluation or an automatic retry.
 - CV and document rendering adopts kinded PDF-index rows, so a report's cover letter and CV no longer evict each other. Shared renderer containment, manifest locking, page-format support, title checks, chronology checks, and template-pack validation are upstream behavior. The fork retains `cv.theme`, report-linked styled-CV filenames, relevance filtering, and its two-page/3–4-project mode defaults. An explicitly selected external template pack is now supported; the old system-template-directory-only compiler restriction is retired.
@@ -489,6 +489,10 @@ Future merge notes:
 - If upstream changes `merge-tracker.mjs` locking again, preserve the full read/modify/write critical section and atomic write, but keep `APPS_FILE` rooted in `users/{USER}/data/applications.md`; do not restore root `CAREER_OPS_TRACKER` as normal production routing.
 - Keep shared templates, modes, scripts, and provider code in the system layer; keep generated reports, CV outputs, trackers, portals, personal profile files, and interview prep in `users/{USER}/`.
 - Keep pure helper imports free of candidate-file reads and writes. Modules that bind user paths may require a selected user even on import; synthetic fixtures explicitly select a disposable user. System help and self-tests do not select a real profile.
+
+## Validation of the v1.36 merge
+
+The final code snapshot passed `node test-all.mjs --quick` in an isolated Linux container, with 14,517 passing checks, zero failures, and 19 warnings. Warnings covered the missing-user CV fixture, upstream maintainer-name matches, unavailable Chromium and live-service checks, locale availability, and permission fixtures run as root. All dashboard Go packages passed. The web passed type checking and a production build with no active user. `verify-pipeline.mjs --json` returned a clean result against an isolated empty tracker; this did not inspect or certify a personal pipeline.
 
 ## Current merge integration notes
 
