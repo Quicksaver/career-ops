@@ -167,7 +167,7 @@ On NixOS, skip this step: the browsers it downloads can't run there. Use the fla
 | Action | How |
 |--------|-----|
 | Evaluate an offer | Paste a URL or JD text |
-| Run the full sourcing loop | `/career-ops go <username>` or ask the agent to run `go` for `<username>` |
+| Run the full sourcing loop | `/career-ops run <username>` or ask the agent to run `run` for `<username>` |
 | Search for offers | `/career-ops scan <username>` or ask the agent to run `scan` for `<username>` |
 | Search authenticated portals | `/career-ops scan-auth <username> linkedin` |
 | Process pending URLs | `/career-ops pipeline <username>` or ask the agent to run `pipeline` for `<username>` |

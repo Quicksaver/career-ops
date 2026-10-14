@@ -7,7 +7,7 @@ import { loadAnswers, loadQueue } from './batch/manual-inputs.mjs';
 const args = process.argv.slice(2);
 const value = name => args[args.indexOf(name) + 1];
 const root = process.env.CAREER_OPS_ROOT;
-if (!root || !root.includes('go-queue-test-')) throw new Error('fixture refuses non-test data root');
+if (!root || !root.includes('run-queue-test-')) throw new Error('fixture refuses non-test data root');
 const config = JSON.parse(readFileSync(join(root, 'fixture.json')));
 const phase = basename(process.argv[1], '.mjs');
 const pipeline = process.env.CAREER_OPS_PIPELINE || join(root, 'data/pipeline.md');
@@ -40,7 +40,7 @@ else if (phase === 'codex-mock') {
   emit({ offline: true });
   writeFileSync(value('--output-last-message'), JSON.stringify({ status: config.handoffPartial ? 'partial' : 'completed', processed_items: 1, added: config.malformedHandoff ? 1 : 0, duplicates: config.handoffPartial ? 0 : 1, expired: 0, errors: config.handoffPartial ? [{ item: 'Fictional', message: 'offline source unavailable', recoverable: true }] : [], requires_user_action: false, user_action: null }));
 } else if (phase === 'batch-mock') {
-  if (!args.includes('--queue-file')) throw new Error('go must provide a queue-file');
+  if (!args.includes('--queue-file')) throw new Error('run must provide a queue-file');
   const queue = loadQueue(value('--queue-file'), root);
   const answers = loadAnswers(args.includes('--answers-file') ? value('--answers-file') : null, 'fictional', root);
   const input = parseBatchInput(read(join(root, 'batch/batch-input.tsv')));

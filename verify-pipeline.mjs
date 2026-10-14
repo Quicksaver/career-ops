@@ -895,5 +895,5 @@ if (JSON_OUTPUT) {
 
 // Assigning exitCode lets Node flush large JSON payloads before termination.
 // Calling process.exit() here truncated warning-heavy output at 64 KiB when
-// stdout was piped to go-runner or jq.
+// stdout was piped to run-workflow or jq.
 process.exitCode = errors > 0 ? 1 : 0;

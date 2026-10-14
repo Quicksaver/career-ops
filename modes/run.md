@@ -1,6 +1,6 @@
-# Mode: go — Complete sourcing and queue processing
+# Mode: run — Complete sourcing and queue processing
 
-Resolve the active user, then run `node go-runner.mjs --user {USER}`. Read the router's shared/profile/custom context and the selected user's configured output language before supervision. The executable runner is the normal entrypoint; its `--help` is the option reference.
+Resolve the active user, then run `node run-workflow.mjs --user {USER}`. Read the router's shared/profile/custom context and the selected user's configured output language before supervision. The executable runner is the normal entrypoint; its `--help` is the option reference.
 
 ## Workflow
 
@@ -30,7 +30,7 @@ A quota/session pause stops every following batch pass and remains in force unti
 
 ## Models and supported CLIs
 
-Automatic agent phases default to Codex GPT 6.1 Sol with medium reasoning. Model and reasoning each resolve as explicit runner argument, selected-user `codex` profile setting, then that system default; the resolved values reach handoff, verification, and every Codex batch worker. Batch workers may explicitly use Claude. OpenCode, Gemini, and Qwen remain upstream direct-batch capabilities and are deliberately unsupported by this fork's `go` coordinator.
+Automatic agent phases default to Codex GPT 6.1 Sol with medium reasoning. Model and reasoning each resolve as explicit runner argument, selected-user `codex` profile setting, then that system default; the resolved values reach handoff, verification, and every Codex batch worker. Batch workers may explicitly use Claude. OpenCode, Gemini, and Qwen remain upstream direct-batch capabilities and are deliberately unsupported by this fork's `run` coordinator.
 
 Parallelism resolves as `--parallel`, selected-user `batch.parallel`, then `1`. Review lanes are read-only; deterministic repair/ledger writes remain serialized. User files stay under the active user's data root; system modes/scripts/templates remain under the checkout.
 

@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { linkNodeModules } from './helpers.mjs';
+import { workflowRunnerPidPaths } from '../lib/run-artifacts.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const offline = readFileSync(join(repo, 'tests/fixtures/go-queue-offline.mjs'), 'utf8');
+const offline = readFileSync(join(repo, 'tests/fixtures/run-queue-offline.mjs'), 'utf8');
 const A = 'https://jobs.example.org/alpha';
 const B = 'https://jobs.example.org/beta';
 const C = 'https://jobs.example.org/charlie';
@@ -28,13 +29,13 @@ function copyGraph(root, file, copied = new Set()) {
 }
 
 function fixture(t, { rows = [A], ...config } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'go-queue-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'run-queue-test-'));
   t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  for (const file of ['go-runner.mjs', 'sync-pipeline-batch.mjs', 'pipeline-liveness.mjs']) copyGraph(root, file);
+  for (const file of ['run-workflow.mjs', 'sync-pipeline-batch.mjs', 'pipeline-liveness.mjs']) copyGraph(root, file);
   cpSync(join(repo, 'tracker-aliases.json'), join(root, 'tracker-aliases.json'));
   assert.equal(linkNodeModules(root), null, 'offline fixture must resolve the checkout dependencies');
   mkdirSync(join(root, 'schemas'), { recursive: true });
-  cpSync(join(repo, 'schemas/go-handoff-output.schema.json'), join(root, 'schemas/go-handoff-output.schema.json'));
+  cpSync(join(repo, 'schemas/run-handoff-output.schema.json'), join(root, 'schemas/run-handoff-output.schema.json'));
   const user = join(root, 'users/fictional');
   for (const directory of ['data', 'config', 'batch/logs', 'jds']) mkdirSync(join(user, directory), { recursive: true });
   writeFileSync(join(user, 'config/profile.yml'), '{}\n');
@@ -52,7 +53,7 @@ function fixture(t, { rows = [A], ...config } = {}) {
   Object.assign(env, { PATH: bin + delimiter + process.env.PATH, CAREER_OPS_ROOT: user, CAREER_OPS_USERS_DIR: join(root, 'users'), CAREER_OPS_TRACKER: join(user, 'data/applications.md'), CAREER_OPS_USER: 'fictional' });
   const read = path => readFileSync(join(user, path), 'utf8');
   const records = path => existsSync(join(user, path)) ? read(path).trim().split('\n').filter(Boolean).map(JSON.parse) : [];
-  const run = async (args = ['--skip-linkedin'], script = 'go-runner.mjs') => {
+  const run = async (args = ['--skip-linkedin'], script = 'run-workflow.mjs') => {
     const child = spawn(process.execPath, [join(root, script), '--user', 'fictional', '--json', ...args], { cwd: root, env, windowsHide: true });
     let stdout = '', stderr = '';
     child.stdout.on('data', data => stdout += data);
@@ -68,7 +69,7 @@ function fixture(t, { rows = [A], ...config } = {}) {
   return { root, user, env, run, read, records, calls: () => records('calls.jsonl'), dispatched: () => records('dispatched.jsonl').map(row => row.url) };
 }
 
-test('go drains existing backlog when discovery adds zero, using real Bash and queue-file isolation', async t => {
+test('run drains existing backlog when discovery adds zero, using real Bash and queue-file isolation', async t => {
   const f = fixture(t);
   writeFileSync(join(f.user, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n40\t${B}\thistorical\t\n`);
   const { code, result } = await f.run();
@@ -84,6 +85,10 @@ test('go drains existing backlog when discovery adds zero, using real Bash and q
   const verify = f.calls().find(c => c.phase === 'verify-runner');
   assert.equal(verify.args[verify.args.indexOf('--codex-model') + 1], 'gpt-6.1-sol');
   assert.equal(verify.args[verify.args.indexOf('--codex-reasoning-effort') + 1], 'medium');
+  for (const path of workflowRunnerPidPaths(f.user)) {
+    assert.ok(!existsSync(path));
+    assert.ok(!existsSync(`${path}.lock`), 'completed workflow releases both generations of ownership');
+  }
 });
 
 test('--skip-scan bypasses every discovery phase, including stale handoff', async t => {

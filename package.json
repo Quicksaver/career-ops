@@ -7,7 +7,7 @@
     "node": "^22.13.0 || >=23.4.0"
   },
   "scripts": {
-    "go": "node go-runner.mjs",
+    "run": "node run-workflow.mjs",
     "cleanup:runs": "node cleanup-runs.mjs",
     "doctor": "node doctor.mjs",
     "or": "node openrouter-runner.mjs",

@@ -25,7 +25,7 @@ Two layers — full list in `DATA_CONTRACT.md`:
 All career-ops commands require an active user. User-specific data is centralized under `users/{USER}/`, which is gitignored.
 
 Resolve the user before any career-ops work:
-1. If the current command explicitly includes a user (`/career-ops go <username>`, `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`, or `--user <username>`), use it.
+1. If the current command explicitly includes a user (`/career-ops run <username>`, `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`, or `--user <username>`), use it.
 2. Otherwise, if this conversation already established an active user from a previous career-ops command, reuse it.
 3. Otherwise, stop immediately and ask which career-ops user to use. Do not inspect or modify user-layer files before the user is known.
 
@@ -50,7 +50,7 @@ Run the per-user binary without `--path`; it infers the user folder from its own
 
 ## Long-Running Command Quiet Mode
 
-When the user asks you to run `go`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
+When the user asks you to run `run`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
 
 - Keep the current agent turn active until the workflow completes and final reconciliation and verification succeed, or until user action, an explicit stop, a confirmed destructive risk, or exhausted safe recovery provides the terminal outcome.
 - Treat background and detached processes as actively supervised work owned by the current turn. Send the final response after the terminal outcome.
@@ -453,7 +453,7 @@ A single-string `modes_dir` (today's default, ~90% of users) behaves exactly as 
 | Evaluates portfolio project | `project` |
 | Asks about application status | `tracker` |
 | Fills out application form | `apply` |
-| Wants the full sourcing loop | `go` |
+| Wants the full sourcing loop | `run` |
 | Wants pipeline integrity reviewed, fixed, or acknowledged | `verify` |
 | Searches for new offers | `scan` |
 | Wants to turn a list of company names into scannable ATS boards / add them to `users/{USER}/portals.yml` | `discover` |
@@ -553,7 +553,7 @@ Headless worker command per CLI:
 | Grok Build CLI | `grok -p "prompt"` |
 
 For a complete deterministic sourcing cycle under Codex, run
-`./go-runner.mjs --user {USER}`. The coordinator invokes deterministic scripts
+`./run-workflow.mjs --user {USER}`. The coordinator invokes deterministic scripts
 for scan, authenticated scan, liveness, queue synchronization, batch merge,
 reconciliation, and verification. It invokes schema-constrained one-off Codex
 workers for `scan-handoff`, where browser/WebSearch judgment remains necessary,
@@ -571,16 +571,16 @@ becomes the keeper together with its existing report/CV artifacts;
 reviewer-selected identity breaks equal-status ties only. Back up and archive
 the losing row's artifacts and record any keeper override.
 
-`go-runner.mjs` resolves Codex model and reasoning independently in this order:
+`run-workflow.mjs` resolves Codex model and reasoning independently in this order:
 `--codex-model` / `--codex-reasoning-effort`, then `codex.model` /
 `codex.reasoning_effort` in `users/{USER}/config/profile.yml`, then Codex global
 defaults. It passes resolved argument/profile values to scan-handoff, reviewed
 verification, and every Codex batch worker.
 
-`--parallel` is optional for `go-runner.mjs`, `batch/batch-runner.sh`, and
+`--parallel` is optional for `run-workflow.mjs`, `batch/batch-runner.sh`, and
 `verify-runner.mjs`.
 Resolve it as the explicit argument, then `batch.parallel` in
-`users/{USER}/config/profile.yml`, then the system default `1`. The go runner
+`users/{USER}/config/profile.yml`, then the system default `1`. The workflow runner
 passes the resolved value explicitly to its batch and verification invocations.
 Verification parallelizes only dependency-safe read-only review lanes; related
 findings remain sequential, and all repairs and ledger writes stay serialized.

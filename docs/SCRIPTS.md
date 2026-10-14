@@ -10,8 +10,8 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 
 | Command | Script | Purpose |
 |---------|--------|---------|
-| `npm run go -- --user {USER}` | `go-runner.mjs` | Deterministic end-to-end sourcing coordinator with streamed human output (`--json` for machines) |
-| `npm run cleanup:runs -- --user {USER}` | `cleanup-runs.mjs` | Delete timestamped verify/go run directories older than 10 days |
+| `npm run run -- --user {USER}` | `run-workflow.mjs` | Deterministic end-to-end sourcing coordinator with streamed human output (`--json` for machines) |
+| `npm run cleanup:runs -- --user {USER}` | `cleanup-runs.mjs` | Delete timestamped workflow and verification directories older than 10 days |
 | `node resolve-parallel.mjs --profile users/{USER}/config/profile.yml --json` | `resolve-parallel.mjs` | Resolve argument/profile/default batch parallelism |
 | `npm run doctor` | `doctor.mjs` | Validate setup prerequisites |
 | `npm run verify -- --user {USER}` | `verify-runner.mjs` | Review every integrity finding, apply bounded actions, remember accepted exceptions, and reverify |
@@ -98,18 +98,18 @@ npm run doctor -- --user <username>
 
 **Exit codes:** `0` all checks passed, `1` one or more checks failed (fix messages printed).
 
-## go
+## run
 
 Runs configured sourcing and drains the existing inbox plus new discoveries. Posting-specific questions, missing JDs, logins, quota holds, and verifier decisions remain visible while independent work continues:
 
 ```bash
-npm run go -- --user <username> --batch-cli codex
+npm run run -- --user <username> --batch-cli codex
 ```
 
 Optional Codex overrides apply to every Codex CLI call made by the run:
 
 ```bash
-npm run go -- --user <username> \
+npm run run -- --user <username> \
   --codex-model gpt-6.1-sol \
   --codex-reasoning-effort medium
 ```
@@ -122,10 +122,10 @@ Batch and verification-review parallelism resolve as an explicit `--parallel N` 
 `batch.parallel` in `users/{USER}/config/profile.yml`, then the system default
 of `1`. The resolved value and its source are included as `parallel` and
 `parallel_source` in the `--json` result. The same hierarchy applies when
-`batch/batch-runner.sh` or `verify-runner.mjs` is invoked directly. The go runner
+`batch/batch-runner.sh` or `verify-runner.mjs` is invoked directly. The workflow runner
 passes its resolved parallel value to both stages.
 
-`--skip-scan` processes only the existing inbox. `--answers-file` resumes exact posting/reason holds; `--limit`, `--retry-failed`, `--resume-paused`, and `--max-queue-passes` bound dispatch/recovery. The go coordinator supports Codex and explicit Claude only. See `modes/go.md` and `node go-runner.mjs --help` for the current contract.
+`--skip-scan` processes only the existing inbox. `--answers-file` resumes exact posting/reason holds; `--limit`, `--retry-failed`, `--resume-paused`, and `--max-queue-passes` bound dispatch/recovery. The run coordinator supports Codex and explicit Claude only. See `modes/run.md` and `node run-workflow.mjs --help` for the current contract.
 
 Manual choices are printed in the summary and persisted under the selected user as `data/manual-actions.json`; batch holds remain in `batch/logs/{id}.hold.json` and `batch-state.tsv`. Pending and blocked `[!]` rows are both remaining work. A clean verification does not make an incomplete source pass or held job completed.
 
@@ -137,8 +137,8 @@ run `verify-pipeline.mjs` again. Verified false positives, legitimate exceptions
 and informational findings are stored by exact payload fingerprint under the
 active user, so unchanged findings do not resurface while changed evidence does.
 
-At startup, `go-runner.mjs` applies the same 10-day run-artifact cleanup exposed
-by `npm run cleanup:runs`. A fully completed go run is immediately compacted to
+At startup, `run-workflow.mjs` applies the same 10-day run-artifact cleanup exposed
+by `npm run cleanup:runs`. A fully completed workflow run is immediately compacted to
 one `summary.json` file. Failed, interrupted, partial, and blocked runs retain
 their detailed artifacts until the 10-day cleanup removes the whole run
 directory.
@@ -148,7 +148,7 @@ directory.
 ## cleanup:runs
 
 Deletes timestamped run directories strictly older than 10 days from both
-`users/{USER}/data/verify-runs/` and `users/{USER}/data/go-runs/`:
+`users/{USER}/data/verify-runs/` and `users/{USER}/data/workflow-runs/`:
 
 ```bash
 npm run cleanup:runs -- --user <username>
@@ -156,8 +156,10 @@ npm run cleanup:runs -- --user <username> --json
 ```
 
 Cleanup is applied immediately; there is no dry-run mode. It is skipped while
-another go or verify runner is active for the same user. Non-timestamped
+another workflow or verify runner is active for the same user. Non-timestamped
 directories are ignored.
+
+Historical workflow folders remain under `data/go-runs/` and follow the same retention policy. The workflow runner also honors legacy ownership stamps, preventing overlap with an older runner during the rename.
 
 ---
 

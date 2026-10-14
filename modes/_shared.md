@@ -281,7 +281,7 @@ After detecting archetype, read `modes/_profile.md` for the user's specific fram
 
 ### Execution ownership (cost and browser guardrail)
 
-Run `go`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two URLs serially in the root agent. For a direct pipeline with three or more pending URLs, coordinate one subagent per URL from the root agent. Give every worker `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, a single role, an atomically reserved report number, and the active user's shared/profile/custom context. State that all user-layer relative paths resolve inside `USER_ROOT`.
+Run `run`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two URLs serially in the root agent. For a direct pipeline with three or more pending URLs, coordinate one subagent per URL from the root agent. Give every worker `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, a single role, an atomically reserved report number, and the active user's shared/profile/custom context. State that all user-layer relative paths resolve inside `USER_ROOT`.
 
 - Perform company, role, and compensation research inline within the agent assigned to the role, using the small explicit set of WebSearch/WebFetch queries named by the mode, such as the `oferta` Blocks C/D budget.
 - Evaluate one role per `/career-ops <JD>` invocation.

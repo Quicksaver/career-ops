@@ -507,7 +507,7 @@ The verification is sequential and only runs against new offers (after dedup), s
 
 When the zero-token scan finds companies that need agent/WebSearch discovery, it writes the full list to `users/{USER}/data/scan-handoff.json`. Run `/career-ops scan-handoff` to process that saved handoff without rerunning the zero-token scan.
 
-Run `/career-ops go` to execute the sourcing loop in order: zero-token scan, `scan-handoff` only when the latest scan wrote handoff items, authenticated LinkedIn scan, then `pipeline` only if those scan phases added new pending jobs. Individual provider/company failures in scan phases do not stop the loop unless the run hits a catastrophic state or needs explicit user interaction.
+Run `/career-ops run <username>` to execute the full workflow: scan configured sources, process any discovery handoff, drain both the existing inbox and new jobs, then reconcile the tracker and run reviewed verification. Posting-specific questions and source failures are recorded while independent work continues. Use `--skip-scan` to process the existing inbox without discovery; direct invocation is `node run-workflow.mjs --user <username>`.
 
 Authenticated portals use a separate scanner and a per-user browser profile. For LinkedIn:
 

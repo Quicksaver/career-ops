@@ -6,14 +6,14 @@ import { pathToFileURL } from 'url';
 import { fail, getBash, pass, ROOT, toBashPath } from '../helpers.mjs';
 import { copyBatchOwnership } from '../copy-batch-ownership.mjs';
 
-console.log('\nWorkflow — deterministic go runner');
+console.log('\nWorkflow — deterministic workflow runner');
 
 try {
   const queue = await import(pathToFileURL(join(ROOT, 'lib/pipeline-queue.mjs')).href);
   const codexConfig = await import(pathToFileURL(join(ROOT, 'lib/codex-config.mjs')).href);
   const parallelConfig = await import(pathToFileURL(join(ROOT, 'lib/parallel-config.mjs')).href);
   const duplicateLifecycle = await import(pathToFileURL(join(ROOT, 'lib/duplicate-lifecycle.mjs')).href);
-  const goSummary = await import(pathToFileURL(join(ROOT, 'lib/go-summary.mjs')).href);
+  const runSummary = await import(pathToFileURL(join(ROOT, 'lib/run-summary.mjs')).href);
   const rejectedKeeper = duplicateLifecycle.mostAdvancedDuplicateRow([
     { num: 1, status: 'Applied' },
     { num: 2, status: 'Rejected' },
@@ -30,22 +30,22 @@ try {
   } else {
     fail('duplicate lifecycle ordering is wrong');
   }
-  const unresolvedLines = goSummary.goUnresolvedFindingLines([{
+  const unresolvedLines = runSummary.runUnresolvedFindingLines([{
     finding_level: 'error',
     finding_code: 'broken_report_link',
     message: '#2603: Report not found: ../reports/2603-opfyx-ltd-2026-06-12.md\ninspect logs',
   }]);
   if (unresolvedLines.length === 2 &&
-      unresolvedLines[0] === '[go] unresolved issues (1):' &&
-      unresolvedLines[1] === '[go] unresolved error, broken_report_link: #2603: Report not found: ../reports/2603-opfyx-ltd-2026-06-12.md inspect logs') {
-    pass('go summary exposes each unresolved verification finding inline');
+      unresolvedLines[0] === '[run] unresolved issues (1):' &&
+      unresolvedLines[1] === '[run] unresolved error, broken_report_link: #2603: Report not found: ../reports/2603-opfyx-ltd-2026-06-12.md inspect logs') {
+    pass('run summary exposes each unresolved verification finding inline');
   } else {
-    fail(`go unresolved summary lines wrong: ${JSON.stringify(unresolvedLines)}`);
+    fail(`run unresolved summary lines wrong: ${JSON.stringify(unresolvedLines)}`);
   }
-  if (goSummary.goUnresolvedFindingLines(null).length === 0) {
-    pass('go summary omits the unresolved section when verification is clean');
+  if (runSummary.runUnresolvedFindingLines(null).length === 0) {
+    pass('run summary omits the unresolved section when verification is clean');
   } else {
-    fail('go summary emits an unresolved section for clean verification');
+    fail('run summary emits an unresolved section for clean verification');
   }
   const fixture = [
     '# Pipeline', '', '## Pending',
@@ -67,7 +67,7 @@ try {
     fail(`expired pipeline rewrite was wrong: ${JSON.stringify(expired)}`);
   }
 
-  const tmp = mkdtempSync(join(tmpdir(), 'career-ops-go-test-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'career-ops-run-test-'));
   const usersDir = join(tmp, 'users');
   const userRoot = join(usersDir, 'test');
   mkdirSync(join(userRoot, 'data'), { recursive: true });
@@ -429,15 +429,15 @@ try {
   }
   rmSync(batchTmp, { recursive: true, force: true });
 
-  const runner = readFileSync(join(ROOT, 'go-runner.mjs'), 'utf-8');
+  const runner = readFileSync(join(ROOT, 'run-workflow.mjs'), 'utf-8');
   const verifyRunner = readFileSync(join(ROOT, 'verify-runner.mjs'), 'utf-8');
   const batchRunner = readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8');
-  const schema = JSON.parse(readFileSync(join(ROOT, 'schemas/go-handoff-output.schema.json'), 'utf-8'));
+  const schema = JSON.parse(readFileSync(join(ROOT, 'schemas/run-handoff-output.schema.json'), 'utf-8'));
   const reviewSchema = JSON.parse(readFileSync(join(ROOT, 'schemas/verify-review-output.schema.json'), 'utf-8'));
   if (runner.includes('--output-schema') && runner.includes('--output-last-message') && schema.additionalProperties === false) {
     pass('handoff agent uses a strict schema-constrained final response');
   } else {
-    fail('handoff agent JSON contract is not strict or not wired into go-runner');
+    fail('handoff agent JSON contract is not strict or not wired into run-workflow');
   }
   if (runner.includes("systemPath('verify-runner.mjs')") && runner.includes('verification_review') &&
       verifyRunner.includes('review-agent-') && verifyRunner.includes('resolve-verify-warnings.mjs') &&
@@ -445,33 +445,33 @@ try {
       verifyRunner.includes('verify-pipeline-post-review-') && verifyRunner.includes('decisionsStillPresent') &&
       verifyRunner.includes('prior_decisions: decisions') && verifyRunner.includes('validateDuplicateConsistency') &&
       reviewSchema.additionalProperties === false) {
-    pass('go runner delegates final integrity handling to schema-constrained reviewed verification');
+    pass('workflow runner delegates final integrity handling to schema-constrained reviewed verification');
   } else {
-    fail('go runner reviewed-verification final step is not fully wired');
+    fail('workflow runner reviewed-verification final step is not fully wired');
   }
   if (runner.includes('--codex-model') && runner.includes('--codex-reasoning-effort') &&
       runner.includes("batchArgs.push('--model'") && runner.includes("batchArgs.push('--reasoning-effort'") &&
       runner.includes("verifyArgs.push('--codex-model'") && runner.includes("verifyArgs.push('--codex-reasoning-effort'")) {
-    pass('go runner forwards resolved Codex model and reasoning to handoff, reviewed verification, and batch calls');
+    pass('workflow runner forwards resolved Codex model and reasoning to handoff, reviewed verification, and batch calls');
   } else {
-    fail('go runner does not forward both Codex settings to every Codex call');
+    fail('workflow runner does not forward both Codex settings to every Codex call');
   }
   if (runner.includes("verifyArgs.push('--parallel', String(parallelSettings.parallel))")) {
-    pass('go runner forwards resolved parallelism to reviewed verification');
+    pass('workflow runner forwards resolved parallelism to reviewed verification');
   } else {
-    fail('go runner does not forward resolved parallelism to reviewed verification');
+    fail('workflow runner does not forward resolved parallelism to reviewed verification');
   }
   if (runner.includes("const unresolvedFindings = summary.verification_review.unresolved_findings || []") &&
-      runner.includes('goUnresolvedFindingLines(unresolvedFindings)')) {
-    pass('go runner prints unresolved verification details from the reviewed result');
+      runner.includes('runUnresolvedFindingLines(unresolvedFindings)')) {
+    pass('workflow runner prints unresolved verification details from the reviewed result');
   } else {
-    fail('go runner reports only the unresolved count without the finding details');
+    fail('workflow runner reports only the unresolved count without the finding details');
   }
   if (runner.includes('cleanupExpiredRuns') && runner.includes('ignoreActivePids: [process.pid]') &&
       runner.includes('compactCompletedRun') && runner.includes("summary.status === 'completed'")) {
-    pass('go runner cleans expired runs at startup and compacts only completed runs');
+    pass('workflow runner cleans expired runs at startup and compacts only completed runs');
   } else {
-    fail('go runner retention and completed-run compaction are not fully wired');
+    fail('workflow runner retention and completed-run compaction are not fully wired');
   }
   if (verifyRunner.includes('loadCompletedPassCheckpoint') &&
       verifyRunner.includes('verification.post-review.pass-') &&
@@ -493,7 +493,7 @@ try {
   }
   if (runner.includes('resolveParallel') && runner.includes('parallel_source') &&
       batchRunner.includes('resolve-parallel.mjs')) {
-    pass('go and direct batch runners share argument/profile/default parallel resolution');
+    pass('run and direct batch runners share argument/profile/default parallel resolution');
   } else {
     fail('parallel profile fallback is not wired into both runners');
   }
@@ -501,24 +501,24 @@ try {
       runner.includes('progress: scanAuthProgressLine') && runner.includes('progress: handoffProgressLine') &&
       runner.includes('progress: true') &&
       runner.includes('--quiet')) {
-    pass('go runner streams bounded live progress with a quiet opt-out');
+    pass('workflow runner streams bounded live progress with a quiet opt-out');
   } else {
-    fail('go runner live progress forwarding is not fully wired');
+    fail('workflow runner live progress forwarding is not fully wired');
   }
   if (runner.includes("child.once('close'") && runner.includes('stream.end(resolve)') &&
       verifyRunner.includes("child.once('close'") && verifyRunner.includes('stream.end(resolveStream)') &&
       batchRunner.includes('--defer-verification') &&
       runner.includes("systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli, '--json'") &&
       runner.includes("systemPath('pipeline-liveness.mjs'), '--user', context.userId, '--json'")) {
-    pass('go and verify runners drain phase logs before consuming structured results');
+    pass('run and verify runners drain phase logs before consuming structured results');
   } else {
-    fail('go runner can still truncate or obscure structured verifier failures');
+    fail('workflow runner can still truncate or obscure structured verifier failures');
   }
-  if (process.platform === 'win32' || (statSync(join(ROOT, 'go-runner.mjs')).mode & 0o111)) {
-    pass('go-runner.mjs is executable');
+  if (process.platform === 'win32' || (statSync(join(ROOT, 'run-workflow.mjs')).mode & 0o111)) {
+    pass('run-workflow.mjs is executable');
   } else {
-    fail('go-runner.mjs is not executable');
+    fail('run-workflow.mjs is not executable');
   }
 } catch (error) {
-  fail(`deterministic go runner tests crashed: ${error.message}`);
+  fail(`deterministic workflow runner tests crashed: ${error.message}`);
 }

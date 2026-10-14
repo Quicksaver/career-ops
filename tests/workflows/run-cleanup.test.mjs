@@ -20,16 +20,19 @@ try {
   const artifacts = await import(pathToFileURL(join(ROOT, 'lib/run-artifacts.mjs')).href);
   const userRoot = join(tmp, 'users', 'test');
   const verifyRoot = join(userRoot, 'data', 'verify-runs');
-  const goRoot = join(userRoot, 'data', 'go-runs');
+  const workflowRoot = join(userRoot, 'data', 'workflow-runs');
+  const legacyRoot = join(userRoot, 'data', 'go-runs');
   mkdirSync(verifyRoot, { recursive: true });
-  mkdirSync(goRoot, { recursive: true });
+  mkdirSync(workflowRoot, { recursive: true });
 
   const oldVerify = join(verifyRoot, '2026-07-04T11-59-59-999Z');
-  const oldGo = join(goRoot, '2026-07-01T12-00-00-000Z');
+  const oldWorkflow = join(workflowRoot, '2026-07-01T12-00-00-000Z');
+  const oldLegacy = join(legacyRoot, '2026-07-01T12-00-00-000Z');
+  const recentLegacy = join(legacyRoot, '2026-07-14T11-00-00-000Z');
   const boundary = join(verifyRoot, '2026-07-04T12-00-00-000Z');
-  const recent = join(goRoot, '2026-07-14T11-00-00-000Z');
+  const recent = join(workflowRoot, '2026-07-14T11-00-00-000Z');
   const unknown = join(verifyRoot, 'manual-backup');
-  for (const dir of [oldVerify, oldGo, boundary, recent, unknown]) {
+  for (const dir of [oldVerify, oldWorkflow, oldLegacy, recentLegacy, boundary, recent, unknown]) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'artifact.log'), 'fixture artifact\n');
   }
@@ -47,14 +50,24 @@ try {
     fail(`active-runner cleanup guard wrong: ${JSON.stringify(activeSkip)}`);
   }
 
+  const legacyPid = artifacts.workflowRunnerPidPaths(userRoot)[1];
+  writeFileSync(legacyPid, `${process.pid}\n`);
+  const legacySkip = artifacts.cleanupExpiredRuns({ userRoot, now: Date.parse('2026-07-14T12:00:00.000Z') });
+  rmSync(legacyPid);
+  if (legacySkip.status === 'skipped' && existsSync(oldLegacy) && existsSync(oldWorkflow)) {
+    pass('legacy workflow ownership also blocks cleanup after the rename');
+  } else {
+    fail(`legacy-runner cleanup guard wrong: ${JSON.stringify(legacySkip)}`);
+  }
+
   const cleanup = artifacts.cleanupExpiredRuns({
     userRoot,
     now: Date.parse('2026-07-14T12:00:00.000Z'),
   });
-  if (cleanup.status === 'completed' && cleanup.deleted_runs === 2 &&
-      !existsSync(oldVerify) && !existsSync(oldGo) && existsSync(boundary) &&
-      existsSync(recent) && existsSync(unknown)) {
-    pass('cleanup removes only timestamped verify/go runs strictly older than ten days');
+  if (cleanup.status === 'completed' && cleanup.deleted_runs === 3 &&
+      !existsSync(oldVerify) && !existsSync(oldWorkflow) && existsSync(boundary) &&
+      !existsSync(oldLegacy) && existsSync(recentLegacy) && existsSync(recent) && existsSync(unknown)) {
+    pass('cleanup removes only timestamped workflow, legacy workflow and verification runs strictly older than ten days');
   } else {
     fail(`run cleanup boundary wrong: ${JSON.stringify(cleanup)}`);
   }
@@ -98,8 +111,8 @@ try {
     fail(`non-completed run was compacted: ${JSON.stringify(skipped)}`);
   }
 
-  const cliOld = join(goRoot, '2000-01-01T00-00-00-000Z');
-  const cliRecent = join(goRoot, '2999-01-01T00-00-00-000Z');
+  const cliOld = join(workflowRoot, '2000-01-01T00-00-00-000Z');
+  const cliRecent = join(workflowRoot, '2999-01-01T00-00-00-000Z');
   mkdirSync(cliOld, { recursive: true });
   mkdirSync(cliRecent, { recursive: true });
   writeFileSync(join(cliOld, 'artifact.log'), 'old\n');

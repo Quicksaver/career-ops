@@ -107,11 +107,11 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/scan.md` | Portal scanner instructions |
 | `modes/scan-handoff.md` | Agent/WebSearch scan handoff instructions |
 | `modes/scan-auth.md` | Authenticated portal scanner instructions |
-| `modes/go.md` | Sourcing-loop shorthand instructions |
-| `go-runner.mjs` | Deterministic end-to-end sourcing coordinator |
-| `cleanup-runs.mjs` | Deletes per-user verify/go run directories older than 10 days |
+| `modes/run.md` | Full sourcing and queue workflow instructions |
+| `run-workflow.mjs` | Deterministic end-to-end sourcing coordinator |
+| `cleanup-runs.mjs` | Deletes per-user workflow and verification run directories older than 10 days |
 | `modes/verify.md` | Prompt-reviewed integrity workflow instructions |
-| `verify-runner.mjs` | Standalone review/action/reverify coordinator used by `go` |
+| `verify-runner.mjs` | Standalone review/action/reverify coordinator used by `run` |
 | `apply-verification-review.mjs` | Applies bounded tracker/orphan actions and exact-fingerprint seen records |
 | `resolve-parallel.mjs` | Resolves batch parallelism from argument, user profile, or system default |
 | `resolve-verify-warnings.mjs` | Validates and applies model-confirmed duplicate-only warning resolutions |

@@ -1,5 +1,5 @@
 ---
-description: Merge upstream main, adapt fork workflows including the full go runner, and report usage changes.
+description: Merge upstream main, adapt fork workflows including the full workflow runner, and report usage changes.
 name: update-main
 ---
 
@@ -13,9 +13,9 @@ Fetch and merge `main` branch from `upstream` remote onto current branch, preser
 
 Remember incoming changes have been purposefully merged, the ongoing branch work is accessory and any conflicts should be resolved by working our changes around the incoming ones as necessary.
 
-Treat every update as an end-to-end compatibility change, even when `go-runner.mjs` itself has no merge conflict. Compare the incoming commands, modes, providers, filters, data contracts, worker schemas, CV checks, tracker/status side effects, and manual-input rules with the executable path used by `go`, batch workers, liveness, reconciliation, and reviewed verification. Adapt the fork to the current upstream behavior and retire duplicate implementations; preserve only the intentional differences documented in `FORK.md`.
+Treat every update as an end-to-end compatibility change, even when `run-workflow.mjs` itself has no merge conflict. Compare the incoming commands, modes, providers, filters, data contracts, worker schemas, CV checks, tracker/status side effects, and manual-input rules with the executable path used by `run`, batch workers, liveness, reconciliation, and reviewed verification. Adapt the fork to the current upstream behavior and retire duplicate implementations; preserve only the intentional differences documented in `FORK.md`.
 
-During the merge, use `modes/go.md` as the authoritative runner contract. Check whether upstream changes require adapting queue dispatch, manual-action collection, answer matching, recovery bounds, or completion criteria. Update the affected runner code and fixtures together so the merged workflow still processes independent jobs while preserving unresolved choices and stopping recovery at its configured limits.
+During the merge, use `modes/run.md` as the authoritative runner contract. Check whether upstream changes require adapting queue dispatch, manual-action collection, answer matching, recovery bounds, or completion criteria. Update the affected runner code and fixtures together so the merged workflow still processes independent jobs while preserving unresolved choices and stopping recovery at its configured limits.
 
 After adapting upstream changes, check both interactive modes and headless workers against the same canonical workflow, including any changes to model or CLI selection. New checks or configuration options are not integrated merely because their files exist: prove they are reached by the runner, or document a deliberate limitation in `FORK.md`.
 
@@ -36,4 +36,4 @@ Run raw pipeline verification against an isolated temporary user fixture. Use an
 
 If the dashboard changed, also run Go tests in `dashboard/`.
 
-Finally, report usage changes over the actual incorporated-base-to-new-base range, distinguishing new features from behavior already present in the fork. Explain which changes apply automatically, need user configuration, or intentionally remain unsupported, and state the evidence and limits of `go` validation.
+Finally, report usage changes over the actual incorporated-base-to-new-base range, distinguishing new features from behavior already present in the fork. Explain which changes apply automatically, need user configuration, or intentionally remain unsupported, and state the evidence and limits of `run` validation.

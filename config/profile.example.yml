@@ -155,7 +155,7 @@ spend_tier: standard
 #   model: gpt-6.1-sol
 #   reasoning_effort: medium  # minimal | low | medium | high | xhigh
 
-# Optional default for go-runner, direct batch-runner, and reviewed verification.
+# Optional default for run-workflow, direct batch-runner, and reviewed verification.
 # An explicit --parallel argument wins. Valid range: 1-32.
 # batch:
 #   parallel: 1

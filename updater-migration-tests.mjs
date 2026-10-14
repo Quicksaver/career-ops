@@ -15,6 +15,7 @@ import {
   createReexecMarker,
   consumeReexecMarker,
   isSafeManifestPath,
+  staleSystemFiles,
 } from './update-system.mjs';
 
 let passed = 0;
@@ -272,7 +273,20 @@ const ALLOWED_MISSING_ENTRIES = new Set([
   'tracker-columns-tests.mjs', // → tests/tracker-columns.test.mjs (#4758)
   // Same reason: moved to tests/tracker-writer-lock.test.mjs (#4759).
   'tracker-writer-lock-tests.mjs',
+  // Renamed workflow entrypoints stay listed so updates remove old copies.
+  'go-runner.mjs',
+  'modes/go.md',
 ]);
+{
+  const retired = ['go-runner.mjs', 'modes/go.md'];
+  const current = ['run-workflow.mjs', 'modes/run.md'];
+  const stale = staleSystemFiles([...retired, ...current], current, systemPaths);
+  if (retired.every(path => stale.includes(path)) && current.every(path => !stale.includes(path))) {
+    pass('workflow rename prunes retired entrypoints while preserving current ones');
+  } else {
+    fail(`workflow rename prune selection wrong: ${JSON.stringify(stale)}`);
+  }
+}
 for (const [listName, entries] of [['SYSTEM_PATHS', systemPaths], ['BOOTSTRAP_PATHS', bootstrapPaths]]) {
   for (const entry of entries) {
     if (entry.endsWith('/')) continue;

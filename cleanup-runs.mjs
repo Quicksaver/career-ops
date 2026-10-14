@@ -15,8 +15,9 @@ Options:
   -h, --help            Show this help
 
 Deletes timestamped run directories older than ${RUN_RETENTION_DAYS} days from
-the active user's data/verify-runs and data/go-runs directories. Cleanup is
-skipped while another go or verify runner is active for that user.`;
+the active user's data/verify-runs and data/workflow-runs directories, including
+historical workflow folders. Cleanup is skipped while another workflow or
+verify runner is active for that user.`;
 
 let context;
 try {
@@ -52,6 +53,6 @@ if (rawArgs.includes('--json')) {
   }, {});
   console.log(
     `[cleanup:runs] deleted ${result.deleted_runs} run(s) older than ${RUN_RETENTION_DAYS} days ` +
-    `(verify ${byKind.verify || 0}, go ${byKind.go || 0}); freed ${result.deleted_human}`,
+    `(verify ${byKind.verify || 0}, run ${byKind.run || 0}); freed ${result.deleted_human}`,
   );
 }

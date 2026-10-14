@@ -8,7 +8,7 @@ description: >-
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[go | verify | scan-handoff | scan-auth | scan | discover | deep | pdf | ats | text | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | triage | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | master-profile | intake | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | calibrate | offer-prep | titles | upskill | followup | reply-watch | outcome | update]"
+argument-hint: "[run | verify | scan-handoff | scan-auth | scan | discover | deep | pdf | ats | text | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | triage | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | master-profile | intake | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | calibrate | offer-prep | titles | upskill | followup | reply-watch | outcome | update]"
 license: MIT
 ---
 
@@ -51,7 +51,7 @@ users/{USER}/
 Resolve the active user before doing mode routing, reading files, or running scripts:
 
 1. If the current invocation explicitly names a user, set that as `ACTIVE_USER`.
-   - Preferred: `/career-ops go <username>`, `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`
+   - Preferred: `/career-ops run <username>`, `/career-ops scan <username>`, `/career-ops scan-auth <username> linkedin`, `/career-ops pipeline <username>`
    - For commands with free-form arguments, prefer: `/career-ops pdf --user <username> some-job`
    - `--user <username>` and `--user=<username>` are always explicit.
 2. Otherwise, if this conversation already established an active user from a prior `/career-ops` invocation, reuse that user.
@@ -72,7 +72,7 @@ After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
 
 ## Long-Running Command Quiet Mode
 
-For `go`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
+For `run`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
 
 - Keep the current agent turn active until the workflow completes and final reconciliation and verification succeed, or until user action, an explicit stop, a confirmed destructive risk, or exhausted safe recovery provides the terminal outcome.
 - Treat background and detached processes as actively supervised work owned by the current turn. Send the final response after the terminal outcome.
@@ -117,7 +117,7 @@ Determine the mode from `$mode`:
 | `inbox` | `agent-inbox` |
 | `pipeline` | `pipeline` |
 | `apply` | `apply` |
-| `go` | `go` |
+| `run` | `run` |
 | `verify` | `verify` |
 | `scan` | `scan` |
 | `scan-handoff` | `scan-handoff` |
@@ -166,7 +166,7 @@ Concrete equivalents for Codex prompt-driven sessions:
 
 ```text
 /career-ops {JD}           ↔ "Evaluate this JD with career-ops auto-pipeline: {JD or URL}"
-/career-ops go             ↔ "Run the career-ops go mode for <username>."
+/career-ops run             ↔ "Run the career-ops run mode for <username>."
 /career-ops verify         ↔ "Run reviewed career-ops verification for <username>."
 /career-ops scan           ↔ "Run the career-ops scan mode and summarize new matches."
 /career-ops pipeline       ↔ "Run the career-ops pipeline mode for <username>."
@@ -209,7 +209,7 @@ Available commands:
   /career-ops tracker   → Application status overview
   /career-ops agent-inbox → Queue/drain requests for the next session (users/{ACTIVE_USER}/data/agent-inbox.md)
   /career-ops apply     → Live application assistant (reads form + generates answers)
-  /career-ops go        → Scan configured sources, drain the inbox, and surface manual actions
+  /career-ops run        → Scan configured sources, drain the inbox, and surface manual actions
   /career-ops verify    → Review every integrity finding, apply safe fixes, remember verified exceptions, and reverify
   /career-ops scan      → Scan portals and discover new offers
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
@@ -246,7 +246,7 @@ Resolve `language.modes_dir` before applying the path shorthand below. With no s
 
 Read the resolved shared context (default `modes/_shared.md`) + `users/{ACTIVE_USER}/modes/_profile.md` (if exists) + `users/{ACTIVE_USER}/modes/_custom.md` (if exists) + the resolved selected mode file (default `modes/{mode}.md`). For an A-F evaluation, that selected file is the primary directory's evaluation mode; do not also load an evaluation file from a secondary directory.
 
-Applies to: `go`, `scan-handoff`, `scan-auth`, `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `text`, `contacto`, `apply`, `pipeline`, `scan`, `batch`
+Applies to: `run`, `scan-handoff`, `scan-auth`, `auto-pipeline`, `oferta`, `ofertas`, `pdf`, `text`, `contacto`, `apply`, `pipeline`, `scan`, `batch`
 
 ### Standalone modes with profile and custom context
 
@@ -262,13 +262,13 @@ Applies to: `triage`
 
 ### Execution ownership for long-running modes
 
-Run `go`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serially in the root agent. Keep the current root turn active through completion, including browser interaction, monitoring, recovery, reconciliation, and verification.
+Run `run`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serially in the root agent. Keep the current root turn active through completion, including browser interaction, monitoring, recovery, reconciliation, and verification.
 
 For a direct pipeline with three or more pending URLs, launch one subagent per URL and coordinate the fan-out from the root agent. Give each worker `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, and the loaded shared/profile/custom/mode instructions. State that all user-layer relative paths resolve inside `USER_ROOT`. Each worker completes its assigned URL directly, keeps research inline and bounded, and returns its terminal result to the root coordinator.
 
 Run one `batch/batch-runner.sh` invocation at a time directly from the root agent and supervise it through its terminal outcome. Treat any configured `--parallel N` workers as internal batch-runner activity under that single root-owned invocation. Commands such as `scan.mjs`, `scan-auth.mjs`, and liveness checks follow the same root-owned subprocess model.
 
-For a full `go` invocation, prefer `./go-runner.mjs --user {ACTIVE_USER}`. It is
+For a full `run` invocation, prefer `./run-workflow.mjs --user {ACTIVE_USER}`. It is
 the deterministic root-owned coordinator and invokes schema-constrained agent
 work for scan handoff; batch evaluation continues to use one contract-validated
 worker per job. Its final phase invokes `verify-runner.mjs`, the same reviewed
@@ -285,14 +285,14 @@ reviewer-selected identity breaks equal-status ties only. The resolver backs up
 and archives losing artifacts and records any keeper override in the duplicate
 ledger.
 Resolve Codex model and reasoning independently with this precedence:
-`go-runner.mjs` arguments, `users/{ACTIVE_USER}/config/profile.yml` under
+`run-workflow.mjs` arguments, `users/{ACTIVE_USER}/config/profile.yml` under
 `codex.model` / `codex.reasoning_effort`, then GPT 6.1 Sol with medium reasoning. The runner
 must pass resolved values to the handoff worker, verification-review
 worker, and all Codex batch workers.
 
 Parallelism resolves independently as `--parallel N`, then `batch.parallel`
 in `users/{ACTIVE_USER}/config/profile.yml`, then the system default `1`.
-`--parallel` is optional on the go runner, direct batch runner, and reviewed
+`--parallel` is optional on the workflow runner, direct batch runner, and reviewed
 verification runner. Verification uses that value only for dependency-safe
 read-only review lanes; deterministic repairs and ledger writes stay serialized.
 

@@ -200,7 +200,7 @@ const SYSTEM_PATHS = [
   'modes/scan.md',
   'modes/scan-handoff.md',
   'modes/scan-auth.md',
-  'modes/go.md',
+  'modes/run.md',
   'modes/verify.md',
   'modes/discover.md',
   'modes/batch.md',
@@ -386,10 +386,13 @@ const SYSTEM_PATHS = [
   'paste-reply-tests.mjs',
   'set-status-tests.mjs',
   'tracker-columns-tests.mjs',
+  // Retired workflow names remain prune targets for existing fork installs.
+  'go-runner.mjs',
+  'modes/go.md',
   // ── end retired paths ─────────────────────────────────────────────────────
   'user-agent.mjs',
   'doctor.mjs',
-  'go-runner.mjs',
+  'run-workflow.mjs',
   'resolve-parallel.mjs',
   'resolve-codex-config.mjs',
   'resolve-verify-warnings.mjs',

@@ -2154,7 +2154,7 @@ const systemFiles = [
   'CLAUDE.md', 'CODEX.md', 'OPENCODE.md', 'VERSION', 'DATA_CONTRACT.md', 'docs/CODEX.md',
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
-  'modes/scan-handoff.md', 'modes/scan-auth.md', 'modes/go.md', 'modes/verify.md',
+  'modes/scan-handoff.md', 'modes/scan-auth.md', 'modes/run.md', 'modes/verify.md',
   'scan-auth.mjs', 'scan-auth/linkedin.mjs',
   'modes/heuristics/recruiter-side.md',
   'templates/states.yml', 'templates/cv-template.html',
@@ -3304,7 +3304,7 @@ console.log('\n8. Mode file integrity');
 
 const expectedModes = [
   '_shared.md', '_profile.template.md', 'oferta.md', 'pdf.md', 'scan.md',
-  'scan-handoff.md', 'scan-auth.md', 'go.md', 'verify.md', 'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
+  'scan-handoff.md', 'scan-auth.md', 'run.md', 'verify.md', 'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
   'ofertas.md', 'pipeline.md', 'project.md', 'tracker.md', 'training.md',
   'interview.md', 'latex.md', 'latex-tex.md', 'email.md', 'add.md', 'titles.md',
   'expand.md', 'discover.md',
@@ -3465,10 +3465,10 @@ for (const skillPath of ['.claude/skills/career-ops/SKILL.md', '.agents/skills/c
   } else {
     fail(`${skillPath} does not expose /career-ops latex in discovery menu`);
   }
-  if (skill.includes('/career-ops go') && skill.includes('| `go` | `go` |')) {
-    pass(`${skillPath} exposes /career-ops go in routing and discovery`);
+  if (skill.includes('/career-ops run') && skill.includes('| `run` | `run` |')) {
+    pass(`${skillPath} exposes /career-ops run in routing and discovery`);
   } else {
-    fail(`${skillPath} does not expose /career-ops go in routing and discovery`);
+    fail(`${skillPath} does not expose /career-ops run in routing and discovery`);
   }
   if (
     skill.includes('/career-ops verify') &&
@@ -3491,17 +3491,17 @@ for (const skillPath of ['.claude/skills/career-ops/SKILL.md', '.agents/skills/c
   }
 }
 
-const goMode = readFile('modes/go.md');
+const runMode = readFile('modes/run.md');
 if (
-  goMode.includes('node go-runner.mjs --user {USER}') &&
-  goMode.includes('existing inbox') &&
-  goMode.includes('manual-actions.json') &&
-  goMode.includes('Continue every independent') &&
-  goMode.includes('pending/blocked inbox')
+  runMode.includes('node run-workflow.mjs --user {USER}') &&
+  runMode.includes('existing inbox') &&
+  runMode.includes('manual-actions.json') &&
+  runMode.includes('Continue every independent') &&
+  runMode.includes('pending/blocked inbox')
 ) {
-  pass('go mode documents the executable queue drain and independent manual actions');
+  pass('run mode documents the executable queue drain and independent manual actions');
 } else {
-  fail('go mode is missing required sourcing-loop coordination rules');
+  fail('run mode is missing required sourcing-loop coordination rules');
 }
 
 const verifyMode = readFile('modes/verify.md');

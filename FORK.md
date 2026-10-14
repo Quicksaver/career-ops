@@ -241,8 +241,8 @@ New upstream features or behavior now present:
 - CLI/runtime surface: upstream added first-class Codex docs/wrapper support and Kimi CLI entrypoints through `CODEX.md`, `KIMI.md`, and `.kimi/skills/career-ops/SKILL.md`. The fork keeps these as thin `AGENTS.md` / canonical-skill pointers, but rewrites examples to include the required active user instead of root `data/pipeline.md` assumptions.
 - OpenAI-compatible evaluator: upstream added `openai-eval.mjs` for OpenAI, OpenRouter, Together, Groq, DeepSeek, local `/v1` servers, and other compatible endpoints. The fork adopted the endpoint/security behavior and adapted CV/report paths through `--user {USER}`, `users/{USER}/cv.md`, and `users/{USER}/reports/`; `test-all.mjs` now has a guard for that user-scoped routing.
 - Governance/docs surface: upstream added `ARCHITECTURE.md`, `MAINTAINERS.md`, broadened `CODEOWNERS`, and added `docs/SUPPORTED_JOB_BOARDS.md`. These are system-layer docs; keep any user-specific targeting or company preferences in `users/{USER}/portals.yml` and profile files.
-- Scanner/mode hardening: upstream trimmed `title_filter` keywords before length checks and bounded scan subagents as single-pass workers that must not fan out into more research agents. The fork keeps those constraints while preserving quiet long-running monitoring, `scan-auth`, `scan-handoff`, `go`, user-scoped portal paths, and the custom provider layer.
-- Sourcing shorthand: the fork adds `/career-ops go` as a coordinator for zero-token discovery, current-scan handoff, authenticated LinkedIn, existing/new inbox processing, and reviewed verification. Manual source/job actions stay visible while independent jobs continue; an empty discovery result still processes the backlog.
+- Scanner/mode hardening: upstream trimmed `title_filter` keywords before length checks and bounded scan subagents as single-pass workers that must not fan out into more research agents. The fork keeps those constraints while preserving quiet long-running monitoring, `scan-auth`, `scan-handoff`, `run`, user-scoped portal paths, and the custom provider layer.
+- Sourcing shorthand: the fork adds `/career-ops run` as a coordinator for zero-token discovery, current-scan handoff, authenticated LinkedIn, existing/new inbox processing, and reviewed verification. Manual source/job actions stay visible while independent jobs continue; an empty discovery result still processes the backlog.
 - Updater/runtime fixes: upstream registered Kimi paths in updater system manifests and fixed updater self-reexec checkout discovery from import closure analysis. The fork keeps those fixes while preserving `users/`, root `voice-dna.md`, and other user-path safety guards; `scaffolder/bin/skill-entrypoints.mjs` also materializes `.kimi/skills/career-ops/SKILL.md` so Kimi behaves like the other CLI entrypoints on filesystems without symlink support.
 - Tracker parser consolidation: upstream extracted header-name tracker column parsing into `tracker-parse.mjs` and expanded tests so `merge-tracker.mjs`, `dedup-tracker.mjs`, `followup-cadence.mjs`, and `analyze-patterns.mjs` share the same `Location`-column-safe mapping. The fork adopted the shared parser while keeping production readers on `users/{USER}/data/applications.md`; `CAREER_OPS_TRACKER` remains a fixture/non-standard override.
 - Evaluation research bounds: upstream added an explicit single-pass research budget to `modes/oferta.md` and `modes/auto-pipeline.md`, capping company/comp/hiring-signal lookup at 5 WebSearch queries and keeping research inside the agent assigned to each role instead of recursively launching research workers. This preserves the fork's one-role-per-worker pipeline fan-out while bounding work within each evaluation.
@@ -290,7 +290,7 @@ Conflict notes from this merge:
 - `doctor.mjs`: adopted upstream's non-fatal setup-warning presentation while retaining the fork's active-user prerequisite root and explicit `users/{USER}/...` labels; the machine-readable onboarding state remains authoritative for whether user workflows may proceed.
 - `docs/SCRIPTS.md`: kept the fork's deterministic HTML renderer documentation and accepted upstream's corrected direct `node build-cv-latex.mjs` invocation and heading.
 - `modes/ar/fursah.md`, `modes/ja/kyujin.md`, `modes/tr/is-ilani.md`, `modes/zh-TW/oferta.md`, and `modes/zh/oferta.md`: adopted upstream's localized Risk Summary blocks but changed their red-flag source paths to `users/{USER}/interview-prep/`; generated report links remain relative to `users/{USER}/reports/`.
-- `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream `/expand`, output-language, Kimi/Gemini, and v1.22 documentation with the fork's active-user router, `go`/`verify`/`scan-handoff`/`scan-auth` supervision, `Closed` lifecycle, and explicit `users/{USER}` path contract.
+- `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream `/expand`, output-language, Kimi/Gemini, and v1.22 documentation with the fork's active-user router, `run`/`verify`/`scan-handoff`/`scan-auth` supervision, `Closed` lifecycle, and explicit `users/{USER}` path contract.
 - `build-cv-html.mjs`, `build-cv-latex.mjs`, `generate-pdf.mjs`, and `modes/pdf.md`: composed the shared optional-section core, photo/preview support, and page budgets with template containment, report-linked naming, section-order validation, and active-user output containment.
 - `gemini-eval.mjs`, `ollama-eval.mjs`, `openai-eval.mjs`, and `openrouter-runner.mjs`: kept upstream token tracking and output-language directives while restoring per-user CV/profile/report allocation and tracker merging. Gemini's reservation is released on every failure path and its tracker addition is written only after the user-scoped report succeeds.
 - `scan.mjs`, `scan-ats-full.mjs`, and `templates/portals.example.yml`: adopted normalized URL/company-role dedup, posted-date windows, visa filters, content-filter refinements, and new provider examples while preserving active-user portal/cache/pipeline/history paths, fork company/location filters, and closed-duplicate reopen writeback.
@@ -311,12 +311,12 @@ Conflict notes from this merge:
 - `generate-cover-letter.mjs`, `modes/cover.md`, and `test/cover-resolver.test.mjs`: combined upstream's shared cover-template resolver with the fork's active-user output flow. Production resolution now reads `cover_letter.template` from `users/{USER}/config/profile.yml`, generated PDFs stay under `users/{USER}/output/`, and pure resolver/build tests still import without selecting a real user.
 - `docs/FAQ.md` and `docs/SCRIPTS.md`: kept upstream's custom-template and OpenAI-tailoring documentation while restoring user-scoped profile/output paths, preserving the blacklist FAQ, and documenting the deterministic renderer's user/output/template boundaries.
 - `cv-templates.mjs`, `test/cv-templates.test.mjs`, `test-all.mjs`, and `update-system.mjs`: adopted the upstream template-format allowlist, cover resolver tests, renderer self-test, and updater registration. The merged quick suite passes 1,748 checks; a separate temporary-user smoke test rendered the deterministic HTML through `generate-pdf.mjs` and recorded the report-linked manifest entry.
-- `.agents/skills/career-ops/SKILL.md`, `AGENTS.md`, and `modes/_shared.md`: accepted upstream's deterministic `_profile` → `_custom` → selected-mode order and factual-source guard, while resolving every user customization reference through `users/{USER}` and retaining the fork's active-user, `go`, `scan-handoff`, `scan-auth`, and quiet-monitoring contracts.
+- `.agents/skills/career-ops/SKILL.md`, `AGENTS.md`, and `modes/_shared.md`: accepted upstream's deterministic `_profile` → `_custom` → selected-mode order and factual-source guard, while resolving every user customization reference through `users/{USER}` and retaining the fork's active-user, `run`, `scan-handoff`, `scan-auth`, and quiet-monitoring contracts.
 - `assessment-log.mjs`, `cv-templates.mjs`, `img-to-pdf.mjs`, and `build-cv-latex.mjs`: upstream introduced or extended these helpers with root-oriented defaults. The merge routes assessment/profile access through `lib/user-context.mjs`, requires a user for normal CLI execution, and keeps generated image/LaTeX output inside the active user root; import-only helpers and self-tests remain data-independent.
 - `DATA_CONTRACT.md`, `docs/FAQ.md`, `docs/SCRIPTS.md`, `modes/cover.md`, `modes/latex.md`, `modes/pdf.md`, and `modes/scan.md`: adopted assessment logging, template selection, image conversion, cross-listing, and blacklist documentation while rewriting candidate-data paths and examples to `users/{USER}` plus explicit `--user` arguments.
 - `test-all.mjs`: combined upstream template, CRLF, workflow-order, assessment, and image self-tests with the fork's disposable `CAREER_OPS_USERS_DIR` fixtures and explicit active-user path markers. The merged quick suite passes 1,745 checks.
 - `web/src/components/assistant-console.tsx`, `web/src/components/copyable-command.tsx`, and `web/src/components/theme-toggle.tsx`: adopted the shared `Button` primitive refactor unchanged; the web typecheck, 19 tests, audit, and production build remain green.
-- `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream `email`, `add`, `agent-inbox`, interview submodes, and onboarding docs with the fork's mandatory active-user router, `go`, `scan-handoff`, `scan-auth`, and quiet long-running monitoring rules. The canonical agent skill now exposes both the new upstream modes and the fork-only sourcing/auth modes.
+- `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream `email`, `add`, `agent-inbox`, interview submodes, and onboarding docs with the fork's mandatory active-user router, `run`, `scan-handoff`, `scan-auth`, and quiet long-running monitoring rules. The canonical agent skill now exposes both the new upstream modes and the fork-only sourcing/auth modes.
 - `CLAUDE.md`: upstream expanded this file again; the fork restored the thin `@./AGENTS.md` wrapper so active-user, data-contract, and source-of-truth behavior continues to have one canonical instruction surface.
 - `DATA_CONTRACT.md`, `modes/patterns.md`, `modes/followup.md`, `modes/apply.md`, `modes/update.md`, `docs/SETUP.md`, `docs/SCRIPTS.md`, and `README.md`: merged upstream's new helpers and docs while rewriting user-data examples to `users/{USER}` and commands to explicit `--user {USER}` where they touch candidate data.
 - `scan.mjs`: adopted upstream's provider registry loader (`providers/_registry.mjs`) and provider additions while preserving `configureScanUserPaths(ctx)`, user-scoped portal/profile/pipeline/history/handoff paths, company block filtering, per-target `location_filter`, and the combined `emptyTargets` behavior.
@@ -375,7 +375,7 @@ Conflict notes from this merge:
 - `.github/workflows/test.yml`, `liveness-api.mjs`, and `test-all.mjs`: the Ashby liveness and CI follow-up merged cleanly with no conflict. No user-path adaptation was required because `liveness-api.mjs` is stateless URL classification/fetch code, and the new tests mock `globalThis.fetch` rather than reading user-layer files.
 - `plugins.mjs`, `plugins/_engine.mjs`, `docs/PLUGIN_REVIEW.md`, `docs/PLUGINS.md`, `plugins/README.md`, and `test-all.mjs`: combined upstream's seed/successor model and plugin registry docs with the fork's user-scoped plugin root. `resolveSuccessorIds(root, userRoot)` now reads the system registry from the repo but checks `plugins.local` and `plugins.lock` under the active user root; `plugins.mjs list/run/skill` passes that override set into discovery, and tests cover user-root successor resolution.
 - `plugins-registry.json`: upstream's Tavily registry addition merged cleanly with no conflict. No active-user adaptation was required because the registry is system-layer metadata and user install/config remains user-scoped.
-- `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream interview submodes and `doctor.mjs --json` `autoCopied` documentation with the fork's mandatory active-user router, `go`, `scan-handoff`, `scan-auth`, and quiet long-running monitoring rules.
+- `.agents/skills/career-ops/SKILL.md` and `AGENTS.md`: combined upstream interview submodes and `doctor.mjs --json` `autoCopied` documentation with the fork's mandatory active-user router, `run`, `scan-handoff`, `scan-auth`, and quiet long-running monitoring rules.
 - `CLAUDE.md`: upstream expanded this file back into a full single-root instruction copy; the fork restored the thin `@./AGENTS.md` wrapper so the active-user and source-of-truth contract has one canonical instruction surface.
 - `analyze-patterns.mjs`: combined upstream ATS channel-yield analysis and `--min-vendor-n` guard with the fork's active-user resolver and `users/{USER}/data/applications.md` default.
 - `scan.mjs`: combined upstream `skip_tiers` seniority filtering with the fork's company block filter, per-target `location_filter`, user-scoped portal/profile/pipeline/history/handoff paths, and closed-duplicate reopen logic. Filter order is company, title, seniority tier, location, salary, content.
@@ -581,7 +581,7 @@ What this customizes:
 - Injects `users/{USER}/modes/_profile.md` and `users/{USER}/config/profile.yml` into the temporary resolved worker prompt so batch scoring uses the same user-layer personalization as interactive scoring.
 - Preserves upstream `spend_tier` routing for explicitly selected Claude workers, reading it from the selected user profile. Codex is the runner default and resolves model/reasoning through the shared argument/profile/system hierarchy.
 - Treats `--model` as an explicit override for either worker CLI and adds the Codex-only `--reasoning-effort minimal|low|medium|high|xhigh` override, which is forwarded to every Codex batch worker as `model_reasoning_effort`.
-- Uses the same model/reasoning resolution for direct Codex batches, go handoff, and reviewed verification: explicit argument, selected-user profile, then `gpt-6.1-sol` / `medium`. Standalone batch defaults to Codex; explicit Claude selection remains supported.
+- Uses the same model/reasoning resolution for direct Codex batches, run handoff, and reviewed verification: explicit argument, selected-user profile, then `gpt-6.1-sol` / `medium`. Standalone batch defaults to Codex; explicit Claude selection remains supported.
 - Preserves upstream pre-screen discards and their audit records under `users/{USER}/batch/logs/discard.log`; sourced helper tests fall back to the fixture-local batch directory without weakening runtime user routing.
 - Injects `users/{USER}/modes/_custom.md` after the profile context and keeps the batch CV fact gate/output command on the same `{{USER_ROOT}}/output/{REPORT_NUM}-...` artifact path.
 
@@ -602,7 +602,7 @@ Future merge notes:
 - Preserve `local:jds/...` support because scan and pipeline flows can enqueue saved local JDs rather than only external URLs.
 - Preserve upstream rate-limit pause semantics and Claude MCP isolation. If the worker command code is refactored again, test that `paused_rate_limit` does not consume retry budget and Claude workers still include `--strict-mcp-config`.
 - Preserve optional parallel resolution as argument, profile `batch.parallel`, then `1`, including the `1-32` validation and logged source. Do not restore a shell-level default that masks the profile value.
-- Preserve Codex `--reasoning-effort` validation and forwarding alongside the existing model override; go-runner relies on both flags to carry its resolved profile values into every batch worker.
+- Preserve Codex `--reasoning-effort` validation and forwarding alongside the existing model override; run-workflow relies on both flags to carry its resolved profile values into every batch worker.
 - If post-batch pipeline reconciliation is refactored, make sure the reconciler receives the user-scoped state, pipeline, and reports paths together; otherwise it can look for report files in the wrong reports directory.
 
 ## Batch Artifact Integrity And Verification Propagation
@@ -617,10 +617,10 @@ Files:
 - `batch/batch-runner.sh`
 - `merge-tracker.mjs`
 - `verify-pipeline.mjs`
-- `go-runner.mjs`
+- `run-workflow.mjs`
 - `test-all.mjs`
 - `tests/workflows/batch-artifacts.test.mjs`
-- `tests/workflows/go-runner.test.mjs`
+- `tests/workflows/run-workflow.test.mjs`
 
 What this customizes:
 
@@ -634,9 +634,9 @@ What this customizes:
 - Releases the allocation sentinel as soon as a concrete real report occupies the number, before cross-artifact validation. The real report itself keeps the number occupied, while genuine validation failures no longer leave misleading sentinel/report pairs behind.
 - Adds `batch/batch-runner.sh --user {USER} --recover-artifact-failures` for historical false failures. Recovery launches no model workers and changes a failed row to completed only when its final JSON says completed and its non-reservation report plus tracker addition pass the same cross-artifact validator used by normal completion; incomplete or inconsistent sets remain failed and visible.
 - Adds a second integrity gate in `merge-tracker.mjs`: when the destination tracker exposes a Via column, a `company=?` addition without `via=` stays pending and the merge exits nonzero. Legacy trackers without a Via column retain their migration-compatible behavior.
-- Makes standalone batch verification authoritative: blocking `verify-pipeline.mjs` errors make `batch/batch-runner.sh` exit nonzero. The internal `--defer-verification` option is used only when `go-runner.mjs` owns the final structured verification phase, avoiding two competing final gates.
+- Makes standalone batch verification authoritative: blocking `verify-pipeline.mjs` errors make `batch/batch-runner.sh` exit nonzero. The internal `--defer-verification` option is used only when `run-workflow.mjs` owns the final structured verification phase, avoiding two competing final gates.
 - Makes `verify-pipeline.mjs --json` assign `process.exitCode` instead of terminating with `process.exit()`, allowing warning-heavy JSON larger than the pipe buffer to flush completely before Node exits.
-- Makes `go-runner.mjs` wait for child-process `close` and log-stream completion, capture verifier exit code `1` as structured JSON, retain that payload in the run summary, and report the actual blocking findings instead of an arbitrary truncated warning tail.
+- Makes `run-workflow.mjs` wait for child-process `close` and log-stream completion, capture verifier exit code `1` as structured JSON, retain that payload in the run summary, and report the actual blocking findings instead of an arbitrary truncated warning tail.
 - Adds regression coverage for reservation-sentinel exclusion, ambiguous same-number report rejection, deterministic Via completion, cross-artifact Via mismatch rejection, untraceable confidential-employer rejection, merge-time blocking with pending-file preservation, verifier JSON above 64 KiB, and the coordinator's log-drain/structured-failure wiring.
 
 Future merge notes:
@@ -646,7 +646,7 @@ Future merge notes:
 - Keep deterministic repair evidence-preserving and one-directional: a missing tracker Via may be copied from the report, but the validator must not invent a Via, overwrite a conflicting value, or mutate the report to match the tracker.
 - Keep reservation sentinels out of report discovery. Do not reintroduce a first-match `NNN-*.md` lookup: directory ordering is not a completion contract, and selecting `NNN-RESERVED.md` falsely reports a missing Machine Summary even when the worker's real report is valid.
 - Preserve pending TSVs on merge integrity failures so operators can inspect or retry them. Do not silently discard, merge, or renumber a blocked confidential-employer row.
-- Preserve the standalone-versus-parent verification split: direct batch runs must fail on blocking verification errors, while the deterministic `go` coordinator may defer the batch-local check only because it immediately performs and records its own structured verification.
+- Preserve the standalone-versus-parent verification split: direct batch runs must fail on blocking verification errors, while the deterministic `run` coordinator may defer the batch-local check only because it immediately performs and records its own structured verification.
 - Preserve Node's graceful stdout flush and the coordinator's `close`/stream-drain ordering. Reintroducing immediate `process.exit()` or resolving child phases on `exit` can truncate valid JSON and obscure the real failure.
 - If upstream adds an equivalent artifact transaction, retire this layer only after testing missing Via repair, conflicting Via rejection, confidential-source enforcement, pending-file preservation, large verifier output, and structured coordinator failure propagation end to end.
 
@@ -1009,11 +1009,11 @@ Future merge notes:
 - If upstream adds a handoff artifact, migrate to the upstream schema only if it remains user-scoped and stores the complete list, not just the terminal preview.
 - Keep WebSearch-derived additions gated by Playwright liveness verification; search snippets must not decide posting activity.
 
-## Go Full Workflow Mode
+## Run Full Workflow Mode
 
-The fork exposes `/career-ops go` as the executable end-to-end coordinator. Standalone `scan` remains a discovery command; invoking it does not authorize evaluation or CV generation.
+The fork exposes `/career-ops run` as the executable end-to-end coordinator. Standalone `scan` remains a discovery command; invoking it does not authorize evaluation or CV generation.
 
-Files: `modes/go.md`, `.agents/skills/career-ops/SKILL.md`, `go-runner.mjs`, `docs/SCRIPTS.md`.
+Files: `modes/run.md`, `.agents/skills/career-ops/SKILL.md`, `run-workflow.mjs`, `docs/SCRIPTS.md`.
 
 - Drains existing pending work as well as newly scanned jobs. The old pending-count-delta gate is retired.
 - Processes configured sources, current scan handoff, authenticated LinkedIn discovery, liveness, stable-ID synchronization, batch evaluation/CV output, tracker merge, reconciliation, and reviewed verification. Dayforce/Interamt are configured-source phases, HN uses the canonical scanner, and full ATS sweeps remain an explicit opt-in.
@@ -1021,7 +1021,7 @@ Files: `modes/go.md`, `.agents/skills/career-ops/SKILL.md`, `go-runner.mjs`, `do
 - Counts blocked `[!]` rows and unfinished batch jobs as remaining work. A completed sourcing subprocess or zero new discoveries never imply a completed inbox.
 - Supports inbox-only runs, explicit dispatch limits, bounded recovery, exact-answer resume, paused-run resume, and validated verification checkpoint resume.
 
-Future updates must inspect the executable runner and headless worker path against every changed upstream mode/command/data contract, even without a conflict in `go-runner.mjs`. Prefer shared upstream workflow instructions and validators to copied rubrics. Verify actual queue behavior with isolated executable fixtures; source-text wiring checks alone are insufficient.
+Future updates must inspect the executable runner and headless worker path against every changed upstream mode/command/data contract, even without a conflict in `run-workflow.mjs`. Prefer shared upstream workflow instructions and validators to copied rubrics. Verify actual queue behavior with isolated executable fixtures; source-text wiring checks alone are insufficient.
 
 ## Full ATS Discovery And Portal Validation
 
@@ -1121,7 +1121,7 @@ Files:
 - `modes/auto-pipeline.md`
 - `modes/oferta.md`
 - `modes/scan.md`
-- `modes/go.md`
+- `modes/run.md`
 - `modes/scan-auth.md`
 - `modes/pipeline.md`
 - `modes/batch.md`
@@ -1129,31 +1129,33 @@ Files:
 
 What this customizes:
 
-- Keeps the active agent turn open until `go`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch` reaches completion, requires user action, receives an explicit stop, encounters confirmed destructive risk, or exhausts safe recovery.
+- Keeps the active agent turn open until `run`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch` reaches completion, requires user action, receives an explicit stop, encounters confirmed destructive risk, or exhausts safe recovery.
 - Treats background and detached processes as work owned by the current turn. Agents poll process output and persisted state at least every 60 seconds, keep routine polls silent, and limit normal user-visible liveness updates to at most once every 10 minutes.
 - Uses stdout/stderr, logs, artifacts, PID/session state, lock ownership, worker liveness, and persisted counters as progress evidence. Proven ownerless locks and stale `processing` entries are recovered before resuming with the same active user and parallelism.
 - Finishes long-running work by confirming worker exit, reconciling pipeline state, merging tracker additions, running `node verify-runner.mjs --user {USER}`, and reporting completed, skipped, failed, seen, repaired, unresolved, and remaining counts.
-- Keeps `go`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serial in the root agent. `modes/scan.md` now expresses this as affirmative root-agent execution instead of recommending a background scan subagent.
+- Keeps `run`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serial in the root agent. `modes/scan.md` now expresses this as affirmative root-agent execution instead of recommending a background scan subagent.
 - Uses one subagent per surviving URL when a direct pipeline has three or more pending URLs. The root agent coordinates the fan-out, reconciliation, tracker merge, and final verification.
 - Requires every delegated pipeline prompt to carry `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, an atomically reserved report number, and the loaded shared/profile/custom/pipeline instructions. The prompt states that all user-layer relative paths resolve inside `USER_ROOT`.
 - Keeps each role's extraction, evaluation, and bounded company/compensation research within the agent assigned to that role, preserving one-role-per-worker scope.
 - Starts one `batch/batch-runner.sh` invocation at a time directly from the root agent. Configured `--parallel N` workers remain bounded internal concurrency managed by that single root-owned runner.
-- Resolves optional batch concurrency consistently for both go and direct batch execution: explicit `--parallel`, then active-user `batch.parallel`, then `1`. The go coordinator records the effective value and source in its final JSON.
+- Resolves optional batch concurrency consistently for both run and direct batch execution: explicit `--parallel`, then active-user `batch.parallel`, then `1`. The run coordinator records the effective value and source in its final JSON.
 - Adds `test-all.mjs` assertions for the cross-file supervision contract in `AGENTS.md`, the career-ops skill, pipeline mode, and batch mode.
 
 Future merge notes:
 
 - Preserve quiet polling together with terminal supervision; an equivalent upstream policy must cover process and persisted-state checks, safe recovery, reconciliation, verification, and terminal count reporting.
 - Preserve the execution split: root-owned serial scan/auth/apply/small-pipeline work, one-worker-per-URL fan-out for direct pipelines with three or more surviving URLs, and one root-owned batch-runner invocation with script-managed internal parallelism.
-- `go-runner.mjs` and `batch/batch-runner.sh` resolve optional parallelism deterministically as explicit `--parallel`, then the active user's `config/profile.yml` `batch.parallel`, then system default `1`. The go summary records both the resolved value and its source.
+- `run-workflow.mjs` and `batch/batch-runner.sh` resolve optional parallelism deterministically as explicit `--parallel`, then the active user's `config/profile.yml` `batch.parallel`, then system default `1`. The run summary records both the resolved value and its source.
 - Keep delegated worker prompts explicit about `ACTIVE_USER`, `USER_ROOT`, user-layer path resolution, one assigned URL, and atomically reserved report numbers.
 - Keep the supervision assertions synchronized with wording changes across instructions and mode files.
 
-## Deterministic `go` Runner
+## Deterministic `run` Runner
+
+The full workflow command is `/career-ops run {USER}`, implemented by `run-workflow.mjs` and exposed as `npm run run`. New diagnostics live under `data/workflow-runs/`. Historical `data/go-runs/` folders keep the same retention policy, and legacy ownership remains honored to prevent overlapping runners during upgrades. Go language and dashboard build commands keep their original names.
 
 Files:
 
-- `go-runner.mjs`
+- `run-workflow.mjs`
 - `scan.mjs`
 - `scan-auth/linkedin.mjs`
 - `resolve-parallel.mjs`
@@ -1168,11 +1170,11 @@ Files:
 - `lib/codex-config.mjs`
 - `lib/runner-command.mjs`
 - `lib/cli-launch.mjs`
-- `lib/go-queue.mjs`
+- `lib/run-queue.mjs`
 - `batch/manual-inputs.mjs`
 - `batch/runner-ownership.mjs`
 - `resolve-codex-config.mjs`
-- `lib/go-summary.mjs`
+- `lib/run-summary.mjs`
 - `lib/verification-review.mjs`
 - `lib/openai-output-schema.mjs`
 - `lib/duplicate-lifecycle.mjs`
@@ -1180,11 +1182,11 @@ Files:
 - `lib/pipeline-queue.mjs`
 - `lib/run-artifacts.mjs`
 - `cleanup-runs.mjs`
-- `schemas/go-handoff-output.schema.json`
+- `schemas/run-handoff-output.schema.json`
 - `schemas/verify-review-output.schema.json`
 - `modes/verify.md`
 - `tests/workflows/verify-review.test.mjs`
-- `tests/workflows/go-runner.test.mjs`
+- `tests/workflows/run-workflow.test.mjs`
 - `tests/workflows/run-cleanup.test.mjs`
 - `package.json`
 - `update-system.mjs`
@@ -1194,14 +1196,14 @@ Files:
 - `batch/README.md`
 - `AGENTS.md`
 - `.agents/skills/career-ops/SKILL.md`
-- `modes/go.md`
+- `modes/run.md`
 - `modes/batch.md`
 
 What this customizes:
 
 - Processes the full existing inbox, including no-new-discovery runs, and constrains each batch dispatch with an exact URL/local-JD queue file. Stable IDs and terminal states prevent unrelated historical inputs or completed jobs from being evaluated again.
 - Persists typed per-job holds under `batch/logs/{id}.hold.json` and gathers job/source/verifier actions in `data/manual-actions.json`. Exact URL-plus-reason answers resume only the corresponding hold; job content and silent/inferred agency values cannot resolve it. Missing-JD and agency holds write no completed artifacts and consume no retry.
-- Supports Codex and Claude in `go` only. OpenCode, Gemini, and Qwen are intentionally excluded from the coordinator; upstream direct-batch implementations remain available but are outside the fork's required support.
+- Supports Codex and Claude in `run` only. OpenCode, Gemini, and Qwen are intentionally excluded from the coordinator; upstream direct-batch implementations remain available but are outside the fork's required support.
 - Uses `lib/runner-command.mjs` for safe native/npm CLI launch, explicit Git Bash on Windows, preserved argv boundaries, and owned process-tree termination. Directory locks from `pipeline-lock.mjs` hold ownership through terminal cleanup; compatibility PID files do not overwrite another live owner.
 - Batch ownership records the native OS PID in `batch-runner.pid.owner.lock/owner.json` and releases only its own token. The compatibility PID remains a Bash/MSYS PID; Windows legacy checks use Git Bash instead of treating it as a native PID. Ambiguous ownership prevents dispatch. Dead ownership is recovered through the shared atomic protocol.
 - Recovery flags include normal pending work, with failed-job retry credit granted once on the first coordinator pass. Codex usage/session limits pause affected jobs without consuming their retry budget and require explicit `--resume-paused` after recovery.
@@ -1237,15 +1239,15 @@ What this customizes:
 - Writes an atomic checkpoint only after a complete chunk is normalized and semantically validated. Actions remain pass-atomic: no duplicate, orphan, tracker, or seen-ledger mutation starts until every lane and the aggregate duplicate-consistency check succeed. A fresh invocation ignores prior run artifacts; `--resume-run RUN_ID` explicitly reuses only checkpoints whose signature matches the active user, exact findings, and prior lane decisions. Matching checkpoints are normalized and semantically revalidated under the current contract when loaded, while their original decision chain remains available solely for matching later checkpoints from the same historical run. Each successful deterministic action phase also writes an atomic result checkpoint. If duplicate repair commits but the following apply phase fails, resume requires an exact match with the saved post-duplicate verification, normalizes/revalidates the saved applicable decisions, retains the completed duplicate result, and retries apply without prompting reviewers again. After every completed apply/reverify boundary, the runner also saves the exact post-review verification state. A later `--resume-run` whose current findings match that checkpoint continues at the next pass and reuses the already committed duplicate/apply action results, rather than replaying the completed repair pass. Raw/invalid reviewer outputs are never resumable decisions. Retry, checkpoint, and normalization counts are exposed under `review_resilience`.
 - Keeps the prompt reviewer read-only. Only `resolve-verify-warnings.mjs` and `apply-verification-review.mjs` may mutate data, and both revalidate prompt output against deterministic verifier evidence. Unsupported, conflicting, ambiguous, or high-severity findings use `manual_review` and keep reviewed verification `partial`.
 - Keeps manual-review decisions visible in direct human runs: after the normal compact summary (and any operational error), every still-active manual item is repeated as `human review, job(s) #..., {finding code} → needs_human_review`. This recap is non-enumerable runner state used only by the human renderer, so `--json` retains its existing machine contract and stdout purity.
-- Makes the parent `go` summary expose every unresolved verifier item immediately after the aggregate verification count, including its severity, stable finding code, and sanitized message. Machine-readable `--json` output retains the verifier fields and also exposes typed manual actions and phase issues.
+- Makes the parent `run` summary expose every unresolved verifier item immediately after the aggregate verification count, including its severity, stable finding code, and sanitized message. Machine-readable `--json` output retains the verifier fields and also exposes typed manual actions and phase issues.
 - Also repeats every other still-unresolved raw finding at the end of a direct human run with its warning/error level, related tracker/report IDs, and issue code. Manual items stay in their dedicated block and are excluded from the general unresolved block. Both recap collections are non-enumerable and never appear in `--json` output.
 - Adds an idempotent `pipeline.md` to `batch-input.tsv` synchronizer with stable IDs so the resumable batch runner cannot silently miss newly scanned jobs.
 - Adds JSON output to `check-liveness.mjs` plus a deterministic pipeline wrapper that moves only confirmed-expired rows and uses `set-status.mjs` for any matching tracker row.
-- Exposes the complete review/action/reverify lifecycle independently as `/career-ops verify`, `npm run verify -- --user {USER}`, and `node verify-runner.mjs --user {USER}`. `npm run verify:raw` remains the unreviewed detector. The `go` coordinator delegates its final integrity phase to the same reviewed runner, so standalone and end-to-end behavior cannot drift.
-- Serializes concurrent `go`, batch, and reviewed-verification runs with per-user directory ownership locks, owns child process groups for stop handling, and writes phase logs under the user root. Setup can block the run; an authenticated-source login becomes a pending action while independent inbox work continues. Completion requires an empty pending/blocked queue and clean source/verification results.
+- Exposes the complete review/action/reverify lifecycle independently as `/career-ops verify`, `npm run verify -- --user {USER}`, and `node verify-runner.mjs --user {USER}`. `npm run verify:raw` remains the unreviewed detector. The `run` coordinator delegates its final integrity phase to the same reviewed runner, so standalone and end-to-end behavior cannot drift.
+- Serializes concurrent `run`, batch, and reviewed-verification runs with per-user directory ownership locks, owns child process groups for stop handling, and writes phase logs under the user root. Setup can block the run; an authenticated-source login becomes a pending action while independent inbox work continues. Completion requires an empty pending/blocked queue and clean source/verification results.
 - Establishes a consistent public CLI output contract. Manual invocations stream bounded operational progress to stdout and finish with only a compact summary plus the actual failure text. `--json` opts into the complete machine result, keeps stdout as a single parseable JSON object, and routes progress to stderr. Internal orchestrators pass `--json` explicitly when parsing child results. Doctor and the batch runner retain their existing compact human output and persisted state artifacts.
-- Adds user-scoped run-artifact retention through `npm run cleanup:runs -- --user {USER}`. It deletes timestamped directories under both `data/verify-runs/` and `data/go-runs/` once they are strictly older than 10 days, and refuses cleanup while another go or verify runner is active for that user. The go runner applies the same cleanup at startup.
-- Compacts only terminal `completed` go and reviewed-verification runs to a single `summary.json`. Failed, interrupted, partial, and blocked runs keep their full diagnostic and resume artifacts until the fixed 10-day cleanup removes the entire run directory.
+- Adds user-scoped run-artifact retention through `npm run cleanup:runs -- --user {USER}`. It deletes timestamped directories under both `data/verify-runs/` and `data/workflow-runs/` once they are strictly older than 10 days, and refuses cleanup while another workflow or verify runner is active for that user. The workflow runner applies the same cleanup at startup.
+- Compacts only terminal `completed` workflow and reviewed-verification runs to a single `summary.json`. Failed, interrupted, partial, and blocked runs keep their full diagnostic and resume artifacts until the fixed 10-day cleanup removes the entire run directory.
 - Prints the reviewed verifier's run ID and artifact directory immediately after acquiring its per-user lock, before the first phase starts. Interrupted runs therefore expose the exact value accepted by `--resume-run`; JSON mode sends these early lines to stderr so stdout remains parseable.
 - Streams zero-token target/provider start and completion, handoff task activity, LinkedIn search prompts, queue deltas, batch job start/completion, and one short line per reviewed finding after its five-finding call completes: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details stay in run artifacts and the opt-in JSON result. `--quiet` retains the phase-log-only behavior.
 - Registers the runner, helpers, shared library, tests, and JSON schema in the updater-managed system layer so updates do not leave a partial coordinator.
@@ -1269,7 +1271,7 @@ Future merge notes:
 
 `scan-hn.mjs` narrows a temporary copy of the selected user's portals configuration and invokes the canonical `scan.mjs` provider pipeline. Title/seniority, company, location, country, visa, blacklist, and dedup rules therefore match normal scans. An API key no longer silently turns this sourcing wrapper into a paid Gemini pass. It uses a private temporary `CAREER_OPS_SCAN_HANDOFF` lane; main-scan handoff artifacts are never snapshot-restored or overwritten by HN, including concurrent/forced-stop cases.
 
-The go queue, liveness helper, synchronizer, authenticated scanner, and reconciler honor explicit pipeline lanes consistently. Normal production paths remain selected-user paths. New helpers and the Codex resolver are updater-managed system files; holds, answers, diagnostics, and manual actions remain user-owned.
+The workflow queue, liveness helper, synchronizer, authenticated scanner, and reconciler honor explicit pipeline lanes consistently. Normal production paths remain selected-user paths. New helpers and the Codex resolver are updater-managed system files; holds, answers, diagnostics, and manual actions remain user-owned.
 
 ## Local Maintenance Skill
 
@@ -1390,8 +1392,8 @@ On every upstream update, explicitly check whether upstream now includes:
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
 - Cross-artifact batch validation equivalent to the fork's report/TSV/final-JSON consistency gate, confidential-employer Via requirement, bounded deterministic repair, merge-time pending-file preservation, and structured verifier failure propagation.
 - Optional profile-driven batch parallelism with argument -> `batch.parallel` -> `1` precedence and bounded validation.
-- Codex model/reasoning argument -> profile -> GPT 6.1 Sol/medium resolution across every Codex call owned by the deterministic go coordinator.
-- Deterministic `go-runner.mjs` orchestration with strict handoff and verification-review schemas, stable queue synchronization, duplicate resolution, orphan restoration/archive, bounded tracker patches, and human-review-preserving final status.
+- Codex model/reasoning argument -> profile -> GPT 6.1 Sol/medium resolution across every Codex call owned by the deterministic run coordinator.
+- Deterministic `run-workflow.mjs` orchestration with strict handoff and verification-review schemas, stable queue synchronization, duplicate resolution, orphan restoration/archive, bounded tracker patches, and human-review-preserving final status.
 - Bounded batch runs through `--limit` are now upstream baseline; preserve only the fork-specific user-scoped/Codex integration around the flag.
 - Batch status/watch progress monitoring through user-scoped batch state.
 - User-scoped `spend_tier`, pre-screen discard logs, CV fact validation, salary/funnel/stats/upskill analytics, reply matching, invite matching, and canonical status updates.
@@ -1404,7 +1406,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Per-user adaptation for upstream `verify-portals.mjs`, `reconcile-pipeline.mjs`, pipeline liveness sweeps, `doctor.mjs --strict`, and any new scan/batch helpers that read `portals.yml`, `data/`, or `batch/`.
 - Per-user adaptation for upstream token aggregation and evaluator usage logs; no summary command may fall back to root `batch/` or `reports/`.
 - User-scoped scan handoff artifacts at `users/{USER}/data/scan-handoff.json` plus the explicit `/career-ops scan-handoff` follow-up mode.
-- Explicit `/career-ops go` full queue processing with conditional handoff, configured sources, independent manual actions, and non-fatal source/company failures.
+- Explicit `/career-ops run` full queue processing with conditional handoff, configured sources, independent manual actions, and non-fatal source/company failures.
 - Report-number reservation past 999 and reconciler report lookup through explicit `--reports` paths.
 - Per-target scan `location_filter` overrides and Arbeitsagentur remote-title/no-remote normalization.
 - User-scoped `voice-dna.md` behavior, if upstream keeps treating root `voice-dna.md` as a user file.
