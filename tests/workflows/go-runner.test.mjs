@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { delimiter, join } from 'path';
 import { pathToFileURL } from 'url';
 import { fail, getBash, pass, ROOT, toBashPath } from '../helpers.mjs';
+import { copyBatchOwnership } from '../copy-batch-ownership.mjs';
 
 console.log('\nWorkflow — deterministic go runner');
 
@@ -303,7 +304,7 @@ try {
   });
   if (fromProfile.model === 'profile-model' && fromProfile.reasoningEffort === 'high' &&
       fromProfile.modelSource === 'profile' && fromProfile.reasoningEffortSource === 'profile') {
-    pass('Codex settings fall back to profile.yml before global defaults');
+    pass('Codex settings fall back to profile.yml before system defaults');
   } else {
     fail(`profile Codex resolution wrong: ${JSON.stringify(fromProfile)}`);
   }
@@ -314,9 +315,9 @@ try {
     fail(`mixed Codex resolution wrong: ${JSON.stringify(mixed)}`);
   }
   const global = codexConfig.resolveCodexSettings({ profilePath: join(configTmp, 'missing.yml') });
-  if (global.model === null && global.reasoningEffort === null &&
-      global.modelSource === 'global' && global.reasoningEffortSource === 'global') {
-    pass('absent Codex arguments and profile values preserve global CLI fallback');
+  if (global.model === 'gpt-6.1-sol' && global.reasoningEffort === 'medium' &&
+      global.modelSource === 'default' && global.reasoningEffortSource === 'default') {
+    pass('absent Codex arguments and profile values use GPT6.1Sol medium system defaults');
   } else {
     fail(`global Codex fallback wrong: ${JSON.stringify(global)}`);
   }
@@ -361,6 +362,7 @@ try {
   mkdirSync(join(batchUserRoot, 'data'), { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
   writeFileSync(join(batchDir, 'batch-runner.sh'), readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8'));
+  copyBatchOwnership(batchTmp);
   writeFileSync(join(batchDir, 'batch-prompt.md'), 'URL={{URL}}\nUSER={{USER}}\n');
   writeFileSync(join(batchDir, 'batch-output-schema.json'), '{}\n');
   writeFileSync(join(batchUserRoot, 'batch/batch-input.tsv'), [

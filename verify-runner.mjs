@@ -19,6 +19,8 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { codexReasoningConfigArg, resolveCodexSettings } from './lib/codex-config.mjs';
+import { resolveRunnerCommand, terminateProcessTreeSync } from './lib/runner-command.mjs';
+import { acquirePipelineLock } from './pipeline-lock.mjs';
 import { resolveParallel } from './lib/parallel-config.mjs';
 import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.mjs';
 import { compactCompletedRun, compactPhaseRecords } from './lib/run-artifacts.mjs';
@@ -128,6 +130,7 @@ const phaseOffset = resumeRun
   : 0;
 const activeChildren = new Set();
 let lockOwned = false;
+let ownershipLock = null;
 let forwardingSignal = false;
 
 function log(message) {
@@ -182,17 +185,24 @@ function processAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-function acquireLock() {
+async function acquireLock() {
   mkdirSync(join(context.userRoot, 'data'), { recursive: true });
-  if (existsSync(lockPath)) {
-    const pid = Number.parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
-    if (processAlive(pid)) throw new Error(`another verify runner is active (PID ${pid})`);
-    rmSync(lockPath, { force: true });
+  ownershipLock = await acquirePipelineLock(lockPath, { timeoutMs: 1000, maxWaitMs: 1000 });
+  try {
+    if (existsSync(lockPath)) {
+      const pid = Number.parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
+      if (processAlive(pid)) throw new Error(`another verify runner is active (PID ${pid})`);
+      rmSync(lockPath, { force: true });
+    }
+    const temporary = `${lockPath}.tmp-${process.pid}`;
+    writeFileSync(temporary, `${process.pid}\n`, 'utf-8');
+    renameSync(temporary, lockPath);
+    lockOwned = true;
+  } catch (error) {
+    ownershipLock.release();
+    ownershipLock = null;
+    throw error;
   }
-  const temporary = `${lockPath}.tmp-${process.pid}`;
-  writeFileSync(temporary, `${process.pid}\n`, 'utf-8');
-  renameSync(temporary, lockPath);
-  lockOwned = true;
 }
 
 function releaseLock() {
@@ -201,19 +211,22 @@ function releaseLock() {
     if (existsSync(lockPath) && readFileSync(lockPath, 'utf-8').trim() === String(process.pid)) rmSync(lockPath, { force: true });
   } finally {
     lockOwned = false;
+    ownershipLock?.release();
+    ownershipLock = null;
   }
 }
 
-function stopActiveChildren(signal = 'SIGTERM') {
+function stopActiveChildren() {
   for (const child of activeChildren) {
-    try { child.kill(signal); } catch { /* child already stopped */ }
+    try { terminateProcessTreeSync(child, { signal: 'SIGKILL' }); }
+    catch (error) { console.error(`[verify] cleanup failed: ${error.message}`); }
   }
 }
 
 function forwardSignal(signal) {
   if (forwardingSignal) return;
   forwardingSignal = true;
-  stopActiveChildren(signal);
+  stopActiveChildren();
   releaseLock();
   process.removeAllListeners(signal);
   process.kill(process.pid, signal);
@@ -227,6 +240,8 @@ process.on('exit', () => {
 });
 
 async function runCommand(name, command, args, options = {}) {
+  const env = { ...process.env, CAREER_OPS_USER: context.userId };
+  const launch = resolveRunnerCommand(command, args, { cwd: context.projectRoot, env });
   const phase = {
     name, status: 'running', exit_code: null, signal: null,
     started_at: new Date().toISOString(), finished_at: null, log: null,
@@ -239,9 +254,10 @@ async function runCommand(name, command, args, options = {}) {
   const stdout = [];
   const stderr = [];
   log(`${name} started`);
-  const child = spawn(command, args, {
+  const child = spawn(launch.command, launch.args, {
+    ...launch.options,
     cwd: context.projectRoot,
-    env: { ...process.env, CAREER_OPS_USER: context.userId },
+    env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   activeChildren.add(child);
@@ -621,7 +637,7 @@ async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, code
 
 async function main() {
   mkdirSync(runDir, { recursive: true });
-  acquireLock();
+  await acquireLock();
   log(`run-id: ${runId}${resumeRun ? ' (resuming)' : ''}`);
   log(`logs: ${runDir}`);
   const codex = resolveCodexSettings({

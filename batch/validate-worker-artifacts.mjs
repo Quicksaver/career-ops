@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from 'fs';
-import { basename, resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { basename, resolve, dirname } from 'path';
+import { isMainModule } from '../lib/is-main-module.mjs';
 import * as yaml from 'js-yaml';
 import { normalizeVia, looksLikeTsvHeaderRow, resolveTsvColumns } from '../tracker-parse.mjs';
+import { hasEmbeddedJdArchive } from '../check-jd-archive.mjs';
+import { loadAnswers, validLocal, validUrl } from './manual-inputs.mjs';
 
 function clean(value) {
   const text = value == null ? '' : String(value).trim();
@@ -40,7 +42,7 @@ export function parseTrackerAddition(content) {
     const parts = lines[1].split('\t');
     if (parts.length !== header.length) throw new Error('tracker addition width disagrees with its header');
     const at = name => clean(parts[map[name]]);
-    return { line: lines[1], parts, headered: true, num: at('num'), company: at('company'), role: at('role'), score: at('score'), via: at('via') };
+    return { line: lines[1], parts, headered: true, num: at('num'), company: at('company'), role: at('role'), score: at('score'), via: at('via'), status: at('status'), pdf: at('pdf'), report: at('report'), url: at('url') };
   }
   if (lines.length !== 1) throw new Error(`tracker addition must contain exactly one non-empty line (found ${lines.length})`);
   const parts = lines[0].split('\t');
@@ -59,6 +61,7 @@ export function parseTrackerAddition(content) {
     company: parts[2].trim(),
     role: parts[3].trim(),
     score: parts[5].trim(),
+    status: parts[4].trim(), pdf: parts[6].trim(), report: parts[7].trim(),
     via: viaFields.length ? clean(viaFields[0].replace(/^via=/i, '')) : '',
   };
 }
@@ -72,8 +75,37 @@ function scoreNumber(score) {
   return match ? Number(match[1]) : null;
 }
 
-export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = null, repair = false }) {
-  const report = parseMachineSummary(readFileSync(reportPath, 'utf8'));
+export function postingIdentity(value) {
+  if (validLocal(value)) return value;
+  if (!validUrl(value)) return null;
+  const url = new URL(value);
+  url.hash = '';
+  url.searchParams.sort();
+  return url.href;
+}
+
+export function allowedPostingIdentities(expectedUrl, userRoot, answersPath, user) {
+  const allowed = new Set([postingIdentity(expectedUrl)].filter(Boolean));
+  if (userRoot && validLocal(expectedUrl, userRoot)) {
+    const text = readFileSync(resolve(userRoot, expectedUrl.slice(6)), 'utf8');
+    const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+    if (frontmatter) {
+      const metadata = yaml.load(frontmatter[1]);
+      for (const field of ['application_url', 'source_url']) {
+        const identity = postingIdentity(metadata?.[field]);
+        if (identity) allowed.add(identity);
+      }
+    }
+  }
+  if (answersPath) for (const answer of loadAnswers(answersPath, user, userRoot)) {
+    if (answer.url === expectedUrl && answer.reason === 'jd_unavailable' && answer.employer_url) allowed.add(postingIdentity(answer.employer_url));
+  }
+  return allowed;
+}
+
+export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = null, repair = false, strictWorkflow = false, userRoot = null, reportNum = null, expectedUrl = null, answersPath = null, user = null }) {
+  const reportContent = readFileSync(reportPath, 'utf8');
+  const report = parseMachineSummary(reportContent);
   let trackerContent = readFileSync(trackerPath, 'utf8');
   let tracker = parseTrackerAddition(trackerContent);
   let repaired = false;
@@ -82,6 +114,38 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
   const reportRole = clean(report.role);
   const reportVia = clean(report.via);
   const confidential = report.company_confidential;
+
+  if (strictWorkflow) {
+    if (!hasEmbeddedJdArchive(reportContent)) errors.push('report must archive the substantive JD verbatim');
+    const num = String(reportNum ?? tracker.num);
+    if (Number(tracker.num) !== Number(num) || !basename(reportPath).startsWith(`${num}-`)) errors.push('report/tracker number disagrees with reserved report number');
+    const reportLink = tracker.report.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    const expectedReport = resolve(reportPath);
+    const linkedReport = reportLink && resolve(userRoot || dirname(dirname(reportPath)), reportLink[2].replaceAll('\\', '/'));
+    if (!reportLink || Number(reportLink[1]) !== Number(num) || linkedReport !== expectedReport) errors.push('tracker report link must target the validated reserved report');
+    if (expectedUrl) {
+      const allowed = allowedPostingIdentities(expectedUrl, userRoot, answersPath, user);
+      if (!allowed.has(postingIdentity(tracker.url))) errors.push('tracker URL disagrees with expected posting identity');
+    }
+    const blocked = report.final_decision === 'Skip' || (Array.isArray(report.hard_stops) && report.hard_stops.length > 0);
+    if (blocked && tracker.status !== 'SKIP') errors.push('Skip/hard stops require tracker SKIP');
+    if (blocked && tracker.pdf === '✅') errors.push('Skip/hard stops cannot have a primary PDF');
+    if (/^(null|undefined)$/i.test(tracker.via)) errors.push('direct Via must be an empty TSV field, never a null string');
+    if (userRoot) {
+      const profilePath = resolve(userRoot, 'config/profile.yml');
+      const profile = existsSync(profilePath) ? yaml.load(readFileSync(profilePath, 'utf8')) : {};
+      if (['text', 'latex'].includes(profile?.cv?.output_format) && tracker.pdf === '✅') errors.push('configured text/latex output cannot claim a PDF');
+      const threshold = profile?.auto_pdf_score_threshold ?? 3;
+      if (tracker.pdf === '✅' && (typeof report.score !== 'number' || report.score < threshold)) errors.push('primary PDF is below the configured score gate');
+      const primaryPdf = resolve(userRoot, 'output', basename(reportPath).replace(/\.md$/, '.pdf'));
+      if (tracker.pdf === '✅' && !existsSync(primaryPdf)) errors.push('primary PDF must exist at the flat report-linked path');
+      const indexPath = resolve(userRoot, 'data/pdf-index.tsv');
+      if (tracker.pdf === '✅' && existsSync(indexPath)) {
+        const indexed = readFileSync(indexPath, 'utf8').split(/\r?\n/).map(line => line.split('\t')).filter(fields => Number(fields[0]) === Number(num) && (!fields[5] || fields[5] === 'cv'));
+        if (indexed.some(fields => basename(fields[1].replaceAll('\\', '/')) !== basename(primaryPdf))) errors.push('secondary CV overwrote the primary PDF index identity');
+      }
+    }
+  }
 
   if (!reportCompany) errors.push('Machine Summary company is missing');
   if (!reportRole) errors.push('Machine Summary role is missing');
@@ -115,7 +179,7 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
     errors.push(`tracker Via ${JSON.stringify(tracker.via)} disagrees with report Via ${JSON.stringify(reportVia)}`);
   }
 
-  const reportScore = typeof report.score === 'number' ? report.score : Number(report.score);
+  const reportScore = report.score == null || clean(report.score) === '' ? NaN : typeof report.score === 'number' ? report.score : Number(report.score);
   const trackerScore = scoreNumber(tracker.score);
   if (Number.isFinite(reportScore) && trackerScore !== null && Math.abs(reportScore - trackerScore) > 0.0001) {
     errors.push(`tracker score ${tracker.score} disagrees with report score ${report.score}`);
@@ -131,21 +195,36 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
       if (!clean(final.tracker)) errors.push('completed final JSON must include the tracker path');
       if (clean(final.tracker) && basename(clean(final.tracker)) !== basename(trackerPath)) errors.push('final JSON tracker path disagrees with the tracker artifact');
       if (clean(final.report) && resolve(clean(final.report)) !== resolve(reportPath)) errors.push('final JSON report path disagrees with the report artifact');
+      if (strictWorkflow) {
+        if (String(final.report_num) !== String(reportNum ?? tracker.num)) errors.push('final JSON number disagrees with reserved report number');
+        if (!clean(final.report)) errors.push('completed final JSON must include the report path');
+        if (final.id !== undefined && String(final.id) !== basename(trackerPath, '.tsv')) errors.push('final JSON job ID disagrees with tracker addition');
+        if (final.score !== undefined && Number.isFinite(reportScore) && final.score !== reportScore) errors.push('final JSON score disagrees with report');
+        if ((final.pdf !== null) !== (tracker.pdf === '✅')) errors.push('final JSON PDF disagrees with tracker PDF');
+        if (final.pdf !== null) {
+          const expected = resolve(userRoot || dirname(dirname(reportPath)), 'output', basename(reportPath).replace(/\.md$/, '.pdf'));
+          if (resolve(final.pdf) !== expected || !existsSync(expected)) errors.push('primary PDF must exist at the flat report-linked path');
+        }
+      }
     }
   }
 
   return { valid: errors.length === 0, repaired, errors, report, tracker };
 }
 
-const invokedDirectly = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invokedDirectly = isMainModule(import.meta.url);
 if (invokedDirectly) {
+  if (process.argv.includes('--help')) {
+    console.log('Usage: node batch/validate-worker-artifacts.mjs --report PATH --tracker PATH [--final PATH] [--repair] [--strict-workflow] [--user-root PATH] [--report-num N] [--expected-url URL] [--answers-file PATH] [--user USER]');
+    process.exit(0);
+  }
   try {
     const args = process.argv.slice(2);
     const reportPath = option(args, '--report');
     const trackerPath = option(args, '--tracker');
     const finalPath = option(args, '--final');
     if (!reportPath || !trackerPath) throw new Error('--report and --tracker are required');
-    const result = validateWorkerArtifacts({ reportPath, trackerPath, finalPath, repair: args.includes('--repair') });
+    const result = validateWorkerArtifacts({ reportPath, trackerPath, finalPath, repair: args.includes('--repair'), strictWorkflow: args.includes('--strict-workflow'), userRoot: option(args, '--user-root'), reportNum: option(args, '--report-num'), expectedUrl: option(args, '--expected-url'), answersPath: option(args, '--answers-file'), user: option(args, '--user') });
     if (!result.valid) {
       console.error(result.errors.join('; '));
       process.exitCode = 1;

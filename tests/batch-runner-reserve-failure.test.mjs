@@ -1,3 +1,4 @@
+import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -21,6 +22,7 @@ function fixture() {
   mkdirSync(batch);
   mkdirSync(bin);
   copyFileSync(join(ROOT, 'batch/batch-runner.sh'), join(batch, 'batch-runner.sh'));
+  copyBatchOwnership(root);
   writeFileSync(join(batch, 'batch-prompt.md'), 'Test prompt');
   // localhost is refused by the JD prefetch guard before curl connects, so the
   // test never touches the network even when the reservation wrongly succeeds.
@@ -34,7 +36,7 @@ function fixture() {
   writeFileSync(join(bin, 'claude'), `#!/usr/bin/env bash\necho ran > "${marker.replace(/\\/g, '/')}"\nexit 0\n`, { mode: 0o755 });
   return {
     root, batch, marker,
-    run: (args) => spawnSync(getBash(), [join(batch, 'batch-runner.sh'), ...args], {
+    run: (args) => spawnSync(getBash(), [join(batch, 'batch-runner.sh'), '--cli', 'claude', ...args], {
       encoding: 'utf8', timeout: 60000,
       env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: root, PATH: bin + delimiter + process.env.PATH },
     }),

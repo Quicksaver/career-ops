@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('germantechjobs', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('germantechjobs', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('germantechjobs', entry, ctx);
   },
 };

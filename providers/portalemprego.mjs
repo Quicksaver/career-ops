@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('portalemprego', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('portalemprego', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('portalemprego', entry, ctx);
   },
 };

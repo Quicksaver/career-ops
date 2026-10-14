@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import {
   createWriteStream,
   existsSync,
@@ -10,7 +10,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import * as yaml from 'js-yaml';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -18,6 +19,11 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { pendingCount } from './lib/pipeline-queue.mjs';
+import { acquirePipelineLock, withPipelineLock } from './pipeline-lock.mjs';
+import { writeFileAtomic } from './tracker-utils.mjs';
+import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.mjs';
+import { resolveRunnerCommand, terminateProcessTree, terminateProcessTreeSync } from './lib/runner-command.mjs';
+import { actionableQueue, goPipelinePath, queueActions, queueFingerprint, readGoAnswers, readGoBatchState, readGoQueue, validateHandoff } from './lib/go-queue.mjs';
 import { codexReasoningConfigArg, resolveCodexSettings } from './lib/codex-config.mjs';
 import { resolveParallel } from './lib/parallel-config.mjs';
 import {
@@ -27,6 +33,7 @@ import {
   RUN_RETENTION_DAYS,
 } from './lib/run-artifacts.mjs';
 import { goUnresolvedFindingLines } from './lib/go-summary.mjs';
+import { inspectOwnership } from './batch/runner-ownership.mjs';
 
 const HELP = `career-ops deterministic go runner
 
@@ -42,6 +49,17 @@ Options:
   --throttle[=MS]       Throttle bulk liveness browser checks
   --no-fallback         Disable headed liveness fallback
   --skip-linkedin       Skip authenticated LinkedIn scan explicitly
+  --skip-scan           Process the inbox without starting discovery
+  --scan-full           Include the broad full-ATS sweep (opt-in)
+  --scan-hn             Include the deterministic Hacker News scanner
+  --scan-dayforce       Include configured Dayforce boards
+  --scan-interamt       Include configured Interamt searches
+  --answers-file PATH   Explicit per-posting answers for held jobs
+  --limit N            Process at most N jobs; omit to drain the inbox
+  --retry-failed        Retry jobs at their previous retry ceiling once
+  --resume-paused       Explicitly resume rate/session-paused jobs
+  --max-queue-passes N  Bound queue recovery passes (default: 3)
+  --resume-verify RUN   Resume validated verification checkpoints
   --quiet               Suppress live phase progress
   --json                Emit the complete machine-readable result on stdout
   -h, --help            Show this help
@@ -97,19 +115,24 @@ const codexReasoningEffort = optionValue('--codex-reasoning-effort');
 const throttle = rawArgs.find((arg) => arg === '--throttle' || arg.startsWith('--throttle='));
 const noFallback = rawArgs.includes('--no-fallback');
 const skipLinkedIn = rawArgs.includes('--skip-linkedin');
+const skipScan = rawArgs.includes('--skip-scan');
+const answersFile = optionValue('--answers-file');
+const batchLimit = optionValue('--limit');
+const maxQueuePasses = Number(optionValue('--max-queue-passes', '3'));
+const resumeVerify = optionValue('--resume-verify');
 const quiet = rawArgs.includes('--quiet');
 const jsonOutput = rawArgs.includes('--json');
 const valueOptions = new Set([
   '--parallel', '--agent-cli', '--batch-cli', '--codex-model', '--codex-reasoning-effort',
+  '--answers-file', '--limit', '--max-queue-passes', '--resume-verify',
 ]);
-const flagOptions = new Set(['--json', '--no-fallback', '--skip-linkedin', '--quiet', '--throttle']);
+const flagOptions = new Set(['--json', '--no-fallback', '--skip-linkedin', '--skip-scan', '--quiet', '--throttle',
+  '--scan-full', '--scan-hn', '--scan-dayforce', '--scan-interamt', '--retry-failed', '--resume-paused']);
 const unknown = [];
 for (let i = 0; i < rawArgs.length; i++) {
   const arg = rawArgs[i];
   if (valueOptions.has(arg)) { i++; continue; }
-  if (flagOptions.has(arg) || arg.startsWith('--parallel=') || arg.startsWith('--agent-cli=') ||
-      arg.startsWith('--batch-cli=') || arg.startsWith('--codex-model=') ||
-      arg.startsWith('--codex-reasoning-effort=') || arg.startsWith('--throttle=')) continue;
+  if (flagOptions.has(arg) || [...valueOptions].some(name => arg.startsWith(`${name}=`)) || arg.startsWith('--throttle=')) continue;
   unknown.push(arg);
 }
 if (unknown.length) {
@@ -124,20 +147,34 @@ if (!['codex', 'claude'].includes(batchCli)) {
   console.error('--batch-cli must be codex or claude');
   process.exit(1);
 }
+if (!Number.isInteger(maxQueuePasses) || maxQueuePasses < 1 || maxQueuePasses > 10) {
+  console.error('--max-queue-passes must be an integer from 1 to 10'); process.exit(1);
+}
+if (batchLimit && (!/^[1-9]\d*$/.test(batchLimit) || !Number.isSafeInteger(Number(batchLimit)))) {
+  console.error('--limit must be a positive safe integer'); process.exit(1);
+}
+if (resumeVerify && !/^[A-Za-z0-9._-]+$/.test(resumeVerify)) {
+  console.error('--resume-verify is not a valid run ID'); process.exit(1);
+}
+if (throttle?.includes('=') && !/^--throttle=\d+$/.test(throttle)) {
+  console.error('--throttle must be a non-negative integer in milliseconds'); process.exit(1);
+}
 let codexSettings = null;
 let parallelSettings = null;
 
 const startedAt = new Date().toISOString();
 const runId = startedAt.replace(/[:.]/g, '-');
 const runDir = userPath(context, `data/go-runs/${runId}`);
-const pipelinePath = userPath(context, 'data/pipeline.md');
+const pipelinePath = goPipelinePath(context.userRoot);
 const lockPath = userPath(context, 'data/go-runner.pid');
 const phases = [];
 let activeChild = null;
 let activeProcessGroup = null;
 let lockOwned = false;
+let runnerLock = null;
 let terminating = false;
 let interruptedSignal = null;
+let stoppingChildren = null;
 
 function log(message) {
   if (quiet) return;
@@ -152,11 +189,12 @@ function readPendingCount() {
 
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
 }
 
-function acquireLock() {
+async function acquireLock() {
   mkdirSync(join(context.userRoot, 'data'), { recursive: true });
+  runnerLock = await acquirePipelineLock(lockPath, { timeoutMs: 1000, maxWaitMs: 1000 });
   if (existsSync(lockPath)) {
     const oldPid = Number.parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
     if (processAlive(oldPid)) throw new Error(`another go runner is active (PID ${oldPid})`);
@@ -169,20 +207,73 @@ function acquireLock() {
 }
 
 function releaseLock() {
-  if (!lockOwned) return;
   try {
-    if (existsSync(lockPath) && readFileSync(lockPath, 'utf-8').trim() === String(process.pid)) {
+    if (lockOwned && existsSync(lockPath) && readFileSync(lockPath, 'utf-8').trim() === String(process.pid)) {
       rmSync(lockPath, { force: true });
     }
   } finally {
     lockOwned = false;
+    runnerLock?.release();
+    runnerLock = null;
   }
+}
+
+function addAction(summary, action) {
+  const item = { status: 'pending', ...action };
+  const key = `${item.phase}:${item.reason}:${item.url || item.id || ''}`;
+  if (!summary.manual_actions.some(existing => `${existing.phase}:${existing.reason}:${existing.url || existing.id || ''}` === key)) {
+    summary.manual_actions.push(item);
+    log(`action required${item.url ? ` for ${compactProgressValue(item.url)}` : ''}: ${compactProgressValue(item.question)}`);
+  }
+}
+
+function addPhaseIssue(summary, phase, error) {
+  const detail = compactProgressValue(error.message || error, 1000);
+  summary.issues.push({ phase, message: detail });
+  log(`${phase} incomplete: ${detail}; continuing independent work`);
+}
+
+async function restoreAnsweredRows(answers) {
+  if (!answers.length || !existsSync(pipelinePath)) return;
+  await withPipelineLock(pipelinePath, () => {
+    const queue = readGoQueue(context.userRoot);
+    const lines = queue.text.replace(/\r\n/g, '\n').split('\n');
+    let changed = false;
+    for (const row of queue.blocked) {
+      if (!answers.some(answer => answer.url === row.url && answer.reason === row.reason)) continue;
+      // Keep the original posting identity; batch receives the exact user answer.
+      lines[row.lineIndex] = `- [ ] ${row.url}`;
+      changed = true;
+    }
+    if (changed) writeFileAtomic(pipelinePath, lines.join('\n'));
+  });
+}
+
+function checkBatchOwner() {
+  const path = userPath(context, 'batch/batch-runner.pid');
+  const owner = inspectOwnership(path);
+  if (owner.status === 'alive') throw new Error(`another batch runner is active (native PID ${owner.pid}); wait for its workers to exit`);
+  if (owner.status === 'ambiguous') throw new Error('batch ownership is ambiguous; inspect its owner metadata before resuming');
+  if (owner.status === 'dead') return; // Atomic batch acquisition recovers dead ownership.
+  if (!existsSync(path)) return;
+  const value = readFileSync(path, 'utf8').trim();
+  const pid = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(pid) || pid <= 0) throw new Error('legacy batch ownership is malformed; inspect its PID file before resuming');
+  let alive;
+  if (process.platform === 'win32') {
+    // Compatibility stamps contain an MSYS PID, never a native Windows PID.
+    const launch = resolveRunnerCommand('bash', ['-c', 'if kill -0 "$1" 2>/dev/null; then exit 0; else exit 3; fi', 'batch-owner-check', value]);
+    const result = spawnSync(launch.command, launch.args, { ...launch.options, timeout: 5000, stdio: 'pipe' });
+    if (result.error || ![0, 3].includes(result.status)) throw new Error('legacy batch ownership could not be checked through Git Bash; refusing to resume');
+    alive = result.status === 0;
+  } else alive = processAlive(pid);
+  if (alive) throw new Error(`another batch runner is active (legacy PID ${pid}); wait for its workers to exit`);
+  // Leave stale compatibility metadata to the atomic batch ownership protocol.
 }
 
 function terminateActiveChild(signal = 'SIGTERM') {
   try {
-    if (process.platform !== 'win32' && activeProcessGroup) process.kill(-activeProcessGroup, signal);
-    else if (activeChild && processAlive(activeChild.pid)) activeChild.kill(signal);
+    if (activeChild || activeProcessGroup) terminateProcessTreeSync(activeChild || activeProcessGroup, { signal });
   } catch {}
 }
 
@@ -191,7 +282,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     if (terminating) return;
     terminating = true;
     interruptedSignal = signal;
-    terminateActiveChild('SIGTERM');
+    if (activeChild) stoppingChildren = terminateProcessTree(activeChild).catch(error => log(`child cleanup failed: ${error.message}`));
   });
 }
 process.on('exit', releaseLock);
@@ -248,7 +339,7 @@ function handoffProgressLine(line) {
 }
 
 function compactProgressValue(value, maxLength = 180) {
-  const text = String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
+  const text = String(value ?? '').replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
@@ -268,10 +359,14 @@ async function runCommand(name, command, args, options = {}) {
       };
   const started = new Date().toISOString();
   log(`${name} started`);
-  const child = spawn(command, args, {
+  const env = { ...process.env, CAREER_OPS_USER: context.userId,
+    CAREER_OPS_ROOT: context.userRoot, CAREER_OPS_USERS_DIR: context.usersDir,
+    ...(options.env || {}) };
+  const launch = resolveRunnerCommand(command, args, { cwd: context.projectRoot, env });
+  const child = spawn(launch.command, launch.args, {
+    ...launch.options,
     cwd: context.projectRoot,
-    env: { ...process.env, CAREER_OPS_USER: context.userId, ...(options.env || {}) },
-    detached: process.platform !== 'win32',
+    env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   activeChild = child;
@@ -300,6 +395,7 @@ async function runCommand(name, command, args, options = {}) {
     child.once('close', (code, signal) => resolve({ code, signal, error: spawnError }));
   });
   activeChild = null;
+  activeProcessGroup = null;
   progress?.stdout.flush();
   progress?.stderr.flush();
   await new Promise((resolve, reject) => {
@@ -370,10 +466,13 @@ async function main() {
     warning_triage: null, duplicate_resolution: null,
     needs_human_review: false, phases, logs: runDir, error: null, user_action: null,
     codex: null, parallel: null, parallel_source: null, cleanup: null,
+    manual_actions: [], issues: [], final_blocked: 0, remaining: null,
+    batch_counts: null, queue_passes: 0,
   };
 
   try {
-    acquireLock();
+    await acquireLock();
+    checkBatchOwner();
     summary.cleanup = cleanupExpiredRuns({
       userRoot: context.userRoot,
       ignoreActivePids: [process.pid],
@@ -414,20 +513,39 @@ async function main() {
     });
     summary.parallel = parallelSettings.parallel;
     summary.parallel_source = parallelSettings.source;
+    const answerPath = answersFile ? resolve(context.projectRoot, answersFile) : null;
+    const answers = readGoAnswers(answerPath, context.userId, context.userRoot);
+    await restoreAnsweredRows(answers);
 
     summary.baseline_pending = readPendingCount();
 
-    const beforeScan = readPendingCount();
-    await runCommand('scan', process.execPath, [systemPath('scan.mjs'), '--user', context.userId], {
-      progress: scanProgressLine,
-      env: { CAREER_OPS_PROGRESS: '1' },
-    });
-    const afterScan = readPendingCount();
-    summary.scan = { status: 'completed', added_pending: Math.max(0, afterScan - beforeScan) };
-    log(`scan added ${summary.scan.added_pending} pending job(s); queue now ${afterScan}`);
+    if (skipScan) summary.scan = { status: 'skipped', reason: 'explicit --skip-scan', added_pending: 0 };
+    else {
+      const beforeScan = readPendingCount();
+      try {
+        const scanResult = parseJsonOutput(await runCommand('scan', process.execPath,
+          [systemPath('scan.mjs'), '--user', context.userId, '--json'], {
+            progress: scanProgressLine, accept: [0, 2], maxStdout: 32 * 1024 * 1024,
+            env: { CAREER_OPS_PROGRESS: '1' },
+          }), 'scan');
+        if (scanResult.version !== 'careerops.scan.receipt@1' || !Array.isArray(scanResult.errors) ||
+            !Number.isSafeInteger(scanResult.added) || scanResult.added < 0) {
+          throw new Error('Scanner returned an invalid scan receipt');
+        }
+        summary.scan = { ...scanResult, status: scanResult.errors.length || scanResult.unverified_zero?.length ? 'partial' : 'completed',
+          added_pending: Math.max(0, readPendingCount() - beforeScan) };
+        for (const item of scanResult.errors) addPhaseIssue(summary, 'scan', `${item.company}: ${item.error}`);
+        for (const target of scanResult.unverified_zero || []) addPhaseIssue(summary, 'scan', `${target}: zero jobs without a successful response`);
+      } catch (error) {
+        if (interruptedSignal) throw error;
+        summary.scan = { status: 'failed', added_pending: Math.max(0, readPendingCount() - beforeScan), error: error.message };
+        addPhaseIssue(summary, 'scan', error);
+      }
+      log(`scan added ${summary.scan.added_pending} pending job(s); queue now ${readPendingCount()}`);
+    }
 
     const handoff = loadHandoff();
-    if (handoff.valid && handoff.items.length) {
+    if (!skipScan && summary.scan?.status !== 'failed' && handoff.valid && handoff.items.length) {
       log(`scan-handoff queued ${handoff.items.length} task(s)`);
       handoff.items.forEach((item, index) => {
         const detail = item.query || item.careers_url || item.url || '';
@@ -447,112 +565,221 @@ async function main() {
       }
       args.push('-');
       const beforeHandoff = readPendingCount();
-      await runCommand('scan-handoff-agent', agentCli, args, {
-        stdin: handoffPrompt(handoff.path),
-        progress: handoffProgressLine,
-      });
-      if (!existsSync(finalPath)) throw new Error('scan-handoff agent did not write its final JSON contract');
-      const handoffResult = JSON.parse(readFileSync(finalPath, 'utf-8'));
-      summary.handoff = {
-        ...handoffResult,
-        observed_added_pending: Math.max(0, readPendingCount() - beforeHandoff),
-      };
-      log(`scan-handoff processed ${handoffResult.processed_items}/${handoff.items.length} task(s), added ${summary.handoff.observed_added_pending} pending job(s); queue now ${readPendingCount()}`);
-      if (handoffResult.status === 'blocked' || handoffResult.requires_user_action) {
-        summary.status = 'blocked';
-        summary.user_action = handoffResult.user_action || 'Scan handoff requires user action.';
-        return summary;
+      try {
+        assertOpenAIStructuredOutputSchema(JSON.parse(readFileSync(systemPath('schemas/go-handoff-output.schema.json'), 'utf8')));
+        await runCommand('scan-handoff-agent', agentCli, args, {
+          stdin: handoffPrompt(handoff.path), progress: handoffProgressLine,
+        });
+        if (!existsSync(finalPath)) throw new Error('scan-handoff agent did not write its final JSON contract');
+        const observed = Math.max(0, readPendingCount() - beforeHandoff);
+        const handoffResult = validateHandoff(JSON.parse(readFileSync(finalPath, 'utf8')), handoff.items.length, observed);
+        summary.handoff = { ...handoffResult, observed_added_pending: observed };
+        log(`scan-handoff processed ${handoffResult.processed_items}/${handoff.items.length} task(s), added ${observed} pending job(s)`);
+        for (const item of handoffResult.errors) addPhaseIssue(summary, 'handoff', `${item.item}: ${item.message}`);
+        if (handoffResult.status !== 'completed' && !handoffResult.errors.length) {
+          addPhaseIssue(summary, 'handoff', `handoff is ${handoffResult.status}`);
+        }
+        if (handoffResult.requires_user_action || handoffResult.status === 'blocked') {
+          addAction(summary, { kind: 'source', phase: 'handoff', reason: 'source_input',
+            question: handoffResult.user_action || 'Review the scan-handoff log and resolve its blocked sources.' });
+        }
+      } catch (error) {
+        if (interruptedSignal) throw error;
+        summary.handoff = { status: 'partial', error: error.message,
+          observed_added_pending: Math.max(0, readPendingCount() - beforeHandoff) };
+        addPhaseIssue(summary, 'handoff', error);
       }
     } else {
       summary.handoff = { status: 'skipped', reason: handoff.valid ? 'empty' : 'missing-or-invalid' };
     }
 
-    if (skipLinkedIn) {
-      summary.linkedin = { status: 'skipped', reason: 'explicit --skip-linkedin' };
+    const portalsPath = process.env.CAREER_OPS_PORTALS || userPath(context, 'portals.yml');
+    let portals = {};
+    try { if (existsSync(portalsPath)) portals = yaml.load(readFileSync(portalsPath, 'utf8')) || {}; }
+    catch (error) { addPhaseIssue(summary, 'scan-config', error); }
+    const extraSources = [
+      ['scan-full', rawArgs.includes('--scan-full'), 'scan-ats-full.mjs'],
+      ['scan-hn', rawArgs.includes('--scan-hn') || portals.hn_hiring?.enabled === true, 'scan-hn.mjs'],
+      ['scan-dayforce', rawArgs.includes('--scan-dayforce') || portals.dayforce_boards?.some(board => board.enabled !== false), 'scan-dayforce.mjs'],
+      ['scan-interamt', rawArgs.includes('--scan-interamt') || portals.interamt_searches?.length > 0, 'scan-interamt.mjs'],
+    ];
+    summary.sources = [];
+    if (!skipScan) for (const [name, enabled, script] of extraSources) {
+      if (!enabled) continue;
+      const before = readPendingCount();
+      try {
+        const result = await runCommand(name, process.execPath, [systemPath(script), '--user', context.userId], {
+          progress: true, env: { GEMINI_API_KEY: '' },
+        });
+        const errors = /(?:Errors|Network errors)\s*\(([1-9]\d*)\)/i.exec(result.output);
+        summary.sources.push({ name, status: errors ? 'partial' : 'completed',
+          added_pending: Math.max(0, readPendingCount() - before), errors: Number(errors?.[1] || 0) });
+        if (errors) addPhaseIssue(summary, name, `${errors[1]} source errors; see phase log`);
+      } catch (error) {
+        if (interruptedSignal) throw error;
+        summary.sources.push({ name, status: 'failed', added_pending: Math.max(0, readPendingCount() - before), error: error.message });
+        addPhaseIssue(summary, name, error);
+        if (/captcha|challenge|login required|account verification/i.test(`${error.tail || ''} ${error.message}`)) {
+          addAction(summary, { kind: 'source', phase: name, reason: 'source_login', question: `Resolve ${name}'s browser/login challenge and rerun go.` });
+        }
+      }
+    }
+
+    if (skipLinkedIn || skipScan) {
+      summary.linkedin = { status: 'skipped', reason: skipScan ? 'explicit --skip-scan' : 'explicit --skip-linkedin' };
     } else {
       const beforeLinkedIn = readPendingCount();
       try {
-        await runCommand('scan-auth-linkedin', process.execPath, [
+        const linkedinResult = await runCommand('scan-auth-linkedin', process.execPath, [
           systemPath('scan-auth.mjs'), '--user', context.userId, 'linkedin',
         ], { progress: scanAuthProgressLine });
+        const errorCount = Number(/Errors:\s*(\d+)/i.exec(linkedinResult.output)?.[1] || 0);
         summary.linkedin = {
-          status: 'completed',
+          status: errorCount ? 'partial' : 'completed', errors: errorCount,
           added_pending: Math.max(0, readPendingCount() - beforeLinkedIn),
         };
+        if (errorCount) addPhaseIssue(summary, 'linkedin', `${errorCount} listing/search errors; see phase log`);
         log(`LinkedIn added ${summary.linkedin.added_pending} pending job(s); queue now ${readPendingCount()}`);
       } catch (error) {
         const logText = `${error.output || ''}\n${error.tail || ''}\n${error.message}`;
         if (/not logged in|captcha|account verification|login required/i.test(logText)) {
-          summary.status = 'blocked';
           summary.linkedin = { status: 'needs-login', added_pending: 0 };
-          summary.user_action = `Run node scan-auth.mjs --user ${context.userId} --login linkedin in a separate terminal, then rerun go.`;
-          return summary;
+          addAction(summary, { kind: 'source', phase: 'linkedin', reason: 'source_login',
+            question: `Run node scan-auth.mjs --user ${context.userId} --login linkedin in a separate terminal, then rerun go.` });
+        } else {
+          if (interruptedSignal) throw error;
+          summary.linkedin = { status: 'failed', added_pending: Math.max(0, readPendingCount() - beforeLinkedIn), error: error.message };
+          addPhaseIssue(summary, 'linkedin', error);
         }
-        throw error;
       }
     }
 
     const discoveredPending = readPendingCount();
-    if (discoveredPending <= summary.baseline_pending) {
-      summary.pipeline = { status: 'skipped', reason: 'no-new-pending', processed: 0 };
-    } else {
+    const initialBatchState = readGoBatchState(context.userRoot);
+    // Finish durable output from interrupted runs before dispatching anything.
+    await runCommand('merge-tracker-initial', process.execPath, [systemPath('merge-tracker.mjs'), '--user', context.userId]);
+    await runCommand('reconcile-pipeline-initial', process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
+    if (readPendingCount() > 0) {
       await runCommand('cv-sync-check', process.execPath, [systemPath('cv-sync-check.mjs'), '--user', context.userId]);
 
       const livenessArgs = [systemPath('pipeline-liveness.mjs'), '--user', context.userId, '--json'];
       if (throttle) livenessArgs.push(throttle);
       if (noFallback) livenessArgs.push('--no-fallback');
-      summary.liveness = parseJsonOutput(
-        await runCommand('pipeline-liveness', process.execPath, livenessArgs, {
+      try {
+        summary.liveness = parseJsonOutput(await runCommand('pipeline-liveness', process.execPath, livenessArgs, {
           accept: [0, 2], maxStdout: 32 * 1024 * 1024,
-        }),
-        'pipeline-liveness',
-      );
+        }), 'pipeline-liveness');
+        if (summary.liveness.status !== 'completed') throw new Error('bulk liveness did not complete');
+        for (const warning of summary.liveness.tracker_warnings || []) addPhaseIssue(summary, 'liveness', warning.message);
+      } catch (error) {
+        if (interruptedSignal) throw error;
+        summary.liveness = { status: 'partial', error: error.message };
+        addPhaseIssue(summary, 'liveness', error);
+        // No verdict is inferred from a failed sweep. Workers still execute
+        // their canonical per-posting liveness/JD gate, including local jobs.
+      }
 
-      summary.batch_sync = parseJsonOutput(
-        await runCommand('sync-pipeline-batch', process.execPath, [
+      const priorBatchPause = existsSync(userPath(context, 'batch/batch-runner.paused')) || readGoBatchState(context.userRoot).some(row => row.status === 'paused_rate_limit');
+      if (priorBatchPause && !rawArgs.includes('--resume-paused')) addAction(summary, {
+        kind: 'batch', phase: 'batch', reason: 'rate_limit',
+        question: 'The batch is paused for a quota/session limit. Resolve it, then rerun go --resume-paused.',
+      });
+      for (let pass = 1; pass <= maxQueuePasses && (!priorBatchPause || rawArgs.includes('--resume-paused')); pass++) {
+        const queue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused: rawArgs.includes('--resume-paused') });
+        if (queue.length === 0) break;
+        checkBatchOwner();
+        const before = queueFingerprint(queue, readGoBatchState(context.userRoot));
+        summary.batch_sync = parseJsonOutput(await runCommand(`sync-pipeline-batch-${pass}`, process.execPath, [
           systemPath('sync-pipeline-batch.mjs'), '--user', context.userId, '--json',
-        ], { maxStdout: 32 * 1024 * 1024 }),
-        'sync-pipeline-batch',
-      );
-
-      if (readPendingCount() > 0) {
+        ], { maxStdout: 32 * 1024 * 1024 }), 'sync-pipeline-batch');
+        const queueFile = join(runDir, `queue-${pass}.txt`);
+        writeFileAtomic(queueFile, `${queue.map(row => row.url).join('\n')}\n`);
         const batchArgs = [
           '--user', context.userId, '--cli', batchCli,
           '--parallel', String(parallelSettings.parallel),
-          '--defer-verification',
+          '--defer-verification', '--include-pending', '--queue-file', queueFile,
         ];
+        if (answerPath) batchArgs.push('--answers-file', answerPath);
+        if (batchLimit) batchArgs.push('--limit', batchLimit);
+        if (pass === 1 && rawArgs.includes('--retry-failed')) batchArgs.push('--retry-failed');
+        if (rawArgs.includes('--resume-paused')) batchArgs.push('--resume-paused');
         if (batchCli === 'codex' && codexSettings.model) {
           batchArgs.push('--model', codexSettings.model);
         }
         if (batchCli === 'codex' && codexSettings.reasoningEffort) {
           batchArgs.push('--reasoning-effort', codexSettings.reasoningEffort);
         }
-        log(`batch queue ready: ${readPendingCount()} pending job(s)`);
-        await runCommand('batch', systemPath('batch/batch-runner.sh'), batchArgs, { progress: true });
+        log(`batch queue pass ${pass}: ${queue.length} runnable job(s)`);
+        summary.queue_passes = pass;
+        try {
+          await runCommand(`batch-${pass}`, systemPath('batch/batch-runner.sh'), batchArgs, { progress: true });
+        } catch (error) {
+          if (interruptedSignal) throw error;
+          addPhaseIssue(summary, 'batch', error);
+        }
+        checkBatchOwner();
+        await runCommand(`merge-tracker-${pass}`, process.execPath, [systemPath('merge-tracker.mjs'), '--user', context.userId]);
+        await runCommand(`reconcile-pipeline-${pass}`, process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
+        for (const action of queueActions(context.userRoot, context.userId)) addAction(summary, action);
+        // A quota pause applies to this CLI/session, including following jobs
+        // and an explicit resume that immediately encounters the limit again.
+        if (existsSync(userPath(context, 'batch/batch-runner.paused'))) break;
+        const afterQueue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused: rawArgs.includes('--resume-paused') });
+        if (batchLimit || queueFingerprint(afterQueue, readGoBatchState(context.userRoot)) === before) break;
       }
-      await runCommand('merge-tracker', process.execPath, [systemPath('merge-tracker.mjs'), '--user', context.userId]);
-      await runCommand('reconcile-pipeline', process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
-      summary.pipeline = {
-        status: readPendingCount() === 0 ? 'completed' : 'partial',
-        processed: Math.max(0, discoveredPending - readPendingCount()),
-      };
     }
+    const finalQueue = readGoQueue(context.userRoot);
+    const currentJobs = queueActions(context.userRoot, context.userId);
+    summary.manual_actions = summary.manual_actions.filter(action => action.kind !== 'job');
+    for (const action of currentJobs) addAction(summary, action);
+    const finalStates = readGoBatchState(context.userRoot);
+    const pendingUrls = new Set(finalQueue.pending.map(row => row.url));
+    for (const state of finalStates) {
+      if (!pendingUrls.has(state.url)) continue;
+      if (state.status === 'paused_rate_limit') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
+        url: state.url, reason: 'rate_limit', question: `Wait for the CLI quota/session reset, then rerun go --resume-paused. ${state.error || ''}` });
+      if (state.status === 'failed') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
+        url: state.url, reason: 'job_failed', question: `Inspect batch job #${state.id} and retry after correcting its failure: ${state.error || 'see worker log'}` });
+    }
+    const changedStates = finalStates.filter(row => {
+      const before = initialBatchState.find(old => old.id === row.id && old.url === row.url);
+      return !before || row.status !== before.status || row.retries !== before.retries || row.startedAt !== before.startedAt;
+    });
+    summary.batch_counts = Object.fromEntries(['completed', 'skipped', 'failed', 'needs_confirmation', 'paused_rate_limit', 'processing']
+      .map(status => [status, changedStates.filter(row => row.status === status).length]));
+    summary.pipeline = { status: finalQueue.pending.length || finalQueue.blocked.length ? 'partial' : 'completed',
+      processed: Math.max(0, discoveredPending - finalQueue.pending.length), limit: batchLimit ? Number(batchLimit) : null };
 
     const verifyArgs = [systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli, '--json'];
     verifyArgs.push('--parallel', String(parallelSettings.parallel));
     if (codexSettings.model) verifyArgs.push('--codex-model', codexSettings.model);
     if (codexSettings.reasoningEffort) verifyArgs.push('--codex-reasoning-effort', codexSettings.reasoningEffort);
     if (quiet) verifyArgs.push('--quiet');
+    if (resumeVerify) verifyArgs.push('--resume-run', resumeVerify);
     const reviewedVerification = parseJsonOutput(
       await runCommand('verify-reviewed', process.execPath, verifyArgs, { maxStdout: 64 * 1024 * 1024 }),
       'verify-reviewed',
     );
+    if (!['completed', 'partial', 'failed'].includes(reviewedVerification.status) ||
+        typeof reviewedVerification.needs_human_review !== 'boolean' ||
+        !Array.isArray(reviewedVerification.unresolved_findings)) {
+      throw new Error('verify-reviewed returned an invalid completion contract');
+    }
     if (reviewedVerification.status === 'failed') {
       throw new Error(`verify-reviewed failed: ${reviewedVerification.error || 'unknown failure'}`);
     }
+    if (reviewedVerification.status === 'partial' && !reviewedVerification.needs_human_review) {
+      addPhaseIssue(summary, 'verification', 'reviewed verification is partial');
+    }
     summary.verification_review = reviewedVerification;
     summary.verification = reviewedVerification.final_verification;
-    summary.needs_human_review = reviewedVerification.needs_human_review;
+    if (reviewedVerification.needs_human_review) for (const finding of reviewedVerification.unresolved_findings) {
+      addAction(summary, { kind: 'verification', phase: 'verification',
+        id: finding.finding_id || finding.id || `finding-${summary.manual_actions.length}`,
+        reason: finding.finding_code || finding.code || 'integrity_review',
+        question: finding.message || 'Review the unresolved verifier finding in the run artifacts.' });
+    }
+    summary.needs_human_review = reviewedVerification.needs_human_review || summary.manual_actions.length > 0;
     summary.warning_triage = {
       status: reviewedVerification.passes > 0 ? 'completed' : 'skipped',
       needs_human_review: reviewedVerification.needs_human_review,
@@ -561,23 +788,50 @@ async function main() {
     };
     summary.duplicate_resolution = reviewedVerification.actions;
 
-    const batchPidPath = userPath(context, 'batch/batch-runner.pid');
-    if (existsSync(batchPidPath)) {
-      const batchPid = Number.parseInt(readFileSync(batchPidPath, 'utf-8').trim(), 10);
-      if (processAlive(batchPid)) throw new Error(`batch runner still active after terminal verification (PID ${batchPid})`);
-      rmSync(batchPidPath, { force: true });
-    }
-    summary.final_pending = readPendingCount();
-    const queueComplete = summary.final_pending === 0 || summary.pipeline?.status === 'skipped';
-    summary.status = queueComplete && !summary.needs_human_review ? 'completed' : 'partial';
+    checkBatchOwner();
+    const remainingQueue = readGoQueue(context.userRoot);
+    summary.final_pending = remainingQueue.pending.length;
+    summary.final_blocked = remainingQueue.blocked.length;
+    summary.remaining = summary.final_pending + summary.final_blocked;
+    summary.user_action = summary.manual_actions.length ? 'Resolve the listed manual actions and rerun with exact per-posting answers where needed.' : null;
+    summary.status = summary.remaining === 0 && !summary.needs_human_review && summary.issues.length === 0 ? 'completed' : 'partial';
     return summary;
   } catch (error) {
     summary.status = interruptedSignal ? 'interrupted' : 'failed';
     summary.error = error.message;
-    summary.final_pending = readPendingCount();
+    try { summary.final_pending = readPendingCount(); } catch { /* retain the original failure */ }
     return summary;
   } finally {
+    if (stoppingChildren) await stoppingChildren;
     summary.finished_at = new Date().toISOString();
+    if (lockOwned) {
+      try {
+        const queue = readGoQueue(context.userRoot);
+        summary.final_pending = queue.pending.length;
+        summary.final_blocked = queue.blocked.length;
+        summary.remaining = queue.pending.length + queue.blocked.length;
+        const sourceActions = summary.manual_actions.filter(action => action.kind !== 'job' || action.phase === 'batch');
+        summary.manual_actions = sourceActions;
+        for (const action of queueActions(context.userRoot, context.userId)) addAction(summary, action);
+        summary.needs_human_review ||= summary.manual_actions.length > 0;
+        if (summary.status === 'completed' && (summary.remaining > 0 || summary.needs_human_review || summary.issues.length > 0)) {
+          summary.status = 'partial';
+        }
+        if (summary.manual_actions.length) summary.user_action ||= 'Resolve the listed actions; other jobs have continued independently.';
+        writeFileAtomic(userPath(context, 'data/manual-actions.json'), JSON.stringify({
+          schema_version: 1, user: context.userId, updated_at: summary.finished_at,
+          run_id: runId, actions: summary.manual_actions,
+        }, null, 2) + '\n');
+      } catch (error) {
+        summary.status = 'failed';
+        summary.error = `${summary.error ? summary.error + '; ' : ''}Cannot persist final queue/actions: ${error.message}`;
+      }
+      try { writeFileAtomic(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2) + '\n'); }
+      catch (error) {
+        summary.status = 'failed';
+        summary.error = `${summary.error ? summary.error + '; ' : ''}Cannot persist run summary: ${error.message}`;
+      }
+    }
     if (summary.status === 'completed') {
       try {
         summary.compaction = compactCompletedRun({
@@ -590,16 +844,11 @@ async function main() {
         log(`completed-run compaction failed: ${error.message}`);
       }
     }
-    if (!interruptedSignal) releaseLock();
+    releaseLock();
   }
 }
 
 const result = await main();
-if (interruptedSignal && activeProcessGroup) {
-  await new Promise((resolve) => setTimeout(resolve, 5000));
-  terminateActiveChild('SIGKILL');
-  releaseLock();
-}
 
 function compactGoSummary(summary) {
   const compactSection = (section, fields) => {
@@ -619,6 +868,13 @@ function compactGoSummary(summary) {
     finished_at: summary.finished_at,
     baseline_pending: summary.baseline_pending,
     final_pending: summary.final_pending,
+    final_blocked: summary.final_blocked,
+    remaining: summary.remaining,
+    batch_counts: summary.batch_counts,
+    queue_passes: summary.queue_passes,
+    manual_actions: summary.manual_actions,
+    issues: summary.issues,
+    sources: summary.sources,
     scan: compactSection(summary.scan, ['status', 'added_pending', 'reason']),
     handoff: compactSection(summary.handoff, [
       'status', 'processed_items', 'observed_added_pending', 'added', 'duplicates',
@@ -662,7 +918,7 @@ function repairedCount(review) {
 
 function printHumanSummary(summary) {
   console.log(`[go] summary: ${summary.status}`);
-  console.log(`[go] queue ${summary.baseline_pending ?? 0} → ${summary.final_pending ?? 'unknown'} pending; processed ${summary.pipeline?.processed || 0}`);
+  console.log(`[go] queue ${summary.baseline_pending ?? 0} → ${summary.final_pending ?? 'unknown'} runnable/pending, ${summary.final_blocked} blocked; processed ${summary.pipeline?.processed || 0}`);
   console.log(`[go] discovered: scan ${summary.scan?.added_pending || 0}, handoff ${summary.handoff?.observed_added_pending || 0}, LinkedIn ${summary.linkedin?.added_pending || 0}`);
   if (summary.verification_review) {
     const unresolvedFindings = summary.verification_review.unresolved_findings || [];
@@ -670,6 +926,8 @@ function printHumanSummary(summary) {
     for (const line of goUnresolvedFindingLines(unresolvedFindings)) console.log(line);
   }
   console.log(`[go] logs: ${summary.logs}`);
+  for (const issue of summary.issues) console.log(`[go] incomplete ${issue.phase}: ${compactProgressValue(issue.message, 1000)}`);
+  for (const action of summary.manual_actions) console.log(`[go] manual ${action.reason}${action.url ? `, ${compactProgressValue(action.url)}` : ''}: ${compactProgressValue(action.question, 1000)}`);
   if (summary.user_action) console.log(`[go] action required: ${summary.user_action}`);
   if (summary.error) console.log(`[go] error: ${summary.error}`);
 }

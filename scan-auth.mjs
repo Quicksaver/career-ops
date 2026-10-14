@@ -56,8 +56,10 @@ function configureUserPaths(ctx) {
   PORTALS_PATH = process.env.CAREER_OPS_PORTALS
     ? resolve(process.env.CAREER_OPS_PORTALS)
     : userPath(ctx, 'portals.yml');
-  SCAN_HISTORY_PATH = userPath(ctx, 'data/scan-history.tsv');
-  PIPELINE_PATH = userPath(ctx, 'data/pipeline.md');
+  SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY
+    ? resolve(ctx.projectRoot, process.env.CAREER_OPS_SCAN_HISTORY) : userPath(ctx, 'data/scan-history.tsv');
+  PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE
+    ? resolve(ctx.projectRoot, process.env.CAREER_OPS_PIPELINE) : userPath(ctx, 'data/pipeline.md');
   JDS_DIR = userPath(ctx, 'jds');
 }
 

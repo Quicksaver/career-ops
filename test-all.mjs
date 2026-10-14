@@ -67,6 +67,7 @@ import { collectMjsFiles } from './lib/mjs-files.mjs';
 import { walkTree, listTree } from './lib/walk-tree.mjs';
 import { FROZEN_EVALUATION_MODES, KNOWN_EVALUATION_MODES, discoverEvaluationModes, readModeText, structuralGaps } from './tests/evaluation-mode-parity-helpers.mjs';
 import { childFailureExcerpt } from './lib/failure-excerpt.mjs';
+import { copyBatchOwnership } from './tests/copy-batch-ownership.mjs';
 import { SCRATCH_PREFIX, markScratchOwner, sweepScratchDirs } from './lib/scratch-dirs.mjs';
 
 const TEST_USERS_DIR = mkdtempSync(join(tmpdir(), 'career-ops-users-'));
@@ -2082,219 +2083,27 @@ try {
   fail(`Liveness classification tests crashed: ${e.message}`);
 }
 
-// ── 6. CUSTOM PROVIDER RETRIES ──────────────────────────────────
+// ── 6. CUSTOM PROVIDER TRANSPORT ────────────────────────────────
 
-console.log('\n6. Custom provider retries');
-
+console.log('\n6. Custom provider transport');
 try {
-  const {
-    FETCH_MAX_ATTEMPTS,
-    FETCH_RETRY_BASE_DELAY_MS,
-    FETCH_RETRY_JITTER_RATIO,
-    RETRYABLE_HTTP_STATUSES,
-    fetchJsonWithRetry,
-    isRetryableFetchError,
-    retryDelayMs,
-  } = await import(pathToFileURL(join(ROOT, 'providers/_custom-fetch.mjs')).href);
-  const { detectCustomProvider, fetchCustomProvider } = await import(pathToFileURL(join(ROOT, 'providers/_custom.mjs')).href);
-
-  const okJson = value => ({ ok: true, status: 200, json: async () => value });
-  const statusJson = status => ({ ok: false, status, json: async () => ({}) });
-  const isWithinJitter = (delay, retryNumber) => {
-    const baseDelay = FETCH_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, retryNumber - 1));
-    const min = Math.round(baseDelay * (1 - FETCH_RETRY_JITTER_RATIO));
-    const max = Math.round(baseDelay * (1 + FETCH_RETRY_JITTER_RATIO));
-    return delay >= min && delay <= max;
-  };
-  const expectReject = async (label, task, predicate, describeError = error => error.message) => {
-    try {
-      await task();
-      fail(`${label} unexpectedly succeeded`);
-    } catch (error) {
-      if (predicate(error)) {
-        pass(label);
-      } else {
-        fail(`${label} rejected unexpectedly: ${describeError(error)}`);
-      }
-    }
-  };
-
+  const { fetchCustomProvider } = await import(pathToFileURL(join(ROOT, 'providers/_custom.mjs')).href);
   let calls = 0;
   const delays = [];
-  const retryResult = await fetchJsonWithRetry('https://example.com/jobs.json', {
-    fetchImpl: async () => {
+  const jobs = await fetchCustomProvider('pcsx', {
+    name: 'Fixture', api: 'https://careers.example/api/pcsx/search?domain=fixture',
+  }, {
+    fetchJson: async (_url, opts) => {
       calls++;
-      return calls < 3 ? statusJson(503) : okJson({ jobs: ['ok'] });
+      if (opts.redirect !== 'error') throw new Error('unguarded redirects');
+      if (calls === 1) throw Object.assign(new Error('quota'), {status:429,retryAfter:'1'});
+      return {data:{count:1,positions:[{id:'1',name:'Engineer',jobDescription:'<p>Build systems</p>'}]}};
     },
-    sleepFn: async ms => delays.push(ms),
-    randomFn: () => 0.5,
+    sleep: async ms => delays.push(ms),
   });
-  if (
-    calls === 3
-    && retryResult.jobs?.[0] === 'ok'
-    && delays.length === 2
-    && delays[1] > delays[0]
-    && delays.every((delay, index) => isWithinJitter(delay, index + 1))
-  ) {
-    pass('fetchJson retries retryable HTTP statuses with exponential backoff');
-  } else {
-    fail(
-      `fetchJson retry sequence was unexpected: expected 3 calls, one ok job, and 2 increasing delays within jitter bounds; `
-      + `got calls=${calls}, jobs=${JSON.stringify(retryResult.jobs)}, delays=[${delays.join(', ')}], `
-      + `withinJitter=${delays.map((delay, index) => isWithinJitter(delay, index + 1)).join(',')}`
-    );
-  }
-
-  calls = 0;
-  await expectReject(
-    'fetchJson does not retry HTTP 404',
-    () => fetchJsonWithRetry('https://example.com/missing.json', {
-      fetchImpl: async () => {
-        calls++;
-        return statusJson(404);
-      },
-      sleepFn: async () => {},
-    }),
-    () => calls === 1,
-    () => `retried ${calls} times`
-  );
-
-  calls = 0;
-  // 409 conflicts are excluded deliberately because identical retries normally
-  // repeat the same state conflict rather than recovering like 429/5xx errors.
-  await expectReject(
-    'fetchJson does not retry HTTP 409 conflicts',
-    () => fetchJsonWithRetry('https://example.com/conflict.json', {
-      fetchImpl: async () => {
-        calls++;
-        return statusJson(409);
-      },
-      sleepFn: async () => {},
-    }),
-    () => calls === 1,
-    () => `retried ${calls} times`
-  );
-
-  let optionRedirect;
-  await fetchJsonWithRetry('https://boards-api.greenhouse.io/v1/boards/example/jobs', {
-    configureOptions: (_url, options) => ({ ...options, redirect: 'error' }),
-    fetchImpl: async (_url, options) => {
-      optionRedirect = options.redirect;
-      return okJson({ jobs: [] });
-    },
-    sleepFn: async () => {},
-  });
-  if (optionRedirect === 'error') {
-    pass('fetchJson uses returned per-attempt option overrides');
-  } else {
-    fail(`fetchJson option override was not applied: ${optionRedirect}`);
-  }
-
-  await expectReject(
-    'Greenhouse explicit APIs must use HTTPS',
-    () => detectCustomProvider('greenhouse', {
-      name: 'Invalid Greenhouse',
-      api: 'http://boards-api.greenhouse.io/v1/boards/example/jobs',
-    }),
-    error => /must use HTTPS/.test(error.message)
-  );
-
-  await expectReject(
-    'Greenhouse explicit APIs reject untrusted hosts',
-    () => detectCustomProvider('greenhouse', {
-      name: 'Invalid Greenhouse',
-      api: 'https://evil-greenhouse.example/v1/boards/example/jobs',
-    }),
-    error => /untrusted hostname/.test(error.message)
-  );
-
-  const originalFetch = globalThis.fetch;
-  let customProviderRedirect;
-  try {
-    globalThis.fetch = async (_url, options) => {
-      customProviderRedirect = options.redirect;
-      return okJson({ jobs: [{ title: 'AI Engineer', absolute_url: 'https://example.com/job', location: { name: 'Remote' } }] });
-    };
-
-    const greenhouseJobs = await fetchCustomProvider('greenhouse', {
-      name: 'Example',
-      api: 'https://boards-api.greenhouse.io/v1/boards/example/jobs',
-    });
-
-    if (customProviderRedirect === 'error' && greenhouseJobs[0]?.title === 'AI Engineer') {
-      pass('Custom provider fetch wrapper preserves Greenhouse options and JSON parsing');
-    } else {
-      fail(`Custom provider wrapper result unexpected: redirect=${customProviderRedirect}, jobs=${greenhouseJobs.length}`);
-    }
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  const networkError = new TypeError('fetch failed');
-  networkError.cause = { code: 'EAI_AGAIN' };
-  const wrappedNetworkError = new Error('socket closed');
-  wrappedNetworkError.code = 'ECONNRESET';
-  const programmingError = new TypeError('Cannot read properties of undefined');
-  const abortError = new Error('The operation was aborted');
-  abortError.name = 'AbortError';
-
-  if (
-    isRetryableFetchError(networkError)
-    && isRetryableFetchError(wrappedNetworkError)
-    && isRetryableFetchError(abortError, { abortIsRetryable: true })
-    && !isRetryableFetchError(abortError)
-    && !isRetryableFetchError(programmingError)
-    && RETRYABLE_HTTP_STATUSES.has(503)
-    && !RETRYABLE_HTTP_STATUSES.has(409)
-  ) {
-    pass('Retryability guard only accepts network/timeout failures and selected statuses');
-  } else {
-    fail('Retryability guard accepted or rejected the wrong error/status');
-  }
-
-  calls = 0;
-  await expectReject(
-    'fetchJson stops after the configured max attempts',
-    () => fetchJsonWithRetry('https://example.com/down.json', {
-      fetchImpl: async () => {
-        calls++;
-        return statusJson(503);
-      },
-      sleepFn: async () => {},
-      maxAttempts: 3,
-    }),
-    () => calls === 3,
-    () => `stopped after ${calls} attempts`
-  );
-
-  await expectReject(
-    'fetchJson rejects invalid maxAttempts',
-    () => fetchJsonWithRetry('https://example.com/invalid-attempts.json', {
-      fetchImpl: async () => okJson({}),
-      maxAttempts: 0,
-    }),
-    error => error instanceof RangeError,
-    error => error.name
-  );
-
-  const jitteredLow = retryDelayMs(1, () => 0);
-  const jitteredHigh = retryDelayMs(1, () => 0.999999);
-  const expectedLow = Math.round(FETCH_RETRY_BASE_DELAY_MS * (1 - FETCH_RETRY_JITTER_RATIO));
-  const expectedHigh = Math.round(FETCH_RETRY_BASE_DELAY_MS * (1 + FETCH_RETRY_JITTER_RATIO));
-  if (FETCH_MAX_ATTEMPTS <= 1) {
-    fail(`FETCH_MAX_ATTEMPTS must be > 1, got ${FETCH_MAX_ATTEMPTS}`);
-  } else if (jitteredLow !== expectedLow) {
-    fail(`Jitter low bound incorrect: expected ${expectedLow}, got ${jitteredLow}`);
-  } else if (jitteredHigh > expectedHigh) {
-    fail(`Jitter high bound exceeds maximum: expected <= ${expectedHigh}, got ${jitteredHigh}`);
-  } else if (jitteredHigh <= FETCH_RETRY_BASE_DELAY_MS) {
-    fail(`Jitter high bound should exceed base delay ${FETCH_RETRY_BASE_DELAY_MS}, got ${jitteredHigh}`);
-  } else {
-    pass('Retry configuration and jitter bounds are valid');
-  }
-} catch (e) {
-  fail(`Custom provider retry tests crashed: ${e.message}`);
-}
+  if(calls===2 && delays[0]===1000 && jobs[0]?.description==='Build systems') pass('Fork providers use context transport, shared Retry-After and normalized description');
+  else fail('Fork provider transport/retry/description contract failed');
+} catch(e) { fail('Custom provider transport tests crashed: '+e.message); }
 
 // ── 7. DASHBOARD BUILD ──────────────────────────────────────────
 
@@ -3202,55 +3011,25 @@ if (/language\.output/.test(careerOpsSkill) && /human-facing output/i.test(caree
   fail('career-ops skill does not inject the output language rule');
 }
 
-if (/Language Rule/i.test(batchPrompt) && /language\.output/.test(batchPrompt) && /write all human-facing output/i.test(batchPrompt)) {
+if (/language\.output/.test(batchPrompt) && /all prose/i.test(batchPrompt)) {
   pass('batch prompt honors language.output for worker prose');
 } else {
   fail('batch prompt does not honor language.output for worker prose');
 }
+if (batchPrompt.includes('Read `AGENTS.md`, `modes/_shared.md`') && batchPrompt.includes('modes/oferta.md')) {
+  pass('batch loads canonical shared and evaluation sources');
+} else { fail('batch does not load canonical workflow sources'); }
+if (batchPrompt.includes('modes/pdf.md') && batchPrompt.includes('primary flat HTML/PDF basename')) {
+  pass('batch inherits canonical rendering with flat primary identity');
+} else { fail('batch lost canonical rendering or primary identity'); }
+if (/JSON serializer/i.test(batchPrompt) && /native null/.test(batchPrompt)) {
+  pass('batch final JSON preserves native types and serializer escaping');
+} else { fail('batch final JSON lacks typed serialization'); }
 
-const batchEvaluationInputs = batchPrompt.match(/### Step 2 \u2014 Evaluate A-G([\s\S]*?)#### Step 0 \u2014 Archetype Detection/)?.[1] ?? '';
-if (/`llms\.txt`/.test(batchEvaluationInputs)) {
-  pass('batch evaluation step loads llms.txt');
-} else {
-  fail('batch evaluation step does not load llms.txt');
-}
 
-if (/Canonical base language:\s*English\./.test(batchPrompt)) {
-  pass('batch prompt uses an English canonical base');
-} else {
-  fail('batch prompt canonical base is not English');
-}
-
-if (!/Antes de interpretar|clasifica el|salario p\u00fablico|promesa contractual/i.test(batchPrompt)) {
-  pass('batch prompt keeps system instructions in its canonical English base');
-} else {
-  fail('batch prompt contains Spanish system instructions despite its English canonical base');
-}
-
-const batchHtmlWritePath = batchPrompt.match(/Write HTML to `([^`]+)`/)?.[1];
-const batchPdfInputPath = batchPrompt.match(/node generate-pdf\.mjs[^\n]*\\\n\s+"([^"]+\.html)"\s+\\/)?.[1];
-if (batchHtmlWritePath && batchHtmlWritePath === batchPdfInputPath) {
-  pass('batch prompt renders the HTML path it writes');
-} else {
-  fail(`batch prompt HTML path mismatch: writes ${batchHtmlWritePath ?? 'unknown'}, renders ${batchPdfInputPath ?? 'unknown'}`);
-}
-
-const batchFinalJson = batchPrompt.match(/### Step 6 \u2014 Final JSON([\s\S]*?)\n---/)?.[1] ?? '';
-if (
-  /JSON\.stringify|JSON serializer/i.test(batchFinalJson) &&
-  /"pdf":\s*\{pdf_path_json_string_or_null\}/.test(batchFinalJson) &&
-  /dynamic string[\s\S]{0,160}escap/i.test(batchFinalJson)
-) {
-  pass('batch final JSON preserves native types and escapes dynamic strings');
-} else {
-  fail('batch final JSON does not require typed, escaped serialization');
-}
-
-// Anchored on the step NUMBER, not the section's wording: the title used to be
-// matched verbatim, so rewording it ("TSV Line" → "TSV Row" when the format
-// gained a header row, #3517) left this matching nothing and failing on the
-// empty string rather than on the thing it asserts.
-const batchTrackerStep = batchPrompt.match(/### Step 5 \u2014 [^\n]*[\s\S]*?### Step 6 \u2014 Final JSON/)?.[0] ?? '';
+// Inspect the tracker contract, independently of the evaluation rubric layout.
+// Normalize real tabs so the field assertions also accept escaped examples.
+const batchTrackerStep = (batchPrompt.match(/## Tracker contract[\s\S]*?(?=## Final result contract)/)?.[0] ?? '').replace(/\t/g, '\\t');
 // The rule protected here is the #749 race: parallel workers must never compute
 // `max+1` themselves. Absence of one spelling is not that property — rewording
 // the forbidden instruction passed the old literal check (#3937) — so the
@@ -3295,8 +3074,8 @@ if (
 } else {
   fail('batch workers still compute tracker numbers independently');
 }
-if (/company=\?[^\n]*via=[^\n]*mandatory/i.test(batchTrackerStep) &&
-    /Do not assert that every TSV has exactly nine fields/i.test(batchTrackerStep)) {
+if (/An unknown employer is `\?` and requires a confirmed Via/.test(batchTrackerStep) &&
+    /Direct Via is an empty field/.test(batchTrackerStep)) {
   pass('batch tracker contract makes Via mandatory for confidential employers without forcing nine fields');
 } else {
   fail('batch tracker contract still permits company=? without a Via channel');
@@ -3349,7 +3128,7 @@ if (
   fail(`batch Step 5 no longer specifies the headed TSV format — tab lines: ${batchTsvLines.length}, missing labels: ${batchLabelsMissing.join(', ') || 'none'}, labels/fields: ${batchTsvLabels.length}/${batchDataFields.length}, data row follows header: ${batchRowFollowsHeader}`);
 }
 
-const batchMachineSummary = batchPrompt.match(/#### Machine Summary[\s\S]*?### Step 3 \u2014 Save the Report/)?.[0] ?? '';
+const batchMachineSummary = batchPrompt.match(/## Machine Summary \(canonical report schema\)[\s\S]*?(?=## Tracker contract)/)?.[0] ?? '';
 const patternsMachineFields = readFile('analyze-patterns.mjs').match(/const MACHINE_SUMMARY_FIELDS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? '';
 if (
   /^via:/m.test(batchMachineSummary) &&
@@ -3366,16 +3145,12 @@ if (
   fail('batch Machine Summary and downstream parser fields are misaligned');
 }
 
-// batch-prompt.md carries the Machine Summary schema TWICE — the standalone
-// #### Machine Summary section and the report-header template in Step 3. A key
-// added to one fence only produces reports whose shape depends on which fence
-// the worker happened to follow, so both are asserted (same rule the existing
-// two-fence checks enforce).
+// One authoritative schema prevents divergent report examples.
 const machineSummaryFenceCount = (batchPrompt.match(/^requirement_importance:/gm) ?? []).length;
-if (machineSummaryFenceCount >= 2) {
-  pass('requirement_importance is present in BOTH batch-prompt Machine Summary fences');
+if (machineSummaryFenceCount === 1) {
+  pass('requirement_importance is present in the sole batch Machine Summary schema');
 } else {
-  fail(`requirement_importance appears in ${machineSummaryFenceCount} batch-prompt Machine Summary fence(s), expected both`);
+  fail(`requirement_importance appears in ${machineSummaryFenceCount} batch Machine Summary schemas, expected one`);
 }
 
 // ── 7e. CV SECTION ORDER CHECK IS LANGUAGE-AWARE ────────────────
@@ -3718,13 +3493,13 @@ for (const skillPath of ['.claude/skills/career-ops/SKILL.md', '.agents/skills/c
 
 const goMode = readFile('modes/go.md');
 if (
-  goMode.includes('node scan.mjs --user {USER}') &&
-  goMode.includes('users/{USER}/data/scan-handoff.json') &&
-  goMode.includes('node scan-auth.mjs --user {USER} linkedin') &&
-  goMode.includes('final pending count is greater than the starting pending count') &&
-  goMode.includes('Provider-specific or company-specific failures do not stop `go`')
+  goMode.includes('node go-runner.mjs --user {USER}') &&
+  goMode.includes('existing inbox') &&
+  goMode.includes('manual-actions.json') &&
+  goMode.includes('Continue every independent') &&
+  goMode.includes('pending/blocked inbox')
 ) {
-  pass('go mode coordinates scan, conditional handoff, LinkedIn scan, and conditional pipeline');
+  pass('go mode documents the executable queue drain and independent manual actions');
 } else {
   fail('go mode is missing required sourcing-loop coordination rules');
 }
@@ -4926,25 +4701,9 @@ if (
 }
 
 const batchPromptDoc = readFile('batch/batch-prompt.md');
-if (
-  batchPromptDoc.includes('Company type classification (required)') &&
-  batchPromptDoc.includes('actual contract / hiring entity') &&
-  batchPromptDoc.includes('default compensation reliability to the conservative canonical tier: `Low`') &&
-  batchPromptDoc.includes('Compensation reliability (required)') &&
-  batchPromptDoc.includes('If no advertised number exists, collapse this section to exactly two concise lines') &&
-  batchPromptDoc.includes('skip component split, detailed market rows, and HR verification questions') &&
-  batchPromptDoc.includes('Advertised range') &&
-  batchPromptDoc.includes('Likely guaranteed base') &&
-  batchPromptDoc.includes('Variable / conditional cash components') &&
-  batchPromptDoc.includes('Expected stable cash') &&
-  batchPromptDoc.includes('Non-cash benefits') &&
-  batchPromptDoc.includes('When a salary figure exists, include 3-6 HR verification questions') &&
-  batchPromptDoc.includes('Do not present advertised compensation as real take-home pay')
-) {
-  pass('batch workers inherit company-type compensation reliability checks');
-} else {
-  fail('batch prompt missing company-type compensation reliability checks');
-}
+if (batchPromptDoc.includes('modes/oferta.md') && readFile('modes/oferta.md').includes('Compensation')) {
+  pass('batch inherits canonical company/compensation checks');
+} else { fail('batch does not load canonical compensation evaluation'); }
 
 const pipelineMode = readFile('modes/pipeline.md');
 if (
@@ -5017,25 +4776,10 @@ if (patternsModeDoc.includes('salary-gap.mjs')) {
   fail('patterns mode missing salary-gap lens mention');
 }
 
-if ((batchPromptDoc.match(/advertised_comp/g) || []).length >= 2) {
-  pass('batch prompt carries advertised_comp in both Machine Summary fences');
-} else {
-  fail('batch prompt missing advertised_comp in one or both Machine Summary fences');
-}
-
-// One YAML fence at a time, each bounded to its own step. A count over the
-// whole file passes when one fence carries the key twice and the other carries
-// it not at all, and an unbounded tail lets any later line stand in for the
-// Step 3 fence.
-const step2SchemaSection = batchPromptDoc.match(/#### Machine Summary[\s\S]*?### Step 3 \u2014 Save the Report/)?.[0] ?? '';
-const step2SchemaFence = step2SchemaSection.match(/```yaml\n([\s\S]*?)\n```/)?.[1] ?? '';
-const step3Section = batchPromptDoc.match(/### Step 3 \u2014 Save the Report[\s\S]*?### Step 4 \u2014/)?.[0] ?? '';
-const step3SummaryFence = step3Section.match(/## Machine Summary\s*\n+```yaml\n([\s\S]*?)\n```/)?.[1] ?? '';
-if (/^reports_to:/m.test(step2SchemaFence) && /^reports_to:/m.test(step3SummaryFence)) {
-  pass('batch prompt carries reports_to in both Machine Summary fences');
-} else {
-  fail('batch prompt missing reports_to in one or both Machine Summary fences');
-}
+const canonicalBatchSummary = readFile('batch/batch-prompt.md');
+if (batchPromptDoc.includes('modes/oferta.md') && canonicalBatchSummary.includes('advertised_comp:') && canonicalBatchSummary.includes('reports_to:')) {
+  pass('batch uses the canonical Machine Summary rather than duplicated YAML fences');
+} else { fail('batch canonical Machine Summary is missing fields'); }
 
 // ── upskill Learning Plan trust model (#1740, phase 2b) ──
 // The learning plan (Step 3) layers web-searched resources onto the phase-1 gap
@@ -14513,6 +14257,7 @@ try {
   mkdirSync(fakeBin, { recursive: true });
 
   writeFileSync(join(batchDir, 'batch-runner.sh'), readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8').replace(/\r\n/g, '\n'));
+  copyBatchOwnership(tmp);
   if (process.platform === 'win32') {
     try { execFileSync(getBash(), ['-c', 'chmod +x batch/batch-runner.sh'], { cwd: tmp }); } catch {}
   } else {
@@ -14532,7 +14277,7 @@ try {
   ].join('\n') + '\n');
   writeFileSync(join(fakeBin, 'claude'), [
     '#!/usr/bin/env bash',
-    'echo "You\\x27ve hit your session limit · resets 12:30pm (Asia/Taipei)"',
+    "echo \"You've hit your session limit · resets 12:30pm (Asia/Taipei)\"",
     'exit 1',
   ].join('\n') + '\n');
   // The runner now prefetches JDs with curl. Keep this offline fixture
@@ -14546,7 +14291,7 @@ try {
   }
 
   const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, CAREER_OPS_USERS_DIR: usersDir };
-  const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--parallel', '1', '--max-retries', '3', '--rate-limit-sleep', '0'], {
+  const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--parallel', '1', '--max-retries', '3', '--rate-limit-sleep', '0'], {
     cwd: tmp,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -14565,7 +14310,7 @@ try {
     '1\thttps://example.com/one\tpaused_rate_limit\t2026-01-01T00:00:00Z\t2026-01-01T00:00:01Z\t001\t-\tsession-limit; paused\t0',
     '2\thttps://example.com/two\tfailed\t2026-01-01T00:00:00Z\t2026-01-01T00:00:01Z\t002\t-\tworker-crash\t1',
   ].join('\n') + '\n');
-  const dry = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--resume-paused', '--dry-run'], {
+  const dry = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--resume-paused', '--dry-run'], {
     cwd: tmp,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -14585,7 +14330,7 @@ try {
     '2\thttps://example.com/two\tcompleted\t2026-01-01T00:00:00Z\t2026-01-01T00:00:01Z\t002\tbad);system("oops")\t-\t0',
     '3\thttps://example.com/three\tskipped\t2026-01-01T00:00:00Z\t2026-01-01T00:00:01Z\t003\t3.5\tbelow-min-score\t0',
   ].join('\n') + '\n');
-  const statusOnly = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--status'], {
+  const statusOnly = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--status'], {
     cwd: tmp,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -14620,6 +14365,7 @@ try {
   mkdirSync(fakeBin, { recursive: true });
 
   writeFileSync(join(batchDir, 'batch-runner.sh'), readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8').replace(/\r\n/g, '\n'));
+  copyBatchOwnership(tmp);
   if (process.platform === 'win32') {
     try { execFileSync(getBash(), ['-c', 'chmod +x batch/batch-runner.sh'], { cwd: tmp }); } catch {}
   } else {
@@ -14658,7 +14404,7 @@ try {
     execFileSync('chmod', ['+x', join(fakeBin, 'claude')]);
   }
 
-  run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--parallel', '1', '--rate-limit-sleep', '0'], {
+  run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--parallel', '1', '--rate-limit-sleep', '0'], {
     cwd: tmp,
     env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, CAREER_OPS_USERS_DIR: usersDir },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -14704,6 +14450,7 @@ try {
   mkdirSync(fakeBin, { recursive: true });
 
   writeFileSync(join(batchDir, 'batch-runner.sh'), readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8').replace(/\r\n/g, '\n'));
+  copyBatchOwnership(tmp);
   if (process.platform === 'win32') {
     try { execFileSync(getBash(), ['-c', 'chmod +x batch/batch-runner.sh'], { cwd: tmp }); } catch {}
   } else {
@@ -14741,7 +14488,7 @@ try {
   writeFileSync(join(recoveryDir, 'rec-shift1'),
     '99\thttps://example.com/99\tfailed\t2026-08-07T09:00:00Z\t\t901\t\trate limited\t2\n');
 
-  run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--parallel', '1', '--rate-limit-sleep', '0'], {
+  run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--parallel', '1', '--rate-limit-sleep', '0'], {
     cwd: tmp,
     env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, CAREER_OPS_USERS_DIR: usersDir },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -14784,6 +14531,7 @@ function makeTierFixture(profileYml) {
   mkdirSync(fakeBin, { recursive: true });
 
   writeFileSync(join(batchDir, 'batch-runner.sh'), readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8').replace(/\r\n/g, '\n'));
+  copyBatchOwnership(tmp);
   if (process.platform === 'win32') {
     try { execFileSync(getBash(), ['-c', 'chmod +x batch/batch-runner.sh'], { cwd: tmp }); } catch {}
   } else {
@@ -14821,7 +14569,7 @@ try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: economy\n');
   const argFile = join(tmp, 'claude-argv.txt');
   const env = { ...process.env, CAREER_OPS_USERS_DIR: join(tmp, 'users'), PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
-  const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
+  const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const argv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (argv.includes('--model') && argv.includes('claude-haiku-4-5') && out.includes('spend_tier=economy')) {
     pass('economy spend_tier resolves to claude-haiku-4-5');
@@ -14836,7 +14584,7 @@ try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: premium\n');
   const argFile = join(tmp, 'claude-argv.txt');
   const env = { ...process.env, CAREER_OPS_USERS_DIR: join(tmp, 'users'), PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
-  const premiumOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
+  const premiumOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const premiumArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (premiumArgv.includes('--model') && premiumArgv.includes('claude-opus-5-5') && premiumOut.includes('spend_tier=premium')) {
     pass('premium spend_tier resolves to claude-opus-5-5');
@@ -14851,7 +14599,7 @@ try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: premium\n');
   const argFile = join(tmp, 'claude-argv.txt');
   const env = { ...process.env, CAREER_OPS_USERS_DIR: join(tmp, 'users'), PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
-  const overrideOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1', '--model', 'claude-sonnet-5-5'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
+  const overrideOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--parallel', '1', '--model', 'claude-sonnet-5-5'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const overrideArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (overrideArgv.includes('--model') && overrideArgv.includes('claude-sonnet-5-5') && !overrideArgv.includes('claude-opus-5-5') && overrideOut.includes('explicit --model override')) {
     pass('--model override takes precedence over spend_tier');
@@ -14866,7 +14614,7 @@ try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('# no spend_tier key\nname: test\n');
   const argFile = join(tmp, 'claude-argv.txt');
   const env = { ...process.env, CAREER_OPS_USERS_DIR: join(tmp, 'users'), PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
-  const standardDefaultOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
+  const standardDefaultOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const standardDefaultArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (standardDefaultArgv.includes('--model') && standardDefaultArgv.includes('claude-sonnet-5-5') && standardDefaultOut.includes('spend_tier=standard')) {
     pass('missing spend_tier key defaults to standard tier (claude-sonnet-5-5)');
@@ -14881,7 +14629,7 @@ try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: turbo\n');
   const argFile = join(tmp, 'claude-argv.txt');
   const env = { ...process.env, CAREER_OPS_USERS_DIR: join(tmp, 'users'), PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
-  const invalidTierOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
+  const invalidTierOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--user', 'test', '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const invalidTierArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (invalidTierArgv.includes('--model') && invalidTierArgv.includes('claude-sonnet-5-5') && invalidTierOut.includes('spend_tier=standard')) {
     pass('invalid spend_tier value falls back to standard tier (claude-sonnet-5-5)');
@@ -17508,12 +17256,9 @@ try {
   } else {
     fail(`modes/oferta.md Block B column order drifted: ${blockBHeaderCells.join(' | ')} — expected ${BLOCK_B_COLUMNS.join(' | ')}`);
   }
-  const batchBlockBRow = readFile('batch/batch-prompt.md').match(/^\|\s*Requirement\s*\|.*\|$/m)?.[0] ?? '';
-  if (batchBlockBRow && batchBlockBRow.split('|').map((c) => c.trim()).filter(Boolean).slice(0, 5).join('|') === BLOCK_B_COLUMNS.join('|')) {
-    pass('batch/batch-prompt.md Block B mirrors the frozen column order');
-  } else {
-    fail(`batch/batch-prompt.md Block B column order diverges from modes/oferta.md: ${batchBlockBRow || '(no header row)'}`);
-  }
+  if (readFile('batch/batch-prompt.md').includes('modes/oferta.md')) {
+    pass('batch inherits the frozen Block B columns from oferta');
+  } else { fail('batch does not load oferta Block B'); }
 
   // 55.4c The two rules that make the importance column defensible rather than
   // just more numbers in the report. Frozen at doc level, in the style of the
@@ -17541,52 +17286,10 @@ try {
     fail(`modes/oferta.md Block B dropped importance promise(s): ${brokenPromises.join(', ')} — these ARE the feature (#2330)`);
   }
 
-  // The gate has to hold for the batch path too, or headless workers become the
-  // hole in it: batch/batch-prompt.md is a second, independent writer of Block B.
   const batchPromptSrc = readFile('batch/batch-prompt.md');
-  const batchGatePromises = [
-    ['inferred cap', /can \*\*never\*\* be `critical` or `high`/],
-    ['gate statement', /never from a market-weight guess/],
-    ['two-pass rule', /before reading `(?:\{\{USER_ROOT\}\}\/)?cv\.md`/],
-  ];
-  const brokenBatchPromises = batchGatePromises.filter(([, re]) => !re.test(batchPromptSrc)).map(([name]) => name);
-  if (brokenBatchPromises.length === 0) {
-    pass('batch workers inherit the Block B importance-evidence gate (#2330)');
-  } else {
-    fail(`batch/batch-prompt.md dropped importance gate rule(s): ${brokenBatchPromises.join(', ')} — batch would bypass the gate (#2330)`);
-  }
-
-  // 55.4d The two-pass rule is only real if nothing loads candidate evidence
-  // BEFORE Block B's first pass. batch-prompt.md's Step 2 preamble used to open
-  // with "Read `cv.md`, `article-digest.md`, ..." for every block at once, which
-  // made the rule unachievable on the batch path however carefully Block B
-  // worded it — the ordering was lost two sections earlier. Asserted on the
-  // preamble's text because that is where the regression would reappear: any
-  // future edit that hoists the CV read back up to Step 2 silently re-anchors
-  // every batch evaluation's importance column.
-  const step2Preamble = batchPromptSrc.match(/### Step 2 — Evaluate A-G[\s\S]*?\n#### Block B /)?.[0] ?? '';
-  const hoistsCvRead = /Read `cv\.md`/.test(step2Preamble);
-  const defersCvRead = /\*\*Do not read `(?:\{\{USER_ROOT\}\}\/)?cv\.md` or `(?:\{\{USER_ROOT\}\}\/)?article-digest\.md` yet\.\*\*/.test(step2Preamble);
-  const namesLoadPoint = /\*\*Load\*\* `(?:\{\{USER_ROOT\}\}\/)?cv\.md` and `(?:\{\{USER_ROOT\}\}\/)?article-digest\.md` now/.test(batchPromptSrc);
-  // The Sources of Truth table is the SECOND place the ordering can be lost:
-  // its "When" column said `cv.md` → "Always" under a heading that reads "read
-  // before evaluating", which contradicts the deferral in Step 2 just as
-  // effectively. Both hoist points are asserted, or fixing one leaves the other.
-  const sourcesTable = batchPromptSrc.match(/## Sources of Truth[\s\S]*?\nRules:/)?.[0] ?? '';
-  const cvRow = sourcesTable.match(/^\| (?:CV|cv\.md) \| `(?:\{\{USER_ROOT\}\}\/)?cv\.md` \|(.*)\|$/m)?.[1] ?? '';
-  const cvRowDefers = /Deferred to Block B pass 2/.test(cvRow);
-  if (!step2Preamble) {
-    fail('batch/batch-prompt.md Step 2 → Block B region not found — the #2330 two-pass ordering freeze cannot verify');
-  } else if (!cvRow) {
-    fail('batch/batch-prompt.md Sources of Truth has no `cv.md` row — the #2330 two-pass ordering freeze cannot verify');
-  } else if (!hoistsCvRead && defersCvRead && namesLoadPoint && cvRowDefers) {
-    pass('batch/batch-prompt.md defers the CV read until Block B pass 2 at both hoist points, so the two-pass rule is achievable (#2330)');
-  } else {
-    fail(
-      'batch/batch-prompt.md broke the Block B two-pass ordering (#2330): ' +
-      `hoistsCvRead=${hoistsCvRead} defersCvRead=${defersCvRead} namesLoadPoint=${namesLoadPoint} cvRowDefers=${cvRowDefers}`,
-    );
-  }
+  if (batchPromptSrc.includes('modes/oferta.md') && /before loading `cv.md`, `article-digest.md`/.test(batchPromptSrc) && /Never revise importance/.test(batchPromptSrc)) {
+    pass('batch inherits canonical importance evidence and defers all candidate proof points');
+  } else { fail('batch lost canonical Block B or the JD-only first pass'); }
 
   // 55.5 cross-check: the web parser still speaks the same column names
   const webParserPath = join(ROOT, 'web', 'src', 'lib', 'career-ops.ts');

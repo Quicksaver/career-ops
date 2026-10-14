@@ -95,6 +95,19 @@ function loadFailedReportNumbers(path) {
   return reportNumbersWithStatus(path, 'failed');
 }
 
+function loadBatchJobs(path) {
+  const jobs = new Map();
+  if (!existsSync(path)) return jobs;
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const fields = line.split('\t');
+    if (!/^\d+$/.test(fields[0]) || fields.length < 6) continue;
+    const rows = jobs.get(fields[0]) || [];
+    rows.push({ status: fields[2], reportNum: fields[5] });
+    jobs.set(fields[0], rows);
+  }
+  return jobs;
+}
+
 /**
  * Pause the async merge flow for a fixed number of milliseconds.
  *
@@ -338,6 +351,8 @@ export async function mergeTracker(options = {}) {
   const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
   const BATCH_STATE_FILE = options.batchStateFile ?? join(DATA_ROOT, 'batch/batch-state.tsv');
   const FAILED_REPORT_NUMBERS = loadFailedReportNumbers(BATCH_STATE_FILE);
+  const BATCH_JOBS = loadBatchJobs(BATCH_STATE_FILE);
+  const withheldAdditions = new Set();
   // Read only to explain a skip, never to lift one. Before #4391, a failed
   // worker's released number could be handed to the next offer, so one number
   // carries both a "failed" and a "completed" row. The guard still has to hold
@@ -1763,6 +1778,20 @@ export async function mergeTracker(options = {}) {
       const addition = parseTsvContent(content, file);
       if (!addition) { skipped++; continue; }
 
+      // Batch additions are named by job ID, independently of worker-provided
+      // report numbers. A rejected worker cannot evade its state by claiming a
+      // different report. Standalone additions with no matching job keep their
+      // existing merge path; withheld processing/held additions can merge later
+      // after that same job completes with the reserved report identity.
+      const jobId = basename(file, '.tsv');
+      const batchJobs = /^\d+$/.test(jobId) ? BATCH_JOBS.get(jobId) : null;
+      if (batchJobs?.some(job => !['completed', 'skipped'].includes(job.status))) {
+        console.warn(`⚠️  Skipping ${file}: batch job #${jobId} is ${batchJobs.map(job => job.status).join('/')} — its tracker addition is not accepted`);
+        withheldAdditions.add(file);
+        skipped++;
+        continue;
+      }
+
       // A via= tag can only be stored if the tracker has a Via column — warn
       // instead of dropping the channel silently (#1596). Clear the value too:
       // existing rows parse with via='' on this layout, so a set addition.via would
@@ -1803,6 +1832,13 @@ export async function mergeTracker(options = {}) {
       // 1. Exact report number match
       // 2. Company + role fuzzy match
       const reportNum = extractReportNum(addition.report, addition.notes);
+
+      if (batchJobs?.some(job => !/^\d+$/.test(job.reportNum) || Number(job.reportNum) !== Number(addition.num) || Number(job.reportNum) !== reportNum)) {
+        console.warn(`⚠️  Skipping ${file}: batch job #${jobId} tracker/report identity disagrees with its reserved report number`);
+        withheldAdditions.add(file);
+        skipped++;
+        continue;
+      }
 
       if (reportNum && FAILED_REPORT_NUMBERS.has(reportNum)) {
         console.warn(`⚠️  Skipping ${file}: report #${reportNum} is marked "failed" in batch-state.tsv — refusing to merge a tracker line for an offer the batch runner itself recorded as failed (possible fabricated result)`);
@@ -2298,7 +2334,7 @@ export async function mergeTracker(options = {}) {
       // into permanent data loss, since applications.md is gitignored and no backup
       // is written.
       if (!existsSync(MERGED_DIR)) mkdirSync(MERGED_DIR, { recursive: true });
-      const archivable = tsvFiles.filter(f => !failedAdditions.includes(f));
+      const archivable = tsvFiles.filter(f => !failedAdditions.includes(f) && !withheldAdditions.has(f));
       for (const file of archivable) {
         renameSync(join(ADDITIONS_DIR, file), join(MERGED_DIR, file));
       }

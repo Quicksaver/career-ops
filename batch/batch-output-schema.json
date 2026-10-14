@@ -98,6 +98,11 @@
       "type": [
         "string",
         "null"
+      ],
+      "enum": [
+        "agency_confirmation",
+        "jd_unavailable",
+        null
       ]
     },
     "url": {

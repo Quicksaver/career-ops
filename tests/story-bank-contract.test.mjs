@@ -1,3 +1,4 @@
+import { batchCanonicalContext } from './batch-canonical-context.mjs';
 import { userFixtureEnv } from './user-fixture.mjs';
 // tests/story-bank-contract.test.mjs — one story-bank.md contract, for every
 // writer and every reader (#4514).
@@ -373,5 +374,6 @@ test('oferta.md no longer appends only "if the file exists"', () => {
 });
 
 test('batch workers are told never to write story-bank.md', () => {
+  batchCanonicalContext();
   assert.match(read('batch/batch-prompt.md'), /Never write to `(?:\{\{USER_ROOT\}\}\/)?interview-prep\/story-bank\.md`/);
 });

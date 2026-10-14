@@ -32,6 +32,7 @@ DISCARD_LOG=""
 APPLICATIONS_FILE=""
 STATE_LOCK_TIMEOUT_SECONDS=30
 MAIN_PID="${BASHPID:-$$}"
+OWNER_TOKEN=""
 
 # Defaults
 PARALLEL=""
@@ -40,18 +41,18 @@ PARALLEL_SOURCE=""
 DRY_RUN=false
 RETRY_FAILED=false
 RESUME_PAUSED=false
+INCLUDE_PENDING=false
 START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
 SKIP_PDF=false
-MODEL=""  # explicit override; otherwise Claude uses spend_tier and Codex uses global config
-REASONING_EFFORT=""  # Codex-only explicit override; otherwise Codex global config applies
-CLI="${CAREER_OPS_BATCH_CLI:-claude}"
+MODEL=""  # explicit override; otherwise Claude uses spend_tier and Codex uses profile settings or system defaults
+REASONING_EFFORT=""  # Codex-only explicit override; otherwise profile settings or system defaults apply
+CLI="${CAREER_OPS_BATCH_CLI:-codex}"
 LIMIT=0
 WORKER_TIMEOUT_SECONDS="${CAREER_OPS_WORKER_TIMEOUT_SECONDS:-900}"
 RESOLVED_MODEL=""
 RESOLVED_SPEND_TIER=""
-CLI=claude
 RATE_LIMIT_SLEEP=300
 BATCH_PAUSED=false
 STATUS_ONLY=false
@@ -59,6 +60,8 @@ WATCH_MODE=false
 DEFER_VERIFICATION=false
 VERIFICATION_FAILED=false
 RECOVER_ARTIFACT_FAILURES=false
+ANSWERS_FILE=""
+QUEUE_FILE=""
 
 # Return success for non-negative integer or decimal strings.
 is_decimal_number() {
@@ -74,17 +77,20 @@ Claude workers use spend_tier from the active user's config/profile.yml unless -
 Usage: batch-runner.sh [OPTIONS]
 
 Options:
+  --answers-file PATH Explicit user-owned exact-URL manual answers (JSON)
+  --queue-file PATH   Read-only plain URL list constraining this run
   --user ID           Required. User folder under users/ID
   --parallel N         Worker-count override (profile batch.parallel, then 1)
-  --cli NAME           claude (default), codex, opencode, gemini, qwen
+  --cli NAME           codex (default), claude, opencode, gemini, qwen
   --dry-run            Show what would be processed, don't execute
-  --retry-failed       Only retry offers marked as "failed" in state
-  --resume-paused      Resume offers paused by a Claude session/rate limit
+  --retry-failed       Select failed offers, allowing one extra attempt at the retry cap
+  --resume-paused      Select offers paused by a session/rate limit
+  --include-pending    Internal coordinator flag: union recovery selections with normal pending eligibility
   --start-from N       Start from offer ID N (skip earlier IDs)
   --limit N            Max offers: positive integer; omit for no limit
   --max-retries N      Max retry attempts per offer (default: 2)
   --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
-  --cli NAME           Headless CLI to use: claude, codex, opencode, gemini, qwen (default: claude,
+  --cli NAME           Headless CLI to use: claude, codex, opencode, gemini, qwen (default: codex,
                        or CAREER_OPS_BATCH_CLI)
   --limit N            Process at most N pending offers in this run (default: 0 = all)
   --worker-timeout N   Seconds before a worker is killed and artifact recovery
@@ -94,7 +100,7 @@ Options:
                        (default: 300; range: 0–2147483647; claude only)
 
   --model NAME         Explicit worker model for the selected CLI. Without it,
-                       Claude uses spend_tier and Codex uses its global config.
+                       Claude uses spend_tier; Codex uses codex profile settings, then system defaults.
   --reasoning-effort LEVEL
                        Codex reasoning effort: minimal, low, medium, high, or xhigh
   --status             Show batch progress and a per-job table, then exit
@@ -114,10 +120,9 @@ Files:
   logs/                Per-offer logs
   tracker-additions/   Tracker lines for post-batch merge
 
-With a data root outside the checkout (CAREER_OPS_ROOT, CAREER_OPS_DATA_DIR
-or a .career-ops-data marker), config/profile.yml, reports/ and
-batch/tracker-additions/ are read and written there. The other files stay
-beside this script.
+Runtime input, state, logs, tracker additions and artifacts live in the selected
+user data root, honoring CAREER_OPS_ROOT, CAREER_OPS_DATA_DIR and the
+.career-ops-data marker. System scripts, prompts and schemas stay in the checkout.
 
 Examples:
   # Dry run to see pending offers
@@ -145,9 +150,15 @@ while [[ $# -gt 0 ]]; do
       PARALLEL_EXPLICIT=true
       shift 2
       ;;
+    --answers-file|--queue-file)
+      [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: $1 requires a path"; exit 1; }
+      if [[ "$1" == "--answers-file" ]]; then ANSWERS_FILE="$2"; else QUEUE_FILE="$2"; fi
+      shift 2
+      ;;
     --dry-run) DRY_RUN=true; shift ;;
     --retry-failed) RETRY_FAILED=true; shift ;;
     --resume-paused) RESUME_PAUSED=true; shift ;;
+    --include-pending) INCLUDE_PENDING=true; shift ;;
     --start-from) START_FROM="$2"; shift 2 ;;
     --limit)
       if [[ $# -lt 2 ]] || ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" =~ ^0+$ ]]; then
@@ -231,6 +242,9 @@ configure_user_paths() {
     /*|[A-Za-z]:[\\/]*) ;;
     *) USER_ROOT="$PROJECT_DIR/$USER_ROOT" ;;
   esac
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) command -v cygpath >/dev/null 2>&1 && USER_ROOT="$(cygpath -m "$USER_ROOT")" ;;
+  esac
   DATA_ROOT="$USER_ROOT"
   BATCH_DIR="$USER_ROOT/batch"
   INPUT_FILE="$BATCH_DIR/batch-input.tsv"
@@ -272,26 +286,37 @@ fi
 
 # Lock file to prevent double execution
 acquire_lock() {
-  if [[ -f "$LOCK_FILE" ]]; then
+  # Legacy locks use the Bash PID namespace. Never unlink an incumbent here.
+  if [[ -f "$LOCK_FILE" && ! -d "$LOCK_FILE.owner.lock" ]]; then
     local old_pid
     old_pid=$(cat "$LOCK_FILE")
     if kill -0 "$old_pid" 2>/dev/null; then
       echo "ERROR: Another batch-runner is already running (PID $old_pid)"
-      echo "If this is stale, remove $LOCK_FILE"
       exit 1
-    else
-      echo "WARN: Stale lock file found (PID $old_pid not running). Removing."
-      rm -f "$LOCK_FILE"
+    elif [[ ! "$old_pid" =~ ^[1-9][0-9]*$ ]]; then
+      echo "ERROR: Ambiguous legacy batch owner; refusing to remove $LOCK_FILE"
+      exit 1
     fi
   fi
-  echo "$MAIN_PID" > "$LOCK_FILE"
+  local native_pid="$MAIN_PID"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      native_pid=$(cat "/proc/$MAIN_PID/winpid") || { echo "ERROR: Cannot determine native batch PID"; exit 1; }
+      ;;
+  esac
+  if ! OWNER_TOKEN=$(node "$SCRIPT_DIR/runner-ownership.mjs" acquire "$LOCK_FILE" "$native_pid" "$MAIN_PID"); then
+    echo "ERROR: Another batch-runner owns the batch, or ownership cannot be established"
+    exit 1
+  fi
 }
 
 release_lock() {
   if [[ "${BASHPID:-$$}" != "$MAIN_PID" ]]; then
     return
   fi
-  rm -f "$LOCK_FILE"
+  if [[ -n "$OWNER_TOKEN" ]]; then
+    node "$SCRIPT_DIR/runner-ownership.mjs" release "$LOCK_FILE" "$OWNER_TOKEN" || true
+  fi
 }
 
 trap release_lock EXIT
@@ -695,6 +720,25 @@ spend_tier_to_model() {
 
 # Resolve the worker model. --model always wins.
 resolve_worker_model() {
+  if [[ "$CLI" == "codex" && -f "$PROJECT_DIR/resolve-codex-config.mjs" ]]; then
+    local -a resolver_args=(--user "$USER_ID" --shell)
+    [[ -z "$MODEL" ]] || resolver_args+=(--codex-model "$MODEL")
+    [[ -z "$REASONING_EFFORT" ]] || resolver_args+=(--codex-reasoning-effort "$REASONING_EFFORT")
+    local resolution
+    resolution=$(node "$PROJECT_DIR/resolve-codex-config.mjs" "${resolver_args[@]}") || return 1
+    # Trusted local resolver emits only fixed-key, safely quoted assignments.
+    eval "$resolution"
+    RESOLVED_MODEL="$CODEX_MODEL"
+    REASONING_EFFORT="$CODEX_REASONING_EFFORT"
+    RESOLVED_SPEND_TIER="codex-config"
+    return 0
+  fi
+  if [[ "$CLI" == "codex" ]]; then
+    RESOLVED_MODEL="${MODEL:-gpt-6.1-sol}"
+    REASONING_EFFORT="${REASONING_EFFORT:-medium}"
+    RESOLVED_SPEND_TIER="default"
+    return 0
+  fi
   if [[ -n "$MODEL" ]]; then
     RESOLVED_MODEL="$MODEL"
     RESOLVED_SPEND_TIER="override"
@@ -958,13 +1002,44 @@ update_state_retrying() {
 }
 
 is_rate_limit_log() {
-  local log_file="$1"
-  grep -Eiq '(rate limit|rate_limit|too many requests|429|quota exceeded|try again later|temporarily unavailable)' "$log_file"
+  is_provider_limit_log "$1" rate
 }
 
 is_session_limit_log() {
-  local log_file="$1"
-  grep -Eiq '(session limit|resets [0-9:]+[ap]m|usage limit|limit[[:space:]]+reached)' "$log_file"
+  is_provider_limit_log "$1" session
+}
+
+# Read only provider error envelopes or anchored CLI diagnostics. Worker JSON,
+# report paths and quoted JD data are not HTTP status/error signals.
+is_provider_limit_log() {
+  node - "$1" "$2" <<'NODE'
+const fs = require('node:fs');
+const [file, kind] = process.argv.slice(2);
+const rateCodes = new Set(['rate_limit_error', 'rate_limit_exceeded', 'insufficient_quota', 'quota_exceeded', 'usage_limit_reached']);
+const sessionCodes = new Set(['session_limit', 'session_limit_reached', 'usage_limit_reached']);
+const codes = kind === 'rate' ? rateCodes : sessionCodes;
+function diagnostic(text) {
+  const line = String(text).replace(/\x1b\[[0-9;]*m/g, '').trim();
+  const message = line.replace(/^(?:API error|error|codex error|claude error):\s*/i, '').replace(/^stream disconnected before completion:\s*/i, '');
+  if (kind === 'rate') {
+    return /^API error:\s*429(?:\s|:|$)/i.test(line)
+      || /^(?:HTTP(?:\/\S+)?\s+429(?:\s|:|$)|unexpected (?:HTTP )?status 429\s+Too Many Requests\b|429\s+Too Many Requests\b|too many requests\b|rate[ _-]limit(?: exceeded| reached| error|:|$)|quota exceeded\b|you exceeded your current quota\b|insufficient_quota(?:\b|$)|usage_limit_reached(?:\b|$))/i.test(message);
+  }
+  return /^(?:(?:you(?:'ve| have)|you have) (?:hit|reached) your (?:usage |session )?limit\b|usage limit (?:reached|exceeded)\b|session limit(?: reached| exceeded|$)|usage_limit_reached(?:\b|$))/i.test(message);
+}
+const matched = fs.readFileSync(file, 'utf8').split(/\r?\n/).some(line => {
+  let event;
+  try { event = JSON.parse(line); } catch { return diagnostic(line); }
+  // Application final JSON and agent_message items can contain arbitrary data.
+  if (!event || typeof event !== 'object' || event.status !== undefined) return false;
+  if (!['error', 'turn.failed', undefined].includes(event.type)) return false;
+  const error = event.error;
+  if (error && typeof error === 'object' && (codes.has(error.code) || codes.has(error.type))) return true;
+  if (event.type === 'error' || event.type === 'turn.failed') return diagnostic(error?.message ?? event.message ?? '');
+  return false;
+});
+process.exitCode = matched ? 0 : 1;
+NODE
 }
 
 # Print a delay or "pause". Only standalone delta-seconds headers are trusted;
@@ -1265,8 +1340,9 @@ recover_artifact_failures() {
     fi
 
     local validation_error=""
-    if ! validation_error=$(node "$SCRIPT_DIR/validate-worker-artifacts.mjs" \
-      --report "$report_file" --tracker "$tracker_file" --final "$final_file" --repair 2>&1); then
+    local -a recovery_validation_args=(--report "$report_file" --tracker "$tracker_file" --final "$final_file" --repair --strict-workflow --user-root "$USER_ROOT" --report-num "$report_num" --expected-url "$url" --user "$USER_ID")
+    if [[ -n "$ANSWERS_FILE" ]]; then recovery_validation_args+=(--answers-file "$ANSWERS_FILE"); fi
+    if ! validation_error=$(node "$SCRIPT_DIR/validate-worker-artifacts.mjs" "${recovery_validation_args[@]}" 2>&1); then
       unresolved=$((unresolved + 1))
       validation_error=$(printf '%s' "$validation_error" | tr '\r\n\t' ' ' | cut -c1-500)
       echo "    ⚠️  Not recoverable: #$id (report $report_num): $validation_error"
@@ -1295,10 +1371,15 @@ process_offer() {
   local id="$1" url="$2" source="$3" notes="$4"
   local remaining="$5"
 
+  if [[ "$url" == local:* && -f "$SCRIPT_DIR/manual-inputs.mjs" ]]; then
+    node "$SCRIPT_DIR/manual-inputs.mjs" local "$USER_ID" "" "" "$url" "$id" "$USER_ROOT" || { echo "ERROR: unsafe local JD reference" >&2; return 2; }
+  fi
   local started_at
   started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local retries
   retries=$(get_retries "$id")
+  local explicit_failed_retry=false
+  if [[ "$RETRY_FAILED" == "true" && "$(get_status "$id")" == "failed" ]]; then explicit_failed_retry=true; fi
   local report_num
   if ! report_num=$(reserve_report_num_retrying "$id" "$url" "$started_at" "$retries"); then
     return 1
@@ -1342,9 +1423,25 @@ process_offer() {
   # words after HTML stripping; a real JD has hundreds. 80 is a conservative
   # lower bound — any genuine posting has at least a title, summary, and a few
   # requirements, which together exceed 80 stripped words.
+  local original_url="$url"
+  local manual_answers="[]"
+  if [[ -n "$ANSWERS_FILE" ]]; then
+    manual_answers=$(node "$SCRIPT_DIR/manual-inputs.mjs" answers "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$original_url")
+    url=$(node "$SCRIPT_DIR/manual-inputs.mjs" jd "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$original_url" "$id" "$jd_file")
+  fi
+  if [[ -f "$SCRIPT_DIR/manual-inputs.mjs" ]] && node "$SCRIPT_DIR/manual-inputs.mjs" linkedin "$USER_ID" "" "" "$url" && [[ ! -s "$jd_file" ]]; then
+    local hold_json
+    hold_json=$(node -e 'const [id,url,num]=process.argv.slice(1); console.log(JSON.stringify({status:"needs_confirmation",id,url,report_num:num,company:"",role:"",score:null,legitimacy:null,via:null,company_confidential:null,pdf:null,report:null,tracker:null,error:null,reason:"jd_unavailable",question:"JD unavailable. Paste the job description or provide the employer posting URL for this exact LinkedIn posting."}));' "$id" "$original_url" "$report_num")
+    node "$SCRIPT_DIR/manual-inputs.mjs" hold "$USER_ID" "" "" "$original_url" "$id" "$LOGS_DIR/$id.hold.json" "$report_num" "$hold_json" || return 2
+    update_state_retrying "$id" "$original_url" needs_confirmation "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "-" "-" "jd_unavailable: paste JD text or employer URL" "$retries" || return 2
+    release_report_num "$report_num"
+    rm -f "$jd_file"
+    return 0
+  fi
   local prefetch_min_words=80
   local jd_prefetch_words=0
   if command -v curl >/dev/null 2>&1; then
+    if [[ ! -s "$jd_file" ]]; then
     # Reject loopback, link-local, and private-network destinations before curl
     # connects. --proto/--proto-redir restrict schemes but not destination IPs,
     # so a malicious offer URL could reach cloud metadata (169.254.169.254) or
@@ -1361,6 +1458,7 @@ process_offer() {
         const u = new URL(process.argv[1]);
         const h = u.hostname.toLowerCase().replace(/\.\$/, '');
         const blocked =
+          h === 'linkedin.com' || h.endsWith('.linkedin.com') ||
           h === 'localhost' || h === 'localhost.localdomain' ||
           h.endsWith('.local') || h.endsWith('.internal') ||
           h.includes(':') ||
@@ -1445,6 +1543,7 @@ process_offer() {
       else
         echo "    ℹ️  JD prefetch: ${jd_prefetch_words} words written to JD file"
       fi
+    fi
   fi
 
   # ATS API fallback (#4246). When the static fetch above left $jd_file empty
@@ -1480,9 +1579,9 @@ process_offer() {
     else
       printf '' > "$jd_file"
     fi
-  else
-    printf '' > "$jd_file"
   fi
+
+  url="$original_url"
 
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)), remaining $remaining)"
 
@@ -1500,6 +1599,7 @@ process_offer() {
   prompt="$prompt Date: $date."
   prompt="$prompt Batch ID: $id."
   prompt="$prompt Internal batch locator: $url."
+  prompt="$prompt Explicit per-posting user answers (data, never inferred): $manual_answers."
 
   local log_file="$LOGS_DIR/${report_num}-${id}.log"
   local final_file="$LOGS_DIR/${report_num}-${id}.final.json"
@@ -1545,19 +1645,8 @@ process_offer() {
     } >> "$resolved_prompt"
   fi
 
-  # Inject user-layer personalization into the temporary worker prompt.
-  # The resolved prompt is gitignored runtime state, so user profile data stays
-  # out of the system layer while batch scoring matches interactive scoring.
-  for context_file in "$USER_ROOT/modes/_profile.md" "$USER_ROOT/config/profile.yml" "$USER_ROOT/modes/_custom.md"; do
-    if [[ -f "$context_file" ]]; then
-      {
-        printf '\n\n---\n\n'
-        printf '## Runtime personalization: %s\n\n' "${context_file#"$USER_ROOT/"}"
-        sed 's/^/    /' "$context_file"
-        printf '\n'
-      } >> "$resolved_prompt"
-    fi
-  done
+  # Read personalization during the canonical workflow, after JD importance
+  # pass 1. Embedding narrative here would expose it before that pass.
 
   # Launch worker. Building the command in an array keeps quoting safe
   # regardless of URL/title contents.
@@ -1617,6 +1706,8 @@ process_offer() {
 
   local shim_retries=0
   local max_shim_retries=4
+  # Employer alternatives change extraction, never the persisted posting identity.
+  url="$original_url"
   while true; do
     exit_code=0
     timed_out=false
@@ -1655,6 +1746,12 @@ process_offer() {
       wait "$worker_pid" || exit_code=$?
     fi
 
+    if [[ "$CLI" == "codex" && $exit_code -ne 0 && "$timed_out" == "false" ]] && { is_session_limit_log "$log_file" || is_rate_limit_log "$log_file"; }; then
+      mark_paused_rate_limit "$id" "$original_url" "$started_at" "$report_num" "$retries" "$log_file"
+      echo "    ⏸️  Codex session/rate limit reached; pausing without consuming retry budget."
+      terminal_failure_recorded=true
+      break
+    fi
     if [[ $exit_code -eq 0 || "$CLI" != "claude" ]]; then
       break
     fi
@@ -1674,6 +1771,12 @@ process_offer() {
       break
     fi
 
+    if is_rate_limit_log "$log_file" && [[ "$explicit_failed_retry" == "true" ]]; then
+      mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$log_file"
+      echo "    ⏸️  Rate limited during the explicit extra attempt; pausing without further dispatch."
+      terminal_failure_recorded=true
+      break
+    fi
     if is_rate_limit_log "$log_file" && (( retries < MAX_RETRIES )); then
       if (( RATE_LIMIT_SLEEP <= 0 )); then
         mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$log_file"
@@ -1703,6 +1806,21 @@ process_offer() {
 
   # Cleanup resolved prompt
   rm -f "$resolved_prompt" "$combined_prompt_file" "$jd_file"
+  if [[ "$terminal_failure_recorded" == "true" ]]; then
+    # A quota failure can follow partial artifact writes. Keep them out of the
+    # final tracker merge, which otherwise reads every addition indiscriminately.
+    local paused_report="" paused_tracker="$TRACKER_DIR/$id.tsv"
+    paused_report=$(find_report_for_num "$report_num")
+    if [[ -f "$paused_tracker" || -n "$paused_report" ]]; then
+      mkdir -p "$LOGS_DIR/quarantine"
+      local paused_quarantine
+      paused_quarantine=$(mktemp -d "$LOGS_DIR/quarantine/rate-limit-$report_num-$id.XXXXXX")
+      if [[ -f "$paused_tracker" ]]; then mv "$paused_tracker" "$paused_quarantine/$id.tsv"; fi
+      if [[ -n "$paused_report" ]]; then mv "$paused_report" "$paused_quarantine/${paused_report##*/}"; fi
+    fi
+    release_report_num "$report_num"
+    return 0
+  fi
 
   local completed_at
   completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -1792,7 +1910,7 @@ process_offer() {
       # and never supplies an agency answer for a different posting.
       if ! node -e '
         const result = JSON.parse(process.argv[1]);
-        process.exit(result.reason === "agency_confirmation" &&
+        process.exit(["agency_confirmation", "jd_unavailable"].includes(result.reason) &&
           result.url === process.argv[2] && String(result.id) === process.argv[3] ? 0 : 1);
       ' "$worker_result_json" "$url" "$id"; then
         question="Invalid confirmation handoff identity/reason; parent must inspect the job log and ask for this URL"
@@ -1806,6 +1924,9 @@ process_offer() {
         # not a worker artifact (same exclusion as the report-file check below).
         for candidate in "$REPORTS_DIR/$report_num-"*.md; do
           [[ "$candidate" == *-RESERVED.md ]] || report_artifacts+=("$candidate")
+        done
+        for candidate in "$USER_ROOT/output/$report_num-"* "$USER_ROOT/jds/$report_num-"*; do
+          [[ -f "$candidate" ]] && report_artifacts+=("$candidate")
         done
         shopt -u nullglob
       fi
@@ -1822,6 +1943,10 @@ process_offer() {
         question="Worker violated the confirmation hold by writing artifacts; inspect the quarantined tracker/report before answering"
         update_state_retrying "$id" "$url" "needs_confirmation" "$started_at" "$completed_at" "-" "-" "$question" "$retries" || true
         echo "    ERROR: confirmation hold produced artifacts; reservation kept and tracker merge skipped." >&2
+        return 2
+      fi
+      if ! node "$SCRIPT_DIR/manual-inputs.mjs" hold "$USER_ID" "" "" "$url" "$id" "$LOGS_DIR/$id.hold.json" "$report_num" "$worker_result_json"; then
+        update_state_retrying "$id" "$url" needs_confirmation "$started_at" "$completed_at" "-" "-" "invalid manual handoff; inspect log" "$retries" || true
         return 2
       fi
       local hold_rc=0
@@ -1849,7 +1974,10 @@ process_offer() {
       --report "$report_file"
       --tracker "$tracker_file"
       --repair
+      --strict-workflow --user-root "$USER_ROOT" --report-num "$report_num"
+      --expected-url "$original_url" --user "$USER_ID"
     )
+    if [[ -n "$ANSWERS_FILE" ]]; then artifact_args+=(--answers-file "$ANSWERS_FILE"); fi
     if [[ "$final_json_valid" == "true" && -f "$final_file" ]]; then
       artifact_args+=(--final "$final_file")
     fi
@@ -1890,7 +2018,7 @@ process_offer() {
       echo "    ✅ Completed (score: $score, report: $report_num)"
     fi
   elif [[ "$terminal_failure_recorded" == "false" ]]; then
-    if (( retries < MAX_RETRIES )); then
+    if (( retries < MAX_RETRIES )) || [[ "$explicit_failed_retry" == "true" ]]; then
       retries=$((retries + 1))
     fi
     local error_msg
@@ -1908,6 +2036,16 @@ process_offer() {
       error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
     fi
     update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries"
+    # Rejected additions must not reach the unconditional end-of-run merge.
+    # Preserve their evidence separately from accepted tracker additions.
+    local rejected_tracker="$TRACKER_DIR/$id.tsv"
+    if [[ -f "$rejected_tracker" || -n "$report_file" ]]; then
+      mkdir -p "$LOGS_DIR/quarantine"
+      local rejected_quarantine
+      rejected_quarantine=$(mktemp -d "$LOGS_DIR/quarantine/rejected-$report_num-$id.XXXXXX")
+      if [[ -f "$rejected_tracker" ]]; then mv "$rejected_tracker" "$rejected_quarantine/$id.tsv"; fi
+      if [[ -n "$report_file" && -f "$report_file" ]]; then mv "$report_file" "$rejected_quarantine/${report_file##*/}"; fi
+    fi
     echo "WARN: Worker #$id contract failure: $error_msg" >> "$log_file"
     echo "    ❌ Failed (attempt $retries, exit code $exit_code, $error_msg)"
   fi
@@ -2096,6 +2234,9 @@ watch_status() {
 main() {
   validate_user
   configure_user_paths
+  if [[ -n "$ANSWERS_FILE" || -n "$QUEUE_FILE" ]]; then
+    node "$SCRIPT_DIR/manual-inputs.mjs" validate "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" || exit 1
+  fi
 
   if [[ "$STATUS_ONLY" == "true" ]]; then
     check_status_prerequisites
@@ -2157,6 +2298,8 @@ main() {
   echo "CLI: $CLI | Worker timeout: ${WORKER_TIMEOUT_SECONDS}s"
   if [[ "$RESOLVED_SPEND_TIER" == "override" ]]; then
     echo "Model: $RESOLVED_MODEL (explicit --model override)"
+  elif [[ "$CLI" == "codex" ]]; then
+    echo "Model: $RESOLVED_MODEL (argument/profile/system resolution)"
   elif [[ -n "$RESOLVED_MODEL" ]]; then
     echo "Model: $RESOLVED_MODEL (spend_tier=${RESOLVED_SPEND_TIER})"
   else
@@ -2164,7 +2307,7 @@ main() {
   fi
   if [[ "$CLI" == "codex" ]]; then
     if [[ -n "$REASONING_EFFORT" ]]; then
-      echo "Reasoning effort: $REASONING_EFFORT (explicit override)"
+      echo "Reasoning effort: $REASONING_EFFORT (argument/profile/system resolution)"
     else
       echo "Reasoning effort: Codex global default"
     fi
@@ -2185,6 +2328,10 @@ main() {
     # Guard against non-numeric id values
     [[ "$id" =~ ^[0-9]+$ ]] || continue
 
+    if [[ -n "$QUEUE_FILE" ]] && ! node "$SCRIPT_DIR/manual-inputs.mjs" contains "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$url"; then
+      continue
+    fi
+
     # Skip if before start-from
     if (( id < START_FROM )); then
       continue
@@ -2193,28 +2340,31 @@ main() {
     local status
     status=$(get_status "$id")
 
+    local resumed_hold=false
+    # Only an explicit, exact-URL answer to the persisted reason releases a hold.
+    if [[ "$status" == "needs_confirmation" && -n "$ANSWERS_FILE" ]] &&
+        node "$SCRIPT_DIR/manual-inputs.mjs" resume "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$url" "$id" "$LOGS_DIR/$id.hold.json"; then
+      if [[ "$DRY_RUN" == "false" ]]; then
+        update_state_retrying "$id" "$url" pending "" "" "-" "-" "" 0 || exit 1
+      fi
+      status=pending
+      resumed_hold=true
+    fi
+
     # No command-line retry flag constitutes a user's agency answer.
     if [[ "$status" == "needs_confirmation" ]]; then
       echo "HOLD #$id: needs confirmation in the parent session ($url)"
       continue
     fi
 
-    if [[ "$RESUME_PAUSED" == "true" ]]; then
-      if [[ "$status" != "paused_rate_limit" ]]; then
-        continue
-      fi
-    elif [[ "$RETRY_FAILED" == "true" ]]; then
-      # Only process failed offers
-      if [[ "$status" != "failed" ]]; then
-        continue
-      fi
-      # Check retry limit
-      local retries
-      retries=$(get_retries "$id")
-      if (( retries >= MAX_RETRIES )); then
-        echo "SKIP #$id: max retries ($MAX_RETRIES) reached"
-        continue
-      fi
+    if [[ "$resumed_hold" == "true" ]]; then
+      : # Explicit answers resume this posting independently of retry selectors.
+    elif [[ "$status" == "failed" && "$RETRY_FAILED" == "true" ]]; then
+      : # One dispatch this invocation, even when the historical retry cap was reached.
+    elif [[ "$status" == "paused_rate_limit" && "$RESUME_PAUSED" == "true" ]]; then
+      :
+    elif [[ "$INCLUDE_PENDING" == "false" && ( "$RESUME_PAUSED" == "true" || "$RETRY_FAILED" == "true" ) ]]; then
+      continue
     else
       # Skip terminal offers
       if [[ "$status" == "completed" || "$status" == "skipped" ]]; then
@@ -2252,7 +2402,9 @@ main() {
 
   if (( pending_count == 0 )); then
     echo "No offers to process."
+    if [[ "$DRY_RUN" == "false" ]]; then merge_tracker; fi
     print_summary
+    [[ "$VERIFICATION_FAILED" == "false" ]] || exit 1
     exit 0
   fi
 

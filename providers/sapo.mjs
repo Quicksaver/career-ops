@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('sapo', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('sapo', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('sapo', entry, ctx);
   },
 };

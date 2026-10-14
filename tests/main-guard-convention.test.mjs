@@ -251,6 +251,8 @@ const repoSources = () =>
 
 // Every exemption carries its reason; an unexplained entry is a review smell.
 const EXEMPT = new Map([
+  ['tests/fixtures/go-queue-offline.mjs', 'dispatches fictional copied CLI stubs by their invoked filename; it does not test whether a module is main'],
+  ['tests/runner-command.test.mjs', 'uses a spawned process entry path to recursively launch the same disposable process-tree fixture'],
   // The helper is the one place allowed to read the entry path.
   ['lib/is-main-module.mjs', 'is the comparison'],
   ['lib/user-context.mjs', 'reads the invoked script name for a user-selection error message, not a main guard'],

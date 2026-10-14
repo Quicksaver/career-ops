@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('pcsx', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('pcsx', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('pcsx', entry, ctx);
   },
 };

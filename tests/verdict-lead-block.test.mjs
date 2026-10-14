@@ -1,3 +1,4 @@
+import { batchCanonicalContext } from './batch-canonical-context.mjs';
 // tests/verdict-lead-block.test.mjs: the `## Verdict (lead)` block is part of the
 // report contract, in every evaluation mode and in the batch worker prompt.
 //
@@ -124,17 +125,13 @@ if (!existsSync(join(ROOT, 'web', 'src'))) {
     }
   }
 
-  // batch/batch-prompt.md carries the same contract in a different shape and so
-  // falls outside the walk above: headless workers get a bulleted list of the
-  // blocks to emit, not a fenced report template, and the file lives outside
-  // modes/. It is the only report producer a user never watches, so a missing
-  // entry here costs a whole batch of reports. Assert the same ordering on the
-  // list it actually emits from.
+  // The batch worker loads the canonical skeleton. Verify its binding first,
+  // then preserve the same Block G → Verdict → Risk Summary ordering.
   {
-    const emitted = readFile('batch/batch-prompt.md');
-    const g = emitted.indexOf('- `## G) Posting Legitimacy`');
-    const lead = g < 0 ? -1 : emitted.indexOf('- `## Verdict (lead)`', g);
-    const rs = lead < 0 ? -1 : emitted.indexOf('- `## Risk Summary`', lead);
+    const emitted = batchCanonicalContext().oferta;
+    const g = emitted.indexOf('## G) Posting Legitimacy');
+    const lead = g < 0 ? -1 : emitted.indexOf('## Verdict (lead)', g);
+    const rs = lead < 0 ? -1 : emitted.indexOf('## Risk Summary', lead);
     if (g >= 0 && lead > g && rs > lead) {
       pass('batch workers emit `## Verdict (lead)` between Block G and Risk Summary');
     } else {

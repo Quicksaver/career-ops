@@ -327,10 +327,20 @@ if (dupes === 0) ok('No exact duplicates found');
 let brokenReports = 0;
 let uninspectableReports = 0;
 for (const e of entries) {
-  const match = e.report.match(/\]\(([^)]+)\)/);
-  if (!match) continue;
-  const link = match[1];
-  if (![join(TRACKER_DIR, link), join(TRACKER_ROOT, link)].some(file => { try { return statSync(file).isFile(); } catch { return false; } })) {
+  let inspectionFailure = null;
+  const link = findDeadReportLink(e.report, TRACKER_DIR, TRACKER_ROOT, {
+    onInspectionError: failure => { inspectionFailure = failure; },
+  });
+  if (inspectionFailure) {
+    const codes = [...new Set(inspectionFailure.errors.map(({ error: err }) => err?.code || 'unknown error'))].join(', ');
+    warn(`#${e.num}: Report could not be inspected (${codes}), so it may exist: ${inspectionFailure.link}`,
+      'report_uninspectable', `report-uninspectable:${e.num}`, {
+        tracker_num: e.num, report_link: inspectionFailure.link, error_codes: codes,
+      });
+    uninspectableReports++;
+    continue;
+  }
+  if (link !== null) {
     error(`#${e.num}: Report not found: ${link}`, 'broken_report_link', `broken-report-link:${e.num}`, { tracker_num: e.num, report_link: link });
     brokenReports++;
   }

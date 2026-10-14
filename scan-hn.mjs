@@ -1,180 +1,106 @@
 #!/usr/bin/env node
 
-/**
- * scan-hn.mjs — Hacker News scanner with Optional AI Enhancement.
- * Following the "Zero-Keys" architecture: 
- * 1. Deterministic fetch via HN Provider API.
- * 2. Optional AI-layer if GEMINI_API_KEY is present.
- * 3. Fallback to keyword-matching if no key is present.
- */
-
-try {
-  const { config } = await import('dotenv');
-  config(); 
-} catch (e) {}
-
-import { readFileSync, existsSync } from 'fs';
+/** HN-only entry point for the canonical, deterministic portal scanner. */
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import * as yaml from 'js-yaml';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { appendToPipeline, appendToScanHistory, loadSeenUrls, PORTALS_PATH } from './scan.mjs';
-import { localToday } from './lib/local-today.mjs';
-
-// Import the deterministic provider
-import hnProvider from './providers/hackernews.mjs';
+import { getUserContext } from './lib/user-context.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
-import { printScanSummaryHeader } from './lib/scan-summary-marker.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
 
-const KNOWN_FLAGS = ['--help', '-h'];
+const KNOWN_FLAGS = ['--help', '-h', '--dry-run', '--json', '--quiet'];
 const USAGE = `Usage:
-  node scan-hn.mjs                  # scan the latest "Ask HN: Who is hiring?" thread
+  node scan-hn.mjs --user <id>       # scan the latest HN hiring thread
+  node scan-hn.mjs --user <id> --dry-run
 
-Fetches the newest hiring thread from Hacker News and keeps the postings that
-match hn_hiring.keywords in portals.yml (default: "Software Engineer"). With
-GEMINI_API_KEY set, Gemini extracts each posting instead of the keyword match.
-New offers are appended to data/pipeline.md and to the scan history.
+Runs the native Hacker News provider through scan.mjs, preserving portals.yml
+filters, blacklist, profile eligibility, dedup and history rules. New offers go
+to data/pipeline.md. GEMINI_API_KEY never enables paid extraction automatically.
 
 Flags:
+  --dry-run                         # preview without writing scan artifacts
+  --json                            # emit the canonical scanner receipt
+  --quiet                           # suppress the scanner footer
   --help, -h                        # show this help and exit`;
 
-// ── Configuration ────────────────────────────────────────────────────
-// Imported from scan.mjs so it honors CAREER_OPS_PORTALS and the data root (#3510).
-
-function loadKeywords() {
-  const defaultKeywords = ["Software Engineer"];
-  if (!existsSync(PORTALS_PATH)) return defaultKeywords;
-  let configObj;
-  try {
-    configObj = yaml.load(readFileSync(PORTALS_PATH, 'utf-8'));
-  } catch (err) {
-    // Same message and exit as scan.mjs. Swallowing this ran the scan on the
-    // default keyword, so a user who set hn_hiring.keywords got postings they
-    // never asked for in data/pipeline.md and nothing saying why (#4921).
-    console.error(`Error: failed to parse ${PORTALS_PATH}: ${err.message}`);
-    process.exit(1);
-  }
-  return configObj?.hn_hiring?.keywords || defaultKeywords;
+/** Keep the full filter policy, narrowing only the scan targets. */
+export function hnScanConfig(config) {
+  const boards = Array.isArray(config.job_boards) ? config.job_boards : [];
+  const hnBoards = boards.filter(board => board?.provider === 'hackernews');
+  const board = hnBoards.find(board => board.enabled !== false) || hnBoards[0]
+    || { name: 'HN Hiring', provider: 'hackernews' };
+  return {
+    ...config,
+    // Legacy keywords supply a default only when no canonical title policy exists.
+    title_filter: config.title_filter ?? { positive: config.hn_hiring?.keywords ?? ['Software Engineer'] },
+    tracked_companies: [],
+    job_boards: [{ ...board, enabled: true }],
+  };
 }
 
-// ── AI Extraction Layer ─────────────────────────────────────────
+// Kept as an explicit extraction utility for existing callers. The scanner does
+// not call it: extracted fields must never become an alternate admission path.
 export async function extractWithAI(rawText, model) {
   const prompt = `--- BEGIN UNTRUSTED DATA ---\n${rawText.substring(0, 2000)}\n--- END UNTRUSTED DATA ---`;
-  // A failed API call is not a non-match, so it is not caught here: an invalid
-  // key, an exhausted quota or a retired model must reach the caller, which
-  // counts it. Returning null for it made every job look like a non-match and
-  // the run end with "New offers: 0" and exit 0.
   const result = await model.generateContent(prompt);
   try {
-    const response = result.response.text();
-    const clean = response.replace(/```yaml|```/g, '').trim();
-
-    let parsed;
-    try {
-      parsed = yaml.load(clean);
-    } catch {
-      return null; // Always return null on parse errors
-    }
-
+    const parsed = yaml.load(result.response.text().replace(/```yaml|```/g, '').trim());
     if (!parsed || typeof parsed !== 'object') return null;
     return {
       company: (parsed.company || parsed.COMPANY || '').trim(),
       title: (parsed.title || parsed.TITLE || '').trim(),
-      location: (parsed.location || parsed.LOCATION || 'Remote/Unknown').trim()
+      location: (parsed.location || parsed.LOCATION || 'Remote/Unknown').trim(),
     };
   } catch {
     return null;
   }
 }
 
-// ── Main Logic ───────────────────────────────────────────────────────
+function runScanner(args, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      ...process.execArgv, fileURLToPath(new URL('./scan.mjs', import.meta.url)), ...args,
+    ], { env, stdio: 'inherit' });
+    child.once('error', reject);
+    child.once('exit', (code, signal) => resolve(signal ? 1 : code ?? 1));
+  });
+}
 
-async function main() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const myKeywords = loadKeywords();
-  const { seen } = loadSeenUrls();
-
-  console.log(`🔍 Fetching latest HN Hiring data...`);
-  
-  const ctx = { fetchJson: async (url) => (await fetch(url)).json() };
-  const rawJobs = await hnProvider.fetch({ name: 'HN' }, ctx);
-
-  const newOffers = [];
-  let aiCalls = 0;
-  let aiFailures = 0;
-  let firstAiError = '';
-
-  // STEP 2: The Architecture Branch
-  if (apiKey) {
-    console.log(`✨ AI Key detected. Processing with Gemini...`);
-    // Same default as gemini-eval.mjs. gemini-1.5-flash is shut down and every
-    // request to it returns 404.
-    const modelName = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      systemInstruction: `Extract job data. Match: [${myKeywords.join(', ')}]. Format: YAML (company, title, location).`,
+export async function scanHn(argv = process.argv.slice(2)) {
+  const ctx = getUserContext(argv, { requireUser: false });
+  validateFlags(ctx.args, KNOWN_FLAGS, USAGE);
+  const user = ctx.userRoot ? ctx : getUserContext(argv);
+  const portalsPath = process.env.CAREER_OPS_PORTALS
+    ? path.resolve(process.env.CAREER_OPS_PORTALS) : path.join(user.userRoot, 'portals.yml');
+  if (!existsSync(portalsPath)) throw new Error('portals.yml not found. Run onboarding first.');
+  let config;
+  try {
+    config = yaml.load(readFileSync(portalsPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`failed to parse ${portalsPath}: ${err.message}`);
+  }
+  const narrowed = hnScanConfig(config && typeof config === 'object' ? config : {});
+  const scratch = mkdtempSync(path.join(tmpdir(), 'career-ops-hn-'));
+  const temporaryPortals = path.join(scratch, 'portals.yml');
+  try {
+    writeFileSync(temporaryPortals, yaml.dump(narrowed), 'utf8');
+    return await runScanner(['--user', user.userId, ...user.args], {
+      ...process.env,
+      CAREER_OPS_PORTALS: temporaryPortals,
+      CAREER_OPS_SCAN_HANDOFF: path.join(scratch, 'scan-handoff.json'),
     });
-
-    for (const job of rawJobs) {
-      if (seen.has(job.url)) continue;
-      
-      aiCalls++;
-      let extracted;
-      try {
-        extracted = await extractWithAI(job.title + " " + (job.text || ""), model);
-      } catch (err) {
-        aiFailures++;
-        if (!firstAiError) firstAiError = `${modelName}: ${err?.message || err}`;
-        seen.add(job.url);
-        continue;
-      }
-      if (extracted && extracted.company && extracted.title) {
-        newOffers.push({ ...job, ...extracted, source: 'hn-hiring', postedAt: Date.now() });
-        console.log(`  ✅ AI Match: ${extracted.company}`);
-      }
-      seen.add(job.url);
-    }
-  } else {
-    // STEP 3: Fallback Mode (Deterministic/No-Key)
-    console.log(`⚠️ No AI key. Using keyword filtering mode...`);
-    for (const job of rawJobs) {
-      if (seen.has(job.url)) continue;
-
-      const matches = myKeywords.some(k => job.title.toLowerCase().includes(k.toLowerCase()));
-      if (matches) {
-        newOffers.push({ ...job, source: 'hn-hiring', postedAt: Date.now() });
-        console.log(`  ✅ Match: ${job.company}`);
-      }
-      seen.add(job.url);
-    }
+  } finally {
+    // Only the fresh directory owned by this invocation is removed.
+    rmSync(scratch, { recursive: true, force: true });
   }
-
-  if (newOffers.length > 0) {
-    await appendToPipeline(newOffers);
-    await appendToScanHistory(newOffers, localToday(), 'added');
-  }
-
-  // Printed on every run, including the zero-match one. This scanner used to
-  // end in silence when nothing matched, which reads identically to a run that
-  // died at the fetch — the summary is what tells those apart (#3560).
-  printScanSummaryHeader('HN Scan', localToday());
-  console.log(`Postings fetched:   ${rawJobs.length}`);
-  console.log(`New offers:         ${newOffers.length}`);
-  if (aiFailures > 0) {
-    console.log(`AI errors:          ${aiFailures} of ${aiCalls}`);
-    console.warn(`\n⚠️  ${aiFailures} of ${aiCalls} Gemini extractions failed, so those postings were not checked. First error: ${firstAiError}`);
-    // Every call failed: the AI pass did not run at all, so a zero here is
-    // not a result. Exit non-zero so a scheduled run does not report success.
-    if (aiFailures === aiCalls) process.exitCode = 1;
-  }
-  if (newOffers.length > 0) console.log(`\n🎉 Success: ${newOffers.length} offers added.`);
 }
 
 if (isMainModule(import.meta.url)) {
-  // Before main(): --help must not start a live scan, and a flag this script
-  // does not have (a --dry-run it never had) must fail rather than fall
-  // through to one. Inside the main-module guard because
-  // tests/hn-scanner.test.mjs imports this module.
-  validateFlags(process.argv.slice(2), KNOWN_FLAGS, USAGE);
-  main().catch(err => { console.error("Fatal:", err.message); process.exit(1); });
+  scanHn().then(code => { process.exitCode = code; }).catch(err => {
+    console.error(`Error: ${err.message}`);
+    process.exitCode = 1;
+  });
 }

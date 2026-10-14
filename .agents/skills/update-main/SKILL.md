@@ -1,5 +1,5 @@
 ---
-description: Update current branch with changes from main, report on new features and altered behaviors.
+description: Merge upstream main, adapt fork workflows including the full go runner, and report usage changes.
 name: update-main
 ---
 
@@ -13,6 +13,12 @@ Fetch and merge `main` branch from `upstream` remote onto current branch, preser
 
 Remember incoming changes have been purposefully merged, the ongoing branch work is accessory and any conflicts should be resolved by working our changes around the incoming ones as necessary.
 
+Treat every update as an end-to-end compatibility change, even when `go-runner.mjs` itself has no merge conflict. Compare the incoming commands, modes, providers, filters, data contracts, worker schemas, CV checks, tracker/status side effects, and manual-input rules with the executable path used by `go`, batch workers, liveness, reconciliation, and reviewed verification. Adapt the fork to the current upstream behavior and retire duplicate implementations; preserve only the intentional differences documented in `FORK.md`.
+
+The `go` contract is to process the existing inbox and newly discovered work through extraction, evaluation, the selected CV workflow, tracker merging, reconciliation, and reviewed verification. Collect posting-specific choices, missing JDs, browser logins, and rate/session limits as explicit pending actions; continue every independent job. Mark the run completed only when no pending/blocked job, manual action, unresolved integrity finding, or incomplete source phase remains. Use exact posting identity when applying an answer and bound recovery instead of repeatedly dispatching held jobs.
+
+After adapting upstream changes, check both interactive modes and headless workers against the same canonical workflow. New checks or configuration options are not integrated merely because their files exist: prove they are reached by the runner, or document a deliberate limitation. Automatic agent phases default to Codex GPT 6.1 Sol with medium reasoning; per-run and user-profile overrides remain explicit. Codex and Claude are the supported batch choices in this fork's `go` coordinator.
+
 Update `FORK.md` before finishing:
 
 - Update the generated-from refs, ahead/behind counts, and diff size.
@@ -24,9 +30,10 @@ Run the relevant validation for touched areas. At minimum, use the repo's standa
 
 ```bash
 node test-all.mjs --quick
-node verify-pipeline.mjs
 ```
+
+Run raw pipeline verification against an isolated temporary user fixture. Use an actual user's data only when that user and validation are authorized; maintenance alone does not authorize user-data inspection or onboarding. When incoming changes can affect queue flow, add or run executable runner fixtures covering existing backlog, mixed success/manual holds, exact-answer resume, partial discovery, failures/recovery, concurrent inbox additions, and the selected output format. On Windows, exercise the real Git Bash/CLI launch path and owned process-tree cleanup. Passing source-text wiring assertions alone does not establish end-to-end compatibility.
 
 If the dashboard changed, also run Go tests in `dashboard/`.
 
-Finally, report on new features or behaviors introduced by the upstream merge, highlight those that can impact the customized behavior or functionality, or that should be otherwise specifically addressed.
+Finally, report usage changes over the actual incorporated-base-to-new-base range, distinguishing new features from behavior already present in the fork. Explain which changes apply automatically, need user configuration, or intentionally remain unsupported, and state the evidence and limits of `go` validation.

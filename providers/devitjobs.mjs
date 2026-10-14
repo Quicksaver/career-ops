@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('devitjobs', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('devitjobs', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('devitjobs', entry, ctx);
   },
 };

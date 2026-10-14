@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('rustjobs', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('rustjobs', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('rustjobs', entry, ctx);
   },
 };

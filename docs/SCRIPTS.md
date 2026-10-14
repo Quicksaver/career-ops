@@ -90,7 +90,7 @@ artifacts rather than dumping it at process exit.
 
 ## doctor
 
-Validates that all prerequisites are in place: Node.js >= 22.13, dependencies installed, Playwright chromium, required files (`cv.md`, `config/profile.yml`, `portals.yml`), fonts directory, and auto-creates `data/`, `output/`, `reports/` if missing.
+Validates prerequisites and selected-user setup. `--json` is read-only; onboarding explicitly opts into template creation with `--init-templates`.
 
 ```bash
 npm run doctor -- --user <username>
@@ -100,7 +100,7 @@ npm run doctor -- --user <username>
 
 ## go
 
-Runs the deterministic sourcing coordinator:
+Runs configured sourcing and drains the existing inbox plus new discoveries. Posting-specific questions, missing JDs, logins, quota holds, and verifier decisions remain visible while independent work continues:
 
 ```bash
 npm run go -- --user <username> --batch-cli codex
@@ -110,14 +110,13 @@ Optional Codex overrides apply to every Codex CLI call made by the run:
 
 ```bash
 npm run go -- --user <username> \
-  --codex-model gpt-5.3-codex \
-  --codex-reasoning-effort high
+  --codex-model gpt-6.1-sol \
+  --codex-reasoning-effort medium
 ```
 
 Each setting resolves independently as command argument, then
 `users/{USER}/config/profile.yml` under `codex.model` or
-`codex.reasoning_effort`, then the global Codex configuration. Global fallback
-is implemented by omitting the corresponding CLI override.
+`codex.reasoning_effort`, then the system defaults `gpt-6.1-sol` and `medium`. The resolved values are forwarded explicitly.
 
 Batch and verification-review parallelism resolve as an explicit `--parallel N` override, then
 `batch.parallel` in `users/{USER}/config/profile.yml`, then the system default
@@ -125,6 +124,10 @@ of `1`. The resolved value and its source are included as `parallel` and
 `parallel_source` in the `--json` result. The same hierarchy applies when
 `batch/batch-runner.sh` or `verify-runner.mjs` is invoked directly. The go runner
 passes its resolved parallel value to both stages.
+
+`--skip-scan` processes only the existing inbox. `--answers-file` resumes exact posting/reason holds; `--limit`, `--retry-failed`, `--resume-paused`, and `--max-queue-passes` bound dispatch/recovery. The go coordinator supports Codex and explicit Claude only. See `modes/go.md` and `node go-runner.mjs --help` for the current contract.
+
+Manual choices are printed in the summary and persisted under the selected user as `data/manual-actions.json`; batch holds remain in `batch/logs/{id}.hold.json` and `batch-state.tsv`. Pending and blocked `[!]` rows are both remaining work. A clean verification does not make an incomplete source pass or held job completed.
 
 The final phase invokes `verify-runner.mjs`, the same reviewed lifecycle exposed
 by `npm run verify`. Its schema-constrained Codex reviewer reads every new error

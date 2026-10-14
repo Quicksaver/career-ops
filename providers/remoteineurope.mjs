@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('remoteineurope', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('remoteineurope', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('remoteineurope', entry, ctx);
   },
 };

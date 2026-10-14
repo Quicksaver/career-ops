@@ -1,3 +1,4 @@
+import { batchCanonicalContext } from './batch-canonical-context.mjs';
 // tests/keyword-match-localized-headings.test.mjs — keyword-match.mjs has to
 // find the keyword section under the heading each evaluation mode writes.
 //
@@ -77,11 +78,13 @@ for (const { rel, text } of modes) {
   });
 }
 
-// batch/batch-prompt.md lists its report headings rather than defining Block F,
-// so the walk above never sees it; its reports went unread until this check.
+// Batch uses the loaded evaluation mode for report headings. Verify linkage
+// before checking that the keyword reader recognizes the canonical heading.
 check('batch/batch-prompt.md: the keyword heading it writes is read', () => {
-  const text = readFileSync(join(ROOT, 'batch', 'batch-prompt.md'), 'utf-8');
-  const heading = text.match(/^- `(## [^`]*Keywords[^`]*)`$/m)?.[1];
+  const text = batchCanonicalContext().oferta;
+  const headings = keywordHeadingsIn(text);
+  assert.equal(headings.length, 1, 'one canonical extracted-keyword heading');
+  const heading = headings[0];
   assert.ok(heading, 'no `## ...Keywords...` heading listed in batch/batch-prompt.md');
   assert.deepEqual(keywordsUnder(heading), KEYWORDS,
     `"${heading}" is not read: add its title to KEYWORDS_HEADINGS in keyword-match.mjs`);

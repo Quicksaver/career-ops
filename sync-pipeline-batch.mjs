@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { dirname } from 'path';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { dirname, resolve } from 'path';
+import { withPipelineLock } from './pipeline-lock.mjs';
+import { writeFileAtomic } from './tracker-utils.mjs';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -36,12 +38,14 @@ if (unknown.length) {
   process.exit(1);
 }
 
-const pipelinePath = userPath(context, 'data/pipeline.md');
+const pipelinePath = process.env.CAREER_OPS_PIPELINE
+  ? resolve(context.projectRoot, process.env.CAREER_OPS_PIPELINE)
+  : userPath(context, 'data/pipeline.md');
 const inputPath = userPath(context, 'batch/batch-input.tsv');
 const statePath = userPath(context, 'batch/batch-state.tsv');
+function synchronize() {
 if (!existsSync(pipelinePath)) {
-  console.error(`Pipeline not found: ${pipelinePath}`);
-  process.exit(1);
+  throw new Error(`Pipeline not found: ${pipelinePath}`);
 }
 
 const pending = parsePendingRows(readFileSync(pipelinePath, 'utf-8')).rows;
@@ -89,21 +93,12 @@ if (stateConflicts.length) {
     status: 'failed', user: context.userId, error: 'batch input/state ID conflicts detected',
     state_conflicts: stateConflicts, dry_run: dryRun,
   };
-  if (json) console.log(JSON.stringify(failure));
-  else {
-    console.error(`Batch sync failed: ${failure.error}`);
-    for (const conflict of stateConflicts) {
-      console.error(`  #${conflict.id}: state ${conflict.state_url} conflicts with input ${conflict.input_url}`);
-    }
-  }
-  process.exit(1);
+  return failure;
 }
 
 if (!dryRun && additions.length) {
   mkdirSync(dirname(inputPath), { recursive: true });
-  const temporary = `${inputPath}.tmp-${process.pid}`;
-  writeFileSync(temporary, serializeBatchInput([...existing, ...additions]), 'utf-8');
-  renameSync(temporary, inputPath);
+  writeFileAtomic(inputPath, serializeBatchInput([...existing, ...additions]));
 }
 
 const result = {
@@ -117,9 +112,19 @@ const result = {
   state_rows: state.length,
   dry_run: dryRun,
 };
-if (json) console.log(JSON.stringify(result));
-else {
-  console.log(`Pending pipeline rows: ${pending.length}`);
-  console.log(`Batch rows added: ${additions.length}${dryRun ? ' (dry run)' : ''}`);
-  if (duplicateInputUrls.length) console.log(`Warnings: ${duplicateInputUrls.length} duplicate batch-input URL(s)`);
+return result;
 }
+const result = dryRun ? synchronize() : await withPipelineLock(inputPath, synchronize);
+if (json) console.log(JSON.stringify(result));
+else if (result.status === 'failed') {
+  console.error(`Batch sync failed: ${result.error}`);
+  for (const conflict of result.state_conflicts) {
+    console.error(`  #${conflict.id}: state ${conflict.state_url} conflicts with input ${conflict.input_url}`);
+  }
+}
+else {
+  console.log(`Pending pipeline rows: ${result.pending}`);
+  console.log(`Batch rows added: ${result.added}${dryRun ? ' (dry run)' : ''}`);
+  if (result.duplicate_input_urls.length) console.log(`Warnings: ${result.duplicate_input_urls.length} duplicate batch-input URL(s)`);
+}
+process.exitCode = result.status === 'failed' ? 1 : 0;

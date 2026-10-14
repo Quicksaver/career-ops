@@ -562,7 +562,7 @@ const PROBE_REQUEST_BUDGET = 4;
  * @param {import('./providers/_types.js').Context} base
  * @returns {{ctx: import('./providers/_types.js').Context, wasTripped: () => boolean}}
  */
-function boundedProbeCtx(base) {
+export function boundedProbeCtx(base) {
   let used = 0;
   let tripped = false;
   const guard = (fn) => async (url, opts) => {
@@ -574,7 +574,7 @@ function boundedProbeCtx(base) {
     return fn(url, opts);
   };
   return {
-    ctx: { ...base, maxPages: 1, fetchJson: guard(base.fetchJson), fetchText: guard(base.fetchText) },
+    ctx: { ...base, maxPages: 1, fetchJson: guard(base.fetchJson), fetchText: guard(base.fetchText), fetchResponse: guard(base.fetchResponse) },
     wasTripped: () => tripped,
   };
 }

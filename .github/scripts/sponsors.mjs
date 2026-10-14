@@ -106,10 +106,11 @@ export function currentSection(text = readFileSync(README, 'utf8')) {
 export function rowsRange(text) {
   const logo = text.indexOf(`src="${LOGO_DIR}`);
   if (logo === -1) return null;
-  const open = text.lastIndexOf('<p align="center">\n  <a href=', logo);
-  if (open === -1) return null;
-  const note = text.indexOf('\n> ', logo);
-  if (note === -1) return null;
+  const open = text.lastIndexOf('<p align="center">', logo);
+  if (open === -1 || !/^<p align="center">\r?\n  <a href=/.test(text.slice(open))) return null;
+  const noteMatch = /\r?\n> /.exec(text.slice(logo));
+  if (!noteMatch) return null;
+  const note = logo + noteMatch.index;
   const closeP = text.lastIndexOf('</p>', note);
   if (closeP === -1 || closeP < logo) return null;
   return { from: open, to: closeP + '</p>'.length };
@@ -117,7 +118,7 @@ export function rowsRange(text) {
 
 export function currentRows(text) {
   const r = rowsRange(text);
-  return r ? text.slice(r.from, r.to) : null;
+  return r ? text.slice(r.from, r.to).replace(/\r\n/g, '\n') : null;
 }
 
 export function localizedReadmes() {

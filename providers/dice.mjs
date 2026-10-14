@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('dice', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('dice', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('dice', entry, ctx);
   },
 };

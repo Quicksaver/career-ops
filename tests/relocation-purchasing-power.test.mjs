@@ -1,3 +1,4 @@
+import { batchCanonicalContext } from './batch-canonical-context.mjs';
 // tests/relocation-purchasing-power.test.mjs — #4694, jurisdiction-compliance-lens
 // umbrella #2026: relocation purchasing-power comparison in salary-gap.mjs.
 //
@@ -323,14 +324,14 @@ test('modes/oferta.md Signal 17 passes the JD location through a file, never --p
 });
 
 test('batch/batch-prompt.md Signal 17 passes the JD location through a file, never --posting-location "<JD', () => {
-  const batchPrompt = readFile('batch/batch-prompt.md');
+  const batchPrompt = batchCanonicalContext().oferta;
   assert.match(batchPrompt, /--posting-location-file/, 'Signal 17 uses the safe file-based flag');
   assert.doesNotMatch(batchPrompt, /--posting-location "<JD/, 'the JD-controlled value is never shell-interpolated directly');
 });
 
 test('both Signal 17 prompts annualize only explicit, sufficiently specified compensation periods', () => {
   for (const path of ['modes/oferta.md', 'batch/batch-prompt.md']) {
-    const prompt = readFile(path);
+    const prompt = path === 'batch/batch-prompt.md' ? batchCanonicalContext().oferta : readFile(path);
     assert.match(prompt, /monthly[\s\S]{0,80}`midpoint × 12`/, `${path} documents monthly-to-annual conversion`);
     assert.match(prompt, /hourly[\s\S]{0,220}(?:JD states weekly hours|JD's stated weekly hours)/, `${path} requires JD-stated weekly hours for hourly annualization`);
     assert.match(prompt, /`midpoint × (?:the JD's stated|stated) weekly hours × 52`/, `${path} documents hourly-to-annual conversion`);
@@ -356,7 +357,7 @@ test('modes/oferta.md Signal 17 no longer uses a heredoc to write the JD locatio
 });
 
 test('batch/batch-prompt.md Signal 17 no longer uses a heredoc to write the JD location (heredoc delimiter collision, CWE-78 round 2)', () => {
-  const batchPrompt = readFile('batch/batch-prompt.md');
+  const batchPrompt = batchCanonicalContext().oferta;
   assert.doesNotMatch(batchPrompt, /<<'?JD_LOCATION_EOF'?/, 'the fixed-delimiter heredoc must be gone, not just renamed');
   assert.doesNotMatch(batchPrompt, /cat <<'/, 'no heredoc of any delimiter name should remain for the posting location');
 });
@@ -368,7 +369,7 @@ test('modes/oferta.md Signal 17 writes the posting-location file via base64-deco
 });
 
 test('batch/batch-prompt.md Signal 17 writes the posting-location file via base64-decoded Node, not a shell-interpolated or heredoc-fed value', () => {
-  const batchPrompt = readFile('batch/batch-prompt.md');
+  const batchPrompt = batchCanonicalContext().oferta;
   assert.match(batchPrompt, /Buffer\.from\("<base64-encoded JD location/, 'decodes a base64 string literal, never raw JD text');
   assert.match(batchPrompt, /"base64"/, 'uses base64 decoding');
 });
@@ -643,11 +644,11 @@ test('modes/oferta.md Block G carries Signal 17 and its Risk Summary row', () =>
 });
 
 test('batch/batch-prompt.md Machine Summary schema carries posting_location and the relocation_purchasing_power risk_summary key', () => {
-  const batchPrompt = readFile('batch/batch-prompt.md');
+  const batchPrompt = batchCanonicalContext().prompt;
   const postingLocationCount = (batchPrompt.match(/posting_location:/g) ?? []).length;
-  assert.ok(postingLocationCount >= 2, `expected posting_location in both schema blocks, found ${postingLocationCount}`);
+  assert.ok(postingLocationCount === 1, `expected posting_location in the sole schema, found ${postingLocationCount}`);
   const relocKeyCount = (batchPrompt.match(/relocation_purchasing_power:/g) ?? []).length;
-  assert.ok(relocKeyCount >= 2, `expected relocation_purchasing_power in both risk_summary blocks, found ${relocKeyCount}`);
+  assert.ok(relocKeyCount === 1, `expected relocation_purchasing_power in the sole risk_summary schema, found ${relocKeyCount}`);
 });
 
 test('templates/README.md documents the new jurisdiction-relocation-tax.yml table', () => {

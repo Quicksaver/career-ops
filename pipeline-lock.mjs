@@ -383,12 +383,15 @@ function lockFingerprint(lockDir) {
  *
  * @param {string} pipelinePath - File the lock guards.
  * @param {object} [options]
+ * @param {number} [options.ownerPid=process.pid] - Native OS PID of an external supervising owner when a short-lived helper acquires on its behalf.
  * @param {number} [options.timeoutMs=8000] - Max time a SINGLE holder may block this caller. Waiting is extended while the lock keeps changing hands (see below).
  * @param {number} [options.retryMs=80] - Delay between acquisition attempts.
  * @param {number} [options.staleMs=30000] - Age threshold for a lock with no readable owner, floored at OWNERLESS_GRACE_MS.
  * @param {number} [options.maxWaitMs] - Absolute ceiling on waiting, however much progress the lock makes. Defaults to 10x timeoutMs.
  */
 export async function acquirePipelineLock(pipelinePath, options = {}) {
+  const ownerPid = options.ownerPid ?? process.pid;
+  if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0) throw new TypeError('ownerPid must be a positive native OS PID');
   // Env overrides let a caller several frames up the stack (a test driving
   // appendToPipeline, say) tune contention timing without threading options
   // through every signature — same escape hatch the tracker lock provides.
@@ -605,7 +608,7 @@ export async function acquirePipelineLock(pipelinePath, options = {}) {
     // acquirer until the age-out, so clean up if the stamp can't be written.
     try {
       writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({
-        pid: process.pid,
+        pid: ownerPid,
         token,
         started_at: new Date().toISOString(),
         pipeline: pipelinePath,

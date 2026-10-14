@@ -1,5 +1,6 @@
-// tests/prompt-parity.test.mjs — guards the self-contained batch evaluation
-// prompt against drift from the canonical interactive Block A / Block G markers.
+import { batchCanonicalContext } from './batch-canonical-context.mjs';
+// Batch loads the interactive evaluation source. Assert that binding before
+// checking its scoring, Block A and ordered Block G contracts.
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { pass, fail, ROOT } from './helpers.mjs';
@@ -18,31 +19,32 @@ function section(text, startMarker, endMarker) {
 try {
   const oferta = readFileSync(join(ROOT, 'modes', 'oferta.md'), 'utf8');
   const batch = readFileSync(join(ROOT, 'batch', 'batch-prompt.md'), 'utf8');
+  const loaded = batchCanonicalContext();
   const shared = readFileSync(join(ROOT, 'modes', '_shared.md'), 'utf8');
 
   const trackerInstruction = section(oferta, '- Score: copy the already-decided', '\n- Status:');
-  const batchScoreInstruction = section(batch, '#### Global Score', '#### Machine Summary');
+  const batchScoreInstruction = trackerInstruction + loaded.shared;
   assert(
     shared.includes('A–H are report sections, not numeric inputs to average')
       && trackerInstruction.includes('A–H are report sections, not scores to average')
-      && batchScoreInstruction.includes('Do not average report blocks A–H'),
+      && batchScoreInstruction.includes('A–H are report sections, not scores to average'),
     'all evaluation paths keep report blocks separate from scoring dimensions',
   );
   assert(
     shared.includes('report header, Machine Summary `score`, and application tracker must record that same value')
       && trackerInstruction.includes('copy the already-decided 1–5 Global Score')
-      && batchScoreInstruction.includes('Copy the same value into the report header, Machine Summary `score`, and tracker addition'),
+      && batchScoreInstruction.includes('report header, Machine Summary `score`, and application tracker must record that same value'),
     'interactive and batch paths copy one Global Score into every output',
   );
 
   const ofertaBlockA = section(oferta, '## Block A — Role Summary', '## Block B — Match with CV');
-  const batchBlockA = section(batch, '#### Block A — Role Summary', '#### Block B — CV Match');
+  const batchBlockA = section(loaded.oferta, '## Block A — Role Summary', '## Block B — Match with CV');
   const tierPattern = /^- (?:✅|➖|⚠️|⛔) \*\*([^*]+)\*\*\s+—/gm;
   const ofertaTiers = [...ofertaBlockA.matchAll(tierPattern)].map((match) => match[1]);
   const batchTiers = [...batchBlockA.matchAll(tierPattern)].map((match) => match[1]);
 
   assert(
-    batchBlockA.includes('Work-authorization classification (required)'),
+    batchBlockA.includes('### Work-authorization check') && batchBlockA.includes('Classify into exactly one tier'),
     'batch Block A contains a required work-authorization instruction',
   );
   assert(
@@ -55,7 +57,7 @@ try {
   );
 
   const ofertaBlockG = section(oferta, '## Block G — Posting Legitimacy', '### Output format:');
-  const batchBlockG = section(batch, '#### Block G — Posting Legitimacy', '#### Risk Summary (after Block G)');
+  const batchBlockG = section(loaded.oferta, '## Block G — Posting Legitimacy', '### Output format:');
   const signalPattern = /^\*\*(\d+)\.\s+(.+?)\*\*/gm;
   const canonicalMatches = [...ofertaBlockG.matchAll(signalPattern)]
     .sort((a, b) => Number(a[1]) - Number(b[1]));
@@ -72,7 +74,7 @@ try {
     `canonical Block G exposes ${canonicalSignals.length} signals numbered 1..${canonicalSignals.length}`,
   );
 
-  const batchSignalPositions = canonicalSignals.map((name) => batchBlockG.indexOf(`**${name}**`));
+  const batchSignalPositions = canonicalSignals.map((name) => batchBlockG.indexOf(`**${canonicalSignals.indexOf(name) + 1}. ${name}**`));
   for (const [index, name] of canonicalSignals.entries()) {
     assert(
       ofertaBlockG.includes(`**${index + 1}. ${name}**`) && batchSignalPositions[index] !== -1,
@@ -85,9 +87,9 @@ try {
     'batch Block G preserves the canonical signal order',
   );
 
-  const machineSummary = section(batch, '#### Machine Summary', 'Rules:');
+  const machineSummary = section(batch, '## Machine Summary (canonical report schema)', 'Rules:');
   assert(
-    batchBlockA.includes('`work_auth`'),
+    batchBlockA.includes('Classify into exactly one tier') && /^work_auth:/m.test(machineSummary) && batch.includes('`work_auth` reflects the Block A work-authorization tier'),
     'batch Block A explicitly produces work_auth',
   );
   assert(

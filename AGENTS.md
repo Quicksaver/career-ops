@@ -65,7 +65,7 @@ When the user asks you to run `go`, `verify`, `scan`, `scan-handoff`, `scan-auth
 The User Layer location (Data Root) is resolved dynamically using the following precedence order:
 1. **Environment Variables:** `CAREER_OPS_ROOT` or `CAREER_OPS_DATA_DIR` overrides the root path (resolved relative to the repository root if it is a relative path).
 2. **Marker File:** If no environment variable is set, a `.career-ops-data` file in the repository root containing an absolute or relative path to the user data directory is used.
-3. **Repository Default:** If neither is present, the repository root directory itself is used.
+3. **Selected User Default:** If neither is present, use `users/{USER}/` under the system checkout, or `{CAREER_OPS_USERS_DIR}/{USER}/` when that users directory is configured. A marker is considered only when no users-directory override is set. Every layout still requires an explicit active user.
 
 **Tracker Path & Canonical Writes:**
 - **Explicit override:** `CAREER_OPS_TRACKER` environment variable overrides the applications tracker file path. Relative paths are resolved relative to the repository root directory.

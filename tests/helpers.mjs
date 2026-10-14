@@ -9,6 +9,7 @@ import { basename, join, dirname, resolve, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { isNestedCheckout, trackedFiles } from '../lib/mjs-files.mjs';
 import { localToday } from '../lib/local-today.mjs';
+import { resolveGitBash } from '../lib/runner-command.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(__dirname, '..');   // repo root (tests/ lives one level down)
@@ -1096,6 +1097,17 @@ function warnFallbackShell(exe) {
 export function getBash() {
   if (bashCache !== null) return bashCache;
   if (process.platform !== 'win32') { bashSourceCache = 'posix'; return (bashCache = 'bash'); }
+  try {
+    const discovered = resolveGitBash();
+    execFileSync(discovered, ['--version'], { stdio: 'ignore', timeout: 5000 });
+    // Keep run()'s executable allowlist limited to the validated Git install.
+    if (!WINDOWS_BASH_CANDIDATES.includes(discovered)) WINDOWS_BASH_CANDIDATES.push(discovered);
+    for (const candidate of [join(dirname(discovered), 'cygpath.exe'), join(dirname(discovered), '../usr/bin/cygpath.exe')]) {
+      if (existsSync(candidate) && !WINDOWS_CYGPATH_CANDIDATES.includes(candidate)) WINDOWS_CYGPATH_CANDIDATES.unshift(candidate);
+    }
+    bashSourceCache = 'git-bash';
+    return (bashCache = discovered);
+  } catch {}
   for (const cmd of WINDOWS_BASH_CANDIDATES) {
     try {
       execFileSync(cmd, ['-c', 'true'], { stdio: 'ignore' });
@@ -1122,6 +1134,7 @@ export function getBash() {
 
 export function toBashPath(wpath) {
   if (process.platform !== 'win32') return wpath;
+  getBash(); // Pin cygpath to the same discovered Git installation.
   const forwardSlashed = wpath.replace(/\\/g, '/');
   // Try cygpath first: it ships with Git for Windows, which is also what
   // provides `bash` on PATH on most Windows dev machines (see getBash()

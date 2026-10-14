@@ -1,3 +1,4 @@
+import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 // tests/batch-runner-prompt-cache-stability.test.mjs: the resolved system
 // prompt batch-runner.sh writes for --append-system-prompt-file must be
 // byte-identical across offers, so a prompt-caching-aware CLI can reuse the
@@ -43,6 +44,7 @@ test('two offers with different URLs/report numbers/dates/IDs resolve to a byte-
     mkdirSync(join(dir, 'data'), { recursive: true });
 
     writeFileSync(join(batchDir, 'batch-runner.sh'), SRC);
+    copyBatchOwnership(dir);
     chmodSync(join(batchDir, 'batch-runner.sh'), 0o755);
 
     // A fixture prompt exercising every placeholder, with real body text
@@ -132,7 +134,7 @@ test('two offers with different URLs/report numbers/dates/IDs resolve to a byte-
       CAPTURE_DIR: captureDir,
     };
 
-    execFileSync(getBash(), [join(batchDir, 'batch-runner.sh'), '--parallel', '1', '--max-retries', '0', '--rate-limit-sleep', '0'], {
+    execFileSync(getBash(), [join(batchDir, 'batch-runner.sh'), '--cli', 'claude', '--parallel', '1', '--max-retries', '0', '--rate-limit-sleep', '0'], {
       cwd: dir,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

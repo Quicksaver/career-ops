@@ -29,6 +29,7 @@ import { getCareerOpsRoot } from './path-resolver.mjs';
 import { flagValue, validateFlags } from './lib/cli-flags.mjs';
 import { withPipelineLock, LockTimeoutError } from './pipeline-lock.mjs';
 import { writeFileAtomic } from './tracker-utils.mjs';
+import { parsePendingRows, pendingCount } from './lib/pipeline-queue.mjs';
 
 const CAREER_OPS = getCareerOpsRoot();
 
@@ -75,7 +76,9 @@ function resolveInsideRepo(inputPath, fallbackPath, flag) {
   return abs;
 }
 
-const defaultPipeline = existsSync(join(CAREER_OPS, 'data/pipeline.md'))
+const defaultPipeline = process.env.CAREER_OPS_PIPELINE
+  ? resolve(dirname(fileURLToPath(import.meta.url)), process.env.CAREER_OPS_PIPELINE)
+  : existsSync(join(CAREER_OPS, 'data/pipeline.md'))
   ? join(CAREER_OPS, 'data/pipeline.md')
   : join(CAREER_OPS, 'pipeline.md');
 const PIPELINE_FILE = resolveInsideRepo(flagValue(args, '--pipeline'), defaultPipeline, '--pipeline');
@@ -172,13 +175,6 @@ function resolvePdf(reportFile) {
 const PENDING_RE = /^##\s+(Pendientes|Pending)\s*$/i;
 const PROCESSED_RE = /^##\s+(Procesadas|Processed)\s*$/i;
 const SECTION_RE = /^##\s+/;
-const PENDING_ITEM_RE = /^- \[ \]\s+/;
-
-function lineUrl(body) {
-  // "{url} | company | role"  ->  "{url}"
-  const i = body.indexOf(' |');
-  return (i >= 0 ? body.slice(0, i) : body).trim();
-}
 
 // The whole read → compute → write runs under the pipeline lock (#4895).
 // scan.mjs and every other pipeline writer append under withPipelineLock; a
@@ -186,12 +182,13 @@ function lineUrl(body) {
 // appended in between — and the .pre-reconcile.bak, copied before they
 // landed, did not have them either.
 function reconcile() {
-  const lines = readFileSync(PIPELINE_FILE, 'utf-8').split(/\r?\n/);
+  const parsed = parsePendingRows(readFileSync(PIPELINE_FILE, 'utf-8'));
+  const lines = parsed.lines;
 
   let pendStart = -1, procStart = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (pendStart < 0 && PENDING_RE.test(lines[i])) pendStart = i;
-    else if (procStart < 0 && PROCESSED_RE.test(lines[i])) procStart = i;
+    if (pendStart < 0 && PENDING_RE.test(lines[i].trim())) pendStart = i;
+    else if (procStart < 0 && PROCESSED_RE.test(lines[i].trim())) procStart = i;
   }
 
   if (pendStart < 0) {
@@ -201,18 +198,17 @@ function reconcile() {
 
   function sectionEnd(start) {
     for (let i = start + 1; i < lines.length; i++) {
-      if (SECTION_RE.test(lines[i])) return i;
+      if (SECTION_RE.test(lines[i].trim())) return i;
     }
     return lines.length;
   }
-  const pendEnd = sectionEnd(pendStart);
   const procEnd = procStart >= 0 ? sectionEnd(procStart) : -1;
 
   // URLs already in Procesadas — guards against a double copy on re-runs.
   const procUrls = new Set();
   if (procStart >= 0) {
     for (let i = procStart + 1; i < procEnd; i++) {
-      const m = lines[i].match(/^- \[x\]\s+(.+)$/i);
+      const m = lines[i].match(/^\s*-\s*\[x\]\s+(.+)$/i);
       if (!m) continue;
       // "[num](path) | url | company | role | score | PDF x" — url is field 2
       const parts = m[1].split('|').map(s => s.trim());
@@ -226,10 +222,9 @@ function reconcile() {
   const moved = [];
   const skippedNoReport = [];
 
-  for (let i = pendStart + 1; i < pendEnd; i++) {
-    if (!PENDING_ITEM_RE.test(lines[i])) continue; // blank lines, "- [!]" errors → keep
-    const body = lines[i].replace(PENDING_ITEM_RE, '');
-    const url = lineUrl(body);
+  for (const row of parsed.rows) {
+    const i = row.lineIndex;
+    const { body, url } = row;
     const done = DONE.get(url);
     if (!done) continue; // not processed → keep in Pendientes
 
@@ -297,15 +292,7 @@ function reconcile() {
 
   const newContent = out.join('\n');
 
-  const newCount = (() => {
-    let n = 0, inPend = false;
-    for (const l of out) {
-      if (PENDING_RE.test(l)) { inPend = true; continue; }
-      if (SECTION_RE.test(l)) { inPend = false; continue; }
-      if (inPend && PENDING_ITEM_RE.test(l)) n++;
-    }
-    return n;
-  })();
+  const newCount = pendingCount(newContent);
 
   const realMoves = moved.filter(m => !m.dup);
   console.log(`🔄 ${realMoves.length} processed entr${realMoves.length === 1 ? 'y' : 'ies'} moved Pendientes → Procesadas:`);

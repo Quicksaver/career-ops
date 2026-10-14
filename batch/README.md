@@ -1,97 +1,84 @@
-# Batch Processing
+# Batch processing
 
-Process multiple job offers in parallel via headless workers. Each worker runs the full evaluation pipeline (A-F report + PDF + tracker line) autonomously. See the **Headless / Batch Mode** table in `AGENTS.md` for the correct command per CLI.
+Process job offers with headless Codex workers by default. Explicit `--cli claude` selects Claude. `CAREER_OPS_BATCH_CLI` overrides the system CLI default; a command-line `--cli` takes precedence over that environment variable.
 
-## Quick Start
+Select a user on every invocation. User state, inputs, reports and output live under the active user data root, normally `users/{USER}/`. This directory follows the configured data-root overrides.
 
-1. **Add offers** to `batch-input.tsv` (tab-separated: `id`, `url`, `source`, `notes`):
+## Run a batch
 
-   ```tsv
-   id	url	source	notes
-   1	https://jobs.example.com/role-a	LinkedIn	
-   2	https://greenhouse.io/company/role-b	Greenhouse	priority
-   ```
+Create `users/{USER}/batch/batch-input.tsv` with real tab-separated fields:
 
-2. **Dry run** to preview what will be processed:
+```tsv
+id	url	source	notes
+1	https://jobs.example.com/role-a	Employer	priority
+2	local:jds/archived-role.md	Authenticated capture	archived
+```
 
-   ```bash
-   ./batch/batch-runner.sh --dry-run
-   ```
+```bash
+./batch/batch-runner.sh --user USER --dry-run
+./batch/batch-runner.sh --user USER
+./batch/batch-runner.sh --user USER --cli claude
+```
 
-3. **Run the batch**:
+The worker loads the current shared, evaluation and output modes. It runs A-G evaluation, archives the JD, generates the configured CV format when gates permit, and writes a labeled tracker addition. The runner validates artifacts, merges tracker additions, reconciles pipeline state and verifies integrity. A parent coordinator can use `--defer-verification` to own the final verification pass.
 
-   ```bash
-   ./batch/batch-runner.sh
-   ```
-
-4. **Results** are automatically merged into `data/applications.md`, processed offers are reconciled out of the `data/pipeline.md` inbox, and integrity is verified with `verify-pipeline.mjs` at the end of the run.
+Codex model and reasoning resolve independently from command-line `--model` / `--reasoning-effort`, then `codex.model` / `codex.reasoning_effort` in the active profile, then `gpt-6.1-sol` / `medium`. Claude resolves its model from `--model`, then the profile's `spend_tier`.
 
 ## Options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--parallel N` | `batch.parallel`, then `1` | Number of concurrent headless workers; explicit flag wins |
-| `--dry-run` | off | Preview pending offers without processing |
-| `--retry-failed` | off | Only retry offers marked as `failed` in state |
-| `--recover-artifact-failures` | off | Revalidate false Machine Summary failures and mark only complete, contract-valid artifact sets as completed; launches no workers |
-| `--resume-paused` | off | Resume offers paused after a Claude session/rate limit |
-| `--start-from N` | `0` | Skip offers with ID below N |
-| `--limit N` | `0` | Max number of offers to process in this run (0 = no limit) |
-| `--max-retries N` | `2` | Max retry attempts per offer before giving up |
-| `--rate-limit-sleep N` | `300` | Seconds to wait before retrying a transient rate-limited worker; use `0` to pause the batch immediately |
-| `--reasoning-effort LEVEL` | Codex global default | Codex-only reasoning override: `minimal`, `low`, `medium`, `high`, or `xhigh` |
+| Flag | Default | Purpose |
+|---|---|---|
+| `--user ID` | required | Select the user |
+| `--cli NAME` | `codex` | Select Codex or Claude |
+| `--parallel N` | profile `batch.parallel`, then `1` | Limit concurrent workers |
+| `--model NAME` | profile, then system default | Override model |
+| `--reasoning-effort LEVEL` | profile, then `medium` | Codex reasoning override |
+| `--queue-file PATH` | absent | Read-only exact posting URLs, one per line, limiting dispatch |
+| `--answers-file PATH` | absent | Explicit user-owned exact-URL manual answers |
+| `--dry-run` | off | Preview dispatch without workers |
+| `--limit N` | unlimited when omitted | Positive maximum count; explicit zero is invalid |
+| `--retry-failed` | off | Select failed jobs, granting one additional dispatch even at the retry cap |
+| `--resume-paused` | off | Select jobs paused by Codex or Claude session/rate limits |
+| `--include-pending` | off | Internal coordinator flag that unions recovery selections with ordinary pending eligibility |
+| `--max-retries N` | `2` | Bound retry attempts |
+| `--worker-timeout N` | `900` | Bound worker execution time in seconds |
+| `--rate-limit-sleep N` | `300` | Maximum adaptive Claude retry delay; zero pauses immediately |
+| `--skip-pdf` | off | Disable PDF rendering |
+| `--recover-artifact-failures` | off | Revalidate known false artifact failures without workers |
+| `--defer-verification` | off | Leave final verification to the parent |
+| `--status` / `--watch` | off | Inspect persisted progress |
 
-## Directory Layout
+## Manual holds and exact answers
 
+A missing JD or unconfirmed agency is `needs_confirmation`, with reason `jd_unavailable` or `agency_confirmation`. It is held outside automatic retries and produces no evaluation, tracker, CV or application artifact. Per-job handoffs are saved in `batch/logs/{id}.hold.json`, including user, exact URL, reason and question. The parent can collect these alongside `batch-state.tsv`.
+
+Headless batch never bulk-fetches LinkedIn through curl, WebFetch, guest endpoints or API bypasses. Without archived or explicitly supplied JD text or an employer URL, it returns a `jd_unavailable` hold before launching a worker. The original posting URL remains the job identity and provenance.
+
+Supply a read-only answer file explicitly:
+
+```json
+{
+  "schema_version": 1,
+  "user": "USER",
+  "answers": [
+    {"url": "https://www.linkedin.com/jobs/view/123", "reason": "jd_unavailable", "answer": "Pasted the exact posting", "jd_text": "Full job description..."},
+    {"url": "local:jds/archived-role.md", "reason": "agency_confirmation", "answer": "This is a direct employer posting", "direct_employer": true}
+  ]
+}
 ```
-batch/
-  batch-runner.sh          # Orchestrator script
-  batch-prompt.md          # Prompt template sent to each worker
-  batch-input.tsv          # Input offers (you create this)
-  batch-state.tsv          # Processing state (auto-managed, resumable)
-  logs/                    # Per-offer worker logs ({report_num}-{id}.log)
-  tracker-additions/       # TSV lines produced by workers
-    merged/                # TSVs already merged into applications.md
-```
 
-## How It Works
-
-1. **batch-runner.sh** reads `batch-input.tsv` and `batch-state.tsv` to determine which offers need processing.
-2. For each pending offer, it assigns a report number and launches a headless worker with `batch-prompt.md` as the system prompt. Placeholders like `{{URL}}`, `{{REPORT_NUM}}` resolve to stable labels (e.g. `<URL from the job message>`), not the concrete value, so the resolved system prompt is byte-identical across offers and prompt caching can reuse it. The actual URL, JD file, report number, date and batch ID are passed separately in the per-job message the worker also receives.
-3. Each worker evaluates the offer, writes a report to `reports/`, generates a PDF to `output/`, and writes a tracker TSV to `tracker-additions/`.
-4. After all workers finish, batch-runner calls `merge-tracker.mjs` to merge TSVs into `data/applications.md`, `reconcile-pipeline.mjs` to move processed offers out of the `data/pipeline.md` inbox, and `verify-pipeline.mjs` to check integrity.
-
-## Tracker Merge
-
-Workers write one TSV per offer to `batch/tracker-additions/`. The merge script (`npm run merge`) handles:
-
-- Deduplication by company + role fuzzy match and report number
-- Column order conversion (TSV has status before score; applications.md has score before status)
-- In-place updates when a re-evaluation scores higher than the existing entry
-- Moving processed TSVs to `tracker-additions/merged/`
-
-Run `npm run merge` manually if you need to merge outside of a batch run.
-
-## Pipeline Reconcile
-
-Batch mode reads offers from `batch-input.tsv`, but the `data/pipeline.md` inbox is a separate list. Without reconciliation, an offer evaluated by a batch run stays in the pipeline "Pendientes" section and gets surfaced again on the next scan or `/career-ops pipeline` run -- producing duplicate reports.
-
-`reconcile-pipeline.mjs` (run as `npm run reconcile`) closes that gap: after the tracker merge, every `completed` or `skipped` offer in `batch-state.tsv` whose URL is still in pipeline "Pendientes" is moved to "Procesadas" with its report link and score (entries without a report file on disk are left in place). It is idempotent -- safe to run after every batch, or manually.
-
-## Resumability
-
-`batch-state.tsv` tracks the status of every offer (`pending`, `processing`, `completed`, `failed`, `skipped`, `rate_limited`, `paused_rate_limit`). If the batch is interrupted, re-running `batch-runner.sh` picks up where it left off -- completed offers are skipped automatically. `rate_limited` is a non-completed state used while the runner waits before retrying, so interrupted rate-limited jobs are eligible on the next normal run.
-
-`paused_rate_limit` is different: a worker hit a Claude session/usage limit, zero-wait pause, or a `Retry-After` above the configured ceiling, so the runner stopped scheduling new offers and preserved the retry count. Resume those rows explicitly after the limit resets:
+A JD answer requires nonempty `jd_text` or a public non-LinkedIn `employer_url`. An agency answer identifies/confirms the intermediary in `answer`, or explicitly corrects it to direct with `direct_employer: true`. The runner resumes only a hold with the same user, exact URL, job ID and reason. A JD answer never confirms agency. User-contained `local:jds/...` identities are accepted; traversal and escaping symlinks are rejected.
 
 ```bash
-./batch/batch-runner.sh --resume-paused
+./batch/batch-runner.sh --user USER --queue-file current-inbox.txt --answers-file answers.json
 ```
 
-A PID-based lock file (`batch-runner.pid`) prevents concurrent batch runs. If a previous run crashed, the stale lock is detected and removed automatically.
+Completed and skipped rows remain terminal and are reconciled instead of evaluated again. Retry flags never supply a user's answer. Direct recovery invocations select only the requested failed/paused states, or both when both flags are supplied. The parent adds `--include-pending` to include ordinary eligible work and grants `--retry-failed` only on its first queue pass. A failed extra attempt increments the persisted retry count, so an ordinary later run cannot renew it. Codex usage, session and rate limits persist `paused_rate_limit` without spending job retries, stop new dispatch and drain existing workers. Resume requires `--resume-paused`.
 
-## Prerequisites
+Batch ownership uses the shared atomic directory/token protocol at `batch/batch-runner.pid.owner.lock/owner.json`. Its `pid` is the native OS PID of the supervising Bash process, including on Windows. The compatibility `batch-runner.pid` retains the Bash PID. Only the acquiring token can release either artifact. A native owner proven dead can be recovered; unreadable or ambiguous ownership stays locked. An illegal hold that writes artifacts is quarantined and stops the run before merging those artifacts.
 
-- Your CLI in PATH (see **Headless / Batch Mode** table in `AGENTS.md`)
-- Node.js >= 22.13, Playwright chromium installed (`npm run doctor` to verify)
-- `batch-input.tsv` with at least one offer
+## Artifact identity
+
+Reports use the runner-reserved number. The primary PDF and HTML stay at `output/{REPORT_NUM}-{company-slug}-{DATE}.{pdf|html}` and are indexed against that number. Text/LaTeX formats never claim a PDF. Skip, hard stops and the PDF score threshold block rendering. Template/pack resolution, standing page format, title/structure/fact checks, keyword diagnostics and opt-in ATS output follow `modes/pdf.md`. Secondary ATS PDFs omit `--report` and cannot replace the primary PDF index entry.
+
+Node.js and the selected CLI must be installed. PDF rendering additionally needs the browser dependencies reported by `npm run doctor`.

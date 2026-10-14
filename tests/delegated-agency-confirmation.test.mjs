@@ -1,7 +1,7 @@
 // #4359: exercise the runner's real result-handling and scheduling code with
 // worker stdout fixtures. Prompt assertions cover the agent-side write gate;
 // these are contract tests, not proof that an arbitrary LLM obeys its prompt.
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, readdirSync, existsSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -30,7 +30,10 @@ const check = (name, fn) => {
 };
 
 try {
-  mkdirSync(join(work, 'reports'));
+  for (const dir of ['reports', 'batch', 'lib', 'output', 'jds']) mkdirSync(join(work, dir));
+  copyFileSync(join(ROOT, 'batch/manual-inputs.mjs'), join(work, 'batch/manual-inputs.mjs'));
+  copyFileSync(join(ROOT, 'lib/is-main-module.mjs'), join(work, 'lib/is-main-module.mjs'));
+  writeFileSync(join(work, 'batch/validate-worker-artifacts.mjs'), '// Validator independently tested.\n');
   writeFileSync(join(work, 'validate-worker-artifacts.mjs'), '// Artifact validity is covered by the artifact contract suite.\n');
   const harness = join(work, 'result.sh');
   writeFileSync(harness, `set -euo pipefail
@@ -49,7 +52,11 @@ exit_code=0
 timed_out=false
 terminal_failure_recorded=false
 final_file="$PWD/absent-final.json"
-SCRIPT_DIR="$PWD"
+SCRIPT_DIR="$PWD/batch"
+USER_ROOT="$PWD"
+USER_ID=fixture
+ANSWERS_FILE=""
+export CAREER_OPS_ROOT="$PWD"
 RECOVERY_DIR="$PWD/recovery"
 update_state() {
   [[ "\${TEST_STATE_FAILURE:-0}" == 0 ]] || return 1
@@ -71,6 +78,7 @@ release_report_num() { printf '%s' "$1" > released; }
 is_decimal_number() { [[ "$1" =~ ^[0-9]+([.][0-9]+)?$ ]]; }
 handle_result() {
   local id=1 url=https://jobs.example.test/1 started_at=start completed_at=end report_num=042 retries=0
+  local original_url="$url" explicit_failed_retry=false
   report_file=$(find_report_for_num 042)
   tracker_file=$(find_tracker_for_id 1)
 ${resultCode}
@@ -79,14 +87,14 @@ handle_result
 `);
   const handle = (payload, prefix = '', env = {}) => {
     for (const name of ['state', 'recovery', 'released']) rmSync(join(work, name), { force: true });
-    payload = { reason: 'agency_confirmation', id: '1', url: 'https://jobs.example.test/1', ...payload };
+    payload = { reason: 'agency_confirmation', id: '1', url: 'https://jobs.example.test/1', report_num: '042', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null, ...payload };
     writeFileSync(join(work, 'worker.log'), `${prefix}\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\`\n`);
     const output = execFileSync(getBash(), [harness], { encoding: 'utf8', timeout: 30000, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     const path = existsSync(join(work, 'state')) ? 'state' : 'recovery';
     return { output, fields: readFileSync(join(work, path), 'utf8').trimEnd().split('\n') };
   };
   check('needs_confirmation holds without artifacts, score, report ID, or retry consumption', () => {
-    const { fields, output } = handle({ status: 'needs_confirmation', question: 'Which agency?', score: 4.8 });
+    const { fields, output } = handle({ status: 'needs_confirmation', question: 'Which agency?' });
     assert.equal(fields[2], 'needs_confirmation');
     assert.deepEqual(fields.slice(5), ['-', '-', 'Which agency?', '0']);
     assert.deepEqual(readdirSync(join(work, 'reports')), []);
@@ -132,6 +140,20 @@ handle_result
       rmSync(quarantined, { force: true });
     }
   });
+  check('confirmation holds quarantine CV and archived JD artifacts before refusing merge', () => {
+    for (const path of ['output/042-example.pdf', 'jds/042-example.md']) writeFileSync(join(work, path), 'unconfirmed artifact');
+    assert.throws(() => handle({ status: 'needs_confirmation', question: 'Which agency?' }), error => error.status === 2);
+    for (const path of ['output/042-example.pdf', 'jds/042-example.md']) {
+      assert.equal(existsSync(join(work, path)), false);
+      const quarantined = join(work, 'logs/quarantine', `1-${path.split('/').at(-1)}`);
+      assert.equal(readFileSync(quarantined, 'utf8'), 'unconfirmed artifact');
+      rmSync(quarantined, { force: true });
+    }
+    assert.equal(existsSync(join(work, 'released')), false);
+    const fields = readFileSync(join(work, 'state'), 'utf8').trimEnd().split('\n');
+    assert.equal(fields[2], 'needs_confirmation');
+    assert.equal(fields[8], '0');
+  });
   check('handoff question control characters cannot split batch state fields', () => {
     const { fields } = handle({ status: 'needs_confirmation', question: 'Agency?\tConfirm\nplease\u001fnow' });
     assert.equal(fields.length, 9);
@@ -173,23 +195,33 @@ done
     assert.doesNotMatch(output, /OVERWRITTEN/);
     assert.equal((output.match(/Superseded:/g) || []).length, 5);
   });
-  check('missing handoff question still holds with a usable parent question', () => {
-    const { fields } = handle({ status: 'needs_confirmation' });
+  check('missing handoff question fails closed and stays held without retry consumption', () => {
+    assert.throws(() => handle({ status: 'needs_confirmation' }), error => error.status === 2);
+    const fields = readFileSync(join(work, 'state'), 'utf8').trimEnd().split('\n');
     assert.equal(fields[2], 'needs_confirmation');
-    assert.match(fields[7], /Which agency/);
+    assert.equal(fields[8], '0');
+    assert.equal(existsSync(join(work, 'released')), false);
   });
   check('only the final fenced payload controls the result', () => {
-    const { fields } = handle({ status: 'needs_confirmation' }, '```json\n{"status":"completed","score":5}\n```');
+    const { fields } = handle({ status: 'needs_confirmation', question: 'Which agency?' }, '```json\n{"status":"completed","score":5}\n```');
     assert.equal(fields[2], 'needs_confirmation');
   });
-  for (const mismatch of [{ url: 'https://jobs.example.test/other' }, { id: '2' }, { reason: 'other' }]) {
+  for (const mismatch of [{ url: 'https://jobs.example.test/other' }, { id: '2' }, { reason: 'other' }, { score: 4.8 }]) {
     check(`invalid handoff ${Object.keys(mismatch)[0]} stays held for inspection`, () => {
-      const { fields } = handle({ status: 'needs_confirmation', question: 'Wrong posting?', ...mismatch });
+      assert.throws(() => handle({ status: 'needs_confirmation', question: 'Wrong posting?', ...mismatch }), error => error.status === 2);
+      const fields = readFileSync(join(work, 'state'), 'utf8').trimEnd().split('\n');
       assert.equal(fields[2], 'needs_confirmation');
-      assert.match(fields[7], /Invalid confirmation handoff/);
+      assert.match(fields[7], /invalid manual handoff/);
       assert.equal(fields[8], '0');
+      assert.equal(existsSync(join(work, 'released')), false);
     });
   }
+  check('unavailable JD uses its own durable reason without evaluation artifacts', () => {
+    const { fields } = handle({ status: 'needs_confirmation', reason: 'jd_unavailable', question: 'Paste JD text' });
+    assert.equal(fields[2], 'needs_confirmation');
+    assert.equal(fields[8], '0');
+    assert.equal(JSON.parse(readFileSync(join(work, 'logs/1.hold.json'), 'utf8')).reason, 'jd_unavailable');
+  });
   check('real worker failures retain retry accounting', () => {
     const { fields } = handle({ status: 'failed', error: 'No JD' });
     assert.equal(fields[2], 'failed');
@@ -216,6 +248,12 @@ CLI=claude
 report_file=
 tracker_file=
 MAX_RETRIES=2
+ANSWERS_FILE=""
+QUEUE_FILE=""
+DRY_RUN=false
+USER_ID=fixture
+SCRIPT_DIR="$(dirname "$0")/batch"
+LOGS_DIR="$(dirname "$0")/logs"
 get_status() { printf '%s' needs_confirmation; }
 get_retries() { printf '0'; }
 schedule() {
@@ -236,13 +274,13 @@ schedule
     for (const [path, later] of [
       ['modes/auto-pipeline.md', '## Step 2 — Save Report'],
       ['modes/oferta.md', '## Block A'],
-      ['batch/batch-prompt.md', '### Step 2 — Evaluate'],
+      ['batch/batch-prompt.md', '## Evaluation and artifacts'],
     ]) {
       const source = read(path);
       const gate = source.indexOf('needs_confirmation');
       assert(gate >= 0 && gate < source.indexOf(later), path);
       assert.match(source.slice(0, source.indexOf(later)), /explicit answer/);
-      assert.match(source.slice(0, source.indexOf(later)), /tracker.*report.*CV/);
+      assert.match(source.slice(0, source.indexOf(later)), /(?:tracker.*report.*CV|report.*tracker.*CV)/);
     }
   });
   check('parent modes retain pending items and require an explicit answer', () => {
@@ -256,7 +294,7 @@ schedule
   });
   check('status display treats a held question as confirmation, not failure', () => {
     const batch = join(work, 'batch');
-    mkdirSync(batch);
+    mkdirSync(batch, { recursive: true });
     writeFileSync(join(batch, 'batch-runner.sh'), runner);
     const url = 'https://jobs.example.test/a-long-posting-path-that-must-remain-visible/12345';
     const question = 'Which agency did this specific posting come through? Please identify the intermediary for this URL.';

@@ -209,7 +209,7 @@ Available commands:
   /career-ops tracker   → Application status overview
   /career-ops agent-inbox → Queue/drain requests for the next session (users/{ACTIVE_USER}/data/agent-inbox.md)
   /career-ops apply     → Live application assistant (reads form + generates answers)
-  /career-ops go        → Run scan, conditional handoff, LinkedIn scan, and conditional pipeline
+  /career-ops go        → Scan configured sources, drain the inbox, and surface manual actions
   /career-ops verify    → Review every integrity finding, apply safe fixes, remember verified exceptions, and reverify
   /career-ops scan      → Scan portals and discover new offers
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
@@ -286,8 +286,8 @@ and archives losing artifacts and records any keeper override in the duplicate
 ledger.
 Resolve Codex model and reasoning independently with this precedence:
 `go-runner.mjs` arguments, `users/{ACTIVE_USER}/config/profile.yml` under
-`codex.model` / `codex.reasoning_effort`, then Codex global defaults. The runner
-must pass resolved non-global values to the handoff worker, verification-review
+`codex.model` / `codex.reasoning_effort`, then GPT 6.1 Sol with medium reasoning. The runner
+must pass resolved values to the handoff worker, verification-review
 worker, and all Codex batch workers.
 
 Parallelism resolves independently as `--parallel N`, then `batch.parallel`

@@ -1,3 +1,4 @@
+import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 import { userFixtureEnv } from './user-fixture.mjs';
 // tests/split-root.test.mjs — entry points that read both layers, run with the
 // data root outside the checkout (#5115).
@@ -216,8 +217,9 @@ function makeCheckout(base, { realTools }) {
   for (const d of [join(dir, 'batch'), join(dir, 'config'), join(dir, 'modes'), binDir, captureDir]) mkdirSync(d, { recursive: true });
 
   writeFileSync(join(dir, 'batch', 'batch-runner.sh'), RUNNER_SRC);
+  copyBatchOwnership(dir);
   chmodSync(join(dir, 'batch', 'batch-runner.sh'), 0o755);
-  writeFileSync(join(dir, 'batch', 'batch-prompt.md'), 'Fixture worker prompt.\n\nReport: reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md\nTracker: batch/tracker-additions/{{ID}}.tsv\n');
+  copyFileSync(join(ROOT, 'batch', 'batch-prompt.md'), join(dir, 'batch', 'batch-prompt.md'));
   writeFileSync(join(dir, 'batch', 'batch-input.tsv'), 'id\turl\tsource\tnotes\n1\thttps://example.com/one\tfixture\t-\n');
   copyFileSync(join(ROOT, 'path-resolver.mjs'), join(dir, 'path-resolver.mjs'));
 
@@ -243,7 +245,7 @@ function makeCheckout(base, { realTools }) {
 }
 
 function runBatch(checkout, env) {
-  return spawnSync(getBash(), [toBashPath(join(checkout.dir, 'batch', 'batch-runner.sh')), '--parallel', '1', '--max-retries', '0', '--rate-limit-sleep', '0'], {
+  return spawnSync(getBash(), [toBashPath(join(checkout.dir, 'batch', 'batch-runner.sh')), '--cli', 'claude', '--parallel', '1', '--max-retries', '0', '--rate-limit-sleep', '0'], {
     cwd: checkout.dir, encoding: 'utf8', timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'],
     env: splitEnv({
       PATH: `${checkout.binDir}${delimiter}${process.env.PATH}`,
@@ -255,12 +257,11 @@ function runBatch(checkout, env) {
 
 const listDir = (dir) => (existsSync(dir) ? readdirSync(dir) : []);
 
-function assertDataRootPersonalization(prompt) {
-  for (const marker of ['DATA-ROOT-PROFILE-MARKER', 'Data Root Candidate', 'DATA-ROOT-CUSTOM-MARKER']) {
-    assert.ok(prompt.includes(marker), `the worker prompt is missing the data root's personalization (${marker})`);
-  }
-  for (const decoy of ['CHECKOUT-DECOY-PROFILE', 'Checkout Decoy', 'CHECKOUT-DECOY-CUSTOM']) {
-    assert.ok(!prompt.includes(decoy), `the worker prompt carries the checkout's personalization (${decoy})`);
+function assertDataRootPersonalization(prompt, root) {
+  assert.ok(prompt.replaceAll('\\', '/').includes(root.replaceAll('\\', '/')), 'canonical worker paths must use the selected data root');
+  for (const source of ['config/profile.yml', 'modes/_custom.md', 'modes/_profile.md']) assert.ok(prompt.includes(source), source);
+  for (const marker of ['DATA-ROOT-PROFILE-MARKER', 'Data Root Candidate', 'DATA-ROOT-CUSTOM-MARKER', 'CHECKOUT-DECOY-PROFILE', 'Checkout Decoy', 'CHECKOUT-DECOY-CUSTOM']) {
+    assert.ok(!prompt.includes(marker), `candidate narrative must not be embedded before JD-only pass 1 (${marker})`);
   }
 }
 
@@ -278,7 +279,7 @@ test('batch-runner: personalization, spend_tier, reports and tracker additions f
     // 1. The worker was briefed with the data root's personalization.
     const promptPath = join(checkout.captureDir, 'system-prompt.md');
     assert.ok(existsSync(promptPath), `the worker was never launched:\n${output}`);
-    assertDataRootPersonalization(readFileSync(promptPath, 'utf8'));
+    assertDataRootPersonalization(readFileSync(promptPath, 'utf8'), dataRoot);
 
     // 2. spend_tier is the data root's (economy), not the checkout's (premium)
     //    or the default (standard). The expected model is read from the
@@ -318,7 +319,7 @@ test('batch-runner: personalization, spend_tier, reports and tracker additions f
 test('batch-runner: a .career-ops-data marker with a relative path is honored like the env override', () => {
   const base = mkdtempSync(join(tmpdir(), 'split-root-batch-marker-'));
   try {
-    makeDataRoot(base, 'marked-root');
+    const dataRoot = makeDataRoot(base, 'marked-root');
     const checkout = makeCheckout(base, { realTools: false });
     // Relative to the checkout, the way path-resolver.mjs resolves it.
     writeFileSync(join(checkout.dir, '.career-ops-data'), '../marked-root\n');
@@ -326,7 +327,7 @@ test('batch-runner: a .career-ops-data marker with a relative path is honored li
     const r = runBatch(checkout, { WORKER_WRITES: 'no' });
     const promptPath = join(checkout.captureDir, 'system-prompt.md');
     assert.ok(existsSync(promptPath), `the worker was never launched:\n${r.stdout}\n${r.stderr}`);
-    assertDataRootPersonalization(readFileSync(promptPath, 'utf8'));
+    assertDataRootPersonalization(readFileSync(promptPath, 'utf8'), dataRoot);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
@@ -342,7 +343,7 @@ test('batch-runner: with no data root configured, nothing about the checkout lay
     assert.equal(r.status, 0, `batch-runner exited ${r.status}:\n${output}`);
 
     const prompt = readFileSync(join(checkout.captureDir, 'system-prompt.md'), 'utf8');
-    assert.ok(prompt.includes('CHECKOUT-DECOY-PROFILE'), 'the default layout no longer injects the checkout\'s modes/_profile.md');
+    assertDataRootPersonalization(prompt, checkout.dir);
     assert.ok(!/^Data root:/m.test(prompt), 'the default layout prompt gained a data-root section');
 
     assert.equal(listDir(join(checkout.dir, 'reports')).filter((f) => f.startsWith('001-acme-')).length, 1,

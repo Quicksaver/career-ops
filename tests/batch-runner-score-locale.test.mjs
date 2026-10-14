@@ -113,7 +113,7 @@ if (!locale) {
     const out = execFileSync(getBash(), [runner, '--status'], {
       encoding: 'utf-8',
       timeout: 30000,
-      env: { ...process.env, LC_ALL: locale },
+      env: { ...process.env, CAREER_OPS_ROOT: work, CAREER_OPS_DATA_DIR: work, CAREER_OPS_USER: 'fixture', LC_ALL: locale },
     });
 
     if (out.includes('Average score: 4.5/5 (2 scored)')) {

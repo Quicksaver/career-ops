@@ -39,8 +39,9 @@ import { safeEncodeURIComponent } from './_safe-url.mjs';
 const API_URL = 'https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs';
 const API_KEY = 'jobboerse-jobsuche'; // public client key the arbeitsagentur.de UI uses
 const DETAIL_BASE = 'https://www.arbeitsagentur.de/jobsuche/jobdetail/';
-const REMOTE_RE = /(remote|homeoffice|home[-\s]?office|ortsunabh|deutschlandweit|bundesweit|100\s*%|full[-\s]?remote|fully remote)/i;
-const NOT_REMOTE_RE = /(no\s+remote|not\s+remote|nicht\s+remote|kein(?:e[nrms]?)?\s+remote|ohne\s+remote|no\s+homeoffice|kein(?:e[nrms]?)?\s+homeoffice)/i;
+const REMOTE_RE = /(?:\bremote\b|\bhomeoffice\b|\bhome[-\s]?office\b|ortsunabh)/i;
+const NOT_REMOTE_RE = /(?:(?:no|not|nicht|kein(?:e[nrms]?)?|ohne)\s+(?:remote|home[-\s]?office)|on[-\s]?site|vor\s+ort|präsenzpflicht)/i;
+const claimsRemote = title => REMOTE_RE.test(title) && !NOT_REMOTE_RE.test(title);
 
 // Clamp a runtime integer into [min, max], falling back to `def` for NaN, so a
 // stray portals.yml value can't produce empty (size=0) or pathological queries.
@@ -115,7 +116,7 @@ export function normalizeJob(job) {
   const location = buildLocation(job && job.stellenlokationen) || 'Deutschland';
   const encodedRefnr = safeEncodeURIComponent(refnr);
   if (encodedRefnr === null) return null;
-  const normalizedLocation = REMOTE_RE.test(title) && !NOT_REMOTE_RE.test(title)
+  const normalizedLocation = claimsRemote(title)
     ? ['Remote', location].filter(Boolean).join(', ')
     : location;
   return {
@@ -218,7 +219,7 @@ export default {
             }
           } else { // 'title'
             const nationwide = await fetchKeyword(kw);
-            wide = nationwide.filter(j => REMOTE_RE.test(String((j && j.stellenangebotsTitel) || '')));
+            wide = nationwide.filter(j => claimsRemote(String((j && j.stellenangebotsTitel) || '')));
           }
         } catch (err) {
           errors.push(`"${kw}" (remote pass): ${(err && err.message) || err}`);
@@ -248,7 +249,7 @@ export default {
           .map(job => [job.refnr, job]),
       ).values()];
       for (const job of wideJobs) {
-        if (remoteMatch !== 'filter' || REMOTE_RE.test(job.title)) {
+        if (claimsRemote(job.title)) {
           job.location = job.location ? `${job.location} · Deutschlandweit (Homeoffice)` : 'Deutschlandweit (Homeoffice)';
         }
         if (!byRef.has(job.refnr)) byRef.set(job.refnr, job);

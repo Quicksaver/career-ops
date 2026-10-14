@@ -148,6 +148,12 @@ export default {
         && matchesTagFilter(filters.tags, job.tags)
         && isWithinDays(job.publishedAt, filters.publishedWithinDays)
       ))
-      .map(({ title, url, company, location }) => ({ title, url, company, location }));
+      .map(({ title, url, company, location, description, publishedAt }) => {
+        const job = { title, url, company, location };
+        if (description) job.description = description;
+        const postedAt = Date.parse(publishedAt);
+        if (Number.isFinite(postedAt)) job.postedAt = postedAt;
+        return job;
+      });
   },
 };

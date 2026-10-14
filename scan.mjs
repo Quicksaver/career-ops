@@ -165,7 +165,7 @@ let PROFILE_PATH = path.join(DATA_ROOT, 'config/profile.yml');
 export let SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY ? path.resolve(process.env.CAREER_OPS_SCAN_HISTORY) : path.join(DATA_ROOT, 'data/scan-history.tsv');
 export let PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE ? path.resolve(process.env.CAREER_OPS_PIPELINE) : path.join(DATA_ROOT, 'data/pipeline.md');
 export let APPLICATIONS_PATH = resolveTrackerPath(DATA_ROOT);
-let SCAN_HANDOFF_PATH = path.join(DATA_ROOT, 'data/scan-handoff.json');
+let SCAN_HANDOFF_PATH = process.env.CAREER_OPS_SCAN_HANDOFF ? path.resolve(CODE_ROOT, process.env.CAREER_OPS_SCAN_HANDOFF) : path.join(DATA_ROOT, 'data/scan-handoff.json');
 let BLACKLIST_PATH = path.join(DATA_ROOT, 'data/blacklist.md');
 let SCAN_RUNS_PATH = path.join(DATA_ROOT, 'data/scan-runs.tsv');
 let PORTAL_HEALTH_PATH = path.join(DATA_ROOT, 'data/portal-health.tsv');
@@ -189,8 +189,10 @@ function configureUserPaths(ctx) {
   PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE
     ? path.resolve(process.env.CAREER_OPS_PIPELINE)
     : userPath(ctx, 'data/pipeline.md');
-  APPLICATIONS_PATH = userPath(ctx, 'data/applications.md');
-  SCAN_HANDOFF_PATH = userPath(ctx, 'data/scan-handoff.json');
+  APPLICATIONS_PATH = resolveTrackerPath(ctx.userRoot);
+  SCAN_HANDOFF_PATH = process.env.CAREER_OPS_SCAN_HANDOFF
+    ? path.resolve(CODE_ROOT, process.env.CAREER_OPS_SCAN_HANDOFF)
+    : userPath(ctx, 'data/scan-handoff.json');
   BLACKLIST_PATH = userPath(ctx, 'data/blacklist.md');
   SCAN_RUNS_PATH = userPath(ctx, 'data/scan-runs.tsv');
   PORTAL_HEALTH_PATH = userPath(ctx, 'data/portal-health.tsv');

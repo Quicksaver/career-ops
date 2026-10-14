@@ -391,6 +391,7 @@ const SYSTEM_PATHS = [
   'doctor.mjs',
   'go-runner.mjs',
   'resolve-parallel.mjs',
+  'resolve-codex-config.mjs',
   'resolve-verify-warnings.mjs',
   // doctor.mjs imports this one: an install that receives the new doctor
   // without it would crash on startup.
@@ -475,6 +476,8 @@ const SYSTEM_PATHS = [
   'batch/batch-runner.sh',
   'batch/batch-output-schema.json',
   'batch/validate-worker-artifacts.mjs',
+  'batch/manual-inputs.mjs',
+  'batch/runner-ownership.mjs',
   'schemas/',
   'batch/aggregate-tokens.mjs',
   'batch/README.md',

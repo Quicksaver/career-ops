@@ -5,6 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import { prepareCliLaunch } from "../../src/lib/cli-launch.mjs";
 
+test("standalone core and web launcher copies stay identical across the web bundler boundary", () => {
+  assert.equal(
+    fs.readFileSync(new URL("../../src/lib/cli-launch.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n"),
+    fs.readFileSync(new URL("../../../lib/cli-launch.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n"),
+  );
+});
+
 test("prepareCliLaunch leaves POSIX commands unchanged", () => {
   const args = ["-p", "hello"];
   assert.deepEqual(prepareCliLaunch("/usr/local/bin/gemini", args, "linux"), {

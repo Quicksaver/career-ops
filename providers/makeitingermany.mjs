@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('makeitingermany', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('makeitingermany', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('makeitingermany', entry, ctx);
   },
 };

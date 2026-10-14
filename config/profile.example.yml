@@ -149,11 +149,11 @@ language:
 # See the tier -> model mapping table in modes/_shared.md.
 spend_tier: standard
 
-# Optional Codex defaults for go-runner. Resolution is per setting:
-# go-runner argument -> this profile -> ~/.codex/config.toml global default.
+# Optional Codex defaults for automatic runners. Resolution is per setting:
+# Runner argument -> this profile -> career-ops system defaults below.
 # codex:
-#   model: gpt-5.3-codex
-#   reasoning_effort: high  # minimal | low | medium | high | xhigh
+#   model: gpt-6.1-sol
+#   reasoning_effort: medium  # minimal | low | medium | high | xhigh
 
 # Optional default for go-runner, direct batch-runner, and reviewed verification.
 # An explicit --parallel argument wins. Valid range: 1-32.

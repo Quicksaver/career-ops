@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('euremotejobs', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('euremotejobs', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('euremotejobs', entry, ctx);
   },
 };

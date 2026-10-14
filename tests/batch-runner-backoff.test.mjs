@@ -1,3 +1,4 @@
+import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -85,9 +86,10 @@ test('ceiling validation normalizes decimal zeros and rejects unsafe or overflow
   }
 }));
 
-function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = '429', successAfter = 99, cli = 'claude', secondLog = log } = {}) {
+function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = 'API Error: 429 Too Many Requests', successAfter = 99, cli = 'claude', secondLog = log, successLog = '' } = {}) {
   writeFileSync(join(dir, 'first.log'), log);
   writeFileSync(join(dir, 'second.log'), secondLog);
+  writeFileSync(join(dir, 'success.log'), successLog);
   return invoke(`${functions}
     RATE_LIMIT_SLEEP=${cap}
     MAX_RETRIES=${max}
@@ -99,15 +101,17 @@ function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = '429'
     claude() {
       calls=$(( $(cat calls.count) + 1 ))
       echo "$calls" > calls.count
-      if (( calls > ${successAfter} )); then return 0; fi
+      if (( calls > ${successAfter} )); then cat success.log; return 0; fi
       if (( calls == 1 )); then cat first.log; else cat second.log; fi
       return 1
     }
     qwen() { claude; }
+    codex() { claude; }
     sleep() { [[ "$1" == 1 ]] || printf 'SLEEP:%s\n' "$1"; }
     update_state_retrying() { printf 'STATE:%s:%s:%s\n' "$3" "$8" "$9"; }
     worker() {
       local retries=${retries} id=1 url=https://example.com started_at=start report_num=001 log_file=worker.log
+      local original_url=https://example.com explicit_failed_retry=false
       local -a claude_args=(-p) model_args=()
       local full_prompt=fixture stdin_file=/dev/null combined_prompt_file=/dev/null
       local -a worker_args=(-p)
@@ -122,7 +126,7 @@ function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = '429'
 }
 
 test('retry loop records actual waits, enforces retry budget, and ignores stale headers', () => fixture(ctx => {
-  const out = runLoop(ctx, { log: '429\nRetry-After: 80', secondLog: '429' });
+  const out = runLoop(ctx, { log: 'API Error: 429 Too Many Requests\nRetry-After: 80', secondLog: 'API Error: 429 Too Many Requests' });
   const sleeps = [...out.matchAll(/SLEEP:(\d+)/g)].map(m => Number(m[1]));
   assert.equal(sleeps.length, 2);
   assert.ok(sleeps[0] >= 80 && sleeps[0] <= 96);
@@ -136,7 +140,7 @@ test('retry loop records actual waits, enforces retry budget, and ignores stale 
 }));
 
 test('zero, over-cap and session pauses preserve retries and use the existing pause marker', () => fixture(ctx => {
-  for (const options of [{ cap: 0 }, { log: '429\nRetry-After: 301' }, { log: 'session limit' }]) {
+  for (const options of [{ cap: 0 }, { log: 'API Error: 429 Too Many Requests\nRetry-After: 301' }, { log: 'session limit' }]) {
     const out = runLoop(ctx, { ...options, retries: 1 });
     assert.doesNotMatch(out, /SLEEP:/);
     assert.match(out, /STATE:paused_rate_limit:.*:1/);
@@ -153,9 +157,47 @@ test('successful, non-rate-limit and non-Claude workers do not back off', () => 
   }
 }));
 
+test('Codex report 429, quoted job text and ordinary artifact errors never pause the retry loop', () => fixture(ctx => {
+  for (const log of [
+    '429',
+    '{"status":"completed","report_num":"429","report":"reports/429-acme.md","error":null}',
+    '{"status":"failed","report_num":"429","error":"missing artifact reports/429-acme.md"}',
+    '{"type":"item.completed","item":{"type":"agent_message","text":"The JD says rate limit reached and 429 Too Many Requests"}}',
+    'Job text: rate limit reached for a client API returning 429',
+    'Error: missing artifact reports/429-acme.md',
+    '{"type":"error","message":"missing artifact reports/429-acme.md"}',
+  ]) {
+    const failed = runLoop(ctx, {cli:'codex', log});
+    assert.match(failed,/END:1:0:false:1/); assert.doesNotMatch(failed,/STATE:paused_rate_limit/);
+    const succeeded = runLoop(ctx,{cli:'codex',successAfter:0,successLog:log});
+    assert.match(succeeded,/END:1:0:false:0/); assert.doesNotMatch(succeeded,/STATE:paused_rate_limit/);
+  }
+}));
+
+test('Codex quota and session provider errors pause only on a failed worker exit', () => fixture(ctx => {
+  for (const log of [
+    'ERROR: Rate limit reached for this model',
+    'API Error: 429 Too Many Requests',
+    'ERROR: unexpected status 429 Too Many Requests: quota exhausted',
+    '{"type":"error","message":"stream disconnected before completion: You exceeded your current quota, please check your plan and billing details."}',
+    "You've hit your usage limit. Try again later.",
+    'You have hit your session limit. Resets 5pm.',
+    '{"type":"error","error":{"type":"rate_limit_error","message":"provider limit"}}',
+    '{"error":{"code":"insufficient_quota","message":"quota exhausted"}}',
+    '{"type":"turn.failed","error":{"code":"usage_limit_reached","message":"usage exhausted"}}',
+    '{"type":"error","message":"You have hit your usage limit"}',
+  ]) {
+    const failed=runLoop(ctx,{cli:'codex',log,retries:1});
+    assert.match(failed,/STATE:paused_rate_limit:.*:1/); assert.match(failed,/END:1:1:true:1/);
+    const succeeded=runLoop(ctx,{cli:'codex',successAfter:0,successLog:log,retries:1});
+    assert.match(succeeded,/END:1:1:false:0/); assert.doesNotMatch(succeeded,/STATE:paused_rate_limit/);
+  }
+}));
+
 test('full runner resumes persisted retries and schedules paused rows only with --resume-paused', () => fixture(({ dir, invoke }) => {
   mkdirSync(join(dir, 'batch'));
   writeFileSync(join(dir, 'batch/batch-runner.sh'), source);
+  copyBatchOwnership(dir);
   writeFileSync(join(dir, 'batch/batch-prompt.md'), 'Fixture prompt');
   writeFileSync(join(dir, 'batch/batch-input.tsv'), 'id\turl\tsource\tnotes\n1\thttps://example.com/job\ttest\tfixture\n');
   // Isolate report allocation and post-run integrations; use the real runner's
@@ -175,14 +217,14 @@ test('full runner resumes persisted retries and schedules paused rows only with 
     writeFileSync(stateFile, state);
     const output = invoke(`
       : > calls.log
-      claude() { echo called >> calls.log; echo '429 Too Many Requests'; return 1; }
+      claude() { echo called >> calls.log; echo 'API Error: 429 Too Many Requests'; return 1; }
       curl() { return 1; }
       sleep() {
         [[ "$1" != 1 ]] || return 0
         printf 'SLEEP:%s\n' "$1"
         cp batch/batch-state.tsv sleeping-state.tsv
       }
-      source batch/batch-runner.sh --model fixture ${resume ? '--resume-paused' : ''}`);
+      source batch/batch-runner.sh --cli claude --model fixture ${resume ? '--resume-paused' : ''}`);
     const calls = readFileSync(join(dir, 'calls.log'), 'utf8').trim();
     if (!scheduled) {
       assert.equal(calls, '');

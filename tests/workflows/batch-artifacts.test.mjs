@@ -2,7 +2,7 @@ import { userFixtureEnv } from '../user-fixture.mjs';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { fail, getBash, pass, ROOT } from '../helpers.mjs';
 
@@ -26,7 +26,7 @@ try {
       'batch-report-selection', selectionReports,
     ], { encoding: 'utf8' }).trim();
   }
-  if (selected === selectedReport) {
+  if (resolve(selected) === resolve(selectedReport)) {
     pass('batch report discovery excludes the coexisting reservation sentinel');
   } else {
     fail(`batch report discovery selected the wrong artifact: ${JSON.stringify(selected)}`);

@@ -17,7 +17,7 @@ function fixture() {
   writeFileSync(join(batch, 'batch-input.tsv'), 'id\turl\tsource\tnotes\n1\thttps://example.com/1\ttest\tfirst\n2\thttps://example.com/2\ttest\tsecond\n');
   // A real CLI must never run, even if a broken limit accidentally queues work.
   writeFileSync(join(bin, 'claude'), '#!/usr/bin/env bash\necho unexpected-worker >&2\nexit 99\n', { mode: 0o755 });
-  return { root, batch, run: args => spawnSync(getBash(), [join(batch, 'batch-runner.sh'), ...args], {
+  return { root, batch, run: args => spawnSync(getBash(), [join(batch, 'batch-runner.sh'), '--cli', 'claude', ...args], {
     encoding: 'utf8', timeout: 10000,
     env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: root, PATH: bin + delimiter + process.env.PATH },
   }) };

@@ -98,6 +98,7 @@ if (dispatchBlock) {
       // dispatch `esac`; close the loop here after a single attempt.
       'local_wrapper() {',
       '  local combined_prompt_file="" stdin_file=/dev/null',
+      '  local original_url=https://jobs.example.test/1 explicit_failed_retry=false',
       '  local -a claude_args=(-p)',
       dispatchBlock,
       '    wait',

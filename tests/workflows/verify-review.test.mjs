@@ -4,6 +4,8 @@ import { tmpdir } from 'os';
 import { delimiter, join } from 'path';
 import { pathToFileURL } from 'url';
 import { fail, pass, ROOT } from '../helpers.mjs';
+import { terminateProcessTreeSync } from '../../lib/runner-command.mjs';
+import { acquirePipelineLock } from '../../pipeline-lock.mjs';
 
 console.log('\nWorkflow — reviewed verification lifecycle');
 
@@ -1263,7 +1265,11 @@ try {
   }
   const interruptedExitPromise = new Promise(resolve =>
     interruptedRunner.once('exit', (code, signal) => resolve({ code, signal })));
-  interruptedRunner.kill('SIGINT');
+  // Windows' native kill terminates Node without delivering a catchable signal.
+  // Its owner must stop the full tree; the next lock acquisition recovers the
+  // dead owner's directory, while the compatibility PID is cleaned at startup.
+  if (process.platform === 'win32') terminateProcessTreeSync(interruptedRunner);
+  else interruptedRunner.kill('SIGINT');
   const interruptedExit = await Promise.race([
     interruptedExitPromise,
     new Promise(resolve => setTimeout(() => resolve({ timeout: true }), 3000)),
@@ -1272,7 +1278,15 @@ try {
   const reviewerStillAlive = interruptReviewerPids.some(pid => {
     try { process.kill(pid, 0); return true; } catch { return false; }
   });
-  if (interruptReviewerPids.length === 2 && !interruptedExit.timeout &&
+  if (process.platform === 'win32' && interruptReviewerPids.length === 2 &&
+      !interruptedExit.timeout && !reviewerStillAlive) {
+    const lockPath = join(dataDir, 'verify-runner.pid');
+    const recovered = await acquirePipelineLock(lockPath, { timeoutMs: 1000, maxWaitMs: 1000 });
+    const owner = JSON.parse(readFileSync(join(recovered.lockDir, 'owner.json'), 'utf8'));
+    if (owner.pid === process.pid) pass('Windows force-stop kills every reviewer and the next acquisition recovers dead-owner locking');
+    else fail(`Windows force-stop lock recovery retained an unexpected owner: ${owner.pid}`);
+    recovered.release();
+  } else if (interruptReviewerPids.length === 2 && !interruptedExit.timeout &&
       interruptedExit.signal === 'SIGINT' && !reviewerStillAlive &&
       !existsSync(join(dataDir, 'verify-runner.pid'))) {
     pass('interrupting parallel review stops every reviewer and releases the user lock');

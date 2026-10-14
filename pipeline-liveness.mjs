@@ -5,12 +5,11 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -18,6 +17,8 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { appendExpiredRows, parsePendingRows } from './lib/pipeline-queue.mjs';
+import { withPipelineLock } from './pipeline-lock.mjs';
+import { writeFileAtomic } from './tracker-utils.mjs';
 
 let context;
 try {
@@ -66,28 +67,34 @@ function finish(result, exitCode = 0) {
   process.exit(exitCode);
 }
 
-const pipelinePath = userPath(context, 'data/pipeline.md');
+const pipelinePath = process.env.CAREER_OPS_PIPELINE
+  ? resolve(context.projectRoot, process.env.CAREER_OPS_PIPELINE)
+  : userPath(context, 'data/pipeline.md');
 if (!existsSync(pipelinePath)) {
   finish({ status: 'completed', checked: 0, active: 0, expired: 0, uncertain: 0, local: 0, moved: 0, results: [], dry_run: dryRun });
 }
 
 const original = readFileSync(pipelinePath, 'utf-8');
 const pendingRows = parsePendingRows(original).rows;
-const webUrls = [...new Set(pendingRows.map((row) => row.url).filter((url) => /^https?:\/\//i.test(url)))];
+function isLinkedIn(url) {
+  try { return /(^|\.)linkedin\.com$/i.test(new URL(url).hostname); } catch { return false; }
+}
+const deferredLinkedIn = pendingRows.filter(row => isLinkedIn(row.url)).length;
+const webUrls = [...new Set(pendingRows.map((row) => row.url).filter((url) => /^https?:\/\//i.test(url) && !isLinkedIn(url)))];
 const local = pendingRows.filter((row) => row.url.startsWith('local:')).length;
-const unsupported = pendingRows.length - webUrls.length - local;
+const unsupported = pendingRows.filter(row => !/^https?:\/\//i.test(row.url) && !row.url.startsWith('local:')).length;
 
 if (webUrls.length === 0) {
   finish({
     status: 'completed', checked: 0, active: 0, expired: 0, uncertain: unsupported,
-    local, unsupported, moved: 0, results: [], dry_run: dryRun,
+    local, unsupported, deferred_linkedin: deferredLinkedIn, moved: 0, results: [], dry_run: dryRun,
   }, unsupported ? 2 : 0);
 }
 
 const tempDir = mkdtempSync(join(tmpdir(), 'career-ops-liveness-'));
 const urlFile = join(tempDir, 'urls.txt');
 writeFileSync(urlFile, `${webUrls.join('\n')}\n`, 'utf-8');
-const checkerArgs = [systemPath('check-liveness.mjs'), '--json'];
+const checkerArgs = [systemPath('check-liveness.mjs'), '--user', context.userId, '--json'];
 if (noFallback) checkerArgs.push('--no-fallback');
 if (throttleArg) checkerArgs.push(throttleArg);
 checkerArgs.push('--file', urlFile);
@@ -95,6 +102,7 @@ const checked = spawnSync(process.execPath, checkerArgs, {
   cwd: context.projectRoot,
   encoding: 'utf-8',
   maxBuffer: 16 * 1024 * 1024,
+  env: { ...process.env, CAREER_OPS_USER: context.userId, CAREER_OPS_ROOT: context.userRoot },
 });
 rmSync(tempDir, { recursive: true, force: true });
 
@@ -113,7 +121,13 @@ if (payload.status !== 'completed' || !Array.isArray(payload.results)) {
 }
 
 const expiredUrls = new Set(payload.results.filter((item) => item.result === 'expired').map((item) => item.url));
-const updated = appendExpiredRows(original, expiredUrls);
+// A network sweep can take minutes. Re-read under the writer lock so a scan or
+// inbox edit made meanwhile survives; never replace it with the old snapshot.
+const updated = dryRun ? appendExpiredRows(original, expiredUrls) : await withPipelineLock(pipelinePath, () => {
+  const result = appendExpiredRows(readFileSync(pipelinePath, 'utf8'), expiredUrls);
+  if (result.moved.length) writeFileAtomic(pipelinePath, result.text);
+  return result;
+});
 const trackerUpdates = [];
 const trackerWarnings = [];
 for (const row of pendingRows.filter((item) => expiredUrls.has(item.url))) {
@@ -139,12 +153,6 @@ for (const row of pendingRows.filter((item) => expiredUrls.has(item.url))) {
     });
   }
 }
-if (!dryRun && updated.moved.length) {
-  const temporary = `${pipelinePath}.tmp-${process.pid}`;
-  writeFileSync(temporary, updated.text, 'utf-8');
-  renameSync(temporary, pipelinePath);
-}
-
 const result = {
   status: 'completed',
   checked: webUrls.length,
@@ -153,6 +161,7 @@ const result = {
   uncertain: payload.uncertain + unsupported,
   local,
   unsupported,
+  deferred_linkedin: deferredLinkedIn,
   moved: updated.moved.length,
   tracker_updates: trackerUpdates,
   tracker_warnings: trackerWarnings,

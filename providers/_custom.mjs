@@ -1,40 +1,114 @@
 #!/usr/bin/env node
 
 /**
- * scan.mjs — Zero-token portal scanner
- *
- * Fetches Greenhouse, Ashby, Lever, and PCSX APIs plus structured feed/HTML
- * providers such as Landing.jobs, SwissDevJobs/GermanTechJobs/DevITJobs,
- * jobs.ch, DEVjobs.de, Jobs in English Denmark, Make it in Germany,
- * EU Remote Jobs, ITJobs, SAPO Emprego, Portal Emprego, Dice,
- * Working Nomads, and RustJobs.dev, applies title
- * filters from portals.yml,
- * deduplicates against existing history, and appends new offers to
- * pipeline.md + scan-history.tsv.
- *
- * Zero Claude API tokens — pure HTTP + JSON.
- *
- * Usage:
- *   node scan.mjs                  # scan all enabled companies
- *   node scan.mjs --dry-run        # preview without writing files
- *   node scan.mjs --company Cohere # scan a single company
+ * Shared fetchers and parsers for fork providers. Transport comes from the
+ * caller's provider context; filtering and user-data writes belong to scan.mjs.
  */
 
-import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs';
-import * as yaml from 'js-yaml';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { safeEncodeURIComponent } from './_safe-url.mjs';
-import { FETCH_TIMEOUT_MS, fetchJsonWithRetry } from './_custom-fetch.mjs';
-const parseYaml = yaml.load;
+import { fetchJsonWithRetry, fetchTextWithRetry, makeHttpCtx, sleep } from './_http.mjs';
+import { decodeEntities as decodeHtmlEntities } from './_html-entities.mjs';
+import { htmlToText } from './_html-to-text.mjs';
 
-// ── Config ──────────────────────────────────────────────────────────
+// Keep the context scoped to one async provider call, including parallel detail
+// work. Concurrent users and probes never share transport or request budgets.
+const providerContext = new AsyncLocalStorage();
+const FETCH_TIMEOUT_MS = 10_000;
 
-const PORTALS_PATH = 'portals.yml';
-const SCAN_HISTORY_PATH = 'data/scan-history.tsv';
-const PIPELINE_PATH = 'data/pipeline.md';
-const APPLICATIONS_PATH = 'data/applications.md';
-const PIPELINE_TEMPLATE = '## Pendientes\n\n## Procesadas\n';
+function currentContext() {
+  const ctx = providerContext.getStore();
+  if (!ctx) throw new Error('Custom provider request has no transport context');
+  return ctx;
+}
 
-const CONCURRENCY = 10;
+function assertRequestUrl(value) {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) {
+    throw new Error('Custom providers require public HTTPS URLs without credentials or custom ports');
+  }
+  return url;
+}
+
+const SOURCE_HOSTS = {
+  itjobs: ['itjobs.pt'], sapo: ['emprego.sapo.pt'], portalemprego: ['portalemprego.pt'],
+  dice: ['dice.com'], euremotejobs: ['euremotejobs.com'], remoteineurope: ['remoteineurope.com'],
+  devitjobs: ['swissdevjobs.ch', 'germantechjobs.de', 'devitjobs.uk', 'devitjobs.nl'],
+  englishjobs: ['englishjobsearch.ch', 'englishjobs.dk', 'englishjobsearch.se', 'englishjobs.no', 'englishjobs.fi', 'englishjobsearch.nl', 'englishjobs.de'],
+  jobsinenglish: ['jobsinenglish.dk'], jobsch: ['jobs.ch'], makeitingermany: ['make-it-in-germany.com'],
+  devjobsde: ['devjobs.de', 'en.devjobs.de'], rustjobs: ['rustjobs.dev'],
+};
+
+function assertSourceUrl(type, value) {
+  const url = assertRequestUrl(value);
+  const allowed = SOURCE_HOSTS[type];
+  if (allowed && !allowed.includes(url.hostname.replace(/^www\./, ''))) throw new Error(`${type}: untrusted source hostname ${url.hostname}`);
+}
+
+function pageLimit(configured) {
+  const maximum = Number(currentContext().maxPages);
+  const cap = Math.max(1, Math.min(500, Math.floor(configured)));
+  return Number.isFinite(maximum) && maximum > 0 ? Math.min(cap, Math.max(1, Math.floor(maximum))) : cap;
+}
+
+function detailLimit(entry, count) {
+  const ctx = currentContext();
+  const enabled = entry.fetchDetails ?? entry.fetch_details;
+  if (ctx.maxPages !== undefined || ctx.probing || enabled !== true) return 0;
+  const cap = Number(entry.detailLimit ?? entry.detail_limit ?? 20);
+  return Math.min(count, Number.isFinite(cap) ? Math.max(0, Math.min(100, Math.floor(cap))) : 20);
+}
+
+function toEpochMs(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const numeric = typeof value === 'number' || /^\d+(?:\.\d+)?$/.test(String(value)) ? Number(value) : NaN;
+  const parsed = Number.isFinite(numeric) ? (Math.abs(numeric) < 100_000_000_000 ? numeric * 1000 : numeric) : Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeCustomJob(job) {
+  if (!job || typeof job !== 'object') return null;
+  const title = normalizeWhitespace(String(job.title ?? ''));
+  let url;
+  let preferred = job.url;
+  try { const employer = new URL(job.applyUrl); if (employer.protocol === 'https:' && !employer.username && !employer.password) preferred = employer.href; } catch { /* retain the board URL */ }
+  try { url = new URL(preferred); } catch { return null; }
+  if (!['https:', 'http:'].includes(url.protocol) && job.sourceUrl) {
+    try { url = new URL(job.sourceUrl); } catch { return null; }
+  }
+  if (!title || !['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
+  const normalized = { ...job, title, url: url.href, company: normalizeWhitespace(String(job.company ?? '')), location: normalizeWhitespace(String(job.location ?? '')) };
+  if (url.href !== job.url && !normalized.sourceUrl) normalized.sourceUrl = job.url;
+  delete normalized.description;
+  delete normalized.postedAt;
+  const description = job.description ?? job.jobDescription;
+  if (typeof description === 'string' && description.trim()) normalized.description = cleanHtmlText(description);
+  const postedAt = Number.isFinite(job.postedAt) ? job.postedAt : toEpochMs(job.postedTs ?? job.publishedAt);
+  if (postedAt !== undefined) normalized.postedAt = postedAt;
+  if (typeof normalized.salary === 'string') { normalized.salaryText = normalized.salary; delete normalized.salary; }
+  return normalized;
+}
+
+// Browser-backed boards use the same guarded transport as API/HTML providers.
+// A fresh browser context carries no user authentication. Every navigation,
+// script and API request is intercepted; private hosts/redirects stay guarded.
+export async function routeCustomBrowserRequests(context, ctx) {
+  let failure;
+  await context.route('**/*', async route => {
+    const request = route.request();
+    if (['image', 'media', 'font'].includes(request.resourceType())) { await route.abort(); return; }
+    try {
+      assertRequestUrl(request.url());
+      const response = await ctx.fetchResponse(request.url(), {
+        method: request.method(), body: request.postData(), headers: request.headers(), redirect: 'error',
+      });
+      const headers = Object.fromEntries(response.headers);
+      for (const field of ['content-encoding', 'content-length', 'transfer-encoding']) delete headers[field];
+      await route.fulfill({ status: response.status, headers, body: Buffer.from(await response.arrayBuffer()) });
+    } catch (error) { failure ||= error; await route.abort(); }
+  });
+  return () => { if (failure) throw failure; };
+}
 const PCSX_DETAIL_CONCURRENCY = 20;
 const EUREMOTEJOBS_DETAIL_CONCURRENCY = 5;
 const EUREMOTEJOBS_MAX_PAGES = 5;
@@ -92,27 +166,8 @@ function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function decodeHtmlEntities(value) {
-  return value
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
-    .replace(/&(amp|lt|gt|quot|apos|nbsp);/gi, (_, name) => {
-      const entities = {
-        amp: '&',
-        lt: '<',
-        gt: '>',
-        quot: '"',
-        apos: "'",
-        nbsp: ' ',
-      };
-      return entities[name.toLowerCase()] || `&${name};`;
-    });
-}
-
 function cleanHtmlText(value) {
-  return normalizeWhitespace(
-    decodeHtmlEntities(value.replace(/<[^>]+>/g, ' ').replace(/\u00a0/g, ' '))
-  );
+  return normalizeWhitespace(htmlToText(value));
 }
 
 function splitHtmlSegments(value) {
@@ -1091,19 +1146,24 @@ function parseLever(json, company) {
 
 function parsePcsxPosition(position, company) {
   const origin = company._api?.pcsx?.origin || getUrlOrigin(company.careers_url) || getUrlOrigin(company.api) || 'https://apply.careers.microsoft.com';
+  const postingPath = position.publicUrl || position.positionUrl || (position.id !== undefined && position.id !== null ? `/careers/job/${position.id}` : '');
+  if (!postingPath) return null;
+  let postingUrl;
+  try { postingUrl = new URL(postingPath, origin).href; } catch { return null; }
   const locations = Array.isArray(position.locations)
     ? position.locations.filter(Boolean)
     : (position.location ? [position.location] : []);
 
   return {
     title: position.name || '',
-    url: position.publicUrl || new URL(position.positionUrl || `/careers/job/${position.id}`, origin).toString(),
+    url: postingUrl,
     company: company.name,
     location: locations.join(' | '),
-    positionId: position.id || null,
-    externalId: position.displayJobId || position.atsJobId || '',
+    positionId: position.id ?? null,
+    externalId: position.id === undefined || position.id === null ? '' : String(position.id),
+    ...(position.displayJobId || position.atsJobId ? { requisitionId: String(position.displayJobId || position.atsJobId) } : {}),
     department: position.department || '',
-    postedTs: position.postedTs || null,
+    postedTs: position.postedTs ?? null,
     workLocationOption: position.workLocationOption || '',
     locationFlexibility: position.locationFlexibility || null,
     jobDescription: position.jobDescription || '',
@@ -1112,8 +1172,8 @@ function parsePcsxPosition(position, company) {
 }
 
 function parsePcsx(json, company) {
-  const positions = json.data?.positions || [];
-  return positions.map(position => parsePcsxPosition(position, company));
+  if (!Array.isArray(json?.data?.positions)) throw new Error('pcsx: unsupported response shape; data.positions must be an array');
+  return json.data.positions.filter(position => position && typeof position === 'object').map(position => parsePcsxPosition(position, company)).filter(Boolean);
 }
 
 function stripCdata(value) {
@@ -1346,6 +1406,13 @@ function formatDevITJobsFamilyNumber(value, separator = ',') {
   return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, separator);
 }
 
+function devITJobsAnnualSalary(job, currency) {
+  const min = Number(job.annualSalaryFrom);
+  const max = Number(job.annualSalaryTo);
+  const bounds = { ...(Number.isFinite(min) && min > 0 ? { min } : {}), ...(Number.isFinite(max) && max > 0 ? { max } : {}) };
+  return Object.keys(bounds).length ? { salary: { ...bounds, ...(currency ? { currency } : {}) } } : {};
+}
+
 function formatDevITJobsFamilySalary(job, currency = {}) {
   const from = Number(job.annualSalaryFrom);
   const to = Number(job.annualSalaryTo);
@@ -1374,13 +1441,14 @@ function formatDevITJobsFamilyLocation(job) {
 }
 
 function parseDevITJobsFamilyJobs(json, company) {
-  if (!Array.isArray(json)) return [];
+  if (!Array.isArray(json)) throw new Error('devitjobs: unsupported response shape; expected a job array');
 
   const providerConfig = company._api?.devitjobs || getDevITJobsFamilyConfig(company);
   const baseUrl = providerConfig?.baseUrl || getDevITJobsFamilyBaseUrl(company);
   const currency = providerConfig?.currency || getDevITJobsFamilyCurrencyConfig(baseUrl);
 
   return json
+    .filter(job => job && typeof job === 'object')
     .map(job => {
       const slug = normalizeWhitespace(String(job.jobUrl || ''));
       const title = normalizeWhitespace(String(job.name || ''));
@@ -1412,7 +1480,9 @@ function parseDevITJobsFamilyJobs(json, company) {
         filterTags: Array.isArray(job.filterTags)
           ? [...new Set(job.filterTags.map(value => normalizeWhitespace(String(value || ''))).filter(Boolean))]
           : [],
-        salary: formatDevITJobsFamilySalary(job, currency),
+        salaryText: formatDevITJobsFamilySalary(job, currency),
+        ...devITJobsAnnualSalary(job, currency.symbol),
+        ...(typeof (job.description ?? job.jobDescription) === 'string' ? { description: job.description ?? job.jobDescription } : {}),
         publishedAt: String(job.activeFrom || ''),
         applyUrl: normalizeWhitespace(String(job.redirectJobUrl || '')),
         candidateContactWay: normalizeWhitespace(String(job.candidateContactWay || '')),
@@ -2423,7 +2493,8 @@ function parseRemoteInEuropeDetailPage(html, fallbackJob) {
 
   return {
     title,
-    url: applyUrl || fallbackJob.url,
+    url: fallbackJob.url,
+    applyUrl,
     sourceUrl: fallbackJob.url,
     company,
     location,
@@ -2549,29 +2620,17 @@ function buildFetchJsonHeaders(url) {
   return headers;
 }
 
-function configureFetchJsonOptions(url, options) {
-  if (GREENHOUSE_API_RE.test(url)) {
-    return { ...options, redirect: 'error' };
-  }
-  return options;
-}
-
 async function fetchJson(url) {
   if (GREENHOUSE_API_RE.test(url)) {
     assertGreenhouseUrl(url);
   }
 
-  return fetchJsonWithRetry(url, {
-    buildHeaders: buildFetchJsonHeaders,
-    configureOptions: configureFetchJsonOptions,
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
+  assertRequestUrl(url);
+  return fetchJsonWithRetry(currentContext(), url, { headers: buildFetchJsonHeaders(url), redirect: 'error' });
 }
 
 async function fetchText(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
+    assertRequestUrl(url);
     const headers = {};
     if (/https?:\/\/emprego\.sapo\.pt\//.test(url)) {
       headers['user-agent'] = 'Mozilla/5.0';
@@ -2611,12 +2670,7 @@ async function fetchText(url) {
       }
     }
 
-    const res = await fetch(url, { signal: controller.signal, headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
-  }
+    return fetchTextWithRetry(currentContext(), url, { headers, redirect: 'error' });
 }
 
 async function fetchPcsxJobs(url, company) {
@@ -2626,20 +2680,21 @@ async function fetchPcsxJobs(url, company) {
   let total = Infinity;
   let requests = 0;
 
-  while (jobs.length < total && requests < 500) {
+  while (start < total && requests < pageLimit(Math.max(1, Math.min(500, Number(company.api_max_pages) || 500)))) {
     pageUrl.searchParams.set('start', String(start));
 
     const json = await fetchJson(pageUrl.toString());
     const pageJobs = parsePcsx(json, company);
-    const count = Number(json.data?.count || pageJobs.length);
+    const count = Number(json.data.count ?? json.data.positions.length);
 
     total = Number.isFinite(count) && count > 0 ? count : pageJobs.length;
     requests += 1;
 
-    if (pageJobs.length === 0) break;
+    if (json.data.positions.length === 0) break;
 
     jobs.push(...pageJobs);
-    start += pageJobs.length;
+    start += json.data.positions.length;
+    if (start < total && requests < pageLimit(500)) await sleep(100, currentContext());
   }
 
   return jobs;
@@ -2654,7 +2709,7 @@ async function fetchLandingJobsJobs(url, company) {
 async function fetchEuRemoteJobsJobs(url, company) {
   const jobs = [];
   const seenUrls = new Set();
-  const maxPages = company._api?.euremotejobs?.maxPages || EUREMOTEJOBS_MAX_PAGES;
+  const maxPages = pageLimit(company._api?.euremotejobs?.maxPages || EUREMOTEJOBS_MAX_PAGES);
 
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
     const pageUrl = buildEuRemoteJobsFeedPageUrl(url, pageNumber);
@@ -2674,9 +2729,10 @@ async function fetchEuRemoteJobsJobs(url, company) {
     if (addedOnPage === 0) break;
   }
 
-  const detailConcurrency = Math.max(1, Math.min(EUREMOTEJOBS_DETAIL_CONCURRENCY, jobs.length));
-  const tasks = jobs.map(job => async () => {
-    if (job.company && job.company !== 'EU Remote Jobs' && job.location) {
+  const limit = detailLimit(company, jobs.length);
+  const detailConcurrency = Math.max(1, Math.min(EUREMOTEJOBS_DETAIL_CONCURRENCY, limit));
+  const tasks = jobs.map((job, index) => async () => {
+    if (index >= limit || (job.company && job.company !== 'EU Remote Jobs' && job.location)) {
       return job;
     }
 
@@ -2718,14 +2774,15 @@ async function fetchPcsxPositionDetails(company, job) {
 }
 
 async function enrichPcsxJobs(company, jobs) {
-  if (company.fetch_details === false || jobs.length === 0) {
+  const limit = detailLimit(company, jobs.length);
+  if (!limit) {
     return jobs;
   }
 
   const detailConcurrency = Math.max(1, Math.min(Number(company.detail_concurrency) || PCSX_DETAIL_CONCURRENCY, jobs.length));
 
-  const tasks = jobs.map(job => async () => {
-    if (!job.positionId) return job;
+  const tasks = jobs.map((job, index) => async () => {
+    if (!job.positionId || index >= limit) return job;
 
     try {
       return await fetchPcsxPositionDetails(company, job);
@@ -2745,7 +2802,7 @@ async function fetchItjobsJobs(url, company) {
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getItjobsPageCount(firstPageHtml);
-    const maxPages = Math.min(company._api?.itjobs?.maxPages || ITJOBS_MAX_PAGES, pageCount);
+    const maxPages = Math.min(pageLimit(company._api?.itjobs?.maxPages || ITJOBS_MAX_PAGES), pageCount);
     jobs.push(...parseItjobsPage(firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -2765,7 +2822,7 @@ async function fetchSapoJobs(url, company) {
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getSapoPageCount(firstPageHtml);
-    const maxPages = Math.min(company._api?.sapo?.maxPages || SAPO_MAX_PAGES, pageCount);
+    const maxPages = Math.min(pageLimit(company._api?.sapo?.maxPages || SAPO_MAX_PAGES), pageCount);
     jobs.push(...parseSapoPage(firstPageHtml, company, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -2785,7 +2842,7 @@ async function fetchPortalEmpregoJobs(url, company) {
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getPortalEmpregoPageCount(firstPageHtml);
-    const maxPages = Math.min(company._api?.portalemprego?.maxPages || PORTALEMPREGO_MAX_PAGES, pageCount);
+    const maxPages = Math.min(pageLimit(company._api?.portalemprego?.maxPages || PORTALEMPREGO_MAX_PAGES), pageCount);
     jobs.push(...parsePortalEmpregoPage(firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -2805,7 +2862,7 @@ async function fetchEnglishJobsJobs(url, company) {
   for (const listUrl of listUrls) {
     const firstPageMarkdown = await fetchText(buildEnglishJobsPageUrl(listUrl, 1));
     const pageCount = getEnglishJobsPageCount(firstPageMarkdown);
-    const maxPages = Math.min(company._api?.englishjobs?.maxPages || ENGLISHJOBS_MAX_PAGES, pageCount);
+    const maxPages = Math.min(pageLimit(company._api?.englishjobs?.maxPages || ENGLISHJOBS_MAX_PAGES), pageCount);
     jobs.push(...parseEnglishJobsPage(firstPageMarkdown, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -2834,7 +2891,7 @@ async function fetchJobsInEnglishJobs(url, company) {
 
     const firstPageHtml = await fetchText(buildJobsInEnglishPageUrl(listUrl, 1));
     const pageCount = getJobsInEnglishPageCount(firstPageHtml);
-    const maxPages = Math.min(config?.maxPages || JOBSINENGLISH_MAX_PAGES, pageCount);
+    const maxPages = Math.min(pageLimit(config?.maxPages || JOBSINENGLISH_MAX_PAGES), pageCount);
     jobs.push(...parseJobsInEnglishPage(firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -2852,20 +2909,23 @@ async function fetchDevJobsDeJobs(url, company) {
   const seenUrls = new Set();
   const jobs = [];
   const listUrls = company._api?.devjobsde?.listUrls || [url];
-  const maxPages = company._api?.devjobsde?.maxPages || DEVJOBSDE_MAX_PAGES;
+  const maxPages = pageLimit(company._api?.devjobsde?.maxPages || DEVJOBSDE_MAX_PAGES);
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ headless: true });
 
   try {
     const context = await browser.newContext({
       userAgent: DEVJOBSDE_BROWSER_USER_AGENT,
+      serviceWorkers: 'block',
     });
+    const assertTransport = await routeCustomBrowserRequests(context, currentContext());
     const page = await context.newPage();
 
     for (const listUrl of listUrls) {
       for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
         const pageUrl = buildDevJobsDePageUrl(listUrl, pageNumber);
-        const pageJobs = await fetchDevJobsDeSearchPage(page, pageUrl, seenUrls);
+        const pageJobs = await fetchDevJobsDeSearchPage(page, pageUrl, seenUrls).catch(error => { assertTransport(); throw error; });
+        assertTransport();
 
         if (pageJobs.length === 0) {
           break;
@@ -2891,7 +2951,7 @@ async function fetchJobsChJobs(url, company) {
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(buildJobsChPageUrl(listUrl, 1));
     const firstPage = parseJobsChSearchPage(firstPageHtml, listUrl, seenUrls);
-    const maxPages = Math.min(company._api?.jobsch?.maxPages || JOBSCH_MAX_PAGES, firstPage.pageCount);
+    const maxPages = Math.min(pageLimit(company._api?.jobsch?.maxPages || JOBSCH_MAX_PAGES), firstPage.pageCount);
     jobs.push(...firstPage.jobs);
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -2912,7 +2972,7 @@ async function fetchMakeItInGermanyJobs(url, company) {
 
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(buildMakeItInGermanyPageUrl(listUrl, 1));
-    const maxPages = Math.min(company._api?.makeitingermany?.maxPages || MAKEITINGERMANY_MAX_PAGES, getMakeItInGermanyPageCount(firstPageHtml));
+    const maxPages = Math.min(pageLimit(company._api?.makeitingermany?.maxPages || MAKEITINGERMANY_MAX_PAGES), getMakeItInGermanyPageCount(firstPageHtml));
     jobs.push(...parseMakeItInGermanyPage(firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -2940,7 +3000,7 @@ async function fetchDiceJobs(url, company) {
     }
 
     const pageCount = Number(firstPageData.meta?.pageCount || 1);
-    const maxPages = Math.min(company._api?.dice?.maxPages || DICE_MAX_PAGES, pageCount);
+    const maxPages = Math.min(pageLimit(company._api?.dice?.maxPages || DICE_MAX_PAGES), pageCount);
 
     for (const item of firstPageData.data || []) {
       const parsed = parseDiceJob(item, seenUrls);
@@ -2967,13 +3027,15 @@ async function fetchRemoteInEuropeJobDetails(job) {
   return parseRemoteInEuropeDetailPage(html, job);
 }
 
-async function enrichRemoteInEuropeJobs(jobs) {
-  if (jobs.length === 0) {
+async function enrichRemoteInEuropeJobs(company, jobs) {
+  const limit = detailLimit(company, jobs.length);
+  if (!limit) {
     return jobs;
   }
 
   const detailConcurrency = Math.max(1, Math.min(REMOTEINEUROPE_DETAIL_CONCURRENCY, jobs.length));
-  const tasks = jobs.map(job => async () => {
+  const tasks = jobs.map((job, index) => async () => {
+    if (index >= limit) return job;
     try {
       return await fetchRemoteInEuropeJobDetails(job);
     } catch {
@@ -2992,7 +3054,7 @@ async function fetchRemoteInEuropeJobs(url, company) {
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getRemoteInEuropePageCount(firstPageHtml);
-    const maxPages = Math.min(company._api?.remoteineurope?.maxPages || REMOTEINEUROPE_MAX_PAGES, pageCount);
+    const maxPages = Math.min(pageLimit(company._api?.remoteineurope?.maxPages || REMOTEINEUROPE_MAX_PAGES), pageCount);
     jobs.push(...parseRemoteInEuropePage(firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
@@ -3068,18 +3130,21 @@ async function fetchRustJobsJobs(url, company) {
   const seenUrls = new Set();
   const jobs = [];
   const listUrls = company._api?.rustjobs?.listUrls || [url];
-  const maxPages = company._api?.rustjobs?.maxPages || RUSTJOBS_MAX_PAGES;
+  const maxPages = pageLimit(company._api?.rustjobs?.maxPages || RUSTJOBS_MAX_PAGES);
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ headless: true });
 
   try {
     const context = await browser.newContext({
       userAgent: DEVJOBSDE_BROWSER_USER_AGENT,
+      serviceWorkers: 'block',
     });
+    const assertTransport = await routeCustomBrowserRequests(context, currentContext());
     const page = await context.newPage();
 
     for (const listUrl of listUrls) {
-      await page.goto(listUrl, { waitUntil: 'networkidle', timeout: RUSTJOBS_NAVIGATION_TIMEOUT_MS });
+      await page.goto(listUrl, { waitUntil: 'networkidle', timeout: RUSTJOBS_NAVIGATION_TIMEOUT_MS }).catch(error => { assertTransport(); throw error; });
+      assertTransport();
 
       let loadedPages = 1;
       while (loadedPages < maxPages) {
@@ -3098,6 +3163,7 @@ async function fetchRustJobsJobs(url, company) {
         loadedPages += 1;
       }
 
+      assertTransport();
       const pageJobs = await extractRustJobsCards(page);
       for (const job of pageJobs) {
         if (!job.company || seenUrls.has(job.url)) continue;
@@ -3118,37 +3184,12 @@ async function fetchRustJobsJobs(url, company) {
 }
 
 async function fetchNodeskIndexPage({ filter, page, hitsPerPage, query, referer }) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`https://${NODESK_ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/${NODESK_ALGOLIA_JOB_INDEX}/query`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'content-type': 'application/json',
-        'x-algolia-application-id': NODESK_ALGOLIA_APP_ID,
-        'x-algolia-api-key': NODESK_ALGOLIA_API_KEY,
-        'origin': 'https://nodesk.co',
-        'referer': referer,
-        'user-agent': 'Mozilla/5.0',
-      },
-      body: JSON.stringify({
-        query,
-        hitsPerPage,
-        page,
-        filters: `searchFilter:${filter}`,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    return response.json();
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchJsonWithRetry(currentContext(), `https://${NODESK_ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/${NODESK_ALGOLIA_JOB_INDEX}/query`, {
+    method: 'POST', redirect: 'error',
+    headers: { 'content-type': 'application/json', 'x-algolia-application-id': NODESK_ALGOLIA_APP_ID,
+      'x-algolia-api-key': NODESK_ALGOLIA_API_KEY, origin: 'https://nodesk.co', referer },
+    body: JSON.stringify({ query, hitsPerPage, page, filters: `searchFilter:${filter}` }),
+  });
 }
 
 async function fetchNodeskJobDetails(job) {
@@ -3156,13 +3197,15 @@ async function fetchNodeskJobDetails(job) {
   return parseNodeskDetailPage(html, job);
 }
 
-async function enrichNodeskJobs(jobs, seenUrls) {
+async function enrichNodeskJobs(company, jobs, seenUrls) {
+  const limit = detailLimit(company, jobs.length);
   if (jobs.length === 0) {
     return jobs;
   }
 
   const detailConcurrency = Math.max(1, Math.min(NODESK_DETAIL_CONCURRENCY, jobs.length));
-  const tasks = jobs.map(job => async () => {
+  const tasks = jobs.map((job, index) => async () => {
+    if (index >= limit) return job;
     try {
       return await fetchNodeskJobDetails(job);
     } catch {
@@ -3192,7 +3235,7 @@ async function fetchNodeskJobs(_url, company) {
   const seenUrls = new Set();
   const jobs = [];
   const filters = company._api?.nodesk?.filters || ['remote-jobs'];
-  const maxPages = company._api?.nodesk?.maxPages || NODESK_MAX_PAGES;
+  const maxPages = pageLimit(company._api?.nodesk?.maxPages || NODESK_MAX_PAGES);
   const hitsPerPage = company._api?.nodesk?.hitsPerPage || 90;
   const queries = company._api?.nodesk?.query || [''];
 
@@ -3219,7 +3262,7 @@ async function fetchNodeskJobs(_url, company) {
     }
   }
 
-  return enrichNodeskJobs(jobs, seenUrls);
+  return enrichNodeskJobs(company, jobs, seenUrls);
 }
 
 async function fetchJobs(company) {
@@ -3297,146 +3340,6 @@ async function fetchJobs(company) {
   return PARSERS[type](json, company);
 }
 
-// ── Title filter ────────────────────────────────────────────────────
-
-function buildTitleFilter(titleFilter) {
-  const positive = (titleFilter?.positive || []).map(k => k.toLowerCase());
-  const negative = (titleFilter?.negative || []).map(k => k.toLowerCase());
-
-  return (title) => {
-    const lower = title.toLowerCase();
-    const hasPositive = positive.length === 0 || positive.some(k => lower.includes(k));
-    const hasNegative = negative.some(k => lower.includes(k));
-    return hasPositive && !hasNegative;
-  };
-}
-
-// ── Location filter ─────────────────────────────────────────────────
-// Optional. If `location_filter` is absent from portals.yml, all locations pass.
-// Semantics:
-//   - Empty location string → pass (don't penalize missing data)
-//   - `block` matches → reject (takes precedence over allow)
-//   - `allow` empty → pass (already cleared block)
-//   - `allow` non-empty → must match at least one keyword
-// All matches are case-insensitive substring.
-
-function buildLocationFilter(locationFilter) {
-  if (!locationFilter) return () => true;
-  const allow = (locationFilter.allow || []).map(k => k.toLowerCase());
-  const block = (locationFilter.block || []).map(k => k.toLowerCase());
-
-  return (location) => {
-    if (!location) return true;
-    const lower = location.toLowerCase();
-    if (block.length > 0 && block.some(k => lower.includes(k))) return false;
-    if (allow.length === 0) return true;
-    return allow.some(k => lower.includes(k));
-  };
-}
-
-// ── Dedup ───────────────────────────────────────────────────────────
-
-function loadSeenUrls() {
-  const seen = new Set();
-
-  // scan-history.tsv
-  if (existsSync(SCAN_HISTORY_PATH)) {
-    const lines = readFileSync(SCAN_HISTORY_PATH, 'utf-8').split('\n');
-    for (const line of lines.slice(1)) { // skip header
-      const url = line.split('\t')[0];
-      if (url) seen.add(url);
-    }
-  }
-
-  // pipeline.md — extract URLs from checkbox lines
-  if (existsSync(PIPELINE_PATH)) {
-    const text = readFileSync(PIPELINE_PATH, 'utf-8');
-    for (const match of text.matchAll(/- \[[ x]\] (https?:\/\/\S+)/g)) {
-      seen.add(match[1]);
-    }
-  }
-
-  // applications.md — extract URLs from report links and any inline URLs
-  if (existsSync(APPLICATIONS_PATH)) {
-    const text = readFileSync(APPLICATIONS_PATH, 'utf-8');
-    for (const match of text.matchAll(/https?:\/\/[^\s|)]+/g)) {
-      seen.add(match[0]);
-    }
-  }
-
-  return seen;
-}
-
-function loadSeenCompanyRoles() {
-  const seen = new Set();
-  if (existsSync(APPLICATIONS_PATH)) {
-    const text = readFileSync(APPLICATIONS_PATH, 'utf-8');
-    // Parse markdown table rows: | # | Date | Company | Role | ...
-    for (const match of text.matchAll(/\|[^|]+\|[^|]+\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g)) {
-      const company = match[1].trim().toLowerCase();
-      const role = match[2].trim().toLowerCase();
-      if (company && role && company !== 'company') {
-        seen.add(`${company}::${role}`);
-      }
-    }
-  }
-  return seen;
-}
-
-// ── Pipeline writer ─────────────────────────────────────────────────
-
-function appendToPipeline(offers) {
-  if (offers.length === 0) return;
-
-  let text = existsSync(PIPELINE_PATH)
-    ? readFileSync(PIPELINE_PATH, 'utf-8')
-    : PIPELINE_TEMPLATE;
-
-  if (!text.trim()) {
-    text = PIPELINE_TEMPLATE;
-  }
-
-  // Find "## Pendientes" section and append after it
-  const marker = '## Pendientes';
-  const idx = text.indexOf(marker);
-  if (idx === -1) {
-    // No Pendientes section — append at end before Procesadas
-    const procIdx = text.indexOf('## Procesadas');
-    const insertAt = procIdx === -1 ? text.length : procIdx;
-    const block = `\n${marker}\n\n` + offers.map(o =>
-      `- [ ] ${o.url} | ${o.company} | ${o.title}`
-    ).join('\n') + '\n\n';
-    text = text.slice(0, insertAt) + block + text.slice(insertAt);
-  } else {
-    // Find the end of existing Pendientes content (next ## or end)
-    const afterMarker = idx + marker.length;
-    const nextSection = text.indexOf('\n## ', afterMarker);
-    const insertAt = nextSection === -1 ? text.length : nextSection;
-
-    const block = '\n' + offers.map(o =>
-      `- [ ] ${o.url} | ${o.company} | ${o.title}`
-    ).join('\n') + '\n';
-    text = text.slice(0, insertAt) + block + text.slice(insertAt);
-  }
-
-  writeFileSync(PIPELINE_PATH, text, 'utf-8');
-}
-
-function appendToScanHistory(offers, date) {
-  // Ensure file + header exist. Location appended as 7th column for non-breaking
-  // backward compat — older scan-history.tsv files with 6 columns still parse fine
-  // since loadSeenUrls only reads column 0.
-  if (!existsSync(SCAN_HISTORY_PATH)) {
-    writeFileSync(SCAN_HISTORY_PATH, 'url\tfirst_seen\tportal\ttitle\tcompany\tstatus\tlocation\n', 'utf-8');
-  }
-
-  const lines = offers.map(o =>
-    `${o.url}\t${date}\t${o.source}\t${o.title}\t${o.company}\tadded\t${o.location || ''}`
-  ).join('\n') + '\n';
-
-  appendFileSync(SCAN_HISTORY_PATH, lines, 'utf-8');
-}
-
 const PROVIDER_TYPE_ALIASES = {
   englishjobsearch: 'englishjobs',
   swissdevjobs: 'devitjobs',
@@ -3448,28 +3351,33 @@ function providerType(id) {
 }
 
 export function detectCustomProvider(id, entry) {
+  if (id === 'pcsx' && entry.provider !== id && entry.api_provider !== id) return null;
   const resolved = detectApi(entry);
   return resolved?.type === providerType(id) ? { url: resolved.url } : null;
 }
 
-export async function fetchCustomProvider(id, entry) {
-  const resolved = detectApi({ ...entry, api_provider: id });
-  if (!resolved || resolved.type !== providerType(id)) {
-    throw new Error(`${id}: cannot derive provider URL for ${entry.name}`);
-  }
+export async function fetchCustomProvider(id, entry, ctx = makeHttpCtx()) {
+  return providerContext.run(ctx, async () => {
+    const resolved = detectApi({ ...entry, api_provider: id });
+    if (!resolved || resolved.type !== providerType(id)) {
+      throw new Error(`${id}: cannot derive provider URL for ${entry.name}`);
+    }
 
-  const company = { ...entry, _api: resolved };
-  const jobs = await fetchJobs(company);
+    assertSourceUrl(resolved.type, resolved.url);
+    const company = { ...entry, _api: resolved };
+    let jobs = await fetchJobs(company);
 
-  if (resolved.type === 'pcsx') {
-    return enrichPcsxJobs(company, jobs);
-  }
+    if (resolved.type === 'pcsx') {
+      jobs = await enrichPcsxJobs(company, jobs);
+    }
 
-  if (resolved.type === 'remoteineurope') {
-    return enrichRemoteInEuropeJobs(jobs);
-  }
+    if (resolved.type === 'remoteineurope') {
+      jobs = await enrichRemoteInEuropeJobs(company, jobs);
+    }
 
-  return jobs;
+    if (!Array.isArray(jobs)) throw new Error(`${id}: provider must return an array`);
+    return jobs.map(normalizeCustomJob).filter(Boolean);
+  });
 }
 
 // ── Parallel fetch with concurrency limit ───────────────────────────
@@ -3480,8 +3388,8 @@ async function parallelFetch(tasks, limit) {
 
   async function next() {
     while (i < tasks.length) {
-      const task = tasks[i++];
-      results.push(await task());
+      const index = i++;
+      results[index] = await tasks[index]();
     }
   }
 

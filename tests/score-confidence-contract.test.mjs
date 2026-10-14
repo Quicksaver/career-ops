@@ -1,3 +1,4 @@
+import { batchCanonicalContext } from './batch-canonical-context.mjs';
 // Evidence confidence is an evaluation contract shared by interactive and
 // headless modes. This suite catches missing fields or silent parser drops.
 import { readFileSync } from 'fs';
@@ -21,15 +22,14 @@ check(
 
 check(
   oferta.includes('After Risk Summary, include `## Score Evidence`')
-    && batch.includes('After Risk Summary in the saved report, include `## Score Evidence`')
-    && batch.includes('- `## Score Evidence`'),
+    && batchCanonicalContext().oferta.includes('After Risk Summary, include `## Score Evidence`'),
   'interactive and batch reports place Score Evidence after Risk Summary',
 );
 
 for (const field of ['score_evidence', 'confidence_gaps']) {
   check(
-    (batch.match(new RegExp(`^${field}:`, 'gm')) ?? []).length === 2,
-    `${field} appears in both batch Machine Summary examples`,
+    (batch.match(new RegExp(`^${field}:`, 'gm')) ?? []).length === 1,
+    `${field} appears in the sole batch Machine Summary schema`,
   );
 }
 
@@ -62,10 +62,10 @@ check(
 check(
   shared.includes('at least two dimensions are `unknown`')
     && shared.includes('all five dimensions are `supported`')
-    && batch.includes('at least two dimensions are `unknown`')
-    && batch.includes('all five are `supported`')
+    && batchCanonicalContext().shared.includes('at least two dimensions are `unknown`')
+    && batchCanonicalContext().shared.includes('all five dimensions are `supported`')
     && shared.includes('too incomplete to assess')
-    && batch.includes('too incomplete to assess'),
+    && batchCanonicalContext().shared.includes('too incomplete to assess'),
   'interactive and batch rubrics keep the low-confidence cap and strict high-confidence rule',
 );
 

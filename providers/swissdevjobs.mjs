@@ -8,7 +8,7 @@ export default {
   detect(entry) {
     return detectCustomProvider('swissdevjobs', entry);
   },
-  fetch(entry) {
-    return fetchCustomProvider('swissdevjobs', entry);
+  fetch(entry, ctx) {
+    return fetchCustomProvider('swissdevjobs', entry, ctx);
   },
 };

@@ -1,3 +1,4 @@
+import { batchCanonicalContext } from './batch-canonical-context.mjs';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
@@ -71,14 +72,14 @@ check(
 
 check(
   'batch prompt carries Signal 16 and keeps it informational',
-  /16\. \*\*Fixed-Term Contract Disclosure\*\*/.test(batch)
-    && /Signals 10-16 never change the tier/.test(batch),
+  batchCanonicalContext().oferta.includes('**16. Fixed-Term Contract Disclosure**')
+    && /never changes the 1–5 Global Score/i.test(signal),
   'batch parity or non-scoring wording is missing',
 );
 check(
   'risk and machine summaries expose the fixed-term result',
   oferta.includes('| Fixed-term contract | Fixed-term disclosure signal in Block G (Signal 16) |')
-    && batch.match(/\| Fixed-term contract \|/g)?.length === 2
-    && batch.match(/fixed_term: "\{detected \| not_detected \| not_evaluated\}"/g)?.length === 2,
+    && batchCanonicalContext().oferta.includes('| Fixed-term contract |')
+    && batch.match(/fixed_term: "\{detected \| not_detected \| not_evaluated\}"/g)?.length === 1,
   'human or machine summary field is missing',
 );
