@@ -1,19 +1,22 @@
 # 공통 컨텍스트 -- career-ops (한국어)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      사용 전 개인 설정 안내
      ============================================================
      이 파일은 한국어 career-ops 모드 전체에서 공유하는 컨텍스트입니다.
      career-ops를 사용하기 전에 반드시 다음을 준비하세요.
-     1. users/{USER}/config/profile.yml에 개인 정보를 입력
-     2. 프로젝트 루트에 users/{USER}/cv.md 생성 (Markdown CV)
-     3. (선택) users/{USER}/article-digest.md에 proof point 정리
+     1. {DATA_ROOT}/config/profile.yml에 개인 정보를 입력
+     2. 사용자 데이터 루트에 {DATA_ROOT}/cv.md 생성 (Markdown CV)
+     3. (선택) {DATA_ROOT}/article-digest.md에 proof point 정리
      4. 아래 [개인화] 표시가 있는 섹션을 자신의 상황에 맞게 조정
      ============================================================ -->
 
 ## Source of Truth (매 평가 전 항상 읽기)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -30,13 +33,13 @@
 
 | 파일 | 경로 | 언제 |
 |------|------|------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (프로젝트 루트) | 항상 |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (있다면) | 항상 (상세 proof point) |
-| profile.yml | `users/{USER}/config/profile.yml` | 항상 (신원 정보와 목표 역할) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (사용자 데이터 루트) | 항상 |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (있다면) | 항상 (상세 proof point) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | 항상 (신원 정보와 목표 역할) |
 
-**규칙: proof point의 metric을 절대 하드코딩하지 않습니다.** 평가 시점에 `users/{USER}/cv.md`와 `users/{USER}/article-digest.md`에서 읽습니다.
-**규칙: article/project metric은 `users/{USER}/article-digest.md`가 `users/{USER}/cv.md`보다 우선합니다** (`users/{USER}/cv.md`에는 더 오래된 수치가 있을 수 있음).
-**규칙: `users/{USER}/cv.md` 또는 `users/{USER}/article-digest.md`에 후보자의 것으로 명시되어 있지 않는 한, 후보자가 어떤 프로젝트, 리포지터리, 라이브러리, 도구, 프레임워크, 오픈소스 산출물의 제작자/저자라고 절대 주장하지 않습니다.** 도구를 "사용하는 것"과 그것을 "만든 것"을 혼동하는 것(X를 사용한 것은 X를 만든 것이 아님)은 가장 흔한 조작 패턴이며 금지됩니다.
+**규칙: proof point의 metric을 절대 하드코딩하지 않습니다.** 평가 시점에 `{DATA_ROOT}/cv.md`와 `{DATA_ROOT}/article-digest.md`에서 읽습니다.
+**규칙: article/project metric은 `{DATA_ROOT}/article-digest.md`가 `{DATA_ROOT}/cv.md`보다 우선합니다** (`{DATA_ROOT}/cv.md`에는 더 오래된 수치가 있을 수 있음).
+**규칙: `{DATA_ROOT}/cv.md` 또는 `{DATA_ROOT}/article-digest.md`에 후보자의 것으로 명시되어 있지 않는 한, 후보자가 어떤 프로젝트, 리포지터리, 라이브러리, 도구, 프레임워크, 오픈소스 산출물의 제작자/저자라고 절대 주장하지 않습니다.** 도구를 "사용하는 것"과 그것을 "만든 것"을 혼동하는 것(X를 사용한 것은 X를 만든 것이 아님)은 가장 흔한 조작 패턴이며 금지됩니다.
 **규칙: 키워드는 다시 표현할 뿐, 절대 지어내지 않습니다.** 순서를 바꾸고, 다시 구성하고, 강조하되 절대 창작하지 않습니다. 어떤 주장이 범위 내 파일로 뒷받침되지 않으면 후보자에게 물어보고, 답이 없으면 생략합니다. 어떤 주제에 대해 침묵하는 것이 지어낸 세부 정보보다 낫습니다.
 
 ---
@@ -63,16 +66,16 @@
 
 ### Archetype별 adaptive framing
 
-> **구체적인 수치는 평가 시점에 `users/{USER}/cv.md`와 `users/{USER}/article-digest.md`에서 읽습니다. 이 파일에 고정값으로 적어두지 마세요.**
+> **구체적인 수치는 평가 시점에 `{DATA_ROOT}/cv.md`와 `{DATA_ROOT}/article-digest.md`에서 읽습니다. 이 파일에 고정값으로 적어두지 마세요.**
 
 | 역할이... | 후보자에게서 강조할 것 | Proof point source |
 |-----------|------------------------|--------------------|
-| Platform / LLMOps | production 경험, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | multi-agent orchestration, HITL, reliability, cost | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | product discovery, PRD, metric, stakeholder management | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | system design, integration, enterprise readiness | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | 빠른 delivery, 고객 접점, prototype to production | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | change management, team enablement, adoption | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | production 경험, observability, evals, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | multi-agent orchestration, HITL, reliability, cost | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | product discovery, PRD, metric, stakeholder management | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | system design, integration, enterprise readiness | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | 빠른 delivery, 고객 접점, prototype to production | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | change management, team enablement, adoption | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 <!-- [개인화] 자신의 구체적인 project/article을 위 archetype에 연결하세요. -->
 
@@ -82,11 +85,11 @@
      - "5년간 SaaS를 만들고 매각. 이제 enterprise applied AI에 100% 집중."
      - "Series-B에서 x10 성장기를 겪은 engineering lead. 다음 도전을 찾는 중."
      - "컨설팅에서 product로 전환. 높은 책임 범위의 역할을 찾는 중."
-     users/{USER}/config/profile.yml -> narrative.exit_story에서 읽음 -->
+     {DATA_ROOT}/config/profile.yml -> narrative.exit_story에서 읽음 -->
 
-모든 콘텐츠에서 `users/{USER}/config/profile.yml`의 전환 narrative를 사용해 framing합니다.
+모든 콘텐츠에서 `{DATA_ROOT}/config/profile.yml`의 전환 narrative를 사용해 framing합니다.
 - **PDF summary:** 과거와 미래를 연결합니다 -- "이제 같은 [역량]을 [공고의 domain]에 적용합니다."
-- **STAR story:** `users/{USER}/article-digest.md`의 proof point를 참조합니다.
+- **STAR story:** `{DATA_ROOT}/article-digest.md`의 proof point를 참조합니다.
 - **답변 초안(블록 G):** 전환 narrative는 첫 답변에 넣습니다.
 - **공고가 "entrepreneurial", "autonomy", "builder", "end-to-end"를 언급할 때:** 이것이 핵심 차별점입니다. match weight를 높입니다.
 
@@ -108,7 +111,7 @@
        url: "https://yourdomain.dev/demo"
        password: "demo-2026"
        when_to_share: "LLMOps, AI Platform, Observability roles"
-     users/{USER}/config/profile.yml -> narrative.proof_points 및 narrative.dashboard에서 읽음 -->
+     {DATA_ROOT}/config/profile.yml -> narrative.proof_points 및 narrative.dashboard에서 읽음 -->
 
 후보자에게 live demo / dashboard가 있다면(`profile.yml` 확인), 관련성 높은 지원에서 접근 정보를 제안합니다.
 
@@ -162,7 +165,7 @@
 
 ### Location Policy
 
-<!-- [개인화] 자신의 상황에 맞게 조정하세요. users/{USER}/config/profile.yml -> location에서 읽음 -->
+<!-- [개인화] 자신의 상황에 맞게 조정하세요. {DATA_ROOT}/config/profile.yml -> location에서 읽음 -->
 
 **지원서 폼에서:**
 - "출근 가능 여부" 같은 binary 질문: `profile.yml`의 실제 availability에 따라 답합니다.
@@ -184,7 +187,7 @@
 ### 절대 하지 말 것
 
 1. 경험이나 metric을 지어내기
-2. `users/{USER}/cv.md` 또는 portfolio 파일을 임의로 수정하기
+2. `{DATA_ROOT}/cv.md` 또는 portfolio 파일을 임의로 수정하기
 3. 후보자 대신 지원서를 제출하기
 4. 생성 메시지에 전화번호 공유하기
 5. 시장가보다 낮은 보상을 추천하기
@@ -195,7 +198,7 @@
 ### 항상 할 것
 
 0. **커버레터:** 폼이 허용하면 항상 포함합니다. CV와 같은 visual design의 PDF. 공고 문구를 proof point와 매핑. 최대 1페이지.
-1. 공고 평가 전 `users/{USER}/cv.md`와 `users/{USER}/article-digest.md`(있다면)를 읽습니다.
+1. 공고 평가 전 `{DATA_ROOT}/cv.md`와 `{DATA_ROOT}/article-digest.md`(있다면)를 읽습니다.
 1b. **세션 첫 평가:** Bash로 `node cv-sync-check.mjs`를 실행합니다. 경고가 있으면 후보자에게 알립니다.
 2. 역할 archetype을 감지하고 framing을 조정합니다.
 3. matching 시 CV의 정확한 문장을 인용합니다.
@@ -215,7 +218,7 @@
 | WebSearch | 보상, 시장 trend, 회사 culture, LinkedIn contact, 공고 fallback 조사 |
 | WebFetch | 정적 페이지의 공고 추출 fallback |
 | Playwright | 공고 활성 여부 확인(browser_navigate + browser_snapshot), SPA에서 공고 추출. **중요: Playwright를 쓰는 agent를 2개 이상 병렬로 띄우지 않습니다 -- 같은 browser instance를 공유합니다** |
-| Read | users/{USER}/cv.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | PDF용 임시 HTML, reports .md, `batch/tracker-additions/`의 tracker 추가용 TSV (`applications.md`는 직접 쓰지 않음) |
 | Edit | report 등 생성된 콘텐츠 수정. tracker 표는 직접 편집하지 않음: 새 행은 TSV로 추가해 `node merge-tracker.mjs`로 병합하고, status와 notes 변경은 `node set-status.mjs`로 처리 |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |

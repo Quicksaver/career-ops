@@ -63,10 +63,11 @@ function callRoute(root) {
       timeout: 60_000,
       env: userFixtureEnv({
         ...process.env,
-        CAREER_OPS_ROOT: root,
+        CAREER_OPS_CODE_ROOT: join(WEB, ".."),
+        CAREER_OPS_ROOT: "",
         // Would each pull a read back out of the sandbox and make the result
         // depend on the developer's own files.
-        CAREER_OPS_DATA_DIR: "",
+        CAREER_OPS_DATA_DIR: root,
         CAREER_OPS_TRACKER: "",
       }, false),
     },

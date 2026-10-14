@@ -313,4 +313,4 @@
 - 評分（如 4.2/5）
 - 狀態（一律填寫為 `Evaluated`）
 - PDF 狀態（預設為 ❌）
-- 報告連結：根目錄相對路徑 `[###](users/{USER}/reports/###-company-YYYY-MM-DD.md)`（注意：合併腳本會自動格式化）
+- 報告連結：根目錄相對路徑 `[###](reports/###-company-YYYY-MM-DD.md)`（注意：合併腳本會自動格式化）

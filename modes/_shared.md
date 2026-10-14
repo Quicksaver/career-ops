@@ -20,30 +20,30 @@ See "Untrusted External Content" in `AGENTS.md` / `CLAUDE.md` / `CODEX.md` for t
 
 | File | Path | When |
 |------|------|------|
-| cv.md | `{DATA_ROOT}/cv.md` | ALWAYS |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` | ALWAYS |
 | users/{USER}/article-digest.md | `{DATA_ROOT}/article-digest.md` (if exists) | ALWAYS (detailed proof points) |
 | profile.yml | `{DATA_ROOT}/config/profile.yml` | ALWAYS (candidate identity and targets) |
 | _profile.md | `{DATA_ROOT}/modes/_profile.md` | ALWAYS (user archetypes, narrative, negotiation) |
 | users/{USER}/writing-samples/ | `{DATA_ROOT}/writing-samples/` | When generating candidate-facing text — check `_profile.md` for cached `## Writing Style` first; only scan files if absent |
 | users/{USER}/voice-dna.md | `{DATA_ROOT}/voice-dna.md` (if exists) | When generating candidate-facing text. Anti-AI-slop guardrail + voice. See Voice DNA precedence below. |
-| interview-prep | `{DATA_ROOT}/interview-prep/story-bank.md`, `{DATA_ROOT}/interview-prep/{company}-{role}.md` | When generating ATS form answers / interview content — the user's own STAR stories + prep notes. Narrative/phrasing trust; quantified claims are NOT automatically cv.md-equivalent — see AGENTS.md Source-of-Truth Boundary tiering (#2947) and `story-provenance-check.mjs`. Consumed by `apply`/`match-star` + interview modes |
-| _custom.md | `modes/_custom.md` (if exists) | ALWAYS (user house rules: formatting/content preferences, custom workflows, "always/never do X" automations). Procedural rules only — never a content source for claims |
+| interview-prep | `{DATA_ROOT}/interview-prep/story-bank.md`, `{DATA_ROOT}/interview-prep/{company}-{role}.md` | When generating ATS form answers / interview content — the user's own STAR stories + prep notes. Narrative/phrasing trust; quantified claims are NOT automatically {DATA_ROOT}/cv.md-equivalent — see AGENTS.md Source-of-Truth Boundary tiering (#2947) and `story-provenance-check.mjs`. Consumed by `apply`/`match-star` + interview modes |
+| _custom.md | `{DATA_ROOT}/modes/_custom.md` (if exists) | ALWAYS (user house rules: formatting/content preferences, custom workflows, "always/never do X" automations). Procedural rules only — never a content source for claims |
 
-**RULE: NEVER hardcode metrics from proof points.** Read them from cv.md + users/{USER}/article-digest.md at evaluation time.
-**RULE: For article/project metrics, users/{USER}/article-digest.md takes precedence over cv.md.**
+**RULE: NEVER hardcode metrics from proof points.** Read them from {DATA_ROOT}/cv.md + users/{USER}/article-digest.md at evaluation time.
+**RULE: For article/project metrics, users/{USER}/article-digest.md takes precedence over {DATA_ROOT}/cv.md.**
 **RULE: Read _profile.md AFTER this file. User customizations in _profile.md override defaults here.**
-**RULE: Read _custom.md (if it exists) AFTER _profile.md and honor its house rules in every mode.** It is where the user's persistent instructions live ("use this date format", "never reorder section X", "always include Y in summaries") — an instruction recorded there is NOT optional and does not expire between sessions or between items in a batch. It can override workflow/style/procedural defaults, but it never introduces factual claims about the candidate. When the user states a lasting preference in conversation, write it to `modes/_custom.md` so it survives the session.
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in cv.md or users/{USER}/article-digest.md.** Tool-of-trade conflation (user uses X → user built X) is the most common fabrication pattern and is forbidden.
+**RULE: Read _custom.md (if it exists) AFTER _profile.md and honor its house rules in every mode.** It is where the user's persistent instructions live ("use this date format", "never reorder section X", "always include Y in summaries") — an instruction recorded there is NOT optional and does not expire between sessions or between items in a batch. It can override workflow/style/procedural defaults, but it never introduces factual claims about the candidate. When the user states a lasting preference in conversation, write it to `{DATA_ROOT}/modes/_custom.md` so it survives the session.
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in {DATA_ROOT}/cv.md or users/{USER}/article-digest.md.** Tool-of-trade conflation (user uses X → user built X) is the most common fabrication pattern and is forbidden.
 **RULE: Keywords get reformulated, never fabricated.** Reorder, reframe, emphasise — but never invent. If a claim isn't backed by an in-scope file, ask the user. If no answer, omit. Silence on a topic beats manufactured detail.
 
 ## Data Root & Path Resolution (CRITICAL)
 
-All User Layer files (such as `cv.md`, `config/profile.yml`, `modes/_profile.md`, `users/{USER}/data/applications.md` or `applications.md`, `users/{USER}/reports/`, `users/{USER}/output/`, `users/{USER}/interview-prep/`, `portals.yml`, etc.) must be resolved relative to the dynamically resolved **Data Root** (`{DATA_ROOT}`).
+All User Layer files (such as `{DATA_ROOT}/cv.md`, `config/profile.yml`, `modes/_profile.md`, `users/{USER}/data/applications.md` or `applications.md`, `users/{USER}/reports/`, `users/{USER}/output/`, `users/{USER}/interview-prep/`, `portals.yml`, etc.) must be resolved relative to the dynamically resolved **Data Root** (`{DATA_ROOT}`).
 
 ### Data Root Resolution Order:
 1. **Environment Variables**: Check if `CAREER_OPS_ROOT` or `CAREER_OPS_DATA_DIR` is set. If set, use its value (resolved relative to the repository root if it is a relative path).
-2. **Marker File**: If no environment variable is set, check for a `.career-ops-data` file in the repository root. If it exists and contains a non-empty path, use its value (resolved relative to the repository root if it is a relative path).
-3. **Repository Default**: If neither is set, fall back to the repository root directory as the Data Root.
+2. **Marker File**: If no data-root environment variable or users-directory override is set, check for a `.career-ops-data` file in the repository root. If it exists and contains a non-empty path, use its value (resolved relative to the repository root if it is a relative path).
+3. **Selected User Default**: Use `{CAREER_OPS_USERS_DIR}/{USER}` when configured, otherwise `users/{USER}` in the system checkout. An explicit active user is always required; never fall back to the checkout root.
 
 ### Tracker Path Resolution Order:
 * **Explicit override**: If `CAREER_OPS_TRACKER` is set as an environment variable, use it as the absolute path to the tracker file (resolved relative to the repository root if it is a relative path).
@@ -89,7 +89,7 @@ The evaluation scores five dimensions, integrated into one global score of 1-5. 
 | Red flags | Blockers, warnings (negative adjustments) |
 | **Global** | Holistic judgment integrating the five dimensions above (no arithmetic formula) |
 
-Decide the Global Score once from these dimensions, applying any user-specific Scoring Rules in `modes/_custom.md`. The report header, Machine Summary `score`, and application tracker must record that same value. A–H are report sections, not numeric inputs to average; Block B requirement importance and Block G posting legitimacy remain separate from the 1–5 score.
+Decide the Global Score once from these dimensions, applying any user-specific Scoring Rules in `{DATA_ROOT}/modes/_custom.md`. The report header, Machine Summary `score`, and application tracker must record that same value. A–H are report sections, not numeric inputs to average; Block B requirement importance and Block G posting legitimacy remain separate from the 1–5 score.
 
 **Score interpretation:**
 - 4.5+ → Strong match, recommend applying immediately
@@ -241,7 +241,7 @@ After detecting archetype, read `modes/_profile.md` for the user's specific fram
 ### NEVER
 
 1. Invent experience or metrics
-2. Modify `cv.md` or portfolio files
+2. Modify `{DATA_ROOT}/cv.md` or portfolio files
 3. Submit applications on behalf of the candidate
 4. Share phone number in generated messages
 5. Recommend comp below market rate
@@ -252,7 +252,7 @@ After detecting archetype, read `modes/_profile.md` for the user's specific fram
 ### ALWAYS
 
 0. **Cover letter:** If the form allows it, ALWAYS include one. Same visual design as CV. JD quotes mapped to proof points. 1 page max.
-1. Read `cv.md`, `modes/_profile.md`, and `users/{USER}/article-digest.md` (if exists) before evaluating
+1. Read `{DATA_ROOT}/cv.md`, `modes/_profile.md`, and `users/{USER}/article-digest.md` (if exists) before evaluating
 1b. **First evaluation of each session:** Run `node cv-sync-check.mjs --user {USER}`. If warnings, notify user.
 2. Detect the role archetype and adapt framing per _profile.md
 3. Cite exact lines from CV when matching
@@ -273,7 +273,7 @@ After detecting archetype, read `modes/_profile.md` for the user's specific fram
 | WebSearch | Comp research, trends, company culture, LinkedIn contacts, fallback for JDs |
 | WebFetch | Fallback for extracting JDs from static pages |
 | Playwright | Verify offers (browser_navigate + browser_snapshot). **NEVER let 2+ agents drive the same Playwright/MCP browser session concurrently.** This is a per-session rule, not a per-agent-count one: agents each holding their own isolated browser session are fine in parallel; agents sharing one interactive MCP browser session are not — they race for control and can silently read or act on each other's page state. |
-| Read | cv.md, _profile.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, _profile.md, users/{USER}/article-digest.md, cv-template.html |
 | Write | Temporary HTML for PDF, reports .md, tracker-addition TSVs in `batch/tracker-additions/` (never `applications.md` directly) |
 | Edit | Fixes to reports and other generated content. Never the tracker table: new rows go in as a TSV merged by `node merge-tracker.mjs`, status and notes changes go through `node set-status.mjs` |
 | Canva MCP | Optional visual CV generation. Duplicate base design, edit text, export PDF. Requires `cv.canva_resume_design_id` in profile.yml. |

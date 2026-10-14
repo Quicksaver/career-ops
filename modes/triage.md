@@ -12,7 +12,7 @@ thousands of tokens; triage reads one compact file instead.
 
 ## Context
 
-Read ONLY `modes/_brief.md`. Do NOT read:
+Read ONLY `{DATA_ROOT}/modes/_brief.md`. Do NOT read:
 - users/{USER}/cv.md
 - users/{USER}/config/profile.yml
 - modes/_shared.md
@@ -22,7 +22,7 @@ Read ONLY `modes/_brief.md`. Do NOT read:
 This is the entire point of triage mode. Full context is expensive and not needed
 to score a role for go/no-go. Read `_brief.md` once, then evaluate.
 
-`modes/_brief.md` is a user-layer file created from `modes/_brief.template.md`
+`{DATA_ROOT}/modes/_brief.md` is a user-layer file created from `modes/_brief.template.md`
 (copied during onboarding with `node doctor.mjs --json --init-templates`). If it does not exist or has not been
 filled in, triage cannot run — fall back to full evaluation.
 
@@ -36,7 +36,7 @@ isn't wrongly skipped just because WebFetch can't read it:
 - **PDF URL** (path ends in `.pdf`, or the page serves a PDF): read it directly with
   the **Read** tool. Do NOT WebFetch — WebFetch can't extract PDF text, which would
   wrongly mark a live PDF posting `SKIP`.
-- **`local:` prefix** (e.g. `local:users/{USER}/jds/role.md`): read the local file with the Read tool.
+- **`local:` prefix** (e.g. `local:jds/role.md`): read the contained capture at `{USER_ROOT}/jds/role.md` with the Read tool.
 - **Otherwise:** WebFetch the URL first — it's cheap. If WebFetch returns no real JD
   content (error, redirect to a generic careers page, or only nav/footer) **and** a
   Playwright/browser tool is available in this session, retry once with it (navigate +
@@ -98,7 +98,7 @@ MARGINAL band below depends on.
 (`triage_threshold` is `users/{USER}/config/profile.yml → pipeline.triage_threshold`, default `3.5`.)
 
 **Priority override:** If the company is on the Priority Override List in
-`modes/_brief.md`, return PASS regardless of score. Check the company name before
+`{DATA_ROOT}/modes/_brief.md`, return PASS regardless of score. Check the company name before
 returning a verdict.
 
 ### 5. Return

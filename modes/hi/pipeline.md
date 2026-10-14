@@ -43,7 +43,7 @@
 **Special cases:**
 - **LinkedIn**: Login require हो सकता है → `[!]` mark करें और candidate से text paste करने को कहें
 - **PDF**: यदि URL PDF की तरफ point करे, Read tool से directly पढ़ें
-- **`local:` prefix**: Local file पढ़ें। Example: `local:users/{USER}/jds/naukri-pm-ai.md` → `users/{USER}/jds/naukri-pm-ai.md` पढ़ें
+- **`local:` prefix**: Local file पढ़ें। Example: `local:jds/naukri-pm-ai.md` → `users/{USER}/jds/naukri-pm-ai.md` पढ़ें
 - **Naukri.com / Instahyre / Cutshort**: Common Indian job portals। Playwright usually cookie banners handle करता है
 - **LinkedIn India / Wellfound India**: Well-structured pages। WebFetch often sufficient
 

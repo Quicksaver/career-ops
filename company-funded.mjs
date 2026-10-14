@@ -1010,6 +1010,7 @@ async function selfTest() {
 
 async function main() {
   const rawArgs = process.argv.slice(2);
+  if (rawArgs.includes('--help') || rawArgs.includes('-h')) { usage(); return; }
   if (rawArgs.includes('--self-test')) {
     await selfTest();
     return;

@@ -146,7 +146,7 @@ function buildSkills(categories) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
 
   if (args.length === 0 || args.includes('--help')) {
     console.error('Usage:');
@@ -160,6 +160,8 @@ async function main() {
     return;
   }
 
+  getCareerOpsRoot(); // resolves and removes global user arguments before positional parsing
+  args = process.argv.slice(2);
   const [inputPath, outputPath] = args;
 
   if (!inputPath || !outputPath) {

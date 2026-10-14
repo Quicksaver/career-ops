@@ -18,6 +18,57 @@ func writeApplicationsFile(t *testing.T, userRoot string) {
 	}
 }
 
+func TestSelectedDataRootOverridesAndCheckoutIsolation(t *testing.T) {
+	for _, name := range []string{"CAREER_OPS_ROOT", "CAREER_OPS_DATA_DIR", "CAREER_OPS_USERS_DIR"} {
+		t.Setenv(name, "")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "path-resolver.mjs"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeApplicationsFile(t, root) // a leftover legacy tracker must not select the checkout
+	got, user, err := resolveCareerOpsPath(root, "", "alice")
+	if err != nil || got != filepath.Join(root, "users", "alice") || user != "alice" {
+		t.Fatalf("checkout selection: %s %s %v", got, user, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".career-ops-data"), []byte("Career Data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, user, err = resolveCareerOpsPath(root, "", "alice")
+	if err != nil || got != filepath.Join(root, "Career Data") || user != "alice" {
+		t.Fatalf("marker selection: %s %s %v", got, user, err)
+	}
+	t.Setenv("CAREER_OPS_DATA_DIR", "alternate")
+	got, _, err = resolveCareerOpsPath(root, "", "alice")
+	if err != nil || got != filepath.Join(root, "alternate") {
+		t.Fatalf("DATA_DIR: %s %v", got, err)
+	}
+	t.Setenv("CAREER_OPS_ROOT", "preferred")
+	got, _, err = resolveCareerOpsPath(root, "", "alice")
+	if err != nil || got != filepath.Join(root, "preferred") {
+		t.Fatalf("ROOT: %s %v", got, err)
+	}
+}
+
+func TestBinaryUserWinsOverWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	alice, bob := filepath.Join(root, "alice"), filepath.Join(root, "bob")
+	writeApplicationsFile(t, alice)
+	writeApplicationsFile(t, bob)
+	t.Chdir(bob)
+	executable := func() (string, error) { return filepath.Join(alice, "career-dashboard"), nil }
+	if got := inferUserPathWithExecutable("", "", executable); got != alice {
+		t.Fatalf("owner = %s, want %s", got, alice)
+	}
+	invalid := filepath.Join(root, "Invalid User")
+	writeApplicationsFile(t, invalid)
+	t.Chdir(invalid)
+	executable = func() (string, error) { return filepath.Join(invalid, "career-dashboard"), nil }
+	if got := inferUserPathWithExecutable("", "", executable); got != "" {
+		t.Fatalf("invalid inferred ID accepted: %s", got)
+	}
+}
+
 func TestResolveCareerOpsPathAcceptsUserFolderPath(t *testing.T) {
 	t.Setenv("CAREER_OPS_USERS_DIR", "")
 	tempDir := t.TempDir()

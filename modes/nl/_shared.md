@@ -1,19 +1,22 @@
 # Gedeelde context -- career-ops (Nederlands)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
 AANPASSING VAN DIT BESTAND
      ============================================================
 Dit bestand bevat de deelcontext voor alle modi
 career-ops in de Nederlandse versie. Voordat je career-ops gebruikt, MOET je:
-1. Vul users/{USER}/config/profile.yml in met uw persoonlijke gegevens
-2. Maak users/{USER}/cv.md aan in de root van het project (CV in Markdown)
-3. (Optioneel) Maak users/{USER}/article-digest.md aan met je proof points
-4. Vul users/{USER}/modes/_profile.md in en pas de secties met [AANPASSEN] hieronder aan
+1. Vul {DATA_ROOT}/config/profile.yml in met uw persoonlijke gegevens
+2. Maak {DATA_ROOT}/cv.md aan in de root van de gebruikersgegevens (CV in Markdown)
+3. (Optioneel) Maak {DATA_ROOT}/article-digest.md aan met je proof points
+4. Vul {DATA_ROOT}/modes/_profile.md in en pas de secties met [AANPASSEN] hieronder aan
      ============================================================ -->
 
 ## Bronnen van waarheid (UITSLUITEND)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -31,19 +34,19 @@ Alleen de onderstaande bestanden mogen worden gebruikt voor kandidaatgerichte in
 
 | Bestand | Pad | Wanneer |
 |--------|--------|-------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (projectroot) | ALTIJD |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (indien aanwezig) | ALTIJD (gedetailleerde proof points) |
-| profile.yml | `users/{USER}/config/profile.yml` | ALTIJD (identiteit en doelrollen) |
-| _profile.md | `users/{USER}/modes/_profile.md` | ALTIJD (archetypen, verhaal en onderhandeling) |
-| users/{USER}/writing-samples/ en users/{USER}/voice-dna.md | `users/{USER}/writing-samples/`, `users/{USER}/voice-dna.md` (indien aanwezig) | Bij kandidaatgerichte tekst; gebruik eerst de gecachte sectie `## Writing Style` in `_profile.md` en gebruik users/{USER}/voice-dna.md om AI-achtige formuleringen af te vangen en de stem te bewaken |
-| interview-prep | `users/{USER}/interview-prep/story-bank.md`, `users/{USER}/interview-prep/{company}-{role}.md` | Voor formulierantwoorden en sollicitatiegesprekken; bevat eigen STAR-verhalen en notities van de gebruiker |
-| _custom.md | `users/{USER}/modes/_custom.md` (indien aanwezig) | ALTIJD (vaste opmaak-, inhouds- en workflowregels; geen bron voor feitelijke claims) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (gebruikersgegevensroot) | ALTIJD |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (indien aanwezig) | ALTIJD (gedetailleerde proof points) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | ALTIJD (identiteit en doelrollen) |
+| _profile.md | `{DATA_ROOT}/modes/_profile.md` | ALTIJD (archetypen, verhaal en onderhandeling) |
+| {DATA_ROOT}/writing-samples/ en {DATA_ROOT}/voice-dna.md | `{DATA_ROOT}/writing-samples/`, `{DATA_ROOT}/voice-dna.md` (indien aanwezig) | Bij kandidaatgerichte tekst; gebruik eerst de gecachte sectie `## Writing Style` in `_profile.md` en gebruik {DATA_ROOT}/voice-dna.md om AI-achtige formuleringen af te vangen en de stem te bewaken |
+| interview-prep | `{DATA_ROOT}/interview-prep/story-bank.md`, `{DATA_ROOT}/interview-prep/{company}-{role}.md` | Voor formulierantwoorden en sollicitatiegesprekken; bevat eigen STAR-verhalen en notities van de gebruiker |
+| _custom.md | `{DATA_ROOT}/modes/_custom.md` (indien aanwezig) | ALTIJD (vaste opmaak-, inhouds- en workflowregels; geen bron voor feitelijke claims) |
 
-**REGEL: codeer NOOIT metrics uit proof points.** Lees ze uit `users/{USER}/cv.md` en `users/{USER}/article-digest.md` op het moment van evaluatie.
-**REGEL: Voor artikel-/projectmetrics heeft `users/{USER}/article-digest.md` voorrang op `users/{USER}/cv.md`.**
+**REGEL: codeer NOOIT metrics uit proof points.** Lees ze uit `{DATA_ROOT}/cv.md` en `{DATA_ROOT}/article-digest.md` op het moment van evaluatie.
+**REGEL: Voor artikel-/projectmetrics heeft `{DATA_ROOT}/article-digest.md` voorrang op `{DATA_ROOT}/cv.md`.**
 **REGEL: Lees `_profile.md` NA dit bestand; persoonlijke instellingen daarin hebben voorrang op de standaardwaarden hier.**
 **REGEL: Lees `_custom.md` (indien aanwezig) NA `_profile.md` en volg die blijvende procedurele regels in elke modus. `_custom.md` mag geen nieuwe feitelijke claims over de kandidaat introduceren.**
-**REGEL: Schrijf een project, repository, library, tool of framework alleen aan de gebruiker toe als `users/{USER}/cv.md` of `users/{USER}/article-digest.md` dat expliciet ondersteunt.**
+**REGEL: Schrijf een project, repository, library, tool of framework alleen aan de gebruiker toe als `{DATA_ROOT}/cv.md` of `{DATA_ROOT}/article-digest.md` dat expliciet ondersteunt.**
 **REGEL: Herformuleer trefwoorden, maar verzin ze nooit. Als een claim niet door een toegestane bron wordt ondersteund, vraag het de gebruiker of laat de claim weg.**
 
 ---
@@ -70,16 +73,16 @@ enz. -->
 
 ### Adaptieve framing op archetype
 
-> **Concrete metrics: lees ze van `users/{USER}/cv.md` en `users/{USER}/article-digest.md` op het moment van evaluatie. Codeer ze NOOIT hier.**
+> **Concrete metrics: lees ze van `{DATA_ROOT}/cv.md` en `{DATA_ROOT}/article-digest.md` op het moment van evaluatie. Codeer ze NOOIT hier.**
 
 | Als de rol... | Benadruk de kandidaat... | Bronnen van proof points |
 |------------------|-----------------------------------|----------------------|
-| Platform / LLMOps | Ervaar productie, observability, evaluaties, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agent / Automatisering | Multi-agent orkestratie, HITL, betrouwbaarheid, kosten | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technische AI ​​PM | Productontdekking, PRD's, metrics, stakeholdermanagement | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Oplossingsarchitect | Systeemontwerp, integraties, bedrijfsklaar | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Voorwaarts ingezette ingenieur | Snelle levering, klantnabijheid, van prototype tot productie | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI-transformatieleider | Verandermanagement, team enablement, adoptie | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | Ervaar productie, observability, evaluaties, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agent / Automatisering | Multi-agent orkestratie, HITL, betrouwbaarheid, kosten | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technische AI ​​PM | Productontdekking, PRD's, metrics, stakeholdermanagement | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Oplossingsarchitect | Systeemontwerp, integraties, bedrijfsklaar | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Voorwaarts ingezette ingenieur | Snelle levering, klantnabijheid, van prototype tot productie | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI-transformatieleider | Verandermanagement, team enablement, adoptie | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 <!-- [AANPASSEN] Koppel je concrete projecten/artikelen aan de bovenstaande archetypen. -->
 
@@ -89,11 +92,11 @@ enz. -->
 - "SaaS gebouwd en verkocht na 5 jaar. Nu 100% gericht op AI toegepast in het bedrijfsleven."
 - "Leid engineering in een Series-B tijdens x10-groei. Op zoek naar de volgende uitdaging."
 - "Overgang van advies naar product. Op zoek naar rollen met hoge verantwoordelijkheid."
-Lees van users/{USER}/config/profile.yml -> narratieve.exit_story -->
+Lees van {DATA_ROOT}/config/profile.yml -> narratieve.exit_story -->
 
-Gebruik het transitieverhaal van `users/{USER}/config/profile.yml` om ALLE inhoud in te kaderen:
+Gebruik het transitieverhaal van `{DATA_ROOT}/config/profile.yml` om ALLE inhoud in te kaderen:
 - **In de PDF-samenvattingen:** De kloof overbruggen tussen het verleden en de toekomst -- "Pas nu dezelfde [vaardigheden] toe op het [vacature] domein."
-- **In STAR-verhalen:** Raadpleeg de proof points van `users/{USER}/article-digest.md`.
+- **In STAR-verhalen:** Raadpleeg de proof points van `{DATA_ROOT}/article-digest.md`.
 - **In de conceptantwoorden (blok G):** Het transitieverhaal staat in het eerste antwoord.
 - **Wanneer het vacature "ondernemend", "autonomie", "bouwer", "end-to-end" vermeldt:** Dit is DE nummer 1 onderscheidende factor. Verhoog het wedstrijdgewicht.
 
@@ -115,9 +118,9 @@ dashboard:
 url: "https://tondomaine.dev/demo"
 wachtwoord: "demo-2026"
 wanneer_to_share: "Rollen LLMOps, AI-platform, observability"
-Lees van users/{USER}/config/profile.yml -> narratieve.proof_points en narratieve.dashboard -->
+Lees van {DATA_ROOT}/config/profile.yml -> narratieve.proof_points en narratieve.dashboard -->
 
-Indien de kandidaat een live demo/dashboard heeft (controleer `users/{USER}/config/profile.yml`), bied dan toegang aan in de betreffende sollicitaties.
+Indien de kandidaat een live demo/dashboard heeft (controleer `{DATA_ROOT}/config/profile.yml`), bied dan toegang aan in de betreffende sollicitaties.
 
 ### Comp-intelligentie
 
@@ -153,7 +156,7 @@ Nederland en België gebruiken deels dezelfde taal, maar hebben verschillende ar
 <!-- [AANPASSEN] Stem dit af op je situatie. -->
 
 **Salarisverwachtingen (algemeen kader):**
-> "Gebaseerd op de huidige marktgegevens voor dit type functie, mik ik op een bereik van [RANGE uit users/{USER}/config/profile.yml]. Ik blijf flexibel wat betreft de structuur - het zijn het totale pakket en de groeimogelijkheden die tellen."
+> "Gebaseerd op de huidige marktgegevens voor dit type functie, mik ik op een bereik van [RANGE uit {DATA_ROOT}/config/profile.yml]. Ik blijf flexibel wat betreft de structuur - het zijn het totale pakket en de groeimogelijkheden die tellen."
 
 **Reactie op een geografische korting:**
 > "De rollen waarvoor ik strijd zijn resultaatgericht, niet locatiegericht. Mijn trackrecord verandert niet per postcode."
@@ -166,10 +169,10 @@ Nederland en België gebruiken deels dezelfde taal, maar hebben verschillende ar
 
 ### Locatiebeleid
 
-<!-- [AANPASSEN] Stem dit af op je situatie. Wordt gelezen uit users/{USER}/config/profile.yml -> location. -->
+<!-- [AANPASSEN] Stem dit af op je situatie. Wordt gelezen uit {DATA_ROOT}/config/profile.yml -> location. -->
 
 **In formulieren:**
-- Binaire vragen "Kunt u ter plaatse zijn?" : reageer op basis van daadwerkelijke beschikbaarheid in `users/{USER}/config/profile.yml`
+- Binaire vragen "Kunt u ter plaatse zijn?" : reageer op basis van daadwerkelijke beschikbaarheid in `{DATA_ROOT}/config/profile.yml`
 - Vrije velden: geef expliciet tijdoverlap en beschikbaarheid aan
 
 **In de evaluaties (score):**
@@ -189,7 +192,7 @@ Nederland en België gebruiken deels dezelfde taal, maar hebben verschillende ar
 ### NOOIT
 
 1. Verzin geen ervaring of metrics
-2. Bewerk `users/{USER}/cv.md` of portfoliobestanden
+2. Bewerk `{DATA_ROOT}/cv.md` of portfoliobestanden
 3. Dien sollicitaties in namens de kandidaat
 4. Deel een telefoonnummer in gegenereerde berichten
 5. Beveel een compensatie aan die beneden de marktwaarde ligt
@@ -200,7 +203,7 @@ Nederland en België gebruiken deels dezelfde taal, maar hebben verschillende ar
 ### ALTIJD
 
 0. **Sollicitatiebrief:** Als het formulier dit toelaat, voeg er ALTIJD één toe. PDF in hetzelfde visuele ontwerp als het cv. Koppel citaten uit de vacature aan proof points. Maximaal 1 pagina.
-1. Lees `users/{USER}/cv.md` en `users/{USER}/article-digest.md` (indien aanwezig) voordat u een vacature evalueert
+1. Lees `{DATA_ROOT}/cv.md` en `{DATA_ROOT}/article-digest.md` (indien aanwezig) voordat u een vacature evalueert
 1b. **Eerste evaluatie van elke sessie:** Voer `node cv-sync-check.mjs` uit via Bash. Bij waarschuwingen de kandidaat hiervan op de hoogte stellen
 2. Detecteer het archetype van de rol en pas de positionering aan
 3. Citeer bij matching de exacte regels uit het CV
@@ -220,7 +223,7 @@ Nederland en België gebruiken deels dezelfde taal, maar hebben verschillende ar
 | WebSearch | Onderzoeksbeloningen, trends, bedrijfscultuur, LinkedIn-contacten, uitwijkvacatures |
 | WebFetch | Terugval om vacatures uit statische pagina's te halen |
 | Playwright | Controleer of de vacatures actief zijn (browser_navigate + browser_snapshot), extraheer de vacatures uit SPA's. **KRITIEK: NOOIT 2+ agenten parallel met Playwright -- ze delen dezelfde browserinstantie** |
-| Read | `users/{USER}/config/profile.yml`, users/{USER}/cv.md, users/{USER}/article-digest.md, `_profile.md`, `_custom.md`, users/{USER}/voice-dna.md, users/{USER}/writing-samples/ en cv-template.html |
+| Read | `{DATA_ROOT}/config/profile.yml`, {DATA_ROOT}/cv.md, {DATA_ROOT}/article-digest.md, `_profile.md`, `_custom.md`, {DATA_ROOT}/voice-dna.md, {DATA_ROOT}/writing-samples/ en cv-template.html |
 | Write | Tijdelijke HTML voor PDF, rapporten .md en TSV-bestanden in `batch/tracker-additions/` |
 | Edit | Bestaande rapportinhoud bijwerken; bewerk `applications.md` nooit rechtstreeks: nieuwe rijen gaan als TSV via `node merge-tracker.mjs`, status- en notitiewijzigingen via `node set-status.mjs` |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |

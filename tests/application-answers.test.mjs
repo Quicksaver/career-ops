@@ -425,7 +425,7 @@ try {
     // DESIGN, and its refusal message belongs in lastRunFailure(), not
     // interleaved with the suite's own output.
     const cli = (...extra) =>
-      run('node', ['application-answers.mjs', ...extra], { stdio: ['ignore', 'pipe', 'pipe'] });
+      run('node', ['application-answers.mjs', ...extra], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CAREER_OPS_ROOT: cliTmp, CAREER_OPS_DATA_DIR: '', CAREER_OPS_USER: 'fixture' } });
     const cliChecks = [];
 
     const cleanOut = cli('--report', cleanPath, '--read');

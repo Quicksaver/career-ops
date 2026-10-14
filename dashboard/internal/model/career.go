@@ -18,6 +18,7 @@ type CareerApplication struct {
 	ReportNumber         string
 	Notes                string
 	JobURL               string // URL of the original job posting
+	JobURLFallback       bool   // company match; an exact report URL takes precedence
 	// Derived from Notes free-text (see data.deriveNoteFields)
 	ListingDate string
 	Location    string  // "City, ST" when a US city+state appears in the notes

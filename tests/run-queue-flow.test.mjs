@@ -7,6 +7,7 @@ import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { linkNodeModules } from './helpers.mjs';
 import { workflowRunnerPidPaths } from '../lib/run-artifacts.mjs';
+import { validateHandoff } from '../lib/run-queue.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const offline = readFileSync(join(repo, 'tests/fixtures/run-queue-offline.mjs'), 'utf8');
@@ -35,6 +36,8 @@ function fixture(t, { rows = [A], ...config } = {}) {
   cpSync(join(repo, 'tracker-aliases.json'), join(root, 'tracker-aliases.json'));
   assert.equal(linkNodeModules(root), null, 'offline fixture must resolve the checkout dependencies');
   mkdirSync(join(root, 'schemas'), { recursive: true });
+  mkdirSync(join(root, 'templates'), { recursive: true });
+  cpSync(join(repo, 'templates/states.yml'), join(root, 'templates/states.yml'));
   cpSync(join(repo, 'schemas/run-handoff-output.schema.json'), join(root, 'schemas/run-handoff-output.schema.json'));
   const user = join(root, 'users/fictional');
   for (const directory of ['data', 'config', 'batch/logs', 'jds']) mkdirSync(join(user, directory), { recursive: true });
@@ -98,6 +101,32 @@ test('--skip-scan bypasses every discovery phase, including stale handoff', asyn
   assert.equal(result.status, 'completed', JSON.stringify(result));
   assert.ok(!f.calls().some(c => ['scan', 'scan-auth', 'codex-mock'].includes(c.phase)));
   assert.deepEqual(f.dispatched(), [A]);
+});
+
+test('one handoff search may discover multiple postings', () => {
+  const result = { status: 'completed', processed_items: 1, added: 2, duplicates: 3, expired: 1,
+    errors: [], requires_user_action: false, user_action: null };
+  assert.equal(validateHandoff(result, 1, 2), result);
+  assert.throws(() => validateHandoff(result, 1, 1), /counts\/status disagree/);
+});
+
+test('blocked tracker additions preserve independent dispatch and final verification', async t => {
+  const f = fixture(t, { blockedAddition: true });
+  const { result } = await f.run(['--skip-scan']);
+  assert.equal(result.status, 'partial', JSON.stringify(result));
+  assert.deepEqual(f.dispatched(), [A]);
+  assert.ok(f.calls().some(c => c.phase === 'verify-runner'));
+  assert.ok(result.manual_actions.some(a => a.reason === 'addition_blocked'));
+});
+
+test('nonzero reviewed verification retains the complete structured failure', async t => {
+  const message = 'fixture integrity failure ' + 'é'.repeat(40000);
+  const f = fixture(t, { rows: [], verification: 'failed', verificationError: message });
+  const { code, result } = await f.run(['--skip-scan']);
+  assert.equal(code, 1);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.verification_review.error, message);
+  assert.match(result.error, /^verify-reviewed failed:/);
 });
 
 for (const scenario of [{ scanError: true }, { handoff: true, handoffPartial: true }, { login: true }, { handoff: true, malformedHandoff: true }]) {

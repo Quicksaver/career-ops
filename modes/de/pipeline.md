@@ -43,7 +43,7 @@ Verarbeitet URLs von Stellenanzeigen, die in `users/{USER}/data/pipeline.md` ges
 **Sonderfälle:**
 - **LinkedIn**: Kann Login erfordern → mit `[!]` markieren und den Kandidaten bitten, den Text einzufügen
 - **PDF**: Wenn die URL auf ein PDF zeigt, direkt mit dem Read-Tool lesen
-- **`local:`-Präfix**: Lokale Datei lesen. Beispiel: `local:users/{USER}/jds/linkedin-pm-ai.md` → `users/{USER}/jds/linkedin-pm-ai.md` lesen
+- **`local:`-Präfix**: Lokale Datei lesen. Beispiel: `local:jds/linkedin-pm-ai.md` → `users/{USER}/jds/linkedin-pm-ai.md` lesen
 - **StepStone / XING / kununu**: Häufig deutscher Markt, oft Cookie-Banner. Playwright kann in Snapshot scrollen, um den Anzeigentext zu erfassen
 - **Bundesagentur für Arbeit (arbeitsagentur.de)**: Strukturierte Stellenanzeigen, gut maschinenlesbar. WebFetch reicht meist
 

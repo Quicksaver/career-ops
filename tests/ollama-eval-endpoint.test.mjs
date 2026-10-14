@@ -48,7 +48,7 @@ const done = new Promise((resolve) => {
   execFile(
     NODE,
     [join(ROOT, 'ollama-eval.mjs'), '--user', 'test', '--url', `http://127.0.0.1:${port}`, '--no-save', 'Some job description text.'],
-    { timeout: 30000, env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir } },
+    { timeout: 30000, env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir, OLLAMA_NUM_CTX: '32768' } },
     (err, stdout, stderr) => resolve({ err, stdout, stderr }),
   );
 });

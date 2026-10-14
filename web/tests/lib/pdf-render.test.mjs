@@ -64,14 +64,29 @@ test("spawnGeneratePdf: clean exit -> ok:true, invokes generate-pdf.mjs with --a
   const spawnFn = (execPath, args, opts) => { calls.push({ execPath, args, opts }); return fakeChild({ exitCode: 0 }); };
 
   // When spawning the render
-  const result = await spawnGeneratePdf({ spawnFn, execPath: "node", root: "/root", html: "/root/x.html", finalPdf: "/root/output/x.pdf", format: "letter", reportNum: "018" });
+  const result = await spawnGeneratePdf({ spawnFn, execPath: "node", env: { CAREER_OPS_USER: "fictional" }, root: "/root", html: "/root/x.html", finalPdf: "/root/output/x.pdf", format: "letter", reportNum: "018" });
 
   // Then it reports ok:true and invoked generate-pdf.mjs with the expected args
   assert.deepEqual(result, { ok: true, stderr: "" });
   assert.equal(calls.length, 1);
   assert.match(calls[0].args[0], /generate-pdf\.mjs$/);
-  assert.deepEqual(calls[0].args.slice(1), ["/root/x.html", "/root/output/x.pdf", "--format=letter", "--report=018", "--allow-reorder"]);
+  assert.deepEqual(calls[0].args.slice(1), ["/root/x.html", "/root/output/x.pdf", "--format=letter", "--report=018", "--allow-reorder", "--user", "fictional"]);
   assert.equal(calls[0].opts.cwd, "/root");
+});
+
+test("renderer and tracker marker launch system scripts with the selected user data environment", async () => {
+  const calls = [];
+  const spawnFn = (execPath, args, opts) => { calls.push({ execPath, args, opts }); return fakeChild({ exitCode: 0 }); };
+  const context = { spawnFn, execPath: "node", root: "/selected-user", systemRoot: "/engine", env: { CAREER_OPS_USER: "fictional", CAREER_OPS_ROOT: "/wrong-alias", CAREER_OPS_DATA_DIR: "/also-wrong" }, reportNum: "018" };
+  await spawnGeneratePdf({ ...context, html: "/selected-user/x.html", finalPdf: "/selected-user/output/x.pdf", format: "a4" });
+  await markTrackerReady(context);
+  for (const call of calls) {
+    assert.equal(call.opts.cwd, "/engine");
+    assert.ok(call.args[0].startsWith("/engine/") || call.args[0].startsWith("\\engine\\"));
+    assert.deepEqual(call.args.slice(-2), ["--user", "fictional"]);
+    assert.equal(call.opts.env.CAREER_OPS_ROOT, "/selected-user");
+    assert.equal(call.opts.env.CAREER_OPS_DATA_DIR, "/selected-user");
+  }
 });
 
 test("spawnGeneratePdf: non-zero exit -> ok:false, stderr surfaced", async () => {

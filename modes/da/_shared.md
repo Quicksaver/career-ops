@@ -1,19 +1,22 @@
 # Delt kontekst -- career-ops (Dansk)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      TILPASNING AF DENNE FIL
      ============================================================
      Denne fil indeholder den delte kontekst for alle career-ops-modes
      i den danske version. Før du bruger career-ops, SKAL du:
-     1. Udfylde users/{USER}/config/profile.yml med dine personlige oplysninger
-     2. Oprette users/{USER}/cv.md i projektets rod (CV i Markdown)
-     3. (Valgfrit) Oprette users/{USER}/article-digest.md med dine proof points
+     1. Udfylde {DATA_ROOT}/config/profile.yml med dine personlige oplysninger
+     2. Oprette {DATA_ROOT}/cv.md i projektets rod (CV i Markdown)
+     3. (Valgfrit) Oprette {DATA_ROOT}/article-digest.md med dine proof points
      4. Tilpasse de afsnit, der er markeret med [TILPAS] nedenfor
      ============================================================ -->
 
 ## Kilder til sandhed (læs ALTID før hver evaluering)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -30,13 +33,13 @@
 
 | Fil | Sti | Hvornår |
 |-----|-----|---------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (projektets rod) | ALTID |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (hvis den findes) | ALTID (detaljerede proof points) |
-| profile.yml | `users/{USER}/config/profile.yml` | ALTID (identitet og målroller) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (projektets rod) | ALTID |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (hvis den findes) | ALTID (detaljerede proof points) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | ALTID (identitet og målroller) |
 
-**REGEL: Aldrig hardcode metrics fra proof points.** Læs dem fra `users/{USER}/cv.md` og `users/{USER}/article-digest.md` på evalueringstidspunktet.
-**REGEL: For metrics om artikler/projekter har `users/{USER}/article-digest.md` forrang frem for `users/{USER}/cv.md`** (`users/{USER}/cv.md` kan indeholde ældre tal).
-**REGEL: Påstå ALDRIG at kandidaten er forfatter/skaber af et projekt, repository, bibliotek, værktøj, framework eller open source-artefakt, medmindre det udtrykkeligt er tilskrevet vedkommende i `users/{USER}/cv.md` eller `users/{USER}/article-digest.md`.** At forveksle "at bruge et værktøj" med "at have skabt det" (at bruge X er ikke at have skabt X) er det mest almindelige opdigtningsmønster og er forbudt.
+**REGEL: Aldrig hardcode metrics fra proof points.** Læs dem fra `{DATA_ROOT}/cv.md` og `{DATA_ROOT}/article-digest.md` på evalueringstidspunktet.
+**REGEL: For metrics om artikler/projekter har `{DATA_ROOT}/article-digest.md` forrang frem for `{DATA_ROOT}/cv.md`** (`{DATA_ROOT}/cv.md` kan indeholde ældre tal).
+**REGEL: Påstå ALDRIG at kandidaten er forfatter/skaber af et projekt, repository, bibliotek, værktøj, framework eller open source-artefakt, medmindre det udtrykkeligt er tilskrevet vedkommende i `{DATA_ROOT}/cv.md` eller `{DATA_ROOT}/article-digest.md`.** At forveksle "at bruge et værktøj" med "at have skabt det" (at bruge X er ikke at have skabt X) er det mest almindelige opdigtningsmønster og er forbudt.
 **REGEL: Nøgleord omformuleres, aldrig opdigtes.** Omarranger, omformuler, fremhæv — men opfind aldrig. Hvis en påstand ikke er dækket af en fil inden for scope, så spørg kandidaten; uden svar udelades den. Tavshed om et emne er bedre end en opdigtet detalje.
 
 ---
@@ -63,16 +66,16 @@ Dette skill behandler ALLE målroller med samme omhu. Ingen er primær eller sek
 
 ### Adaptiv framing efter arketype
 
-> **Konkrete metrics: læs dem fra `users/{USER}/cv.md` og `users/{USER}/article-digest.md` på evalueringstidspunktet. ALDRIG hardcode dem her.**
+> **Konkrete metrics: læs dem fra `{DATA_ROOT}/cv.md` og `{DATA_ROOT}/article-digest.md` på evalueringstidspunktet. ALDRIG hardcode dem her.**
 
 | Hvis rollen er... | Fremhæv hos kandidaten... | Kilder til proof points |
 |-------------------|---------------------------|-------------------------|
-| Platform / LLMOps | Produktionserfaring, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | Multi-agent-orkestrering, HITL, pålidelighed, omkostninger | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product discovery, PRDs, metrics, stakeholder-styring | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | Systemdesign, integrationer, enterprise-klar | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | Hurtig levering, kundenærhed, prototype til produktion | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | Forandringsledelse, team-enablement, adoption | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | Produktionserfaring, observability, evals, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | Multi-agent-orkestrering, HITL, pålidelighed, omkostninger | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product discovery, PRDs, metrics, stakeholder-styring | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | Systemdesign, integrationer, enterprise-klar | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | Hurtig levering, kundenærhed, prototype til produktion | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | Forandringsledelse, team-enablement, adoption | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 <!-- [TILPAS] Knyt dine konkrete projekter/artikler til arketyperne ovenfor -->
 
@@ -82,11 +85,11 @@ Dette skill behandler ALLE målroller med samme omhu. Ingen er primær eller sek
      - "SaaS bygget og solgt efter 5 år. Nu 100% fokus på anvendt AI i enterprise."
      - "Engineering-lead i en Series-B under 10x vækst. Søger den næste udfordring."
      - "Skift fra konsulent til produkt. Søger roller med højt ansvar."
-     Læses fra users/{USER}/config/profile.yml -> narrative.exit_story -->
+     Læses fra {DATA_ROOT}/config/profile.yml -> narrative.exit_story -->
 
-Brug overgangsnarrativet fra `users/{USER}/config/profile.yml` til at ramme ALT indhold ind:
+Brug overgangsnarrativet fra `{DATA_ROOT}/config/profile.yml` til at ramme ALT indhold ind:
 - **I PDF-summaries:** Byg bro mellem fortid og fremtid -- "Anvender nu de samme [kompetencer] på [opslagets domæne]."
-- **I STAR-stories:** Referér til proof points fra `users/{USER}/article-digest.md`.
+- **I STAR-stories:** Referér til proof points fra `{DATA_ROOT}/article-digest.md`.
 - **I draft-svar (Blok G):** Overgangsnarrativet hører til i det første svar.
 - **Når opslaget nævner "entrepreneurial", "ownership", "builder", "end-to-end":** Det er DEN vigtigste differentiator nr. 1. Øg match-vægten.
 
@@ -108,7 +111,7 @@ Positionér "Builder" som et professionelt signal -- ikke som "hobbyist". De æg
        url: "https://ditdomæne.dev/demo"
        password: "demo-2026"
        when_to_share: "LLMOps, AI Platform, Observability-roller"
-     Læses fra users/{USER}/config/profile.yml -> narrative.proof_points og narrative.dashboard -->
+     Læses fra {DATA_ROOT}/config/profile.yml -> narrative.proof_points og narrative.dashboard -->
 
 Hvis kandidaten har en live demo / et dashboard (tjek `profile.yml`), så tilbyd adgang i relevante ansøgninger.
 
@@ -161,7 +164,7 @@ I danske opslag og forhandlinger optræder visse termer, som ikke findes på EN/
 
 ### Lokationspolitik (Location Policy)
 
-<!-- [TILPAS] Tilpas til din situation. Læses fra users/{USER}/config/profile.yml -> location -->
+<!-- [TILPAS] Tilpas til din situation. Læses fra {DATA_ROOT}/config/profile.yml -> location -->
 
 **I formularer:**
 - Binære spørgsmål "Kan du være på kontoret?": svar efter den reelle tilgængelighed i `profile.yml`
@@ -183,7 +186,7 @@ I danske opslag og forhandlinger optræder visse termer, som ikke findes på EN/
 ### ALDRIG
 
 1. Opfinde erfaring eller metrics
-2. Ændre `users/{USER}/cv.md` eller portfolio-filer
+2. Ændre `{DATA_ROOT}/cv.md` eller portfolio-filer
 3. Indsende ansøgninger på kandidatens vegne
 4. Dele et telefonnummer i genererede beskeder
 5. Anbefale aflønning under markedsniveau
@@ -194,7 +197,7 @@ I danske opslag og forhandlinger optræder visse termer, som ikke findes på EN/
 ### ALTID
 
 0. **Ansøgning (følgebrev):** Hvis formularen tillader det, så inkludér ALTID én. PDF i samme visuelle design som CV'et. Citater fra opslaget mappet til proof points. Maks. 1 side.
-1. Læs `users/{USER}/cv.md` og `users/{USER}/article-digest.md` (hvis den findes), før et opslag evalueres
+1. Læs `{DATA_ROOT}/cv.md` og `{DATA_ROOT}/article-digest.md` (hvis den findes), før et opslag evalueres
 1b. **Første evaluering i hver session:** Kør `node cv-sync-check.mjs` via Bash. Ved advarsler, informér kandidaten
 2. Detektér rollens arketype og tilpas framingen
 3. Citér eksakte linjer fra CV'et ved matching
@@ -214,7 +217,7 @@ I danske opslag og forhandlinger optræder visse termer, som ikke findes på EN/
 | WebSearch | Lønundersøgelse, tendenser, virksomhedskultur, LinkedIn-kontakter, fallback for opslag |
 | WebFetch | Fallback til at udtrække opslag fra statiske sider |
 | Playwright | Tjek om opslag er aktive (browser_navigate + browser_snapshot), udtræk opslag fra SPAs. **KRITISK: ALDRIG 2+ agenter parallelt med Playwright -- de deler den samme browser-instans** |
-| Read | users/{USER}/cv.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | Midlertidig HTML til PDF, reports .md, TSV-filer til trackeren i `batch/tracker-additions/` (aldrig `applications.md` direkte) |
 | Edit | Rettelser i rapporter og andet genereret indhold. Aldrig tracker-tabellen: nye rækker tilføjes som TSV og flettes med `node merge-tracker.mjs`, ændringer af status og noter går gennem `node set-status.mjs` |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |

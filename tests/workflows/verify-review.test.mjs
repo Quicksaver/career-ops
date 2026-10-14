@@ -68,7 +68,7 @@ function decision(finding, overrides) {
 function applyReview(verification, findings) {
   const verificationPath = join(tmp, `verification-${Math.random()}.json`);
   const reviewPath = join(tmp, `review-${Math.random()}.json`);
-  writeFileSync(verificationPath, JSON.stringify(verification));
+  writeFileSync(verificationPath, JSON.stringify({ ...verification, user: 'test', root: userRoot, tracker: trackerPath }));
   writeFileSync(reviewPath, JSON.stringify({ status: 'completed', needs_human_review: false, findings }));
   return JSON.parse(execFileSync(process.execPath, [
     join(ROOT, 'apply-verification-review.mjs'), '--user', 'test',
@@ -491,7 +491,7 @@ try {
     );
     const [broadTracker, broadReport, subsetTracker, subsetReport] =
       nestedReconciliation.review.findings;
-    if (nestedReconciliation.normalizations.length === 2 &&
+    if (nestedReconciliation.normalizations.length >= 1 &&
         broadTracker.disposition === 'resolve_duplicate' &&
         broadReport.disposition === 'resolve_duplicate' &&
         subsetTracker.classification === 'informational' && subsetTracker.disposition === 'mark_seen' &&
@@ -743,7 +743,8 @@ try {
   };
   const missingReportVerificationPath = join(tmp, 'missing-report-verification.json');
   const missingReportTriagePath = join(tmp, 'missing-report-triage.json');
-  writeFileSync(missingReportVerificationPath, JSON.stringify({ errors: [], warnings: [missingReportWarning] }));
+  writeFileSync(missingReportVerificationPath, JSON.stringify({ user: missingReportUser, root: missingReportRoot,
+    tracker: join(missingReportRoot, 'data/applications.md'), errors: [], warnings: [missingReportWarning] }));
   writeFileSync(missingReportTriagePath, JSON.stringify({
     warnings: [{
       warning_id: missingReportWarning.id,

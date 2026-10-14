@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { localToday } from './lib/local-today.mjs';
+import { pathIsInsideCanonical } from './tracker-utils.mjs';
 
 
 export const APPLICATION_ANSWERS_HEADING = '## Application Answers';
@@ -515,11 +516,13 @@ function usage() {
 }
 
 function resolveReportPath(reportArg, userContext) {
+	const repositoryPrefix = `users/${userContext.userId}/`;
+	if (reportArg.startsWith(repositoryPrefix)) reportArg = reportArg.slice(repositoryPrefix.length);
   const reportPath = isAbsolute(reportArg)
     ? resolve(reportArg)
     : userPath(userContext, reportArg);
   const rel = relative(userContext.userRoot, reportPath);
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel) || !pathIsInsideCanonical(reportPath, userContext.userRoot)) {
     throw new Error(`Refusing to write outside the active user's folder: ${reportPath}`);
   }
   return reportPath;
@@ -548,6 +551,14 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+  let userContext;
+  try {
+    userContext = getUserContext(process.argv.slice(2));
+  } catch (err) {
+    printUserContextErrorAndExit(err);
+    return;
+  }
+  args = parseArgs(userContext.args);
   if (args.readDraft) {
     if (args.input || args.state || args.date) {
       console.error(`--read-draft is read-only and takes no --input, --state or --date.\n\n${usage()}`);
@@ -562,7 +573,7 @@ async function main() {
     // No strict counterpart on purpose. Block H's body is a convention, not a
     // format this module writes, so "I could not read a line" is an expected
     // outcome rather than a corrupted report worth refusing over.
-    const reportText = readFileSync(resolve(args.report), 'utf-8');
+    const reportText = readFileSync(resolveReportPath(args.report, userContext), 'utf-8');
     console.log(JSON.stringify(parseDraftAnswersBlockH(reportText), null, 2));
     return;
   }
@@ -580,7 +591,7 @@ async function main() {
     // strict throws with a message naming every unreadable line; main().catch
     // prints it to stderr and sets a non-zero exit code, which is the contract
     // modes/apply.md keys on. A report without the section prints null.
-    const reportText = readFileSync(resolve(args.report), 'utf-8');
+    const reportText = readFileSync(resolveReportPath(args.report, userContext), 'utf-8');
     const snapshot = parseApplicationAnswersSection(reportText, { strict: args.strict === true });
     console.log(JSON.stringify(snapshot, null, 2));
     return;
@@ -590,15 +601,6 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-
-  let userContext;
-  try {
-    userContext = getUserContext(process.argv.slice(2));
-  } catch (err) {
-    printUserContextErrorAndExit(err);
-    return;
-  }
-  args = parseArgs(userContext.args);
 
   const inputText = args.input === '-' ? readFileSync(0, 'utf-8') : readFileSync(resolve(args.input), 'utf-8');
   const input = JSON.parse(inputText);

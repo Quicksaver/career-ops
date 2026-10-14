@@ -4,10 +4,9 @@ import path from "node:path";
  * Resolve the directory holding the engine's root `*.mjs` scripts (doctor,
  * scan-ats-full, verify-portals, tracker, …).
  *
- * Scripts live in the **engine checkout** — never in the data root. Under the
- * #524 split layout (`CAREER_OPS_ROOT` pointing at a data-only directory, or a
- * `.career-ops-data` marker), the data root must NOT be consulted here, or
- * every script-driven Web UI endpoint reports the checkout as missing.
+ * Scripts live in the engine checkout. Web runtime resolution uses
+ * CAREER_OPS_CODE_ROOT, then the web's legacy CAREER_OPS_ROOT system alias.
+ * Candidate data follows CAREER_OPS_DATA_DIR, the marker or the selected user.
  *
  * `CAREER_OPS_CODE_ROOT` selects the checkout explicitly — needed when the web
  * runtime lives outside the engine checkout (isolated build/deploy dirs). The
@@ -23,7 +22,7 @@ import path from "node:path";
  * @returns {string} absolute path to the engine checkout
  */
 export function resolveCodeRoot(cwd, env = process.env) {
-  const explicit = (env.CAREER_OPS_CODE_ROOT || "").trim();
+  const explicit = env.CAREER_OPS_CODE_ROOT?.trim() || env.CAREER_OPS_ROOT?.trim();
   if (explicit) return path.resolve(cwd, explicit);
   return path.resolve(cwd, "..");
 }

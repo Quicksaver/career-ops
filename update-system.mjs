@@ -41,7 +41,7 @@
  */
 
 import { execFile, execFileSync, execSync, spawnSync } from 'child_process';
-import { copyFileSync, readFileSync, writeFileSync, existsSync, unlinkSync, rmSync, lstatSync, statSync, mkdtempSync, realpathSync } from 'fs';
+import { copyFileSync, readFileSync, writeFileSync, existsSync, unlinkSync, rmSync, lstatSync, statSync, mkdtempSync, realpathSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve, posix as pathPosix } from 'path';
 import { tmpdir } from 'os';
 import { randomBytes, timingSafeEqual } from 'crypto';
@@ -287,15 +287,8 @@ const SYSTEM_PATHS = [
   'scripts/export-ats-text.mjs',
   'scripts/followup-sweep.sh',
   'story-provenance-check.mjs',
-  // Ships alongside doctor.mjs, which imports it: an upgraded install whose
-  // updater had no entry for it would check out a doctor that cannot load.
-  // Retired 2026-09-05: the suite moved to tests/context-budget.test.mjs. The
-  // entry stays so staleSystemFiles() prunes the orphan on an upgraded install;
-  // drop it once a release has shipped past that move.
   'img-to-pdf.mjs',
   'archive-posting.mjs',
-  'extract-jd.mjs',
-  'extract-pdf.mjs',
   'application-answers.mjs',
   'generate-cover-letter.mjs',
   'merge-tracker.mjs',
@@ -481,6 +474,7 @@ const SYSTEM_PATHS = [
   'batch/validate-worker-artifacts.mjs',
   'batch/manual-inputs.mjs',
   'batch/runner-ownership.mjs',
+  'batch/worker-process.mjs',
   'schemas/',
   'batch/aggregate-tokens.mjs',
   'batch/README.md',
@@ -1950,7 +1944,7 @@ export function isUserConfiguredTemplateVariant(file, configuredVariants = {}) {
   // "standard" resolves to the base template (without a named suffix), so
   // a leftover cv-template.standard.* / cover-letter-template.standard.* is
   // inactive and must remain eligible for stale-file pruning.
-  return Boolean(configured) && configured !== 'standard' && configured === name;
+  return (Array.isArray(configured) ? configured : [configured]).some(value => value && value !== 'standard' && value === name);
 }
 
 /**
@@ -2130,30 +2124,52 @@ export function configuredTemplateVariantPathsToPreserve(
     .sort();
 }
 
+export function configuredTemplateDataRoots({ systemRoot = ROOT, dataRoot = ROOT, usersDir = process.env.CAREER_OPS_USERS_DIR || join(systemRoot, 'users') } = {}) {
+  const roots = new Set([resolve(dataRoot)]);
+  const directory = resolve(systemRoot, usersDir);
+  if (existsSync(directory)) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(entry.name)) roots.add(join(directory, entry.name));
+    }
+  }
+  return [...roots];
+}
+
 /**
- * Snapshot configured variant files from the user data root before checkout.
+ * Read configured profiles from their data roots and snapshot template files
+ * from the system checkout before checkout.
  * The callback keeps Git access in apply() while making the data-root read
  * directly testable without mutating the real repository.
  *
- * @param {{dataRoot?: string, remoteFiles?: string[], readRemoteContent?: (path: string) => string,
+ * @param {{dataRoot?: string, dataRoots?: string[], systemRoot?: string, remoteFiles?: string[], readRemoteContent?: (path: string) => string,
  *   readLocalContent?: (path: string) => string, localPathExists?: (path: string) => boolean}} options
  * @returns {Promise<{configuredVariants: object, localFiles: string[], localContents: object, remoteContents: object, preservedPaths: string[]}>}
  */
 export async function snapshotConfiguredTemplateVariants({
   dataRoot = ROOT,
+  dataRoots = [dataRoot],
+  systemRoot = ROOT,
   remoteFiles = [],
   readRemoteContent = () => null,
   readLocalContent = (path) => readFileSync(path, 'utf8'),
   localPathExists = existsSync,
 } = {}) {
-  const configuredVariants = await loadConfiguredTemplateVariants({
-    profilePath: join(dataRoot, 'config', 'profile.yml'),
-  });
+  const selected = new Map();
+  for (const root of dataRoots) {
+    const variants = await loadConfiguredTemplateVariants({ profilePath: join(root, 'config', 'profile.yml') });
+    for (const [kind, name] of Object.entries(variants)) {
+      if (!selected.has(kind)) selected.set(kind, new Set());
+      selected.get(kind).add(name);
+    }
+  }
+  const configuredVariants = Object.fromEntries([...selected].map(([kind, names]) => [kind, names.size === 1 ? [...names][0] : [...names]]));
   const configuredVariantPaths = [];
-  for (const [kind, name] of Object.entries(configuredVariants)) {
+  for (const [kind, names] of selected) {
     const prefix = kind === 'cv' ? 'cv-template' : 'cover-letter-template';
-    for (const extension of ['html', 'tex']) {
-      configuredVariantPaths.push(`templates/${prefix}.${name}.${extension}`);
+    for (const name of names) {
+      for (const extension of ['html', 'tex']) {
+        configuredVariantPaths.push(`templates/${prefix}.${name}.${extension}`);
+      }
     }
   }
   // A configured template can live in a one-level pack. Remote paths are the
@@ -2169,7 +2185,7 @@ export async function snapshotConfiguredTemplateVariants({
   const localContents = {};
   const remoteContents = {};
   const localFiles = uniqueConfiguredVariantPaths.filter((file) => {
-    const localPath = join(dataRoot, ...file.split('/'));
+    const localPath = join(systemRoot, ...file.split('/'));
     try {
       localContents[file] = readLocalContent(localPath);
       return true;
@@ -4408,6 +4424,8 @@ async function apply() {
     }
     const configuredSnapshot = await snapshotConfiguredTemplateVariants({
       dataRoot,
+      dataRoots: configuredTemplateDataRoots({ systemRoot: ROOT, dataRoot }),
+      systemRoot: ROOT,
       remoteFiles: configuredVariantRemoteFiles,
       readRemoteContent: (file) => gitShowRaw(`${targetCommit}:${file}`),
     });

@@ -296,4 +296,4 @@
 - 评分（如 4.2/5）
 - 状态（无脑填写为 `Evaluated`）
 - PDF 状态（默认为 ❌）
-- 报告链接：根目录相对路径 `[###](users/{USER}/reports/###-company-YYYY-MM-DD.md)`（注意：合并脚本会将其自动格式化）
+- 报告链接：根目录相对路径 `[###](reports/###-company-YYYY-MM-DD.md)`（注意：合并脚本会将其自动格式化）

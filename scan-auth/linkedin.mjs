@@ -78,7 +78,8 @@ const DEFAULT_DELAY_SEARCHES_MS = [5000, 15000];
 
 export function randomDelay(range) {
   if (typeof range === 'number' && Number.isFinite(range)) return Math.max(0, range);
-  const [min, max] = Array.isArray(range) ? range : DEFAULT_DELAY_PAGES_MS;
+  const valid = Array.isArray(range) && range.length === 2 && range.every(value => typeof value === 'number' && Number.isFinite(value)) && range[0] >= 0 && range[0] <= range[1];
+  const [min, max] = valid ? range : DEFAULT_DELAY_PAGES_MS;
   return Math.floor(Math.random() * (max - min) + min);
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -131,6 +132,7 @@ export default class LinkedInScanner {
     const ls = doc.linkedin_searches || {};
     return {
       title_filter: doc.title_filter || { positive: [], negative: [] },
+      scan_history: doc.scan_history || {},
       keywords: ls.keywords || [],
       employer_blocklist: ls.employer_blocklist || [],
       date_posted: ls.date_posted,
@@ -210,6 +212,7 @@ export default class LinkedInScanner {
     }
 
     const listings = [];
+    const holds = [];
     const skipped = [];
     const errors = [];
     const stats = {
@@ -323,6 +326,12 @@ export default class LinkedInScanner {
             // 4. All pre-click checks passed — click card and extract detail
             const data = await this.extractJob(page, card, preview);
             stats.extracted++;
+            if (!data.jobId) {
+              warn(`  ✗ Missing posting identity: ${data.title}`);
+              stats.errors++;
+              consecutiveFailures++;
+              continue;
+            }
 
             // 5. Post-click dedup (by job ID, now available after click)
             const dedupKey = data.jobId || companyTitleKey;
@@ -352,8 +361,12 @@ export default class LinkedInScanner {
 
             if (!data.jdText) {
               warn(`  ✗ No JD content: ${data.title}`);
-              stats.errors++;
-              consecutiveFailures++;
+              holds.push({ url: data.listingUrl, title: data.title, company: data.company,
+                status: 'needs_confirmation', reason: 'jd_unavailable',
+                question: 'JD unavailable. Paste the JD text or provide its direct employer URL to resume.' });
+              scanHistory.add(data.jobId);
+              if (companyTitleKey) scanHistory.add(companyTitleKey);
+              consecutiveFailures = 0;
               continue;
             }
 
@@ -400,7 +413,7 @@ export default class LinkedInScanner {
     }
 
     await page.close();
-    return { listings, skipped, errors, stats };
+    return { listings, holds, skipped, errors, stats };
   }
 
   // -------------------------------------------------------------------------
@@ -683,7 +696,7 @@ export default class LinkedInScanner {
       const applyEl = xpathFirst(sel.xpathApplyUrl);
 
       // if no apply url or easy apply button is present, use the listing url
-      let applicationUrl = applyEl?.href?.trim() ?? `https://www.linkedin.com/jobs/view/${jobId}/`;
+      let applicationUrl = jobId ? applyEl?.href?.trim() || `https://www.linkedin.com/jobs/view/${jobId}/` : '';
 
 
       const jdEl = document.querySelector(sel.jdContent);

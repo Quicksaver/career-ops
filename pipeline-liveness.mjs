@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import {
   existsSync,
   mkdtempSync,
@@ -18,7 +19,10 @@ import {
 } from './lib/user-context.mjs';
 import { appendExpiredRows, parsePendingRows } from './lib/pipeline-queue.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
-import { writeFileAtomic } from './tracker-utils.mjs';
+import { writeFileAtomic, loadCanonicalStates, resolveCanonicalStateId } from './tracker-utils.mjs';
+import { parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
+import { resolveTrackerPath } from './path-resolver.mjs';
+import { normalizeUrl } from './url-key.mjs';
 
 let context;
 try {
@@ -130,17 +134,34 @@ const updated = dryRun ? appendExpiredRows(original, expiredUrls) : await withPi
 });
 const trackerUpdates = [];
 const trackerWarnings = [];
+const trackerPath = resolveTrackerPath(context.userRoot);
+const states = loadCanonicalStates(systemPath('templates/states.yml'));
 for (const row of pendingRows.filter((item) => expiredUrls.has(item.url))) {
-  const [company, role] = row.fields;
-  if (!company || !role) continue;
+  if (!existsSync(trackerPath)) continue;
+  const snapshot = readFileSync(trackerPath, 'utf8');
+  const lines = snapshot.split(/\r?\n/);
+  const options = { allowTabs: true, allowIndentation: true };
+  const columns = resolveColumns(lines, options);
+  const matches = lines.map(line => parseTrackerRow(line, columns, options)).filter(item =>
+    item && item.url && normalizeUrl(item.url) === normalizeUrl(row.url));
+  if (!matches.length) continue;
+  const [match] = matches;
+  const { company, role } = match;
+  if (matches.length !== 1 || resolveCanonicalStateId(match.status, states) !== 'evaluated') {
+    trackerWarnings.push({ company, role, url: row.url,
+      message: matches.length !== 1 ? 'Posting matches multiple tracker rows; review before closing' : `Preserved application status ${match.status}` });
+    continue;
+  }
   const statusArgs = [
     systemPath('set-status.mjs'), '--user', context.userId,
-    company, 'Closed', '--role', role,
+    'Closed', '--row', String(match.num),
+    '--expect-tracker', createHash('sha256').update(snapshot, 'utf8').digest('hex'),
     '--note', 'Posting expired during pipeline liveness sweep', '--json',
   ];
   if (dryRun) statusArgs.push('--dry-run');
   const status = spawnSync(process.execPath, statusArgs, {
     cwd: context.projectRoot, encoding: 'utf-8', maxBuffer: 1024 * 1024,
+    env: { ...process.env, CAREER_OPS_USER: context.userId, CAREER_OPS_ROOT: context.userRoot },
   });
   if (status.status === 0) {
     trackerUpdates.push({ company, role });

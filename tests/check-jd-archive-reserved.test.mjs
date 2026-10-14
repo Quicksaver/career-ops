@@ -1,3 +1,4 @@
+import './user-fixture.mjs';
 import { strict as assert } from 'assert';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';

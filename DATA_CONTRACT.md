@@ -16,7 +16,7 @@ These files contain your personal data, customizations, and work product. Update
 | `config/local-paths.txt` | Files *this clone* owns that upstream does not ship — one repo-relative path per line (optional; copy `config/local-paths.example.txt` here and edit). See [Fork-local paths](#fork-local-paths) below |
 | `users/{USER}/modes/_profile.md` | Your archetypes, narrative, negotiation scripts |
 | `users/{USER}/modes/_custom.md` | Your house rules, custom workflows & output preferences (procedural — survives updates) |
-| `modes/_brief.md` | Your compact profile brief (~1.5–2K tokens) read by the two-pass triage first pass |
+| `{DATA_ROOT}/modes/_brief.md` | Your compact profile brief (~1.5–2K tokens) read by the two-pass triage first pass |
 | `users/{USER}/voice-dna.md` | Your writing voice guardrail — banned words, anti-AI-slop rules, tone (optional) |
 | `users/{USER}/article-digest.md` | Your proof points from portfolio |
 | `users/{USER}/interview-prep/story-bank.md` | Your accumulated STAR+R stories |
@@ -37,6 +37,15 @@ These files contain your personal data, customizations, and work product. Update
 | `users/{USER}/data/career-profile.yml` | Your source-backed Master Career Profile; written only after explicit review of imported CV facts |
 | `users/{USER}/data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync` — safe to delete) |
 | `users/{USER}/data/pipeline.md` | Your URL inbox |
+| `users/{USER}/data/workflow-runs/`, `users/{USER}/data/verify-runs/`, legacy `users/{USER}/data/go-runs/` | Workflow diagnostics and resumable checkpoints; completed runs are compacted, timestamped runs expire after 10 days |
+| `users/{USER}/data/manual-actions.json` | Persisted exact-posting questions and user actions collected by the workflow coordinator |
+| `users/{USER}/data/scan-handoff.json` | Latest unsupported-source handoff for the selected user's scanner |
+| `users/{USER}/data/verification-reviews.jsonl` | Exact finding fingerprints, review decisions and accepted exceptions |
+| `users/{USER}/data/verification-actions.jsonl` | Verification repair records and artifact provenance |
+| `users/{USER}/data/duplicate-resolutions.jsonl` | Duplicate keeper decisions, lifecycle overrides and archive locations |
+| `users/{USER}/data/run-workflow.pid*`, legacy `users/{USER}/data/go-runner.pid*`, `users/{USER}/data/verify-runner.pid*` | Per-user coordinator ownership metadata and compatibility PID stamps |
+| `users/{USER}/batch/*` | Batch inputs/state, `logs/*.hold.json` exact-posting holds, quarantined evidence, tracker additions and `tracker-additions/merged/` provenance; `batch-runner.pid*` and `.workers-*/` record active ownership |
+| `~/.scan-auth/users/{USER}/` | Per-user authenticated portal browser profiles, outside the checkout |
 | `users/{USER}/data/scan-history.tsv` | Your scan history: one tab-separated row per posting the scanners have seen. Columns are append-only — a new column goes at the end and existing ones never move — so older rows may have fewer columns, and a missing cell reads as empty. The column order is declared in `lib/scan-history-columns.mjs`; what each column holds is in the Scan History table of `modes/scan.md`. A cell that would run as a spreadsheet formula is stored with one extra leading `'`; `parseScanHistoryLine` removes it. |
 | `users/{USER}/data/scan-runs.tsv` | Your per-run scan counters (appended by `scan.mjs`, read by `stats.mjs`) |
 | `users/{USER}/data/scheduled-jobs.json` | Your local scheduled-scan definitions, queue, and bounded run history (written by the web UI and `web/scripts/scheduled-jobs-runner.mjs`) |
@@ -97,7 +106,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/_writing.md` | Writing guardrails (Voice DNA / Writing Style / ATS) — loaded by the CV/cover/apply writing modes, not by evaluation (#1710) |
 | `modes/_custom.template.md` | Template seed for the user's `users/{USER}/modes/_custom.md` |
 | `modes/_profile.template.md` | Template seed for the user's `users/{USER}/modes/_profile.md` |
-| `modes/_brief.template.md` | Template seed for the user's `modes/_brief.md` |
+| `modes/_brief.template.md` | Template seed for the user's `{DATA_ROOT}/modes/_brief.md` |
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
 | `modes/cover.md` | Cover letter generation instructions |
@@ -178,6 +187,8 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `opencode.example.json` | OpenCode project config template (seed for `opencode.json`; ships Playwright MCP registration) |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
+| `batch/worker-process.mjs` | Native worker launch, ownership registration and process-tree cleanup |
+| `resolve-codex-config.mjs` | Shared model/reasoning resolution for the selected user |
 | `schemas/*` | Strict JSON contracts for deterministic agent steps |
 | `dashboard/*` | Go TUI dashboard |
 | `templates/*` | Base templates |
@@ -202,14 +213,14 @@ These files contain system logic, scripts, templates, and instructions that impr
 
 ## Custom Data Directory
 
-By default, all User Layer files reside inside the project repository root. You can configure a separate, external directory for your personal data.
+Every workflow requires an explicit active user. By default, User Layer files reside in `users/{USER}/` inside the system checkout. You can select a separate directory for that user's personal data.
 
 ### Resolution Precedence:
-1. **Environment Variables (`CAREER_OPS_ROOT` or `CAREER_OPS_DATA_DIR`):** Set this to the absolute or relative path of your custom data directory.
-2. **Marker File (`.career-ops-data`):** A repository-level marker file named `.career-ops-data` containing the path (absolute or relative) to the user data directory.
-3. **Repository Default:** Defaults to the codebase/repository root directory.
+1. **Environment variables:** `CAREER_OPS_ROOT`, then `CAREER_OPS_DATA_DIR`, select the active user's data root. Relative paths anchor to the system checkout.
+2. **Marker file:** When neither data-root alias nor `CAREER_OPS_USERS_DIR` is configured, `.career-ops-data` in the checkout selects the active user's data root. Its path may be absolute or relative to the checkout.
+3. **Selected user default:** Use `{CAREER_OPS_USERS_DIR}/{USER}` when configured, otherwise `{SYSTEM_ROOT}/users/{USER}`. Never fall back to the system checkout as user data.
 
-When resolved, all User Layer files/directories (e.g. `users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, `users/{USER}/modes/_custom.md`, `users/{USER}/data/`, `users/{USER}/reports/`, `users/{USER}/output/`, `users/{USER}/portals.yml`) will be resolved relative to that path. System Layer files continue to be resolved relative to the codebase/repository root, keeping code and personal data completely separate.
+The selected root already identifies the user: resolve `cv.md`, `config/profile.yml`, `modes/_profile.md`, `modes/_custom.md`, `data/`, `reports/`, `output/`, and `portals.yml` directly beneath it. Do not append `users/{USER}/` again. System modes, scripts, templates, and bundled plugins remain in the system checkout. The web app uses `CAREER_OPS_CODE_ROOT` for that checkout and `CAREER_OPS_DATA_DIR` for an explicit data root; its legacy `CAREER_OPS_ROOT` alias denotes the system checkout.
 
 ### Tracker Path & Writes:
 - **`CAREER_OPS_TRACKER`** can be set to override the applications tracker file path directly (relative paths are resolved relative to the repository root).

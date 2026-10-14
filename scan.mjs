@@ -117,7 +117,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
-import { rebuildRow } from './tracker-utils.mjs';
+import { rebuildRow, openTrackerTransaction, loadCanonicalStates, resolveCanonicalStateId } from './tracker-utils.mjs';
 import { buildTrustValidator } from './providers/_trust-validator.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
 import { mergeProviderPlugins } from './plugins/_engine.mjs';
@@ -158,9 +158,10 @@ try {
 const parseYaml = yaml.load;
 
 // ── Config ──────────────────────────────────────────────────────────
-import { resolveTrackerPath } from './path-resolver.mjs';
+import { resolveTrackerPath, resolveTrackerPathForWrite } from './path-resolver.mjs';
 
-export let PORTALS_PATH = path.join(DATA_ROOT, 'portals.yml');
+export let PORTALS_PATH = process.env.CAREER_OPS_PORTALS ? path.resolve(process.env.CAREER_OPS_PORTALS) : path.join(DATA_ROOT, 'portals.yml');
+let activeDataRoot = DATA_ROOT;
 let PROFILE_PATH = path.join(DATA_ROOT, 'config/profile.yml');
 export let SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY ? path.resolve(process.env.CAREER_OPS_SCAN_HISTORY) : path.join(DATA_ROOT, 'data/scan-history.tsv');
 export let PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE ? path.resolve(process.env.CAREER_OPS_PIPELINE) : path.join(DATA_ROOT, 'data/pipeline.md');
@@ -173,6 +174,7 @@ const PROVIDERS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const CONCURRENCY = 10;
 
 function configureUserPaths(ctx) {
+  activeDataRoot = ctx.userRoot;
   ensureUserDirs(ctx, ['data']);
   PORTALS_PATH = process.env.CAREER_OPS_PORTALS
     ? path.resolve(process.env.CAREER_OPS_PORTALS)
@@ -2905,7 +2907,7 @@ function loadSeenCompanyRoleBuckets(appsPath = APPLICATIONS_PATH, canonicalize =
       bucket.closedRows.push(app);
     } else {
       bucket.activeRows.push(app);
-      if (isReopenedTrackerNote(app.notes)) bucket.reopenableRows.push(app);
+      if (isEvaluatedTrackerStatus(app.status) && isReopenedTrackerNote(app.notes)) bucket.reopenableRows.push(app);
     }
   }
   return seen;
@@ -2990,6 +2992,11 @@ function isReopenedTrackerNote(notes) {
   return /\bReopened\s+\d{4}-\d{2}-\d{2}:/i.test(String(notes ?? ''));
 }
 
+const trackerStates = loadCanonicalStates(path.join(CODE_ROOT, 'templates/states.yml'));
+function isEvaluatedTrackerStatus(status) {
+  return resolveCanonicalStateId(String(status ?? '').replace(/\*\*/g, '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim(), trackerStates) === 'evaluated';
+}
+
 function appendReopenNote(notes, date, url) {
   const cleanNotes = sanitizeMarkdownField(notes);
   const cleanUrl = sanitizePipelineUrl(url);
@@ -2998,54 +3005,74 @@ function appendReopenNote(notes, date, url) {
   return cleanNotes ? `${cleanNotes}; ${entry}` : entry;
 }
 
-export function reopenClosedDuplicateApplications(offers, date, canonicalize = defaultCompanyNormalizer) {
+export async function reopenClosedDuplicateApplications(offers, date, canonicalize = defaultCompanyNormalizer, { onReopened = () => {} } = {}) {
   if (offers.length === 0 || !existsSync(APPLICATIONS_PATH)) return 0;
+  const transaction = await openTrackerTransaction(resolveTrackerPathForWrite(activeDataRoot));
+  try {
+    const lines = (existsSync(transaction.path) ? transaction.read() : readFileSync(APPLICATIONS_PATH, 'utf-8')).split('\n');
+    const expiredUrls = new Set(readIfExists(SCAN_HISTORY_PATH).split('\n').slice(1)
+      .map(parseScanHistoryLine).filter(row => row.status === 'skipped_expired').map(row => normalizeUrlForDedup(row.url)));
+    const colMap = detectTrackerColumns(lines);
+    const rowsByKey = new Map();
 
-  const lines = readFileSync(APPLICATIONS_PATH, 'utf-8').split('\n');
-  const colMap = detectTrackerColumns(lines);
-  const rowsByKey = new Map();
-
-  for (let i = 0; i < lines.length; i++) {
-    const app = parseTrackerApplicationLine(lines[i], i, colMap);
-    if (!app) continue;
-    const key = companyRoleDedupKey(app.company, app.role, canonicalize);
-    if (!key) continue;
-    if (!rowsByKey.has(key)) rowsByKey.set(key, { normalActiveRows: [], reopenedRows: [], closedRows: [] });
-    const bucket = rowsByKey.get(key);
-    if (isClosedTrackerStatus(app.status)) {
-      bucket.closedRows.push(app);
-    } else if (isReopenedTrackerNote(app.notes)) {
-      bucket.reopenedRows.push(app);
-    } else {
-      bucket.normalActiveRows.push(app);
+    for (let i = 0; i < lines.length; i++) {
+      const app = parseTrackerApplicationLine(lines[i], i, colMap);
+      if (!app) continue;
+      const key = companyRoleDedupKey(app.company, app.role, canonicalize);
+      if (!key) continue;
+      if (!rowsByKey.has(key)) rowsByKey.set(key, { normalActiveRows: [], reopenedRows: [], closedRows: [] });
+      const bucket = rowsByKey.get(key);
+      if (isClosedTrackerStatus(app.status)) {
+        bucket.closedRows.push(app);
+      } else if (isEvaluatedTrackerStatus(app.status) && isReopenedTrackerNote(app.notes)) {
+        bucket.reopenedRows.push(app);
+      } else {
+        bucket.normalActiveRows.push(app);
+      }
     }
-  }
 
-  let reopened = 0;
-  for (const offer of offers) {
-    const key = companyRoleDedupKey(offer.company, offer.title, canonicalize);
-    if (!key) continue;
-    const bucket = rowsByKey.get(key);
-    if (!bucket || bucket.normalActiveRows.length > 0) continue;
-    const app = bucket.reopenedRows[0] || bucket.closedRows[0];
-    if (!app) continue;
+    let reopened = 0;
+    const transitions = [];
+    const appliedOffers = [];
+    for (const offer of offers) {
+      if (expiredUrls.has(normalizeUrlForDedup(offer.url))) continue;
+      const key = companyRoleDedupKey(offer.company, offer.title, canonicalize);
+      if (!key) continue;
+      const bucket = rowsByKey.get(key);
+      if (!bucket || bucket.normalActiveRows.length > 0) continue;
+      const app = bucket.reopenedRows[0] || bucket.closedRows[0];
+      if (!app) continue;
+      if ((String(app.notes).match(/https?:\/\/[^\s;]+/g) || []).some(url => normalizeUrlForDedup(url) === normalizeUrlForDedup(offer.url))) continue;
 
-    const parts = [...app.parts];
-    parts[colMap.date] = date;
-    parts[colMap.status] = 'Evaluated';
-    if (colMap.notes != null) {
-      parts[colMap.notes] = appendReopenNote(app.notes, date, offer.url);
-      app.notes = parts[colMap.notes];
+      const parts = [...app.parts];
+      if (isClosedTrackerStatus(app.status)) {
+        parts[colMap.date] = date;
+        parts[colMap.status] = 'Evaluated';
+        transitions.push([app.num, date, 'Closed', 'Evaluated', 'correction', `scan: live duplicate ${offer.url}`].join('\t'));
+        app.status = 'Evaluated';
+      }
+      if (colMap.notes != null) {
+        parts[colMap.notes] = appendReopenNote(app.notes, date, offer.url);
+        app.notes = parts[colMap.notes];
+      }
+      lines[app.lineIndex] = rebuildRow(parts);
+      app.parts = parts;
+      if (bucket.reopenedRows.length === 0) bucket.reopenedRows.push(app);
+      bucket.closedRows = bucket.closedRows.filter(row => row !== app);
+      reopened++;
+      appliedOffers.push(offer);
     }
-    lines[app.lineIndex] = rebuildRow(parts);
-    app.parts = parts;
-    if (bucket.reopenedRows.length === 0) bucket.reopenedRows.push(app);
-    bucket.closedRows = bucket.closedRows.filter(row => row !== app);
-    reopened++;
-  }
 
-  if (reopened > 0) writeFileSync(APPLICATIONS_PATH, lines.join('\n'), 'utf-8');
-  return reopened;
+    if (reopened > 0) {
+      transaction.replace(lines.join('\n'));
+      for (const offer of appliedOffers) onReopened(offer);
+      if (transitions.length) {
+        try { appendFileSync(path.join(path.dirname(transaction.path), 'status-log.tsv'), `${transitions.join('\n')}\n`, 'utf-8'); }
+        catch (error) { console.error(`Warning: reopened tracker rows, but status-log append failed: ${error.message}`); }
+      }
+    }
+    return reopened;
+  } finally { transaction.close(); }
 }
 
 function readIfExists(filePath) {
@@ -3183,7 +3210,7 @@ export function formatPipelineOffer(offer) {
   // loadSeenUrls dedups on the URL and ignores trailing columns (backward-compatible).
   const location = typeof offer.location === 'string' ? sanitizeMarkdownField(offer.location) : '';
   const compensation = formatCompensation(offer.salary);
-  const base = `- [ ] ${url} | ${company} | ${title}`;
+  const base = `- [${offer.blocked ? '!' : ' '}] ${url} | ${company} | ${title}`;
   let line = base;
   if (compensation) line = `${base} | ${location} | ${compensation}`;
   else if (location) line = `${base} | ${location}`;
@@ -4418,6 +4445,17 @@ async function main() {
   const emptyTargets = [];
   const unverifiedZeroTargets = [];
 
+  if (!dryRun) registerRunFailureSnapshot(() => ({
+    timestamp: new Date().toISOString(), companies: targets.filter(target => !target._isBoard).length,
+    boards: targets.filter(target => target._isBoard).length, found: totalFound,
+    filteredTitle: totalFilteredTitle, filteredTier: totalFilteredTier,
+    filteredLocation: totalFilteredLocation, filteredPostingAge: totalFilteredPostingAge,
+    filteredSalary: totalFilteredSalary, filteredContent: totalFilteredContent,
+    filteredCooldown: totalFilteredCooldown, dupes: totalDupes, newAdded: 0, errors: errors.length,
+    filteredBlacklist: totalFilteredBlacklist, filteredVisa: totalFilteredVisa,
+    filteredPostedDate: totalFilteredPostedDate, filteredCountryEligibility: totalFilteredCountryEligibility,
+  }));
+
   let startedTargets = 0;
   let completedTargets = 0;
   const showProgress = process.env.CAREER_OPS_PROGRESS === '1';
@@ -4447,6 +4485,8 @@ async function main() {
         },
       }),
       profilePath: PROFILE_PATH,
+      locationHints: company.location_filter ?? config.location_filter,
+      dedupIncludeLanguage,
       sinceMs: earlyStopSinceMs,
       includeUndated: true,
     };
@@ -4515,6 +4555,7 @@ async function main() {
       }
       for (const job of jobs) {
         // Trust enrichment runs before filters and never drops jobs.
+        refreshListingKey(job);
         const trustResult = trustValidator(job);
         job.trustScore = trustResult.score;
         job.trustFlags = trustResult.flags;
@@ -4723,14 +4764,20 @@ async function main() {
   let droppedOffers = [];
   let invalidOffers = [];
   let migratedOffers = [];
-  if (verify && newOffers.length > 0) {
-    console.log(`\nVerifying liveness of ${newOffers.length} new offer(s) via API, with sequential Playwright fallback...`);
-    const result = await verifyOffers(newOffers, { headedFallback, throttleBaseMs, rediscover });
-    verifiedOffers = result.verified;
+  if (verify && (newOffers.length > 0 || reopenedClosedDuplicates.length > 0)) {
+    const newOfferSet = new Set(newOffers);
+    const verificationInputs = [...newOffers, ...reopenedClosedDuplicates];
+    console.log(`\nVerifying liveness of ${verificationInputs.length} new or reopening offer(s) via API, with sequential Playwright fallback...`);
+    const result = await verifyOffers(verificationInputs, { headedFallback, throttleBaseMs, rediscover });
+    verifiedOffers = result.verified.filter(offer => newOfferSet.has(offer));
+    const confirmedReopens = result.verified.filter(offer => !newOfferSet.has(offer) && result.verificationStatusByOffer.get(offer) === 'active');
+    const newUrls = new Set(newOffers.map(offer => offer.url));
+    confirmedReopens.push(...result.migrated.filter(offer => !newUrls.has(offer.previousUrl)));
+    reopenedClosedDuplicates.splice(0, reopenedClosedDuplicates.length, ...confirmedReopens);
     expiredOffers = result.expired;
     droppedOffers = result.dropped;
     invalidOffers = result.invalid;
-    migratedOffers = result.migrated;
+    migratedOffers = result.migrated.filter(offer => newUrls.has(offer.previousUrl));
     // Migrated offers re-enter the pipeline at their newly discovered URL.
     if (migratedOffers.length > 0) {
       verifiedOffers = [...verifiedOffers, ...migratedOffers];
@@ -4801,9 +4848,10 @@ async function main() {
     await appendToScanHistory(verifiedOffers, date);
   }
   if (!dryRun && reopenedClosedDuplicates.length > 0) {
-    totalReopenedClosedDupes = reopenClosedDuplicateApplications(reopenedClosedDuplicates, date, canonicalizeCompany);
+    const appliedOffers = [];
+    totalReopenedClosedDupes = await reopenClosedDuplicateApplications(reopenedClosedDuplicates, date, canonicalizeCompany, { onReopened: offer => appliedOffers.push(offer) });
     if (totalReopenedClosedDupes > 0) {
-      appendToScanHistory(reopenedClosedDuplicates, date, 'reopened_closed_duplicate');
+      await appendToScanHistory(unrecordedOffers(appliedOffers, 'reopened_closed_duplicate', readIfExists(SCAN_HISTORY_PATH)), date, 'reopened_closed_duplicate');
     }
   } else {
     totalReopenedClosedDupes = reopenedClosedDuplicates.length;
@@ -5186,6 +5234,10 @@ async function main() {
 // Only run main() when invoked directly (`node scan.mjs`), not when imported by tests.
 // `|| ''` guards the case where Node is invoked without a script arg (e.g. `node -e`).
 if (isMainModule(import.meta.url)) {
+  process.once('SIGINT', () => {
+    writeRunFailureRow('failed');
+    process.exit(130);
+  });
   main().catch(err => {
     console.error('Fatal:', err.message);
     writeRunFailureRow('failed');

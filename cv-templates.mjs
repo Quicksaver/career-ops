@@ -25,8 +25,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // templates/ is System Layer (code root); config/profile.yml is User Layer and
 // follows the data root. CAREER_OPS_PROFILE still wins over both.
 const DEFAULT_TEMPLATES_DIR = resolve(__dirname, 'templates');
-const DEFAULT_PROFILE_PATH =
-  process.env.CAREER_OPS_PROFILE || resolve(getCareerOpsRoot(), 'config', 'profile.yml');
+function defaultProfilePath() {
+  return process.env.CAREER_OPS_PROFILE || resolve(getCareerOpsRoot(), 'config', 'profile.yml');
+}
 
 export const KINDS = {
   cv: {
@@ -585,7 +586,7 @@ export function atsLint(path, kind, opts = {}) {
   return result;
 }
 
-export function loadProfileDefault(kind, { profilePath = DEFAULT_PROFILE_PATH, strict = false } = {}) {
+export function loadProfileDefault(kind, { profilePath = defaultProfilePath(), strict = false } = {}) {
   const cfg = KINDS[kind];
   if (!cfg) throw new Error(`Unknown template kind: ${kind}`);
   if (!existsSync(profilePath)) return null;
@@ -612,7 +613,7 @@ export function resolveTemplate(kind, name, opts = {}) {
   const {
     dir = DEFAULT_TEMPLATES_DIR,
     format = 'html',
-    profilePath = DEFAULT_PROFILE_PATH,
+    profilePath,
     fallback = false,
   } = opts;
   assertFormat(format);

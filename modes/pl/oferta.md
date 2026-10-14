@@ -157,7 +157,7 @@ Zapisz pełną ocenę w `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-DD}.
 - Score: średnia dopasowania (1-5)
 - Status: `Evaluated`
 - PDF: nie (lub tak, jeśli auto-pipeline wygenerował PDF)
-- Report: względny link do pliku reportu (np. `[001](users/{USER}/reports/001-company-2026-01-01.md)`)
+- Report: względny link do pliku reportu (np. `[001](reports/001-company-2026-01-01.md)`)
 
 **Format trackera:**
 

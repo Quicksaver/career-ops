@@ -1,9 +1,11 @@
 import path from "node:path";
+import fs from "node:fs";
+import { resolveCodeRoot } from "./core/code-root.mjs";
+import { resolveDataRoot } from "./core/data-root.mjs";
 
 /** Resolve system code independently of the selected user's data. */
 export function careerOpsSystemRoot() {
-  const configured = process.env.CAREER_OPS_CODE_ROOT?.trim() || process.env.CAREER_OPS_ROOT?.trim();
-  return configured ? path.resolve(configured) : path.resolve(process.cwd(), "..");
+  return resolveCodeRoot(process.cwd(), process.env);
 }
 
 /** Require the same user-ID format as the core CLI resolver. */
@@ -24,9 +26,12 @@ export function careerOpsUsersRoot() {
 }
 
 export function careerOpsRoot() {
-  const id = careerOpsUserId();
-  const data = process.env.CAREER_OPS_DATA_DIR?.trim();
-  return data ? path.resolve(careerOpsSystemRoot(), data) : path.join(careerOpsUsersRoot(), id);
+  careerOpsUserId();
+  const systemRoot = careerOpsSystemRoot();
+  return resolveDataRoot(systemRoot, () => {
+    const marker = path.join(systemRoot, '.career-ops-data');
+    return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : null;
+  }, process.env, path.resolve, path.join);
 }
 
 /** @returns {NodeJS.ProcessEnv} */

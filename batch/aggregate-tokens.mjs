@@ -1,4 +1,3 @@
-import { pathToFileURL, fileURLToPath } from 'url';
 import { getUserContext, printUserContextErrorAndExit, userPath } from '../lib/user-context.mjs';
 import { estimateCost } from '../utils/token-tracker.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';

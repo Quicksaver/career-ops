@@ -43,7 +43,7 @@ Elabora gli URL degli annunci accumulati in `users/{USER}/data/pipeline.md`. Il 
 **Casi particolari:**
 - **LinkedIn:** può richiedere login -> contrassegnare come `[!]` e chiedere al candidato di incollare il testo dell'annuncio
 - **PDF:** se l'URL punta a un PDF, leggerlo direttamente con il Read tool
-- **Prefisso `local:`:** legge un file locale. Esempio: `local:users/{USER}/jds/linkedin-pm-ai.md` -> legge `users/{USER}/jds/linkedin-pm-ai.md`
+- **Prefisso `local:`:** legge un file locale. Esempio: `local:jds/linkedin-pm-ai.md` -> legge `users/{USER}/jds/linkedin-pm-ai.md`
 - **Indeed IT / LinkedIn IT:** portali molto diffusi in Italia. Playwright gestisce bene i cookie banner.
 
 ## Numerazione automatica

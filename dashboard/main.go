@@ -39,6 +39,7 @@ type appModel struct {
 	stats           screens.StatsModel
 	state           viewState
 	careerOpsPath   string
+	userID          string
 	theme           theme.Theme
 	progressMetrics model.ProgressMetrics
 	statsMetrics    model.StatsMetrics
@@ -153,7 +154,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case screens.PipelineUpdateStatusMsg:
-		err := data.UpdateApplicationStatus(msg.CareerOpsPath, msg.App, msg.NewStatus)
+		err := data.UpdateApplicationStatus(msg.CareerOpsPath, msg.App, msg.NewStatus, m.userID)
 		m.reloadPipelineData()
 		if err != nil {
 			m.pipeline, _ = m.pipeline.Update(screens.StatusUpdateFailedMsg{Err: err.Error()})
@@ -164,7 +165,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case screens.PipelineUpdateStatusAndNotesMsg:
 		// Issue 1380: atomic status + notes write from the discard reason picker.
-		err := data.UpdateApplicationStatusAndNotes(msg.CareerOpsPath, msg.App, msg.NewStatus, msg.NotesAppend)
+		err := data.UpdateApplicationStatusAndNotes(msg.CareerOpsPath, msg.App, msg.NewStatus, msg.NotesAppend, m.userID)
 		m.reloadPipelineData()
 		if err != nil {
 			m.pipeline, _ = m.pipeline.Update(screens.StatusUpdateFailedMsg{Err: err.Error()})
@@ -207,7 +208,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		err := data.UpdateApplicationStatus(m.careerOpsPath, msg.App, msg.NewStatus)
+		err := data.UpdateApplicationStatus(m.careerOpsPath, msg.App, msg.NewStatus, m.userID)
 		m.reloadPipelineData()
 		if err != nil {
 			// A sidecar failure can follow a successful tracker write. Reflect
@@ -277,6 +278,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, openCmd(msg.Path)
 
 	case screens.PipelineGeneratePDFMsg:
+		msg.UserID = m.userID
 		return m, runGeneratePDF(msg)
 
 	default:
@@ -326,7 +328,10 @@ func runGeneratePDF(msg screens.PipelineGeneratePDFMsg) tea.Cmd {
 		if err != nil {
 			return screens.PipelinePDFGeneratedMsg{Err: err.Error()}
 		}
-		userID := filepath.Base(msg.CareerOpsPath)
+		userID := msg.UserID
+		if !reUserID.MatchString(userID) {
+			return screens.PipelinePDFGeneratedMsg{Err: "PDF regeneration requires the selected career-ops user"}
+		}
 		htmlPath := filepath.Join(msg.CareerOpsPath, filepath.FromSlash(msg.HTMLPath))
 		pdfPath := filepath.Join(msg.CareerOpsPath, filepath.FromSlash(msg.PDFPath))
 		args := []string{
@@ -343,7 +348,7 @@ func runGeneratePDF(msg screens.PipelineGeneratePDFMsg) tea.Cmd {
 		}
 		cmd := exec.Command("node", args...)
 		cmd.Dir = projectRoot
-		cmd.Env = append(cmd.Environ(), "CAREER_OPS_USER="+userID, "CAREER_OPS_USERS_DIR="+filepath.Dir(msg.CareerOpsPath), "CAREER_OPS_ROOT="+msg.CareerOpsPath)
+		cmd.Env = append(cmd.Environ(), "CAREER_OPS_USER="+userID, "CAREER_OPS_USERS_DIR="+filepath.Dir(msg.CareerOpsPath), "CAREER_OPS_ROOT="+msg.CareerOpsPath, "CAREER_OPS_DATA_DIR="+msg.CareerOpsPath)
 		// Preserve relative overrides before changing the child's working directory.
 		if tracker := resolveEnvPath(os.Getenv("CAREER_OPS_TRACKER")); tracker != "" {
 			cmd.Env = append(cmd.Env, "CAREER_OPS_TRACKER="+tracker)
@@ -480,6 +485,11 @@ func resolveEnvPath(envVal string) string {
 	return filepath.Clean(filepath.Join(root, trimmed))
 }
 
+func isSystemCheckout(path string) bool {
+	info, err := os.Stat(filepath.Join(path, "path-resolver.mjs"))
+	return err == nil && !info.IsDir()
+}
+
 func hasApplicationsFile(path string) bool {
 	for _, rel := range []string{"applications.md", filepath.Join("data", "applications.md")} {
 		if _, err := os.Stat(filepath.Join(path, rel)); err == nil {
@@ -505,7 +515,17 @@ func appendUniquePath(paths []string, path string) []string {
 }
 
 func inferUserPath(userID, usersDirFlag string) string {
+	return inferUserPathWithExecutable(userID, usersDirFlag, os.Executable)
+}
+
+func inferUserPathWithExecutable(userID, usersDirFlag string, executable func() (string, error)) string {
 	var candidates []string
+	// A per-user executable identifies its owner even when launched from another user's folder.
+	if userID == "" {
+		if exe, err := executable(); err == nil {
+			candidates = appendUniquePath(candidates, filepath.Dir(exe))
+		}
+	}
 
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = appendUniquePath(candidates, cwd)
@@ -528,7 +548,7 @@ func inferUserPath(userID, usersDirFlag string) string {
 		}
 	}
 
-	if exe, err := os.Executable(); err == nil {
+	if exe, err := executable(); err == nil {
 		exeDir := filepath.Dir(exe)
 		candidates = appendUniquePath(candidates, exeDir)
 		if userID != "" {
@@ -540,7 +560,7 @@ func inferUserPath(userID, usersDirFlag string) string {
 	}
 
 	for _, candidate := range candidates {
-		if hasApplicationsFile(candidate) && (userID == "" || filepath.Base(candidate) == userID) {
+		if hasApplicationsFile(candidate) && !isSystemCheckout(candidate) && reUserID.MatchString(filepath.Base(candidate)) && (userID == "" || filepath.Base(candidate) == userID) {
 			return candidate
 		}
 	}
@@ -579,10 +599,36 @@ func dashboardOpenTarget(userRoot, target string) string {
 }
 
 func resolveCareerOpsPath(pathFlag, usersDirFlag, userID string) (string, string, error) {
+	userID = strings.TrimSpace(userID)
 	if userID != "" && !reUserID.MatchString(userID) {
 		return "", "", fmt.Errorf("invalid career-ops user %q. Use letters, numbers, dots, underscores, or hyphens", userID)
 	}
 
+	if pathFlag == "" && userID == "" {
+		if inferred := inferUserPath("", usersDirFlag); inferred != "" {
+			userID = filepath.Base(inferred)
+		}
+	}
+	if pathFlag == "" && userID != "" {
+		if override := os.Getenv("CAREER_OPS_ROOT"); strings.TrimSpace(override) != "" {
+			return resolveEnvPath(override), userID, nil
+		}
+		if override := os.Getenv("CAREER_OPS_DATA_DIR"); strings.TrimSpace(override) != "" {
+			return resolveEnvPath(override), userID, nil
+		}
+		if usersDirFlag == "" && os.Getenv("CAREER_OPS_USERS_DIR") == "" {
+			if marker, err := os.ReadFile(filepath.Join(getRepoRoot(), ".career-ops-data")); err == nil && strings.TrimSpace(string(marker)) != "" {
+				return resolveEnvPath(string(marker)), userID, nil
+			}
+		}
+		usersDir := usersDirFlag
+		if usersDir == "" {
+			usersDir = os.Getenv("CAREER_OPS_USERS_DIR")
+		}
+		if strings.TrimSpace(usersDir) != "" {
+			return filepath.Join(resolveEnvPath(usersDir), userID), userID, nil
+		}
+	}
 	if pathFlag == "" {
 		if inferred := inferUserPath(userID, usersDirFlag); inferred != "" {
 			if userID == "" {
@@ -600,14 +646,36 @@ func resolveCareerOpsPath(pathFlag, usersDirFlag, userID string) (string, string
 	if abs, err := filepath.Abs(projectPath); err == nil {
 		projectPath = abs
 	}
-	if hasApplicationsFile(projectPath) {
+	if hasApplicationsFile(projectPath) && !isSystemCheckout(projectPath) {
 		if userID == "" {
 			userID = filepath.Base(projectPath)
+		}
+		if !reUserID.MatchString(userID) {
+			return "", "", fmt.Errorf("cannot infer a user from --path; pass --user ID")
 		}
 		return projectPath, userID, nil
 	}
 	if userID == "" {
 		return "", "", fmt.Errorf("--path points to a project directory; pass --user ID, or point --path at users/<user>")
+	}
+	if isSystemCheckout(projectPath) {
+		rootPath := func(value string) string {
+			if filepath.IsAbs(value) {
+				return filepath.Clean(value)
+			}
+			return filepath.Join(projectPath, value)
+		}
+		if value := strings.TrimSpace(os.Getenv("CAREER_OPS_ROOT")); value != "" {
+			return rootPath(value), userID, nil
+		}
+		if value := strings.TrimSpace(os.Getenv("CAREER_OPS_DATA_DIR")); value != "" {
+			return rootPath(value), userID, nil
+		}
+		if usersDirFlag == "" && os.Getenv("CAREER_OPS_USERS_DIR") == "" {
+			if marker, err := os.ReadFile(filepath.Join(projectPath, ".career-ops-data")); err == nil && strings.TrimSpace(string(marker)) != "" {
+				return rootPath(strings.TrimSpace(string(marker))), userID, nil
+			}
+		}
 	}
 
 	usersDir := usersDirFlag
@@ -641,7 +709,7 @@ func main() {
 		userID = os.Getenv("CAREER_OPS_USER")
 	}
 
-	careerOpsPath, _, err := resolveCareerOpsPath(*pathFlag, *usersDirFlag, userID)
+	careerOpsPath, resolvedUser, err := resolveCareerOpsPath(*pathFlag, *usersDirFlag, userID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -678,6 +746,7 @@ func main() {
 	m := appModel{
 		pipeline:        pm,
 		careerOpsPath:   careerOpsPath,
+		userID:          resolvedUser,
 		theme:           t,
 		progressMetrics: progressMetrics,
 		statsMetrics:    statsMetrics,

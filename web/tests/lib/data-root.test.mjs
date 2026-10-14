@@ -4,10 +4,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { resolveDataRoot } from '../../src/lib/core/data-root.mjs';
+import { careerOpsRoot } from '../../src/lib/user-context.mjs';
 
 const CORE = path.resolve(import.meta.dirname, '../../..');
-const resolve = (root, env) => resolveDataRoot(root, () => '../legacy-data', env, path.resolve, path.join);
+const resolve = (root, env) => {
+  const saved = {...process.env};
+  try {
+    for (const key of Object.keys(process.env).filter(key => key.startsWith('CAREER_OPS_'))) delete process.env[key];
+    Object.assign(process.env, {CAREER_OPS_CODE_ROOT: root, ...env});
+    return careerOpsRoot();
+  } finally {
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+};
 
 test('missing selection rejects legacy root, data-dir, and marker fallbacks', () => {
   for (const env of [{}, { CAREER_OPS_ROOT: '/legacy' }, { CAREER_OPS_DATA_DIR: '/legacy' }]) {
@@ -45,4 +55,14 @@ test('web and copied core resolver agree on default, relative, and absolute user
     Object.assign(process.env, saved);
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('production web data roots honor data-dir, marker and users override precedence', () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'web-marker-'));
+  try {
+    fs.writeFileSync(path.join(root,'.career-ops-data'),'marker-data');
+    assert.equal(resolve(root,{CAREER_OPS_USER:'fixture'}),path.join(root,'marker-data'));
+    assert.equal(resolve(root,{CAREER_OPS_USER:'fixture',CAREER_OPS_DATA_DIR:'explicit-data'}),path.join(root,'explicit-data'));
+    assert.equal(resolve(root,{CAREER_OPS_USER:'fixture',CAREER_OPS_USERS_DIR:'other-users'}),path.join(root,'other-users','fixture'));
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });

@@ -17,17 +17,28 @@
 //
 // Run:  node --test tests/lib/cv-template.test.mjs
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveCvTemplate } from "../../src/lib/core/cv-template.mjs";
 import { BASE_CV_TEMPLATE, buildPrompt } from "../../src/lib/run-prompts.mjs";
 import { linkCorePackage } from "../helpers/core-package.mjs";
 
 const CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const selectedEnv = { ...process.env };
+const fixtureRoots = [];
+const warmupRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cv-template-probe-"));
+process.env.CAREER_OPS_USER = "fixture";
+process.env.CAREER_OPS_DATA_DIR = warmupRoot;
+delete process.env.CAREER_OPS_ROOT;
+after(() => {
+  for (const root of [...fixtureRoots, warmupRoot]) fs.rmSync(root, { recursive: true, force: true });
+  for (const key of Object.keys(process.env)) delete process.env[key];
+  Object.assign(process.env, selectedEnv);
+});
 
 // cv-templates.mjs imports js-yaml. A web-only install (web-ci.yml runs `npm ci`
 // in web/ alone) has the file and not its dependencies, so probe importability
@@ -36,7 +47,7 @@ const CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 // followups-lock.test.mjs / #2922).
 let coreUsable = true;
 try {
-  await import(path.join(CORE, "cv-templates.mjs"));
+  await import(pathToFileURL(path.join(CORE, "cv-templates.mjs")).href);
 } catch {
   coreUsable = false;
 }
@@ -47,10 +58,11 @@ try {
  * directory, which also gives cv-templates.mjs a fresh module URL — it caches its
  * default profile path at load, so a shared copy would freeze the first case's env.
  */
-function fakeCheckout({ profileAt = "config/profile.yml", template = "mine", pack = null } = {}) {
+function fakeCheckout({ profileAt = "candidate/config/profile.yml", template = "mine", pack = null } = {}) {
   // realpath: macOS symlinks /var → /private/var, and path.relative() against an
   // unresolved base would compare two spellings of the same directory.
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cv-template-")));
+  fixtureRoots.push(root);
   fs.copyFileSync(path.join(CORE, "cv-templates.mjs"), path.join(root, "cv-templates.mjs"));
   // cv-templates.mjs imports ./lib/is-main-module.mjs, ./path-resolver.mjs (its
   // default profile path follows the data root), ./providers/_html-entities.mjs
@@ -101,7 +113,7 @@ async function asDashboard(root, profileEnv, fn) {
   const priorCwd = process.cwd();
   const priorEnv = process.env.CAREER_OPS_PROFILE;
   const priorData = process.env.CAREER_OPS_DATA_DIR;
-  process.env.CAREER_OPS_DATA_DIR = root;
+  process.env.CAREER_OPS_DATA_DIR = path.join(root, "candidate");
   fs.mkdirSync(path.join(root, "web"), { recursive: true });
   process.chdir(path.join(root, "web"));
   if (profileEnv === undefined) delete process.env.CAREER_OPS_PROFILE;
@@ -121,7 +133,7 @@ test("a RELATIVE CAREER_OPS_PROFILE resolves against the checkout, not the cwd",
   // documents it — relative — and a dashboard whose cwd is `<core>/web`
   const root = fakeCheckout();
 
-  const rel = await asDashboard(root, "config/profile.yml", () => resolveCvTemplate(root));
+  const rel = await asDashboard(root, "candidate/config/profile.yml", () => resolveCvTemplate(root));
 
   // Then cv.template is honored, exactly as it is on the CLI. Resolved against the
   // cwd this reads `<core>/web/config/profile.yml`, finds nothing, and silently
@@ -142,7 +154,7 @@ test("an ABSOLUTE CAREER_OPS_PROFILE is left alone", { skip: !coreUsable }, asyn
   fs.rmSync(abs, { force: true });
 });
 
-test("no CAREER_OPS_PROFILE falls back to the checkout's own config/profile.yml", { skip: !coreUsable }, async () => {
+test("no CAREER_OPS_PROFILE reads the selected data-root profile while templates stay in the checkout", { skip: !coreUsable }, async () => {
   // Given the default install, where the core's own default is the right answer
   // and this module must not restate it
   const root = fakeCheckout();

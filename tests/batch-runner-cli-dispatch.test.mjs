@@ -21,6 +21,7 @@ import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, chmodSync, existsS
 import { join, dirname, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8').replace(/\r\n/g, '\n');
@@ -60,6 +61,7 @@ if (/Unknown --cli/.test(SRC)) {
 
 if (dispatchBlock) {
   const work = mkdtempSync(join(tmpdir(), 'batch-cli-dispatch-'));
+  copyBatchOwnership(work);
   try {
     const bin = join(work, 'bin');
     mkdirSync(bin);
@@ -92,6 +94,10 @@ if (dispatchBlock) {
       'prompt="JOB PROMPT"',
       `resolved_prompt=${JSON.stringify(systemPrompt)}`,
       `log_file=${JSON.stringify(logFile)}`,
+      `SCRIPT_DIR=${JSON.stringify(join(work, 'batch'))}`,
+      `WORKER_DIR=${JSON.stringify(work)}`,
+      'WORKER_TIMEOUT_SECONDS=30',
+      'id=fixture',
       // The runner declares these before the loop; mirror them so the
       // extracted block runs in the same shape it has inside process_offer().
       // The block opens the retry loop (`while true; do`) and ends at the

@@ -43,7 +43,7 @@ Przetwarza URL-e ofert nagromadzone w `users/{USER}/data/pipeline.md`. Kandydat 
 **Przypadki szczególne:**
 - **LinkedIn**: Może wymagać logowania -> oznacz `[!]` i poproś kandydata o wklejenie tekstu
 - **PDF**: Jeśli URL wskazuje na PDF, przeczytaj go bezpośrednio narzędziem Read
-- **Prefiks `local:`**: Przeczytaj plik lokalny. Przykład: `local:users/{USER}/jds/linkedin-pm-ai.md` -> przeczytaj `users/{USER}/jds/linkedin-pm-ai.md`
+- **Prefiks `local:`**: Przeczytaj plik lokalny. Przykład: `local:jds/linkedin-pm-ai.md` -> przeczytaj `users/{USER}/jds/linkedin-pm-ai.md`
 - **Pracuj.pl / No Fluff Jobs / Just Join IT**: Popularne polskie portale. Playwright dobrze radzi sobie z bannerami cookie
 - **Bulldogjob / LinkedIn PL**: Oferty ustrukturyzowane, dobrze czytelne maszynowo. WebFetch zwykle wystarcza
 

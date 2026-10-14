@@ -27,7 +27,7 @@ Requires a tailored CV produced by `modes/pdf.md`. Normally that CV was just bui
 2. **Report** at `users/{USER}/reports/{num}-{company}-{date}.md` — read for the `**URL:**` header, archetype, and identified gaps.
 3. **JD** at `users/{USER}/jds/{slug}.md`, or fetched from the report's `**URL:**`.
 4. **Tailored bullets** — resolve the artifact for *this* role, in order. Never parse the `.pdf`.
-   1. `/tmp/cv-{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.json` from the same session — the cleanest source (`experience[].bullets[]`). This is the usual case, since the audit runs in the same `pdf` flow that wrote it.
+   1. The exact JSON payload path supplied by the current PDF flow (normally `/tmp/cv-{candidate}-{company}.json`), from the same session — the cleanest source (`experience[].bullets[]`). This is the usual case, since the audit runs in the same `pdf` flow that wrote it.
    2. The `html` column recorded for this report in `users/{USER}/data/pdf-index.tsv` (`report \t pdf \t html \t format \t date`, written by `generate-pdf.mjs`). Look the row up by report number; the canonical result is the flat report-linked HTML under `users/{USER}/output/`.
    3. A path the user supplies explicitly.
 

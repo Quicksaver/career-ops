@@ -1,16 +1,19 @@
 # Ortak Bağlam -- career-ops (Türkçe)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      BU DOSYA OTOMATİK GÜNCELLENEBİLİR. Buraya kişisel veri ekleme.
      
-     Özelleştirmeler users/{USER}/modes/_profile.md dosyasına gider (hiçbir zaman
+     Özelleştirmeler {DATA_ROOT}/modes/_profile.md dosyasına gider (hiçbir zaman
      otomatik güncellenmez). Bu dosya sistem kurallarını, puanlama
      mantığını ve her sürümde gelişen araç yapılandırmasını içerir.
      ============================================================ -->
 
 ## Temel Kaynaklar (Her değerlendirmeden önce MUTLAKA okunacak)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -27,14 +30,14 @@
 
 | Dosya | Konum | Ne zaman |
 |-------|-------|----------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (proje kök dizini) | Her zaman |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (varsa) | Her zaman — ayrıntılı kanıtlar |
-| profile.yml | `users/{USER}/config/profile.yml` | Her zaman — kişisel bilgiler ve hedef roller |
-| _profile.md | `users/{USER}/modes/_profile.md` | Her zaman — kullanıcı arketipleri, anlatı, müzakere |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (kullanıcı veri kökü) | Her zaman |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (varsa) | Her zaman — ayrıntılı kanıtlar |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | Her zaman — kişisel bilgiler ve hedef roller |
+| _profile.md | `{DATA_ROOT}/modes/_profile.md` | Her zaman — kullanıcı arketipleri, anlatı, müzakere |
 
-**KURAL: Kanıt noktalarındaki ölçüm değerlerini ASLA sabit kodlama.** Değerlendirme sırasında bunları users/{USER}/cv.md + users/{USER}/article-digest.md dosyalarından oku.
-**KURAL: Makale/proje metrikleri için `users/{USER}/article-digest.md`, `users/{USER}/cv.md`'ye göre önceliklidir.**
-**KURAL: `users/{USER}/cv.md` veya `users/{USER}/article-digest.md` içinde açıkça adaya atfedilmediği sürece, adayın bir projenin, deponun, kütüphanenin, aracın, framework'ün veya açık kaynak bir yapıtın yaratıcısı olduğunu ASLA iddia etme.** Bir aracı "kullanmak" ile onu "yaratmış olmak"ı karıştırmak (X'i kullanmak, X'i yaratmış olmak değildir) en yaygın uydurma kalıbıdır ve yasaktır.
+**KURAL: Kanıt noktalarındaki ölçüm değerlerini ASLA sabit kodlama.** Değerlendirme sırasında bunları {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md dosyalarından oku.
+**KURAL: Makale/proje metrikleri için `{DATA_ROOT}/article-digest.md`, `{DATA_ROOT}/cv.md`'ye göre önceliklidir.**
+**KURAL: `{DATA_ROOT}/cv.md` veya `{DATA_ROOT}/article-digest.md` içinde açıkça adaya atfedilmediği sürece, adayın bir projenin, deponun, kütüphanenin, aracın, framework'ün veya açık kaynak bir yapıtın yaratıcısı olduğunu ASLA iddia etme.** Bir aracı "kullanmak" ile onu "yaratmış olmak"ı karıştırmak (X'i kullanmak, X'i yaratmış olmak değildir) en yaygın uydurma kalıbıdır ve yasaktır.
 **KURAL: Anahtar kelimeler yeniden ifade edilir, asla uydurulmaz.** Yeniden sıralamak, yeniden çerçevelemek, öne çıkarmak — ama asla uydurmamak. Bir iddia kapsamdaki bir dosyayla desteklenmiyorsa adaya sor; yanıt yoksa çıkar. Bir konuda sessiz kalmak, uydurulmuş bir ayrıntıdan iyidir.
 **KURAL: `_profile.md`'yi bu dosyadan SONRA oku. Kullanıcının `_profile.md`'deki özelleştirmeleri buradaki varsayılanları geçersiz kılar.**
 
@@ -105,7 +108,7 @@ Sistem tüm hedef rollere eşit özenle yaklaşır. Maaş ve gelişim fırsatı 
 
 ### Arketip Tespiti
 
-İlanı arketipe göre sınıflandır. `users/{USER}/modes/_profile.md` → *Your Target Roles*
+İlanı arketipe göre sınıflandır. `{DATA_ROOT}/modes/_profile.md` → *Your Target Roles*
 belirleyicidir: orada arketip tanımlanmışsa tespiti **o** tabloya göre yap,
 aşağıdakini yalnızca onun kapsamadığı durumlar için yedek olarak kullan. Bu,
 yukarıda belirtilen önceliğin aynısıdır: kullanıcının `_profile.md`'deki
@@ -150,28 +153,28 @@ eklemez.
 | AI Forward Deployed | "client-facing", "deploy", "prototype", "fast delivery", "field" |
 | AI Transformation | "change management", "adoption", "enablement", "transformation" |
 
-Arketipi tespit ettikten sonra kullanıcıya özgü çerçeveleme ve kanıt noktaları için `users/{USER}/modes/_profile.md` dosyasını oku.
+Arketipi tespit ettikten sonra kullanıcıya özgü çerçeveleme ve kanıt noktaları için `{DATA_ROOT}/modes/_profile.md` dosyasını oku.
 
 ### Arketipe Göre Uyarlama
 
-> **Somut rakamlar ve metrikler: değerlendirme sırasında `users/{USER}/cv.md` ve `users/{USER}/article-digest.md` dosyalarından okunacak. Buraya sabit yazma.**
+> **Somut rakamlar ve metrikler: değerlendirme sırasında `{DATA_ROOT}/cv.md` ve `{DATA_ROOT}/article-digest.md` dosyalarından okunacak. Buraya sabit yazma.**
 
 
 | Rol ise... | Adayda şunu öne çıkar... | Kanıt kaynakları |
 |-----------|--------------------------|-----------------|
-| Platform / LLMOps | Production deneyimi, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | Multi-agent orchestration, HITL, güvenilirlik, maliyet | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product discovery, PRD'ler, metrikler, paydaş yönetimi | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | Sistem tasarımı, entegrasyonlar, enterprise uyum | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | Hızlı teslimat, müşteri yönlü, prototipten production'a | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | Değişim yönetimi, ekip enablement, benimseme | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | Production deneyimi, observability, evals, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | Multi-agent orchestration, HITL, güvenilirlik, maliyet | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product discovery, PRD'ler, metrikler, paydaş yönetimi | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | Sistem tasarımı, entegrasyonlar, enterprise uyum | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | Hızlı teslimat, müşteri yönlü, prototipten production'a | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | Değişim yönetimi, ekip enablement, benimseme | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 ### Kariyer Anlatısı (Tüm içeriklerde kullanılacak)
 
 
-`users/{USER}/config/profile.yml` dosyasındaki kariyer hikayesini tüm içeriklere zemin olarak kullan:
+`{DATA_ROOT}/config/profile.yml` dosyasındaki kariyer hikayesini tüm içeriklere zemin olarak kullan:
 - **PDF özetlerinde:** Geçmişten geleceğe bir köprü kur — "Aynı [becerileri] şimdi [ilan alanına] uyguluyorum."
-- **STAR hikayelerinde:** `users/{USER}/article-digest.md`'deki somut kanıt noktalarına başvur
+- **STAR hikayelerinde:** `{DATA_ROOT}/article-digest.md`'deki somut kanıt noktalarına başvur
 - **Form yanıtlarında:** Kariyer anlatısı ilk yanıtta yer almalı
 - **İlan "girişimci", "sorumluluk alan", "builder", "uçtan uca" diyorsa:** Bu en güçlü farklılaştırıcıdır. Eşleşme ağırlığını artır.
 
@@ -261,7 +264,7 @@ Türkçe iş ilanlarında ve sözleşme müzakerelerinde, yabancı piyasalarda k
 ### ASLA
 
 1. Deneyim veya metrik uydurma
-2. `users/{USER}/cv.md` ya da portfolyo dosyalarını değiştirme
+2. `{DATA_ROOT}/cv.md` ya da portfolyo dosyalarını değiştirme
 3. Adayın onayı olmadan başvuru gönderme
 4. Üretilen mesajlarda telefon numarası paylaşma
 5. Piyasa fiyatının altında ücret önerme
@@ -272,7 +275,7 @@ Türkçe iş ilanlarında ve sözleşme müzakerelerinde, yabancı piyasalarda k
 ### HER ZAMAN
 
 0. **Ön yazı:** Form izin veriyorsa HER ZAMAN ön yazı ekle. CV ile aynı görsel tasarımda PDF olarak üret. İçerik: ilandan doğrudan alıntılar + kanıt noktalarıyla eşleştirme. Maksimum 1 sayfa.
-1. Herhangi bir ilanı değerlendirmeden önce `users/{USER}/cv.md` ve `users/{USER}/article-digest.md` dosyalarını oku (varsa)
+1. Herhangi bir ilanı değerlendirmeden önce `{DATA_ROOT}/cv.md` ve `{DATA_ROOT}/article-digest.md` dosyalarını oku (varsa)
 1b. **Her oturumun ilk değerlendirmesinde:** `node cv-sync-check.mjs` çalıştır. Uyarı varsa adayı bilgilendirmeden devam etme
 2. Rol arketipini belirle ve çerçevelemeyi buna göre uyarla
 3. CV eşleştirmesinde dosyadan tam satır alıntıla
@@ -292,9 +295,9 @@ Türkçe iş ilanlarında ve sözleşme müzakerelerinde, yabancı piyasalarda k
 | WebSearch | Maaş araştırması, şirket kültürü, Kariyer.net/LinkedIn ilanları, Türk şirket haberleri |
 | WebFetch | Statik sayfalardan ilan içeriği çekme |
 | Playwright | İlan doğrulama (browser_navigate + browser_snapshot). **KRİTİK: Aynı anda 2+ ajan Playwright ile çalıştırma — tek browser instance paylaşılır** |
-| Read | users/{USER}/cv.md, _profile.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, _profile.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | PDF için geçici HTML, rapor .md dosyaları, `batch/tracker-additions/*.tsv` (yeni takipçi girişleri) |
-| Edit | Rapor ve diğer üretilmiş içerikteki düzeltmeler. `users/{USER}/data/applications.md` tablosu asla doğrudan düzenlenmez: yeni satırlar TSV olarak eklenip `node merge-tracker.mjs` ile birleştirilir, mevcut satırların durum ve not güncellemeleri `node set-status.mjs` ile yapılır |
+| Edit | Rapor ve diğer üretilmiş içerikteki düzeltmeler. `{DATA_ROOT}/data/applications.md` tablosu asla doğrudan düzenlenmez: yeni satırlar TSV olarak eklenip `node merge-tracker.mjs` ile birleştirilir, mevcut satırların durum ve not güncellemeleri `node set-status.mjs` ile yapılır |
 | Canva MCP | İsteğe bağlı görsel CV üretimi. Temel tasarımı çoğalt, metni düzenle, PDF olarak dışa aktar. `profile.yml`'de `canva_resume_design_id` gerektirir. |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |
 

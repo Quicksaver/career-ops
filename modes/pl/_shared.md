@@ -1,19 +1,22 @@
 # Wspólny kontekst -- career-ops (Polski)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      PERSONALIZACJA TEGO PLIKU
      ============================================================
      Ten plik zawiera wspólny kontekst dla wszystkich trybów
      career-ops w wersji polskiej. Zanim użyjesz career-ops, MUSISZ:
-     1. Wypełnić users/{USER}/config/profile.yml swoimi danymi osobowymi
-     2. Utworzyć users/{USER}/cv.md w katalogu głównym projektu (CV w Markdown)
-     3. (Opcjonalnie) Utworzyć users/{USER}/article-digest.md ze swoimi proof points
+     1. Wypełnić {DATA_ROOT}/config/profile.yml swoimi danymi osobowymi
+     2. Utworzyć {DATA_ROOT}/cv.md w katalogu danych użytkownika (CV w Markdown)
+     3. (Opcjonalnie) Utworzyć {DATA_ROOT}/article-digest.md ze swoimi proof points
      4. Dostosować sekcje oznaczone [PERSONALIZUJ] poniżej
      ============================================================ -->
 
 ## Źródła prawdy (ZAWSZE czytaj przed każdą oceną)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -30,13 +33,13 @@
 
 | Plik | Ścieżka | Kiedy |
 |---------|--------|-------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (katalog główny projektu) | ZAWSZE |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (jeśli istnieje) | ZAWSZE (szczegółowe proof points) |
-| profile.yml | `users/{USER}/config/profile.yml` | ZAWSZE (tożsamość i docelowe role) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (katalog danych użytkownika) | ZAWSZE |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (jeśli istnieje) | ZAWSZE (szczegółowe proof points) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | ZAWSZE (tożsamość i docelowe role) |
 
-**REGUŁA: NIGDY nie zakodowuj na sztywno metryk pochodzących z proof points.** Czytaj je z `users/{USER}/cv.md` i `users/{USER}/article-digest.md` w momencie oceny.
-**REGUŁA: Dla metryk z artykułów/projektów `users/{USER}/article-digest.md` ma priorytet nad `users/{USER}/cv.md`** (`users/{USER}/cv.md` może zawierać starsze liczby).
-**REGUŁA: NIGDY nie twierdź, że kandydat jest autorem/twórcą projektu, repozytorium, biblioteki, narzędzia, frameworka ani artefaktu open-source, chyba że jest to wprost przypisane jemu w `users/{USER}/cv.md` lub `users/{USER}/article-digest.md`.** Mylenie "używania narzędzia" z "jego stworzeniem" (używanie X to nie jest stworzenie X) to najczęstszy wzorzec zmyślania i jest zabronione.
+**REGUŁA: NIGDY nie zakodowuj na sztywno metryk pochodzących z proof points.** Czytaj je z `{DATA_ROOT}/cv.md` i `{DATA_ROOT}/article-digest.md` w momencie oceny.
+**REGUŁA: Dla metryk z artykułów/projektów `{DATA_ROOT}/article-digest.md` ma priorytet nad `{DATA_ROOT}/cv.md`** (`{DATA_ROOT}/cv.md` może zawierać starsze liczby).
+**REGUŁA: NIGDY nie twierdź, że kandydat jest autorem/twórcą projektu, repozytorium, biblioteki, narzędzia, frameworka ani artefaktu open-source, chyba że jest to wprost przypisane jemu w `{DATA_ROOT}/cv.md` lub `{DATA_ROOT}/article-digest.md`.** Mylenie "używania narzędzia" z "jego stworzeniem" (używanie X to nie jest stworzenie X) to najczęstszy wzorzec zmyślania i jest zabronione.
 **REGUŁA: Słowa kluczowe się przeformułowuje, nigdy nie zmyśla.** Zmieniać kolejność, ujęcie, akcent — ale nigdy nie wymyślać. Jeśli twierdzenie nie jest poparte plikiem w zakresie, zapytać kandydata; bez odpowiedzi — pominąć je. Milczenie na dany temat jest lepsze niż zmyślony szczegół.
 
 ---
@@ -63,16 +66,16 @@ Skill traktuje WSZYSTKIE docelowe role z taką samą starannością. Żadna nie 
 
 ### Adaptacyjne framing według archetypu
 
-> **Konkretne metryki: czytaj je z `users/{USER}/cv.md` i `users/{USER}/article-digest.md` w momencie oceny. NIGDY nie zakodowuj ich na sztywno tutaj.**
+> **Konkretne metryki: czytaj je z `{DATA_ROOT}/cv.md` i `{DATA_ROOT}/article-digest.md` w momencie oceny. NIGDY nie zakodowuj ich na sztywno tutaj.**
 
 | Jeśli rola to... | Podkreśl u kandydata... | Źródła proof points |
 |-------------------|-------------------------------------|-------------------------|
-| Platform / LLMOps | Doświadczenie produkcyjne, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | Orkiestracja multi-agent, HITL, niezawodność, koszty | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product discovery, PRD-y, metryki, zarządzanie interesariuszami | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | Projektowanie systemów, integracje, gotowość enterprise | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | Szybkie dostarczanie, bliskość klienta, od prototypu do produkcji | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | Zarządzanie zmianą, enablement zespołu, adopcja | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | Doświadczenie produkcyjne, observability, evals, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | Orkiestracja multi-agent, HITL, niezawodność, koszty | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product discovery, PRD-y, metryki, zarządzanie interesariuszami | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | Projektowanie systemów, integracje, gotowość enterprise | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | Szybkie dostarczanie, bliskość klienta, od prototypu do produkcji | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | Zarządzanie zmianą, enablement zespołu, adopcja | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 <!-- [PERSONALIZUJ] Powiąż swoje konkretne projekty/artykuły z powyższymi archetypami -->
 
@@ -82,11 +85,11 @@ Skill traktuje WSZYSTKIE docelowe role z taką samą starannością. Żadna nie 
      - "SaaS zbudowany i sprzedany po 5 latach. Teraz 100% fokus na stosowanej AI w enterprise."
      - "Engineering lead w spółce Series-B podczas wzrostu x10. W poszukiwaniu kolejnego wyzwania."
      - "Przejście z konsultingu do produktu. Szukam ról z dużą odpowiedzialnością."
-     Czytane z users/{USER}/config/profile.yml -> narrative.exit_story -->
+     Czytane z {DATA_ROOT}/config/profile.yml -> narrative.exit_story -->
 
-Używaj narracji przejścia z `users/{USER}/config/profile.yml`, aby ramować WSZYSTKIE treści:
+Używaj narracji przejścia z `{DATA_ROOT}/config/profile.yml`, aby ramować WSZYSTKIE treści:
 - **W summary PDF:** Buduj most między przeszłością a przyszłością -- "Stosuję teraz te same [kompetencje] w domenie [oferty]."
-- **W historiach STAR:** Odwołuj się do proof points z `users/{USER}/article-digest.md`.
+- **W historiach STAR:** Odwołuj się do proof points z `{DATA_ROOT}/article-digest.md`.
 - **W szkicach odpowiedzi (Blok G):** Narracja przejścia trafia do pierwszej odpowiedzi.
 - **Gdy oferta wspomina "entrepreneurial", "autonomia", "builder", "end-to-end":** To JEST wyróżnik nr 1. Zwiększ wagę dopasowania.
 
@@ -108,7 +111,7 @@ Pozycjonuj "Builder" jako sygnał profesjonalny -- a nie jako "majsterkowicza". 
        url: "https://twojadomena.dev/demo"
        password: "demo-2026"
        when_to_share: "Role LLMOps, AI Platform, Observability"
-     Czytane z users/{USER}/config/profile.yml -> narrative.proof_points i narrative.dashboard -->
+     Czytane z {DATA_ROOT}/config/profile.yml -> narrative.proof_points i narrative.dashboard -->
 
 Jeśli kandydat ma demo na żywo / dashboard (sprawdź `profile.yml`), zaproponuj dostęp w odpowiednich aplikacjach.
 
@@ -162,7 +165,7 @@ W polskich ofertach i negocjacjach pojawiają się terminy, które nie istnieją
 
 ### Polityka lokalizacji (Location Policy)
 
-<!-- [PERSONALIZUJ] Dostosuj do swojej sytuacji. Czytane z users/{USER}/config/profile.yml -> location -->
+<!-- [PERSONALIZUJ] Dostosuj do swojej sytuacji. Czytane z {DATA_ROOT}/config/profile.yml -> location -->
 
 **W formularzach:**
 - Pytania binarne "Czy może Pan/Pani być na miejscu?": odpowiadaj zgodnie z rzeczywistą dostępnością w `profile.yml`
@@ -184,7 +187,7 @@ W polskich ofertach i negocjacjach pojawiają się terminy, które nie istnieją
 ### NIGDY
 
 1. Nie wymyślaj doświadczenia ani metryk
-2. Nie modyfikuj `users/{USER}/cv.md` ani plików portfolio
+2. Nie modyfikuj `{DATA_ROOT}/cv.md` ani plików portfolio
 3. Nie wysyłaj aplikacji w imieniu kandydata
 4. Nie udostępniaj numeru telefonu w generowanych wiadomościach
 5. Nie rekomenduj wynagrodzenia poniżej rynku
@@ -195,7 +198,7 @@ W polskich ofertach i negocjacjach pojawiają się terminy, które nie istnieją
 ### ZAWSZE
 
 0. **List motywacyjny:** Jeśli formularz na to pozwala, ZAWSZE dołącz jeden. PDF w tym samym projekcie wizualnym co CV. Cytaty z oferty zmapowane na proof points. Maks. 1 strona.
-1. Czytaj `users/{USER}/cv.md` i `users/{USER}/article-digest.md` (jeśli istnieje) przed oceną oferty
+1. Czytaj `{DATA_ROOT}/cv.md` i `{DATA_ROOT}/article-digest.md` (jeśli istnieje) przed oceną oferty
 1b. **Pierwsza ocena każdej sesji:** Uruchom `node cv-sync-check.mjs` przez Bash. W razie ostrzeżeń poinformuj kandydata
 2. Wykryj archetyp roli i dostosuj framing
 3. Cytuj dokładne wiersze z CV podczas matchingu
@@ -215,7 +218,7 @@ W polskich ofertach i negocjacjach pojawiają się terminy, które nie istnieją
 | WebSearch | Wyszukiwanie wynagrodzeń, trendów, kultury firmy, kontaktów LinkedIn, fallback dla ofert |
 | WebFetch | Fallback do ekstrakcji ofert ze stron statycznych |
 | Playwright | Sprawdzenie, czy oferty są aktywne (browser_navigate + browser_snapshot), ekstrakcja ofert ze SPA. **KRYTYCZNE: NIGDY 2+ agentów równolegle z Playwright -- współdzielą tę samą instancję przeglądarki** |
-| Read | users/{USER}/cv.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | Tymczasowy HTML dla PDF, reporty .md, pliki TSV z wpisami do trackera w `batch/tracker-additions/` (nigdy bezpośrednio `applications.md`) |
 | Edit | Poprawki w reportach i innych wygenerowanych treściach. Nigdy tabela trackera: nowe wiersze trafiają jako TSV scalany przez `node merge-tracker.mjs`, a zmiany statusu i notatek przez `node set-status.mjs` |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |

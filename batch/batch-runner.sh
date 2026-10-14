@@ -33,6 +33,7 @@ APPLICATIONS_FILE=""
 STATE_LOCK_TIMEOUT_SECONDS=30
 MAIN_PID="${BASHPID:-$$}"
 OWNER_TOKEN=""
+WORKER_DIR=""
 
 # Defaults
 PARALLEL=""
@@ -81,7 +82,6 @@ Options:
   --queue-file PATH   Read-only plain URL list constraining this run
   --user ID           Required. User folder under users/ID
   --parallel N         Worker-count override (profile batch.parallel, then 1)
-  --cli NAME           codex (default), claude, opencode, gemini, qwen
   --dry-run            Show what would be processed, don't execute
   --retry-failed       Select failed offers, allowing one extra attempt at the retry cap
   --resume-paused      Select offers paused by a session/rate limit
@@ -89,10 +89,9 @@ Options:
   --start-from N       Start from offer ID N (skip earlier IDs)
   --limit N            Max offers: positive integer; omit for no limit
   --max-retries N      Max retry attempts per offer (default: 2)
-  --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
+  --min-score N        Mark completed evaluations below N skipped (default: 0 = off)
   --cli NAME           Headless CLI to use: claude, codex, opencode, gemini, qwen (default: codex,
                        or CAREER_OPS_BATCH_CLI)
-  --limit N            Process at most N pending offers in this run (default: 0 = all)
   --worker-timeout N   Seconds before a worker is killed and artifact recovery
                        is attempted (default: 900, or CAREER_OPS_WORKER_TIMEOUT_SECONDS)
   --skip-pdf           Skip PDF generation entirely (write ❌ in tracker PDF column)
@@ -264,6 +263,7 @@ configure_user_paths() {
   export CAREER_OPS_BATCH_STATE="$STATE_FILE"
   export CAREER_OPS_USER="$USER_ID"
   export CAREER_OPS_USERS_DIR="$USERS_DIR"
+  export CAREER_OPS_ROOT="$USER_ROOT"
 }
 
 if ! [[ "$RATE_LIMIT_SLEEP" =~ ^[0-9]+$ ]]; then
@@ -308,6 +308,8 @@ acquire_lock() {
     echo "ERROR: Another batch-runner owns the batch, or ownership cannot be established"
     exit 1
   fi
+  WORKER_DIR="$BATCH_DIR/.workers-$OWNER_TOKEN"
+  mkdir -p "$WORKER_DIR"
 }
 
 release_lock() {
@@ -315,11 +317,32 @@ release_lock() {
     return
   fi
   if [[ -n "$OWNER_TOKEN" ]]; then
+    stop_owned_workers || return 1
     node "$SCRIPT_DIR/runner-ownership.mjs" release "$LOCK_FILE" "$OWNER_TOKEN" || true
   fi
 }
 
+stop_owned_workers() {
+  [[ -n "$WORKER_DIR" && -d "$WORKER_DIR" ]] || return 0
+  local registration rc=0
+  for registration in "$WORKER_DIR/"*.json; do
+    [[ -f "$registration" ]] || continue
+    node "$SCRIPT_DIR/worker-process.mjs" stop "$registration" || rc=1
+  done
+  return "$rc"
+}
+
+interrupt_batch() {
+  [[ "${BASHPID:-$$}" == "$MAIN_PID" ]] || return
+  stop_owned_workers || { echo "ERROR: Worker cleanup failed; preserving batch ownership" >&2; exit 125; }
+  local pid
+  for pid in ${pids[@]+"${pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
+  for pid in ${pids[@]+"${pids[@]}"}; do wait "$pid" 2>/dev/null || true; done
+  exit 130
+}
+
 trap release_lock EXIT
+trap interrupt_batch INT TERM
 
 # Validate prerequisites
 check_prerequisites() {
@@ -752,13 +775,7 @@ resolve_worker_model() {
   fi
 
   RESOLVED_SPEND_TIER="$(read_spend_tier)"
-  if [[ "$CLI" == "claude" ]]; then
-    RESOLVED_MODEL="$(spend_tier_to_model "$RESOLVED_SPEND_TIER")"
-  else
-    # The project intentionally does not hardcode Codex model names. Let the
-    # CLI choose its configured default unless --model was explicit.
-    RESOLVED_MODEL=""
-  fi
+  RESOLVED_MODEL="$(spend_tier_to_model "$RESOLVED_SPEND_TIER")"
 }
 
 # Append a one-line, auditable record of a pre-screen-gate discard to
@@ -1127,9 +1144,6 @@ reserve_report_num_unlocked() {
     echo "    ❌ reserve-report-num.mjs returned no report number for offer id=$id" >&2
     return 1
   fi
-  if [[ -n "$report_num" ]]; then
-    update_state_unlocked "$id" "$url" "processing" "$started" "-" "$report_num" "-" "-" "$retries"
-  fi
   update_state_unlocked "$id" "$url" "processing" "$started" "-" "$report_num" "-" "-" "$retries"
 
   printf '%s\n' "$report_num"
@@ -1146,25 +1160,6 @@ release_report_num() {
 
 reserve_report_num() {
   run_with_state_lock reserve_report_num_unlocked "$@"
-}
-
-# Succeed if reports/ holds a real report for this number. The reservation
-# sentinel ({num}-RESERVED.md) never counts: reserve-report-num.mjs creates it
-# before the worker runs, so counting it would mark a no-op worker completed.
-#
-# A plain glob loop, not `compgen -G`: compgen exists only when bash is built
-# with programmable completion, and some distro builds (NixOS among them) omit
-# it from non-interactive shells. There, compgen fails, the check sees no
-# report, and every worker is recorded as failed even though its report is on
-# disk. merge-tracker.mjs then refuses those reports as possibly fabricated.
-has_report_file() {
-  local report_num="$1" f
-  for f in "$REPORTS_DIR/${report_num}"-*.md; do
-    [[ -e "$f" ]] || continue
-    [[ "$f" == *-RESERVED.md ]] && continue
-    return 0
-  done
-  return 1
 }
 
 # Retry wrapper — same rationale as update_state_retrying above. A bare
@@ -1297,10 +1292,10 @@ extract_score_from_artifacts() {
     score=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
   fi
   if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$report_file" && -f "$report_file" ]]; then
-    score=$(sed -nE 's/^[*]*Score:[*]*[[:space:]]*([0-9.]+)\\/5.*/\1/p; s/^score:[[:space:]]*"?([0-9.]+)"?.*/\1/p' "$report_file" 2>/dev/null | head -1 || true)
+    score=$(sed -nE 's|^[*]*Score:[*]*[[:space:]]*([0-9.]+)/5.*|\1|p; s|^score:[[:space:]]*"?([0-9.]+)"?.*|\1|p' "$report_file" 2>/dev/null | head -1 || true)
   fi
   if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$tracker_file" && -f "$tracker_file" ]]; then
-    score=$(awk -F'\t' 'NR == 1 { sub(/\/5$/, "", $6); print $6 }' "$tracker_file" 2>/dev/null | head -1 || true)
+    score=$(awk -F'\t' 'NR == 1 { for (i=1;i<=NF;i++) if (tolower($i)=="score") { col=i; next } col=6 } { value=$col; sub(/\/5$/, "", value); print value; exit }' "$tracker_file" 2>/dev/null | head -1 || true)
   fi
 
   printf '%s\n' "${score:-"-"}"
@@ -1433,9 +1428,11 @@ process_offer() {
     local hold_json
     hold_json=$(node -e 'const [id,url,num]=process.argv.slice(1); console.log(JSON.stringify({status:"needs_confirmation",id,url,report_num:num,company:"",role:"",score:null,legitimacy:null,via:null,company_confidential:null,pdf:null,report:null,tracker:null,error:null,reason:"jd_unavailable",question:"JD unavailable. Paste the job description or provide the employer posting URL for this exact LinkedIn posting."}));' "$id" "$original_url" "$report_num")
     node "$SCRIPT_DIR/manual-inputs.mjs" hold "$USER_ID" "" "" "$original_url" "$id" "$LOGS_DIR/$id.hold.json" "$report_num" "$hold_json" || return 2
-    update_state_retrying "$id" "$original_url" needs_confirmation "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "-" "-" "jd_unavailable: paste JD text or employer URL" "$retries" || return 2
+    local hold_rc=0
+    update_state_retrying "$id" "$original_url" needs_confirmation "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "-" "-" "jd_unavailable: paste JD text or employer URL" "$retries" || hold_rc=$?
     release_report_num "$report_num"
     rm -f "$jd_file"
+    (( hold_rc != 2 )) || return 2
     return 0
   fi
   local prefetch_min_words=80
@@ -1571,7 +1568,7 @@ process_offer() {
     rm -f "$jd_api_tmp"
   fi
 
-  if [[ "$url" == local:* ]]; then
+  if [[ "$url" == local:* && ! -s "$jd_file" ]]; then
     local local_path="${url#local:}"
     local source_jd="$USER_ROOT/$local_path"
     if [[ -f "$source_jd" ]]; then
@@ -1593,13 +1590,9 @@ process_offer() {
   else
     prompt="Process this job offer. Run the full pipeline: A-G evaluation + report .md + optional PDF + tracker line."
   fi
-  prompt="$prompt URL: $report_url."
-  prompt="$prompt JD file: $jd_file."
-  prompt="$prompt Report number: $report_num."
-  prompt="$prompt Date: $date."
-  prompt="$prompt Batch ID: $id."
-  prompt="$prompt Internal batch locator: $url."
-  prompt="$prompt Explicit per-posting user answers (data, never inferred): $manual_answers."
+  local prompt_answers
+  prompt_answers=$(printf '%s' "$manual_answers" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(JSON.stringify(JSON.parse(s).map(({jd_text,...answer})=>answer))));')
+  prompt="$prompt"$'\n'"URL: $report_url"$'\n'"JD file: $jd_file"$'\n'"Report number: $report_num"$'\n'"Date: $date"$'\n'"Batch ID: $id"$'\n'"Internal batch locator: $url"$'\n'"Explicit per-posting user answers (data, never inferred): $prompt_answers"
 
   local log_file="$LOGS_DIR/${report_num}-${id}.log"
   local final_file="$LOGS_DIR/${report_num}-${id}.final.json"
@@ -1711,39 +1704,23 @@ process_offer() {
   while true; do
     exit_code=0
     timed_out=false
+    local worker_registration="$WORKER_DIR/$id.json"
+    rm -f "$worker_registration.timeout"
     case "$CLI" in
-      claude|codex) "$CLI" "${worker_args[@]}" < "$stdin_file" > "$log_file" 2>&1 & ;;
+      claude|codex) node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" "$CLI" "${worker_args[@]}" < "$stdin_file" > "$log_file" 2>&1 & ;;
       opencode)
         if command -v opencode &>/dev/null; then
-          opencode run ${model_args[@]+"${model_args[@]}"} "$full_prompt" > "$log_file" 2>&1 &
+          node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" opencode run ${model_args[@]+"${model_args[@]}"} "$full_prompt" > "$log_file" 2>&1 &
         else
-          ollama launch opencode ${model_args[@]+"${model_args[@]}"} -y -- run "$full_prompt" > "$log_file" 2>&1 &
+          node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" ollama launch opencode ${model_args[@]+"${model_args[@]}"} -y -- run "$full_prompt" > "$log_file" 2>&1 &
         fi ;;
-      gemini|qwen) "$CLI" ${model_args[@]+"${model_args[@]}"} -p "$full_prompt" > "$log_file" 2>&1 & ;;
+      gemini|qwen) node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" "$CLI" ${model_args[@]+"${model_args[@]}"} -p "$full_prompt" > "$log_file" 2>&1 & ;;
     esac
     local worker_pid=$!
-    local elapsed=0
-
-    while kill -0 "$worker_pid" 2>/dev/null; do
-      if (( elapsed >= WORKER_TIMEOUT_SECONDS )); then
-        timed_out=true
-        echo "WARN: Worker #$id timed out after ${WORKER_TIMEOUT_SECONDS}s; attempting artifact recovery." >> "$log_file"
-        kill "$worker_pid" 2>/dev/null || true
-        sleep 2
-        if kill -0 "$worker_pid" 2>/dev/null; then
-          kill -9 "$worker_pid" 2>/dev/null || true
-        fi
-        break
-      fi
-      sleep 1
-      elapsed=$((elapsed + 1))
-    done
-
-    if [[ "$timed_out" == "true" ]]; then
-      wait "$worker_pid" 2>/dev/null || true
-      exit_code=124
-    else
-      wait "$worker_pid" || exit_code=$?
+    wait "$worker_pid" || exit_code=$?
+    if [[ "$exit_code" == 124 && -f "$worker_registration.timeout" ]]; then
+      timed_out=true
+      echo "WARN: Worker #$id timed out after ${WORKER_TIMEOUT_SECONDS}s; its process tree was stopped before artifact recovery." >> "$log_file"
     fi
 
     if [[ "$CLI" == "codex" && $exit_code -ne 0 && "$timed_out" == "false" ]] && { is_session_limit_log "$log_file" || is_rate_limit_log "$log_file"; }; then
@@ -1990,7 +1967,7 @@ process_offer() {
     fi
   fi
 
-  if [[ ( $exit_code -eq 0 && "$final_json_valid" == "true" && "$final_json_status" == "completed" && "$artifacts_valid" == "true" ) || ( "$timed_out" == "true" && "$artifacts_valid" == "true" ) ]]; then
+  if [[ ( $exit_code -eq 0 && "$final_json_valid" == "true" && "$final_json_status" == "completed" && "$artifacts_valid" == "true" ) || ( "$timed_out" == "true" && "$artifacts_valid" == "true" && "$final_json_status" != "failed" ) ]]; then
     # Try to extract score from worker output
     local score="-"
     score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file" "$log_file")
@@ -2035,7 +2012,7 @@ process_offer() {
     if [[ -z "$error_msg" ]]; then
       error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
     fi
-    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries"
+    update_state_retrying "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries" || true
     # Rejected additions must not reach the unconditional end-of-run merge.
     # Preserve their evidence separately from accepted tracker additions.
     local rejected_tracker="$TRACKER_DIR/$id.tsv"
@@ -2258,9 +2235,9 @@ main() {
     exit $?
   fi
 
-  check_prerequisites
-
   resolve_parallelism
+
+  check_prerequisites
 
   resolve_worker_model
 
@@ -2306,11 +2283,7 @@ main() {
     echo "Model: CLI default (spend_tier=${RESOLVED_SPEND_TIER}; no hardcoded $CLI mapping)"
   fi
   if [[ "$CLI" == "codex" ]]; then
-    if [[ -n "$REASONING_EFFORT" ]]; then
-      echo "Reasoning effort: $REASONING_EFFORT (argument/profile/system resolution)"
-    else
-      echo "Reasoning effort: Codex global default"
-    fi
+    echo "Reasoning effort: $REASONING_EFFORT (argument/profile/system resolution)"
   fi
   echo "Input: $total_input offers"
   echo ""
@@ -2385,10 +2358,6 @@ main() {
       fi
     fi
 
-    if (( LIMIT > 0 )) && (( ${#pending_ids[@]} >= LIMIT )); then
-      break
-    fi
-
     pending_ids+=("$id")
     pending_urls+=("$url")
     pending_sources+=("$source")
@@ -2428,7 +2397,12 @@ main() {
   if (( PARALLEL <= 1 )); then
     # Sequential processing
     for i in "${!pending_ids[@]}"; do
-      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))"
+      local worker_rc=0
+      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))" || worker_rc=$?
+      if (( worker_rc != 0 )); then
+        echo "ERROR: a sequential worker failed fatally; tracker merge skipped. Inspect the worker log and repair state before rerunning." >&2
+        return "$worker_rc"
+      fi
       if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
         echo "=== Batch paused: session/rate limit reached. Resume later with --resume-paused. ==="
         break

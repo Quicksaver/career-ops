@@ -1,3 +1,4 @@
+import './user-fixture.mjs';
 /**
  * tests/process-quality.test.mjs — Systematic test suite for process-quality.mjs
  *
@@ -346,6 +347,13 @@ eq('--min-threshold sets minThreshold in metadata', thresholdJson.metadata.minTh
 const badThresholdOut = runUserCli(['--min-threshold', 'abc', '--json']);
 const badThresholdJson = JSON.parse(badThresholdOut);
 eq('--min-threshold abc falls back to 1', badThresholdJson.metadata.minThreshold, 1);
+
+for (const bad of ['-5', '3.5', '7abc', '999999999999999999999', '9007199254740993']) {
+  const parsed = JSON.parse(runUserCli(['--min-threshold', bad, '--json']));
+  eq(`--min-threshold ${bad} falls back to 1`, parsed.metadata.minThreshold, 1);
+}
+
+eq('--min-threshold 0 retains the valid zero boundary', JSON.parse(runUserCli(['--min-threshold', '0', '--json'])).metadata.minThreshold, 0);
 
 const summaryOut = runUserCli(['--summary']);
 ok('--summary produces human-readable output', summaryOut.includes('Process Quality Signal'));

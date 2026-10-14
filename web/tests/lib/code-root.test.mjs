@@ -29,6 +29,12 @@ test("no env → the cwd's parent is the checkout (web/ lives inside it)", () =>
   assert.equal(resolveCodeRoot(web, {}), CORE);
 });
 
+test("web ROOT alias selects system code and CODE_ROOT takes precedence", () => {
+  const cwd = path.join(os.tmpdir(), "web-alias", "web");
+  assert.equal(resolveCodeRoot(cwd, { CAREER_OPS_ROOT: "../engine", CAREER_OPS_DATA_DIR: "../data" }), path.resolve(cwd, "../engine"));
+  assert.equal(resolveCodeRoot(cwd, { CAREER_OPS_ROOT: "../ignored", CAREER_OPS_CODE_ROOT: "../selected" }), path.resolve(cwd, "../selected"));
+});
+
 test("the data root is never consulted — scripts never resolve into it (#524)", () => {
   const dataRoot = path.join(CORE, "..", "career-data");
   const codeRoot = resolveCodeRoot(dataRoot, {});

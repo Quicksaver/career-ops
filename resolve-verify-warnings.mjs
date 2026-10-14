@@ -9,9 +9,11 @@ import {
   rmSync,
 } from 'fs';
 import { basename, dirname, extname, join } from 'path';
+import { spawnSync } from 'child_process';
 import {
   getUserContext,
   printUserContextErrorAndExit,
+  systemPath,
   userPath,
 } from './lib/user-context.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
@@ -25,6 +27,8 @@ import {
 } from './tracker-utils.mjs';
 import { normalizeReportLink } from './tracker-links.mjs';
 import { mostAdvancedDuplicateRow } from './lib/duplicate-lifecycle.mjs';
+import { assertVerificationContext } from './lib/verification-review.mjs';
+import { resolveTrackerPath } from './path-resolver.mjs';
 
 const HELP = `Apply validated duplicate resolutions from reviewed verification.
 
@@ -161,129 +165,11 @@ async function main() {
     };
   }
 
-  const appsPath = canonicalizeTrackerPath(userPath(context, 'data/applications.md'));
+  const appsPath = canonicalizeTrackerPath(resolveTrackerPath(context.userRoot));
+  assertVerificationContext(verification, context, appsPath);
   if (!existsSync(appsPath)) throw new Error('applications.md is missing');
   const reportsRoot = userPath(context, 'reports');
   const outputRoot = userPath(context, 'output');
-  const originalTracker = readFileSync(appsPath, 'utf-8');
-  const lines = originalTracker.split('\n');
-  const colmap = resolveColumns(lines);
-  const trackerRows = new Map();
-  for (let index = 0; index < lines.length; index++) {
-    const row = parseTrackerRow(lines[index], colmap);
-    if (!row) continue;
-    if (trackerRows.has(row.num)) throw new Error(`Tracker number #${row.num} is not unique; deterministic verification must be repaired first`);
-    trackerRows.set(row.num, { ...row, index });
-  }
-
-  for (const plan of trackerPlans) {
-    for (const num of [plan.resolution.keeper_tracker_num, ...plan.resolution.duplicate_tracker_nums]) {
-      if (!trackerRows.has(num)) throw new Error(`${plan.warning.id}: tracker #${num} no longer exists`);
-    }
-  }
-
-  // Lifecycle is the canonical identity rule. The reviewer-selected keeper is
-  // retained only as the tie-breaker when candidates have the same status rank.
-  // Otherwise the most advanced row, with Rejected above Applied, becomes the
-  // keeper together with its existing report/PDF identity.
-  for (const plan of trackerPlans) {
-    const reviewerKeeper = plan.resolution.keeper_tracker_num;
-    const candidateNums = [reviewerKeeper, ...plan.resolution.duplicate_tracker_nums];
-    const candidateRows = candidateNums.map(num => trackerRows.get(num));
-    const lifecycleKeeper = mostAdvancedDuplicateRow(candidateRows, reviewerKeeper);
-    plan.reviewerKeeperTrackerNum = reviewerKeeper;
-    plan.lifecycleSource = lifecycleKeeper;
-    plan.resolution = {
-      ...plan.resolution,
-      keeper_tracker_num: lifecycleKeeper.num,
-      duplicate_tracker_nums: candidateNums.filter(num => num !== lifecycleKeeper.num),
-    };
-
-    const trackerReportNames = candidateRows.map(row => reportTarget(row.report)).filter(Boolean);
-    if (new Set(trackerReportNames).size < 2) continue;
-    const explicitOverlap = reportPlans.find(reportPlan => {
-      const files = new Set([
-        reportPlan.resolution.keeper_report_file,
-        ...reportPlan.resolution.duplicate_report_files,
-      ].map(file => file && basename(file)).filter(Boolean));
-      return trackerReportNames.every(name => files.has(name));
-    });
-    if (!explicitOverlap) continue;
-    const lifecycleKeeperName = reportTarget(lifecycleKeeper.report);
-    const reportCandidates = [
-      explicitOverlap.resolution.keeper_report_file,
-      ...explicitOverlap.resolution.duplicate_report_files,
-    ];
-    const lifecycleKeeperFile = reportCandidates.find(file => basename(file) === lifecycleKeeperName);
-    if (!lifecycleKeeperFile) {
-      throw new Error(`${plan.warning.id}: lifecycle keeper #${lifecycleKeeper.num} report is absent from the overlapping report resolution`);
-    }
-    explicitOverlap.reviewerKeeperReportFile = explicitOverlap.resolution.keeper_report_file;
-    explicitOverlap.resolution = {
-      ...explicitOverlap.resolution,
-      keeper_report_file: lifecycleKeeperFile,
-      duplicate_report_files: reportCandidates.filter(file => file !== lifecycleKeeperFile),
-    };
-  }
-
-  // A confirmed duplicate tracker row can carry its own report even when the
-  // report-title heuristic did not emit a separate duplicate-report warning.
-  // Archive that losing report as a deterministic consequence of removing the
-  // row, using the lifecycle-selected tracker keeper as the canonical identity.
-  const explicitlyResolvedReports = new Set(reportPlans.flatMap(plan => [
-    plan.resolution.keeper_report_file,
-    ...plan.resolution.duplicate_report_files,
-  ]));
-  const implicitlyResolvedReports = new Set();
-  for (const plan of trackerPlans) {
-    const keeperRow = trackerRows.get(plan.resolution.keeper_tracker_num);
-    const keeperName = reportTarget(keeperRow.report);
-    if (!keeperName) continue;
-    const trackerReportNames = new Set([
-      keeperName,
-      ...plan.resolution.duplicate_tracker_nums
-        .map(num => reportTarget(trackerRows.get(num).report))
-        .filter(Boolean),
-    ]);
-    const explicitOverlap = reportPlans.find(reportPlan =>
-      [...trackerReportNames].every(name => new Set([
-        reportPlan.resolution.keeper_report_file,
-        ...reportPlan.resolution.duplicate_report_files,
-      ].map(file => file && basename(file)).filter(Boolean)).has(name)));
-    if (explicitOverlap && basename(explicitOverlap.resolution.keeper_report_file) !== keeperName) {
-      throw new Error(`${plan.warning.id}: report keeper must match lifecycle-selected tracker keeper #${keeperRow.num}`);
-    }
-    const duplicates = plan.resolution.duplicate_tracker_nums
-      .map(num => reportTarget(trackerRows.get(num).report))
-      .filter(name => name && name !== keeperName)
-      .map(name => `reports/${name}`)
-      // A duplicate tracker row can already have a broken report link. Removing
-      // that losing row still resolves the tracker duplicate; there is no file
-      // to archive, so do not manufacture a derived report plan that makes the
-      // entire otherwise-safe batch fail.
-      .filter(file => existsSync(join(context.userRoot, file)))
-      .filter(file => !explicitlyResolvedReports.has(file) && !implicitlyResolvedReports.has(file));
-    if (duplicates.length === 0) continue;
-    for (const file of duplicates) implicitlyResolvedReports.add(file);
-    reportPlans.push({
-      warning: plan.warning,
-      decision: plan.decision,
-      derived: true,
-      resolution: {
-        keeper_tracker_num: null,
-        duplicate_tracker_nums: [],
-        keeper_report_file: `reports/${keeperName}`,
-        duplicate_report_files: duplicates,
-      },
-    });
-  }
-
-  for (const plan of reportPlans) {
-    for (const file of [plan.resolution.keeper_report_file, ...plan.resolution.duplicate_report_files]) {
-      if (!existsSync(join(context.userRoot, file))) throw new Error(`${plan.warning.id}: ${file} no longer exists`);
-    }
-  }
-
   const lock = await acquireTrackerLock(trackerLockDirFor(appsPath), { tracker: appsPath });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupRoot = userPath(context, `data/warning-triage-backups/${stamp}`);
@@ -294,7 +180,154 @@ async function main() {
   let reportsArchived = 0;
   let artifactsArchived = 0;
 
+  let originalTracker = null;
+  let trackerWritten = false;
   try {
+    originalTracker = readFileSync(appsPath, 'utf-8');
+    const checked = spawnSync(process.execPath, [systemPath('verify-pipeline.mjs'), '--user', context.userId, '--json'], {
+      cwd: context.projectRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60000,
+      env: { ...process.env, CAREER_OPS_USER: context.userId, CAREER_OPS_ROOT: context.userRoot, CAREER_OPS_TRACKER: appsPath },
+    });
+    if (![0, 1].includes(checked.status)) throw new Error(`Cannot revalidate duplicate candidates: ${checked.stderr || checked.error?.message}`);
+    const fresh = JSON.parse(checked.stdout);
+    const freshWarnings = new Map((fresh.warnings || []).map(warning => [warning.id, warning]));
+    for (const plan of [...trackerPlans, ...reportPlans]) {
+      const current = freshWarnings.get(plan.warning.id);
+      const field = plan.warning.code === 'possible_duplicate_tracker' ? 'tracker_nums' : 'files';
+      if (!current || current.code !== plan.warning.code || !sameMembers(current.details?.[field] || [], plan.warning.details?.[field] || [])) {
+        throw new Error(`${plan.warning.id}: duplicate identity changed; rerun verification`);
+      }
+    }
+    const lines = originalTracker.split('\n');
+    const colmap = resolveColumns(lines);
+    const trackerRows = new Map();
+    for (let index = 0; index < lines.length; index++) {
+      const row = parseTrackerRow(lines[index], colmap);
+      if (!row) continue;
+      if (trackerRows.has(row.num)) throw new Error(`Tracker number #${row.num} is not unique; deterministic verification must be repaired first`);
+      trackerRows.set(row.num, { ...row, index });
+    }
+
+    for (const plan of trackerPlans) {
+      for (const num of [plan.resolution.keeper_tracker_num, ...plan.resolution.duplicate_tracker_nums]) {
+        if (!trackerRows.has(num)) throw new Error(`${plan.warning.id}: tracker #${num} no longer exists`);
+      }
+    }
+
+    // Lifecycle is the canonical identity rule. The reviewer-selected keeper is
+    // retained only as the tie-breaker when candidates have the same status rank.
+    // Otherwise the most advanced row, with Rejected above Applied, becomes the
+    // keeper together with its existing report/PDF identity.
+    for (const plan of trackerPlans) {
+      const reviewerKeeper = plan.resolution.keeper_tracker_num;
+      const candidateNums = [reviewerKeeper, ...plan.resolution.duplicate_tracker_nums];
+      const candidateRows = candidateNums.map(num => trackerRows.get(num));
+      const lifecycleKeeper = mostAdvancedDuplicateRow(candidateRows, reviewerKeeper);
+      plan.reviewerKeeperTrackerNum = reviewerKeeper;
+      plan.lifecycleSource = lifecycleKeeper;
+      plan.resolution = {
+        ...plan.resolution,
+        keeper_tracker_num: lifecycleKeeper.num,
+        duplicate_tracker_nums: candidateNums.filter(num => num !== lifecycleKeeper.num),
+      };
+
+      const trackerReportNames = candidateRows.map(row => reportTarget(row.report)).filter(Boolean);
+      if (new Set(trackerReportNames).size < 2) continue;
+      const explicitOverlap = reportPlans.find(reportPlan => {
+        const files = new Set([
+          reportPlan.resolution.keeper_report_file,
+          ...reportPlan.resolution.duplicate_report_files,
+        ].map(file => file && basename(file)).filter(Boolean));
+        return trackerReportNames.every(name => files.has(name));
+      });
+      if (!explicitOverlap) continue;
+      const lifecycleKeeperName = reportTarget(lifecycleKeeper.report);
+      const reportCandidates = [
+        explicitOverlap.resolution.keeper_report_file,
+        ...explicitOverlap.resolution.duplicate_report_files,
+      ];
+      const lifecycleKeeperFile = reportCandidates.find(file => basename(file) === lifecycleKeeperName);
+      if (!lifecycleKeeperFile) {
+        throw new Error(`${plan.warning.id}: lifecycle keeper #${lifecycleKeeper.num} report is absent from the overlapping report resolution`);
+      }
+      explicitOverlap.reviewerKeeperReportFile = explicitOverlap.resolution.keeper_report_file;
+      explicitOverlap.resolution = {
+        ...explicitOverlap.resolution,
+        keeper_report_file: lifecycleKeeperFile,
+        duplicate_report_files: reportCandidates.filter(file => file !== lifecycleKeeperFile),
+      };
+    }
+
+    // A confirmed duplicate tracker row can carry its own report even when the
+    // report-title heuristic did not emit a separate duplicate-report warning.
+    // Archive that losing report as a deterministic consequence of removing the
+    // row, using the lifecycle-selected tracker keeper as the canonical identity.
+    const explicitlyResolvedReports = new Set(reportPlans.flatMap(plan => [
+      plan.resolution.keeper_report_file,
+      ...plan.resolution.duplicate_report_files,
+    ]));
+    const implicitlyResolvedReports = new Set();
+    for (const plan of trackerPlans) {
+      const keeperRow = trackerRows.get(plan.resolution.keeper_tracker_num);
+      const keeperName = reportTarget(keeperRow.report);
+      if (!keeperName) continue;
+      const trackerReportNames = new Set([
+        keeperName,
+        ...plan.resolution.duplicate_tracker_nums
+          .map(num => reportTarget(trackerRows.get(num).report))
+          .filter(Boolean),
+      ]);
+      const explicitOverlap = reportPlans.find(reportPlan =>
+        [...trackerReportNames].every(name => new Set([
+          reportPlan.resolution.keeper_report_file,
+          ...reportPlan.resolution.duplicate_report_files,
+        ].map(file => file && basename(file)).filter(Boolean)).has(name)));
+      if (explicitOverlap && basename(explicitOverlap.resolution.keeper_report_file) !== keeperName) {
+        throw new Error(`${plan.warning.id}: report keeper must match lifecycle-selected tracker keeper #${keeperRow.num}`);
+      }
+      const duplicates = plan.resolution.duplicate_tracker_nums
+        .map(num => reportTarget(trackerRows.get(num).report))
+        .filter(name => name && name !== keeperName)
+        .map(name => `reports/${name}`)
+        // A duplicate tracker row can already have a broken report link. Removing
+        // that losing row still resolves the tracker duplicate; there is no file
+        // to archive, so do not manufacture a derived report plan that makes the
+        // entire otherwise-safe batch fail.
+        .filter(file => existsSync(join(context.userRoot, file)))
+        .filter(file => !explicitlyResolvedReports.has(file) && !implicitlyResolvedReports.has(file));
+      if (duplicates.length === 0) continue;
+      for (const file of duplicates) implicitlyResolvedReports.add(file);
+      reportPlans.push({
+        warning: plan.warning,
+        decision: plan.decision,
+        derived: true,
+        resolution: {
+          keeper_tracker_num: null,
+          duplicate_tracker_nums: [],
+          keeper_report_file: `reports/${keeperName}`,
+          duplicate_report_files: duplicates,
+        },
+      });
+    }
+
+    for (const plan of reportPlans) {
+      // A report-only resolution still belongs to the most advanced application
+      // referencing any candidate. It cannot replace that row's primary identity.
+      const files = [plan.resolution.keeper_report_file, ...plan.resolution.duplicate_report_files];
+      const owners = [...trackerRows.values()].filter(row => files.some(file => basename(file) === reportTarget(row.report)));
+      if (owners.length) {
+        const keeperOwner = mostAdvancedDuplicateRow(owners, owners.find(row => reportTarget(row.report) === basename(plan.resolution.keeper_report_file))?.num);
+        const primary = files.find(file => basename(file) === reportTarget(keeperOwner.report));
+        plan.reviewerKeeperReportFile ||= plan.resolution.keeper_report_file;
+        plan.resolution = { ...plan.resolution, keeper_report_file: primary,
+          duplicate_report_files: files.filter(file => file !== primary) };
+      }
+      for (const file of [plan.resolution.keeper_report_file, ...plan.resolution.duplicate_report_files]) {
+        if (!existsSync(join(context.userRoot, file))) throw new Error(`${plan.warning.id}: ${file} no longer exists`);
+      }
+    }
+
+
     mkdirSync(backupRoot, { recursive: true });
     copyFileSync(appsPath, join(backupRoot, 'applications.md'));
     const removeIndices = new Set();
@@ -329,7 +362,7 @@ async function main() {
           parts[colmap.report] = normalizeReportLink(
             `[${keeperNum}](reports/${keeperFile})`,
             dirname(appsPath),
-            context.userRoot,
+            canonicalizeTrackerPath(context.userRoot),
           );
           if (colmap.notes != null) {
             parts[colmap.notes] = appendNote(parts[colmap.notes], [`Report ${duplicateFile} deduplicated into ${keeperFile}`]);
@@ -351,7 +384,7 @@ async function main() {
         reportsArchived++;
 
         const stem = duplicateFile.slice(0, -extname(duplicateFile).length);
-        for (const extension of ['.html', '.pdf']) {
+        for (const extension of ['.html', '.pdf', '.tex']) {
           const sourceArtifact = join(outputRoot, `${stem}${extension}`);
           if (!existsSync(sourceArtifact)) continue;
           const backupOutputDir = join(backupRoot, 'output');
@@ -369,6 +402,7 @@ async function main() {
 
     const repairedLines = lines.filter((_, index) => !removeIndices.has(index));
     writeFileAtomic(appsPath, repairedLines.join('\n'));
+    trackerWritten = true;
 
     const ledgerPath = userPath(context, 'data/duplicate-resolutions.jsonl');
     const resolvedAt = new Date().toISOString();
@@ -415,7 +449,7 @@ async function main() {
       backup: backupRoot,
     };
   } catch (error) {
-    writeFileAtomic(appsPath, originalTracker);
+    if (trackerWritten && originalTracker !== null) writeFileAtomic(appsPath, originalTracker);
     for (const item of moved.reverse()) {
       try {
         if (existsSync(item.to)) {

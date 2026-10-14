@@ -33,7 +33,12 @@ else if (phase === 'verify-runner') {
     writeFileSync(join(root, 'batch/batch-runner.pid.owner.lock/owner.json'), JSON.stringify({ pid: config.finalBatchOwner, token: 'final-fixture-owner' }));
     writeFileSync(join(root, 'batch/batch-runner.pid'), '987654\n');
   }
-  emit({ status: config.verification || 'completed', needs_human_review: Boolean(config.review), unresolved_findings: config.review ? [{ message: 'fixture review required' }] : [], final_verification: { status: 'completed' }, passes: 0, actions: {} });
+  emit({ status: config.verification || 'completed', error: config.verificationError || null, needs_human_review: Boolean(config.review), unresolved_findings: config.review ? [{ message: 'fixture review required' }] : [], final_verification: { status: 'completed' }, passes: 0, actions: {} });
+  if (config.verification === 'failed') process.exitCode = 1;
+}
+else if (phase === 'merge-tracker' && config.blockedAddition) {
+  console.log('Summary: 1 addition NOT merged; retained for correction');
+  process.exitCode = 1;
 }
 else if (phase === 'codex-mock') {
   await new Promise(resolve => { process.stdin.resume(); process.stdin.on('end', resolve); });

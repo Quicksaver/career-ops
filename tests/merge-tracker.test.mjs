@@ -146,7 +146,7 @@ try {
     fail(`lower-scored re-eval did not write through: ${downRow.trim()}`);
   }
 
-  if (/\[7\]/.test(downRow) && !/\[8\]\(/.test(downRow)) {
+  if (/\[7\]/.test(downRow.split('|')[8]) && /Re-eval report \[8\]\(/.test(downRow.split('|')[9])) {
     pass('downgrade preserves the existing tracker/report identity');
   } else {
     fail(`downgrade changed the canonical report identity: ${downRow.trim()}`);
@@ -207,7 +207,7 @@ try {
   }, { rows: SEED });
   const sameRow = same.tracker.split('\n').find(l => /\bInitech\b/.test(l)) || '';
 
-  if (/\[7\]/.test(sameRow) && !/\[10\]\(/.test(sameRow) && /Re-eval 2026-03-02 \(3\.8→3\.8\)/.test(sameRow)
+  if (/\[7\]/.test(sameRow.split('|')[8]) && /Re-eval report \[10\]\(/.test(sameRow.split('|')[9]) && /Re-eval 2026-03-02 \(3\.8→3\.8\)/.test(sameRow)
       && !/Superseded report/.test(sameRow) && /🔄1 updated/.test(same.output)) {
     pass('equal-scored re-evaluation writes through without a superseded marker');
   } else {

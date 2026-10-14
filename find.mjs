@@ -35,7 +35,6 @@ import { isMainModule } from './lib/is-main-module.mjs';
 
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const DATA_ROOT = getCareerOpsRoot();
 
 // "008" and "8" are the same report — zero-padded report-link form vs unpadded
 // tracker-# form (same normalization as the manifest writer in generate-pdf.mjs).
@@ -190,6 +189,7 @@ const USAGE = `Usage:
   node find.mjs --user <id> --help`;
 
 function parseArgs(argv) {
+  if (argv.slice(2).includes('--help') || argv.slice(2).includes('-h')) { console.log(USAGE); process.exit(0); }
   let userContext;
   try {
     userContext = getUserContext(argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
@@ -225,6 +225,7 @@ function main() {
     return;
   }
 
+  const DATA_ROOT = getCareerOpsRoot();
   const trackerPath = resolveTrackerPath(DATA_ROOT);
   if (!existsSync(trackerPath)) {
     console.error(`Error: ${trackerPath} not found — nothing to search.`);

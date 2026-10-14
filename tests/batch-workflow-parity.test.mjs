@@ -28,10 +28,10 @@ function fixture() {
   writeFileSync(join(root, 'fixture-worker.mjs'), `import {readFileSync,writeFileSync} from 'node:fs';
 const args=process.argv.slice(2), prompt=args.at(-1);
 writeFileSync(process.env.FIXTURE_CALLS+'.worker',args.join('\\n'));
-const jdPath=prompt.match(/JD file: (.*?)\\. Report number:/)?.[1];
+const jdPath=prompt.match(/^JD file: (.+)$/m)?.[1];
 if(jdPath) writeFileSync(process.env.FIXTURE_CALLS+'.jd',readFileSync(jdPath));
 const result=JSON.parse(process.env.FIXTURE_RESULT);
-result.url=prompt.match(/Internal batch locator: (.*?)\\. Explicit per-posting/)?.[1] || result.url;
+result.url=prompt.match(/^Internal batch locator: (.+)$/m)?.[1] || result.url;
 console.log('\u0060\u0060\u0060json\\n'+JSON.stringify(result)+'\\n\u0060\u0060\u0060');\n`);
   writeFileSync(join(bin, 'claude'), '#!/usr/bin/env bash\nnode "$FIXTURE_WORKER" "$@"\n', { mode: 0o755 });
   writeFileSync(join(bin, 'codex'), '#!/usr/bin/env bash\necho unexpected-codex-worker >&2\nexit 99\n', { mode: 0o755 });
@@ -176,8 +176,22 @@ test('artifact gates enforce archive, format, Skip, primary PDF identity and emp
     const tsv = (pdf, status = 'Evaluated', via = '') => `num\tdate\tcompany\trole\tstatus\tscore\tpdf\treport\tnotes\turl\tvia\n001\t2026-10-14\tAcme\tEngineer\t${status}\t4.0/5\t${pdf}\t[001](reports/001-acme-2026-10-14.md)\tnote\t${url}\t${via}\n`;
     const validate = () => validateWorkerArtifacts({ reportPath, trackerPath, finalPath, strictWorkflow: true, userRoot: f.root, reportNum: '001' });
     writeFileSync(reportPath, report('Apply')); writeFileSync(trackerPath, tsv('❌'));
-    writeFileSync(finalPath, JSON.stringify({ status: 'completed', report_num: '001', company: 'Acme', role: 'Engineer', via: null, company_confidential: false, pdf: null, report: reportPath, tracker: trackerPath }));
+    writeFileSync(finalPath, JSON.stringify({ status: 'completed', report_num: '001', company: 'Acme', role: 'Engineer', score: 4, via: null, company_confidential: false, pdf: null, report: reportPath, tracker: trackerPath }));
     assert.equal(validate().valid, true);
+    const originalFinal = JSON.parse(readFileSync(finalPath, 'utf8'));
+    for (const score of [null, undefined, -1, 6, '4']) {
+      writeFileSync(finalPath, JSON.stringify({ ...originalFinal, score }));
+      assert.match(validate().errors.join(';'), /final JSON score/);
+    }
+    writeFileSync(finalPath, JSON.stringify(originalFinal));
+    for (const score of ['null', '.inf', '6', '-1']) {
+      writeFileSync(reportPath, report('Apply').replace('score: 4.0', `score: ${score}`));
+      assert.match(validate().errors.join(';'), /report score/);
+    }
+    writeFileSync(reportPath, report('Apply'));
+    writeFileSync(trackerPath, tsv('❌').replace('4.0/5', 'N/A'));
+    assert.match(validate().errors.join(';'), /tracker score/);
+    writeFileSync(trackerPath, tsv('❌'));
     assert.equal(parseTrackerAddition(readFileSync(trackerPath, 'utf8')).via, '');
     writeFileSync(trackerPath, tsv('❌', 'Evaluated', 'null')); assert.equal(validate().valid, false);
     writeFileSync(trackerPath, tsv('✅')); writeFileSync(join(f.root, 'config/profile.yml'), 'cv:\n  output_format: text\n');
@@ -195,6 +209,25 @@ test('artifact gates enforce archive, format, Skip, primary PDF identity and emp
     assert.equal(validate().valid, true);
     writeFileSync(reportPath, report('Apply').replace(/## Job Description[\s\S]*?## Machine Summary/, '## Machine Summary'));
     assert.match(validate().errors.join(';'), /archive/);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('explicit JD text replaces a missing local capture and remains absent from echoed manual answers', () => {
+  const f = fixture();
+  try {
+    const local = 'local:jds/missing.md';
+    const text = 'Exact user supplied JD text.\nKeep these bytes unchanged.\n';
+    writeFileSync(join(f.batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${local}\tfixture\t\n`);
+    const queue = join(f.root, 'queue.txt');
+    const answers = join(f.root, 'answers.json');
+    writeFileSync(queue, `${local}\n`);
+    writeFileSync(answers, JSON.stringify({ schema_version: 1, user: 'fixture', answers: [{ url: local, reason: 'jd_unavailable', answer: 'Captured the posting.', jd_text: text }] }));
+    const result = f.run(['--queue-file', queue, '--answers-file', answers]);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(readFileSync(`${f.calls}.jd`, 'utf8'), text);
+    const prompt = readFileSync(`${f.calls}.worker`, 'utf8');
+    assert.doesNotMatch(prompt, /Exact user supplied JD text/);
+    assert.match(prompt, /Internal batch locator: local:jds\/missing\.md/);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 

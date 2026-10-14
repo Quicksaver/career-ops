@@ -64,7 +64,7 @@ Pending lines are `- [ ] {url} | {company} | {title} | {location}`. Scanner は 
 **Special cases:**
 - **LinkedIn:** login が必要な場合あり → `[!]` と mark し、ユーザーに text paste を依頼
 - **PDF:** URL が PDF を指す場合、Read tool で直接読む
-- **`local:` prefix:** Local file を読む。Example: `local:users/{USER}/jds/linkedin-pm-ai.md` → `users/{USER}/jds/linkedin-pm-ai.md`
+- **`local:` prefix:** Local file を読む。Example: `local:jds/linkedin-pm-ai.md` → `users/{USER}/jds/linkedin-pm-ai.md`
 - **Wantedly / Green / Findy:** 日本の主要 platforms。まず Playwright で確認
 - **doda / リクナビNEXT / マイナビ転職:** 日本の大手 job portals。Usually WebFetch または Playwright で確認
 - **ビズリーチ:** ハイクラス求人。Login が必要な場合あり

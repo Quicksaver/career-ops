@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { chromium } from 'playwright';
-import { resolve, dirname, extname, relative, isAbsolute } from 'path';
+import { resolve, dirname, extname } from 'path';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
+import { pathIsInsideCanonical } from './tracker-utils.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 
 /**
@@ -242,8 +243,7 @@ async function main() {
   const inputPath = resolve(parsed.inputPath);
   const outputPath = resolve(parsed.outputPath);
 
-  const relOut = relative(userContext.userRoot, outputPath);
-  if (relOut === '' || relOut.startsWith('..') || isAbsolute(relOut)) {
+  if (outputPath === resolve(userContext.userRoot) || !pathIsInsideCanonical(outputPath, userContext.userRoot)) {
     console.error(`❌ Refusing to write the PDF outside the active user root: ${outputPath}`);
     process.exit(1);
   }

@@ -38,7 +38,7 @@ const MODES = ['CAREER_OPS_ROOT', 'CAREER_OPS_DATA_DIR', 'marker'];
 // Anything that could point a child at the developer's real files, or change
 // the code path under test, is cleared before the per-case env is applied.
 const CLEARED_ENV = [
-  'CAREER_OPS_ROOT', 'CAREER_OPS_DATA_DIR', 'CAREER_OPS_TRACKER', 'CAREER_OPS_PROFILE',
+  'CAREER_OPS_ROOT', 'CAREER_OPS_DATA_DIR', 'CAREER_OPS_USERS_DIR', 'CAREER_OPS_TRACKER', 'CAREER_OPS_PROFILE',
   'CAREER_OPS_BATCH_STATE', 'CAREER_OPS_MODEL', 'OPENROUTER_API_KEY',
 ];
 
@@ -70,7 +70,7 @@ function fixture(t, entry, { nodeModules = false, assets = [] } = {}) {
   const data = join(dir, 'data-root');
   mkdirSync(code);
   mkdirSync(data);
-  for (const file of [...importClosure(entry), ...assets]) {
+  for (const file of [...importClosure(entry), 'templates/states.yml', ...assets]) {
     mkdirSync(dirname(join(code, file)), { recursive: true });
     copyFileSync(join(ROOT, file), join(code, file));
   }
@@ -97,7 +97,7 @@ function envFor(mode, { code, data }, extra = {}) {
   for (const key of CLEARED_ENV) delete env[key];
   if (mode === 'marker') writeFileSync(join(code, '.career-ops-data'), data);
   else env[mode] = data;
-  return userFixtureEnv({ ...env, CAREER_OPS_DATA_DIR: data, ...extra });
+  return { ...env, CAREER_OPS_USER: 'fixture', ...extra };
 }
 
 function run(f, script, args, env, input) {

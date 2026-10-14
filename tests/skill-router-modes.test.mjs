@@ -10,7 +10,7 @@
 // AGENTS.md, which is why the gap went unnoticed for triage, calibrate,
 // intake and ats.
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { fail, pass, ROOT } from './helpers.mjs';
 
@@ -29,7 +29,8 @@ const documentedModes = [...new Set(
 if (documentedModes.length < 20) {
   fail(`could not read the AGENTS.md Skill Modes table (found ${documentedModes.length} modes)`);
 } else {
-  const unrouted = documentedModes.filter((m) => !new RegExp(`^\\| \`[^\`]+\` \\| \`${m}\` \\|$`, 'm').test(skill));
+  const routes = new Map([...skill.matchAll(/^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|$/gm)].map(m => [m[1], m[2]]));
+  const unrouted = documentedModes.filter(m => !routes.has(m) || !existsSync(join(ROOT, 'modes', `${routes.get(m)}.md`)));
   if (unrouted.length === 0) {
     pass(`all ${documentedModes.length} modes in AGENTS.md Skill Modes have a row in the router's routing table`);
   } else {

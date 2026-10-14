@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getScheduledJob } from "@/lib/scheduled-jobs";
 import { isSafeScheduledId } from "@/lib/scheduled-jobs-store.mjs";
 import { resolveCodeRoot } from "@/lib/core/code-root.mjs";
+import { careerOpsCoreEnv } from "@/lib/career-ops";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ function runJob(runner: string, id: string) {
     try {
       child = spawn(process.execPath, [runner, "--job", id], {
         cwd: resolveCodeRoot(process.cwd(), process.env),
-        env: process.env,
+        env: careerOpsCoreEnv(),
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

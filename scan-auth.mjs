@@ -27,6 +27,10 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import LinkedInScanner from './scan-auth/linkedin.mjs';
+import { collectSeenUrls, shouldDedupScanHistoryRow, configureScanUserPaths,
+  appendToPipeline as appendCanonicalPipeline, appendToScanHistory as appendCanonicalHistory } from './scan.mjs';
+import { parseScanHistoryLine } from './lib/scan-history-columns.mjs';
+import { localToday } from './lib/local-today.mjs';
 
 const SCANNERS = {
   linkedin: new LinkedInScanner(),
@@ -52,6 +56,7 @@ function getLegacyProfileDir(portal) {
 }
 
 function configureUserPaths(ctx) {
+  configureScanUserPaths(ctx);
   ensureUserDirs(ctx, ['data', 'jds']);
   PORTALS_PATH = process.env.CAREER_OPS_PORTALS
     ? resolve(process.env.CAREER_OPS_PORTALS)
@@ -133,14 +138,12 @@ function extractJobIdFromUrl(url) {
   }
 }
 
-function loadScanHistory() {
+export function loadScanHistory({ historyPath = SCAN_HISTORY_PATH, policy = {} } = {}) {
   const keys = new Set();
-  if (!existsSync(SCAN_HISTORY_PATH)) return keys;
-  const lines = readFileSync(SCAN_HISTORY_PATH, 'utf-8').split('\n');
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split('\t');
-    if (!cols[0]) continue;
-    const url = cols[0];
+  if (!existsSync(historyPath)) return keys;
+  const text = readFileSync(historyPath, 'utf-8');
+  const { seen } = collectSeenUrls({ scanHistoryText: text, pipelineText: '', applicationsText: '' }, policy);
+  for (const url of seen) {
 
     try {
       if (new URL(url).hostname.includes('linkedin')) {
@@ -151,59 +154,25 @@ function loadScanHistory() {
       // Non-URL entries can still contribute company::title below.
     }
 
-    const title = (cols[3] || '').trim();
-    const company = (cols[4] || '').trim();
+  }
+  for (const line of text.split('\n')) {
+    const row = parseScanHistoryLine(line);
+    if (row.status !== 'added' || !shouldDedupScanHistoryRow({ firstSeen: row.first_seen, status: row.status }, policy)) continue;
+    const title = row.title.trim();
+    const company = row.company.trim();
     if (company && title) keys.add(`${company}::${title}`.toLowerCase());
   }
   return keys;
 }
 
-function appendScanHistory(entries) {
-  const today = new Date().toISOString().split('T')[0];
-  let needsHeader = false;
-  if (!existsSync(SCAN_HISTORY_PATH)) {
-    needsHeader = true;
-    mkdirSync(dirname(SCAN_HISTORY_PATH), { recursive: true });
+async function appendScanHistory(entries) {
+  const groups = new Map();
+  for (const entry of entries.filter(entry => entry.url)) {
+    if (!groups.has(entry.status)) groups.set(entry.status, []);
+    groups.get(entry.status).push({ ...entry, source: entry.portal });
   }
-  const lines = [];
-  if (needsHeader) lines.push('url\tfirst_seen\tportal\ttitle\tcompany\tstatus');
-  for (const e of entries) {
-    if (!e.url) continue;
-    const title = e.title.replace(/\t/g, ' ');
-    const company = e.company.replace(/\t/g, ' ');
-    lines.push(`${e.url}\t${today}\t${e.portal}\t${title}\t${company}\t${e.status}`);
-  }
-  if (lines.length) {
-    const content = (needsHeader ? '' : '\n') + lines.join('\n') + '\n';
-    writeFileSync(SCAN_HISTORY_PATH, content, { flag: 'a' });
-  }
-  return needsHeader ? Math.max(0, lines.length - 1) : lines.length;
-}
-
-function appendToPipeline(listings) {
-  if (listings.length === 0) return;
-  if (!existsSync(PIPELINE_PATH)) {
-    warn(`pipeline.md not found for this user; listings were not added. Create ${PIPELINE_PATH} or run onboarding first.`);
-    return;
-  }
-
-  let text = readFileSync(PIPELINE_PATH, 'utf-8');
-  const firstH2Match = /^## .+$/m.exec(text);
-  if (!firstH2Match) return;
-  const firstH2 = firstH2Match.index;
-  const afterFirstH2 = text.indexOf('\n', firstH2);
-  const secondH2Match = /^## .+$/m.exec(text.slice(afterFirstH2 + 1));
-  const secondH2 = secondH2Match ? afterFirstH2 + 1 + secondH2Match.index : -1;
-  const insertAt = secondH2 === -1 ? text.length : secondH2;
-
-  const before = text.slice(0, insertAt);
-  const prefix = before.endsWith('\n') ? '' : '\n';
-  const block = listings.map(l =>
-    `- [ ] ${l.url} | ${l.company.replace(/\|/g, '-')} | ${l.title.replace(/\|/g, '-')}`
-  ).join('\n') + '\n';
-  text = before + prefix + block + text.slice(insertAt);
-
-  writeFileSync(PIPELINE_PATH, text, 'utf-8');
+  for (const [status, offers] of groups) await appendCanonicalHistory(offers, localToday(), status);
+  return entries.filter(entry => entry.url).length;
 }
 
 async function launchBrowser(profileDir) {
@@ -249,13 +218,12 @@ function yamlEscape(str) {
   return `"${s}"`;
 }
 
-function saveJd(detail, portalId) {
-  mkdirSync(JDS_DIR, { recursive: true });
+export function saveJd(detail, portalId, { jdsDir = JDS_DIR } = {}) {
+  mkdirSync(jdsDir, { recursive: true });
   const jobId = extractJobIdFromUrl(detail.url || '');
   const suffix = jobId || Date.now().toString();
-  const slug = slugify(`${detail.company}-${detail.title}-${suffix}`);
-  const filename = `${slug}.md`;
-  const filepath = join(JDS_DIR, filename);
+  const filename = `${slugify(`${detail.company}-${detail.title}`)}-${suffix}.md`;
+  const filepath = join(jdsDir, filename);
 
   const content = `---
 title: ${yamlEscape(detail.title)}
@@ -373,7 +341,7 @@ export async function main(argv = process.argv.slice(2)) {
     }
 
     const scanResult = await scanner.scan(context, config, {
-      scanHistory: loadScanHistory(),
+      scanHistory: loadScanHistory({ policy: { recheckAfterDays: config.scan_history?.recheck_after_days ?? null } }),
     });
     if (!scanResult) return;
 
@@ -406,8 +374,14 @@ export async function main(argv = process.argv.slice(2)) {
       });
     }
 
-    appendToPipeline(pipelineEntries);
-    const historyCount = appendScanHistory(historyEntries);
+    for (const hold of scanResult.holds || []) {
+      pipelineEntries.push({ ...hold, blocked: true, note: hold.question });
+      historyEntries.push({ ...hold, portal: cli.portalId, status: 'needs_confirmation' });
+    }
+
+    // Admission history follows durable queue publication, never the reverse.
+    await appendCanonicalPipeline(pipelineEntries, { pipelinePath: PIPELINE_PATH });
+    const historyCount = await appendScanHistory(historyEntries);
     log(`Added ${pipelineEntries.length} listings to ${PIPELINE_PATH}`);
     log(`Wrote ${historyCount} entries to ${SCAN_HISTORY_PATH} (${pipelineEntries.length} added, ${(scanResult.skipped || []).length} skipped)`);
     printSummary(scanner, userContext, {
@@ -422,7 +396,7 @@ export async function main(argv = process.argv.slice(2)) {
 
 if (isMainModule(import.meta.url)) {
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
-    console.log('Usage: node scan-auth.mjs --user <id> <portal> [--login] [--dry-run]');
+    console.log(usage());
     process.exit(0);
   }
   main().catch(err => {

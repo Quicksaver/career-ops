@@ -1,19 +1,22 @@
 # Konteks bersama -- career-ops (Bahasa Indonesia)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      PERSONALISASI FILE INI
      ============================================================
      File ini berisi konteks bersama untuk semua mode career-ops
      versi Bahasa Indonesia. Sebelum memakai career-ops, kamu HARUS:
-     1. Mengisi users/{USER}/config/profile.yml dengan data pribadimu
-     2. Membuat users/{USER}/cv.md di root proyek (CV dalam format Markdown)
-     3. (Opsional) Membuat users/{USER}/article-digest.md berisi proof point-mu
+     1. Mengisi {DATA_ROOT}/config/profile.yml dengan data pribadimu
+     2. Membuat {DATA_ROOT}/cv.md di root data pengguna (CV dalam format Markdown)
+     3. (Opsional) Membuat {DATA_ROOT}/article-digest.md berisi proof point-mu
      4. Menyesuaikan bagian bertanda [PERSONALISASI] di bawah ini
      ============================================================ -->
 
 ## Sumber kebenaran (SELALU baca sebelum setiap evaluasi)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -30,13 +33,13 @@
 
 | File | Path | Kapan |
 |------|------|-------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (root proyek) | SELALU |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (jika ada) | SELALU (proof point terperinci) |
-| profile.yml | `users/{USER}/config/profile.yml` | SELALU (identitas dan role target) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (root data pengguna) | SELALU |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (jika ada) | SELALU (proof point terperinci) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | SELALU (identitas dan role target) |
 
-**ATURAN: JANGAN PERNAH menuliskan metrik dari proof point secara hardcode.** Baca metrik dari `users/{USER}/cv.md` dan `users/{USER}/article-digest.md` pada saat evaluasi.
-**ATURAN: Untuk metrik artikel/proyek, `users/{USER}/article-digest.md` lebih diutamakan daripada `users/{USER}/cv.md`** (`users/{USER}/cv.md` bisa memuat angka yang lebih lama).
-**ATURAN: JANGAN PERNAH menyatakan bahwa kandidat adalah pembuat/pencipta suatu proyek, repositori, pustaka, alat, framework, atau artefak open-source, kecuali hal itu secara eksplisit dikaitkan dengannya di `users/{USER}/cv.md` atau `users/{USER}/article-digest.md`.** Menyamakan "memakai sebuah alat" dengan "menciptakannya" (memakai X bukan berarti menciptakan X) adalah pola fabrikasi yang paling umum, dan dilarang.
+**ATURAN: JANGAN PERNAH menuliskan metrik dari proof point secara hardcode.** Baca metrik dari `{DATA_ROOT}/cv.md` dan `{DATA_ROOT}/article-digest.md` pada saat evaluasi.
+**ATURAN: Untuk metrik artikel/proyek, `{DATA_ROOT}/article-digest.md` lebih diutamakan daripada `{DATA_ROOT}/cv.md`** (`{DATA_ROOT}/cv.md` bisa memuat angka yang lebih lama).
+**ATURAN: JANGAN PERNAH menyatakan bahwa kandidat adalah pembuat/pencipta suatu proyek, repositori, pustaka, alat, framework, atau artefak open-source, kecuali hal itu secara eksplisit dikaitkan dengannya di `{DATA_ROOT}/cv.md` atau `{DATA_ROOT}/article-digest.md`.** Menyamakan "memakai sebuah alat" dengan "menciptakannya" (memakai X bukan berarti menciptakan X) adalah pola fabrikasi yang paling umum, dan dilarang.
 **ATURAN: Kata kunci diformulasikan ulang, tidak pernah dikarang.** Susun ulang, bingkai ulang, tekankan — tetapi jangan pernah mengarang. Jika sebuah klaim tidak didukung oleh berkas dalam cakupan, tanyakan kepada kandidat; tanpa jawaban, hilangkan. Diam tentang suatu topik lebih baik daripada detail yang dikarang.
 
 ---
@@ -63,16 +66,16 @@ Skill ini menangani SEMUA role target dengan perhatian yang sama. Tidak ada yang
 
 ### Framing adaptif per arketipe
 
-> **Metrik konkret: baca dari `users/{USER}/cv.md` dan `users/{USER}/article-digest.md` pada saat evaluasi. JANGAN PERNAH menuliskannya secara hardcode di sini.**
+> **Metrik konkret: baca dari `{DATA_ROOT}/cv.md` dan `{DATA_ROOT}/article-digest.md` pada saat evaluasi. JANGAN PERNAH menuliskannya secara hardcode di sini.**
 
 | Jika role-nya... | Tonjolkan pada kandidat... | Sumber proof point |
 |------------------|----------------------------|--------------------|
-| Platform / LLMOps | Pengalaman produksi, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | Orkestrasi multi-agent, HITL, reliability, biaya | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product discovery, PRD, metrik, manajemen stakeholder | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | Perancangan sistem, integrasi, siap enterprise | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | Delivery cepat, kedekatan dengan klien, prototype ke produksi | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | Manajemen perubahan, enablement tim, adopsi | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | Pengalaman produksi, observability, evals, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | Orkestrasi multi-agent, HITL, reliability, biaya | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product discovery, PRD, metrik, manajemen stakeholder | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | Perancangan sistem, integrasi, siap enterprise | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | Delivery cepat, kedekatan dengan klien, prototype ke produksi | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | Manajemen perubahan, enablement tim, adopsi | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 <!-- [PERSONALISASI] Petakan proyek/artikel konkretmu ke arketipe di atas -->
 
@@ -82,11 +85,11 @@ Skill ini menangani SEMUA role target dengan perhatian yang sama. Tidak ada yang
      - "Membangun dan menjual SaaS setelah 5 tahun. Kini 100% fokus pada AI terapan di enterprise."
      - "Memimpin engineering di startup Series-B saat pertumbuhan 10x. Mencari tantangan berikutnya."
      - "Beralih dari konsultan ke produk. Mencari role dengan tanggung jawab besar."
-     Dibaca dari users/{USER}/config/profile.yml -> narrative.exit_story -->
+     Dibaca dari {DATA_ROOT}/config/profile.yml -> narrative.exit_story -->
 
-Gunakan narasi transisi dari `users/{USER}/config/profile.yml` untuk membingkai SEMUA konten:
+Gunakan narasi transisi dari `{DATA_ROOT}/config/profile.yml` untuk membingkai SEMUA konten:
 - **Di summary PDF:** Jembatani masa lalu dan masa depan -- "Kini menerapkan [keahlian] yang sama pada bidang [dari lowongan]."
-- **Di story STAR:** Rujuk proof point dari `users/{USER}/article-digest.md`.
+- **Di story STAR:** Rujuk proof point dari `{DATA_ROOT}/article-digest.md`.
 - **Di draft jawaban (Blok G):** Narasi transisi masuk di jawaban pertama.
 - **Ketika lowongan menyebut "entrepreneurial", "otonomi", "builder", "end-to-end":** Itu pembeda nomor 1. Naikkan bobot match.
 
@@ -108,7 +111,7 @@ Posisikan "Builder" sebagai sinyal profesional -- bukan "tukang oprek". Proof po
        url: "https://domainmu.dev/demo"
        password: "demo-2026"
        when_to_share: "Role LLMOps, AI Platform, Observability"
-     Dibaca dari users/{USER}/config/profile.yml -> narrative.proof_points dan narrative.dashboard -->
+     Dibaca dari {DATA_ROOT}/config/profile.yml -> narrative.proof_points dan narrative.dashboard -->
 
 Jika kandidat punya demo live / dashboard (cek `profile.yml`), tawarkan aksesnya pada lamaran yang relevan.
 
@@ -162,7 +165,7 @@ Dalam lowongan dan negosiasi di Indonesia, beberapa istilah tidak ada di pasar E
 
 ### Kebijakan lokasi (Location Policy)
 
-<!-- [PERSONALISASI] Sesuaikan dengan situasimu. Dibaca dari users/{USER}/config/profile.yml -> location -->
+<!-- [PERSONALISASI] Sesuaikan dengan situasimu. Dibaca dari {DATA_ROOT}/config/profile.yml -> location -->
 
 **Di formulir:**
 - Pertanyaan biner "Bisakah bekerja on-site?": jawab sesuai ketersediaan nyata di `profile.yml`
@@ -185,7 +188,7 @@ Dalam lowongan dan negosiasi di Indonesia, beberapa istilah tidak ada di pasar E
 ### JANGAN PERNAH
 
 1. Mengarang pengalaman atau metrik
-2. Mengubah `users/{USER}/cv.md` atau file portofolio
+2. Mengubah `{DATA_ROOT}/cv.md` atau file portofolio
 3. Mengirim lamaran atas nama kandidat
 4. Membagikan nomor telepon dalam pesan yang dihasilkan
 5. Merekomendasikan kompensasi di bawah pasar
@@ -196,7 +199,7 @@ Dalam lowongan dan negosiasi di Indonesia, beberapa istilah tidak ada di pasar E
 ### SELALU
 
 0. **Cover letter:** Jika formulir memungkinkan, SELALU sertakan. PDF dengan desain visual yang sama dengan CV. Kutipan dari lowongan dipetakan ke proof point. Maksimal 1 halaman.
-1. Baca `users/{USER}/cv.md` dan `users/{USER}/article-digest.md` (jika ada) sebelum mengevaluasi lowongan
+1. Baca `{DATA_ROOT}/cv.md` dan `{DATA_ROOT}/article-digest.md` (jika ada) sebelum mengevaluasi lowongan
 1b. **Evaluasi pertama setiap sesi:** Jalankan `node cv-sync-check.mjs` via Bash. Jika ada peringatan, beri tahu kandidat
 2. Deteksi arketipe role dan sesuaikan framing
 3. Kutip baris persis dari CV saat melakukan matching
@@ -216,7 +219,7 @@ Dalam lowongan dan negosiasi di Indonesia, beberapa istilah tidak ada di pasar E
 | WebSearch | Riset kompensasi, tren, budaya perusahaan, kontak LinkedIn, fallback lowongan |
 | WebFetch | Fallback untuk mengekstrak lowongan dari halaman statis |
 | Playwright | Verifikasi apakah lowongan masih aktif (browser_navigate + browser_snapshot), ekstrak lowongan dari SPA. **KRITIS: JANGAN PERNAH menjalankan 2+ agen paralel dengan Playwright -- mereka berbagi instance browser yang sama** |
-| Read | users/{USER}/cv.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | HTML sementara untuk PDF, report .md, file TSV tambahan tracker di `batch/tracker-additions/` (jangan pernah `applications.md` secara langsung) |
 | Edit | Perbaikan pada report dan konten hasil generate lainnya. Jangan pernah mengedit tabel tracker: baris baru masuk sebagai TSV yang digabung dengan `node merge-tracker.mjs`, perubahan status dan catatan melalui `node set-status.mjs` |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |

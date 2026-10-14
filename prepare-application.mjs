@@ -164,7 +164,8 @@ function readProfile() {
 function readCover() {
   if (!coverPath) return null;
   const abs = resolve(userContext.userRoot, coverPath);
-  if (!abs.startsWith(userContext.userRoot + '/') && abs !== userContext.userRoot) {
+  const rel = relative(userContext.userRoot, abs);
+  if (rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(rel)) {
     console.error(`Warning: cover letter path escapes users/${userContext.userId}/ — skipping`);
     return null;
   }

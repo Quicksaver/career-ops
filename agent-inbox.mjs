@@ -36,11 +36,15 @@ import {
   readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync,
   openSync, fstatSync, readSync, closeSync, realpathSync, statSync,
 } from 'fs';
-import { dirname } from 'path';
+import { dirname, resolve as resolvePath, relative, isAbsolute } from 'path';
+import { getUserContext, userPath, printUserContextErrorAndExit } from './lib/user-context.mjs';
+let context;
+try { context = getUserContext(process.argv.slice(2)); } catch (err) { printUserContextErrorAndExit(err); }
+const cliArgs = context.args;
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { writeFileAtomic } from './tracker-utils.mjs';
 
-const PATH = process.env.CAREER_OPS_INBOX || 'data/agent-inbox.md';
+const PATH = process.env.CAREER_OPS_INBOX ? resolvePath(context.projectRoot, process.env.CAREER_OPS_INBOX) : userPath(context, 'data/agent-inbox.md');
 
 const HEADER = [
   '# Agent Inbox',
@@ -63,13 +67,16 @@ function ensureGitignored() {
   // The inbox is personal data. On installs whose .gitignore predates this
   // feature, make sure the default path is ignored so a first `add` can't
   // accidentally commit it. Only manages the default, non-overridden path.
-  if (process.env.CAREER_OPS_INBOX || PATH !== 'data/agent-inbox.md') return;
+  if (process.env.CAREER_OPS_INBOX) return;
+  const ignorePath = resolvePath(context.projectRoot, '.gitignore');
+  const rel = relative(context.projectRoot, PATH).replaceAll('\\', '/');
+  if (rel.startsWith('../') || isAbsolute(rel)) return; // includes a different Windows drive
   try {
-    if (!existsSync('.gitignore')) return; // not a git checkout we should touch
-    const text = readFileSync('.gitignore', 'utf8');
-    if (text.split('\n').some((l) => l.trim() === PATH)) return; // already ignored
-    writeFileSync('.gitignore', text.replace(/\s*$/, '') + `\n${PATH}\n`);
-  } catch { /* best effort — never block queuing on this */ }
+    if (!existsSync(ignorePath)) return;
+    const text = readFileSync(ignorePath, 'utf8');
+    if (text.split('\n').some((l) => l.trim() === rel || l.trim() === 'users/*')) return;
+    writeFileSync(ignorePath, text.replace(/\s*$/, '') + `\n${rel}\n`);
+  } catch { /* best effort */ }
 }
 
 function oneLine(s) {
@@ -141,9 +148,9 @@ function parseItems() {
 }
 
 function opt(name, def = '') {
-  const i = process.argv.indexOf('--' + name);
+  const i = cliArgs.indexOf('--' + name);
   if (i < 0) return def;
-  const v = process.argv[i + 1];
+  const v = cliArgs[i + 1];
   return v && !v.startsWith('--') ? v : def;
 }
 
@@ -152,16 +159,16 @@ function opt(name, def = '') {
 // opt() reads only the first occurrence and would never see a later bare one.
 function optAll(name) {
   const values = [];
-  process.argv.forEach((arg, i) => {
+  cliArgs.forEach((arg, i) => {
     if (arg !== '--' + name) return;
-    const v = process.argv[i + 1];
+    const v = cliArgs[i + 1];
     values.push(v && !v.startsWith('--') ? v : '');
   });
   return values;
 }
 
 async function add() {
-  const text = oneLine(process.argv.slice(3).join(' '));
+  const text = oneLine(cliArgs.slice(1).join(' '));
   if (!text) fail('add needs a request, e.g. node agent-inbox.mjs add "evaluate https://..."');
   // Append rather than rewrite. This is the queue's concurrent path — anything
   // running in the background can drop an item in — and a read-whole-file /
@@ -219,7 +226,7 @@ async function add() {
 }
 
 function list() {
-  const all = process.argv.includes('--all');
+  const all = cliArgs.includes('--all');
   const parsed = parseItems();
   const items = parsed.filter((it) => all || !it.done);
   if (!items.length) return process.stdout.write(all ? 'Inbox is empty.\n' : 'No pending items.\n');
@@ -235,7 +242,7 @@ function list() {
 }
 
 async function resolve() {
-  const n = Number(process.argv[3]);
+  const n = Number(cliArgs[1]);
   if (!Number.isInteger(n) || n < 1) fail('resolve needs a 1-based item number (see `list`)');
   const outcome = await withPipelineLock(PATH, () => {
     // The item snapshot, line lookup, and rewrite are one transaction. An
@@ -300,7 +307,7 @@ function fail(msg) {
   process.exit(1);
 }
 
-const cmd = process.argv[2];
+const cmd = cliArgs[0];
 if (cmd === 'add') await add();
 else if (cmd === 'list') list();
 else if (cmd === 'resolve') await resolve();

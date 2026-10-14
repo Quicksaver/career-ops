@@ -91,7 +91,7 @@ func TestStatusTargetUsesReaderPath(t *testing.T) {
 				}
 				app = apps[0]
 			}
-			err := UpdateApplicationStatusAndNotes(root, app, "Interview", "follow-up")
+			err := UpdateApplicationStatusAndNotes(root, app, "Interview", "follow-up", "fixture")
 			if layout == "missing-override" {
 				if err == nil {
 					t.Fatal("missing override must fail without fallback")

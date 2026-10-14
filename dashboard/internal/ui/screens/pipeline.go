@@ -62,6 +62,7 @@ type PipelineOpenFailedMsg struct {
 // CareerOpsPath (as recorded in the manifest).
 type PipelineGeneratePDFMsg struct {
 	CareerOpsPath string
+	UserID        string
 	ReportNumber  string
 	HTMLPath      string
 	PDFPath       string
@@ -432,8 +433,9 @@ func (m *PipelineModel) applyReportDetails(reportPath, jobURL, listingDate strin
 		if app.ReportPath != reportPath {
 			return
 		}
-		if jobURL != "" {
+		if jobURL != "" && (app.JobURL == "" || app.JobURLFallback) {
 			app.JobURL = jobURL
+			app.JobURLFallback = false
 		}
 		if listingDate != "" {
 			app.ListingDate = listingDate
@@ -444,6 +446,19 @@ func (m *PipelineModel) applyReportDetails(reportPath, jobURL, listingDate strin
 	}
 	for i := range m.filtered {
 		apply(&m.filtered[i])
+	}
+	if m.sortMode == sortDate {
+		selected, ok := m.CurrentApp()
+		m.applyFilterAndSort()
+		if ok {
+			for i, app := range m.filtered {
+				if app.Number == selected.Number && app.ReportPath == selected.ReportPath && app.Company == selected.Company && app.Role == selected.Role {
+					m.cursor = i
+					m.adjustScroll()
+					break
+				}
+			}
+		}
 	}
 }
 
@@ -483,8 +498,11 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 	reloaded.discardPendingApp = m.discardPendingApp
 	reloaded.discardPendingStatus = m.discardPendingStatus
 	reloaded.discardPredictedCount = m.discardPredictedCount
-	reloaded.applyFilterAndSort()
 	reloaded.CopyReportCache(&m)
+	for report, summary := range reloaded.reportCache {
+		reloaded.applyReportDetails(report, summary.jobURL, summary.listingDate)
+	}
+	reloaded.applyFilterAndSort()
 
 	for i, app := range reloaded.filtered {
 		if selectedReportPath != "" && app.ReportPath == selectedReportPath {
@@ -689,14 +707,21 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 
 	case "o":
 		if app, ok := m.CurrentApp(); ok {
-			if app.JobURL != "" {
+			if app.JobURL != "" && !app.JobURLFallback {
 				return m, func() tea.Msg { return PipelineOpenURLMsg{URL: app.JobURL} }
 			}
 			if app.ReportPath != "" {
 				root, report := m.careerOpsPath, app.ReportPath
 				return m, func() tea.Msg {
-					return PipelineReportLoadedMsg{ReportPath: report, Details: data.LoadReportDetails(root, report, true), OpenURL: true}
+					details := data.LoadReportDetails(root, report, true)
+					if details.JobURL == "" {
+						details.JobURL = app.JobURL
+					}
+					return PipelineReportLoadedMsg{ReportPath: report, Details: details, OpenURL: true}
 				}
+			}
+			if app.JobURL != "" {
+				return m, func() tea.Msg { return PipelineOpenURLMsg{URL: app.JobURL} }
 			}
 			m.flash = "No URL found for this application"
 		}
@@ -1568,10 +1593,18 @@ func (m PipelineModel) renderHeaderTabs(maxWidth int) string {
 func (m PipelineModel) renderPlainHeaderTabs(maxWidth int) string {
 	tabs := getPipelineTabs()
 	labels := make([]string, 0, len(tabs))
-	for _, tab := range tabs {
-		labels = append(labels, tab.label)
+	for i, tab := range tabs {
+		label := tab.label
+		if i == m.activeTab {
+			label = "[" + label + "]"
+		}
+		labels = append(labels, label)
 	}
-	return truncateRunes(strings.Join(labels, " "), maxWidth)
+	joined := strings.Join(labels, " ")
+	if lipgloss.Width(joined) <= maxWidth {
+		return joined
+	}
+	return truncateRunes(labels[m.activeTab], maxWidth)
 }
 
 func (m PipelineModel) renderHeaderTabsWithCounts(showCounts bool) string {

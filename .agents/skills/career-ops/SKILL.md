@@ -59,7 +59,9 @@ Resolve the active user before doing mode routing, reading files, or running scr
 
 Valid user IDs use letters, numbers, dots, underscores, or hyphens. Do not accept path-like user IDs.
 
-After resolving `ACTIVE_USER`, use `USER_ROOT=users/{ACTIVE_USER}`:
+After resolving `ACTIVE_USER`, resolve `USER_ROOT` with the canonical `path-resolver.mjs` contract: `CAREER_OPS_ROOT`, then `CAREER_OPS_DATA_DIR` (relative values anchor to the system checkout), then `.career-ops-data` when no users-directory override is set, then `{CAREER_OPS_USERS_DIR}/{ACTIVE_USER}` or `users/{ACTIVE_USER}`. Pass the active user explicitly when asking the resolver. `{DATA_ROOT}` and `USER_ROOT` refer to that same selected directory; `users/{USER}/...` in mode examples denotes its default layout, never a second prefix to append to `USER_ROOT`.
+
+After resolution:
 
 - Read/write user-layer files only inside `USER_ROOT` (`users/{USER}/cv.md`, `users/{USER}/config/profile.yml`, `users/{USER}/modes/_profile.md`, `users/{USER}/modes/_custom.md`, `users/{USER}/article-digest.md`, `users/{USER}/portals.yml`, `users/{USER}/data/`, `users/{USER}/reports/`, `users/{USER}/output/`, `users/{USER}/interview-prep/`, `users/{USER}/jds/`, `users/{USER}/writing-samples/`, and user batch state).
 - Read system-layer files from the repo root (`modes/_shared.md`, mode files, scripts, templates, providers, dashboard, docs).
@@ -215,7 +217,7 @@ Available commands:
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
   /career-ops scan-auth <username> linkedin → Authenticated portal scan with per-user browser session
   /career-ops discover  → Resolve a company list to scannable ATS boards + append to users/{USER}/portals.yml (zero-token)
-  /career-ops triage    → Fast first-pass go/no-go score from modes/_brief.md (writes no files)
+  /career-ops triage    → Fast first-pass go/no-go score from {DATA_ROOT}/modes/_brief.md (writes no files)
   /career-ops batch     → Batch processing with parallel workers
   /career-ops patterns  → Analyze rejection patterns and improve targeting
   /career-ops calibrate → Check whether evaluation scores predict your real outcomes (advisory only)

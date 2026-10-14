@@ -157,7 +157,7 @@ Gem den fulde evaluering i `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-D
 - Score: gennemsnit af matchet (1-5)
 - Status: `Evaluated`
 - PDF: nej (eller ja, hvis auto-pipeline har genereret en PDF)
-- Report: relativt link til report-filen (fx `[001](users/{USER}/reports/001-company-2026-01-01.md)`)
+- Report: relativt link til report-filen (fx `[001](reports/001-company-2026-01-01.md)`)
 
 **Tracker-format:**
 

@@ -45,7 +45,7 @@
 - **Yenibiris.com:** Playwright ile çalışır.
 - **LinkedIn:** Giriş gerektirebilir → `[!]` olarak işaretle, adaydan ilan metnini yapıştırmasını iste.
 - **PDF linki:** URL doğrudan bir PDF'e işaret ediyorsa Read aracıyla oku.
-- **`local:` öneki:** Yerel dosyayı oku. Örnek: `local:users/{USER}/jds/kariyer-backend.md` → `users/{USER}/jds/kariyer-backend.md` oku.
+- **`local:` öneki:** Yerel dosyayı oku. Örnek: `local:jds/kariyer-backend.md` → `users/{USER}/jds/kariyer-backend.md` oku.
 
 ## Rapor Numaralandırma
 

@@ -30,6 +30,49 @@ func tabIndexForFilter(t *testing.T, filter string) int {
 	return -1
 }
 
+func TestHydrationPreservesPostingIdentityAndDateSortOnReload(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Number: 1, Company: "One", Role: "Engineer", Status: "Evaluated", ReportPath: "reports/001.md", Date: "2026-01-01", JobURL: "https://example.com/new"},
+		{Number: 2, Company: "Two", Status: "Evaluated", ReportPath: "reports/002.md", Date: "2026-02-01"},
+	}
+	pm := NewPipelineModel(theme.NewTheme("auto"), apps, model.PipelineMetrics{}, t.TempDir(), 120, 40)
+	pm.sortMode = sortDate
+	pm.applyFilterAndSort()
+	pm.cursor = 1
+	pm.EnrichReportDetails("reports/001.md", data.ReportDetails{JobURL: "https://example.com/old", ListingDate: "2026-03-01"})
+	if pm.filtered[0].Number != 1 || pm.cursor != 0 || pm.filtered[0].JobURL != "https://example.com/new" {
+		t.Fatalf("hydration lost selection, sort, or URL: %+v cursor=%d", pm.filtered, pm.cursor)
+	}
+	fresh := append([]model.CareerApplication(nil), apps...)
+	fresh[0].ListingDate = ""
+	reloaded := pm.WithReloadedData(fresh, model.PipelineMetrics{})
+	if reloaded.filtered[0].ListingDate != "2026-03-01" || reloaded.filtered[0].JobURL != "https://example.com/new" {
+		t.Fatalf("reload lost cached metadata: %+v", reloaded.filtered)
+	}
+}
+
+func TestNarrowTabsShowActiveFilter(t *testing.T) {
+	pm := NewPipelineModel(theme.NewTheme("auto"), nil, model.PipelineMetrics{}, "", 120, 40)
+	pm.activeTab = len(getPipelineTabs()) - 1
+	got := pm.renderPlainHeaderTabs(25)
+	if !strings.Contains(got, "["+getPipelineTabs()[pm.activeTab].label+"]") {
+		t.Fatalf("active tab missing: %q", got)
+	}
+}
+
+func TestLegacyOpenLoadsReportBeforeCompanyFallback(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "reports"), 0o755)
+	os.WriteFile(filepath.Join(root, "reports", "001.md"), []byte("**URL:** https://example.com/exact\n"), 0o644)
+	app := model.CareerApplication{Number: 1, Company: "Example", Status: "Evaluated", ReportPath: "reports/001.md", JobURL: "https://example.com/other", JobURLFallback: true}
+	pm := NewPipelineModel(theme.NewTheme("auto"), []model.CareerApplication{app}, model.PipelineMetrics{}, root, 120, 40)
+	_, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	msg, ok := cmd().(PipelineReportLoadedMsg)
+	if !ok || msg.Details.JobURL != "https://example.com/exact" || !msg.OpenURL {
+		t.Fatalf("opened company fallback: %+v", msg)
+	}
+}
+
 func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 	tabs := getPipelineTabs()
 	if len(tabs) == 0 {

@@ -160,6 +160,11 @@ test('the generic scaffold exemptions still apply outside batch/ and documents/'
   );
 });
 
+test('private users-tree README and gitkeep files never pass generic scaffold exemptions', () => {
+  const isBlocked = loadGuard();
+  for (const file of ['users/fictional/README.md', 'users/fictional/.gitkeep', 'users/fictional/documents/private/README.md', 'users/fictional/reports/.gitkeep']) assert.equal(isBlocked(file), true, file);
+});
+
 test('the guard exempts every tracked source under batch/', () => {
   const isBlocked = loadGuard();
   const tracked = trackedFiles('batch/');

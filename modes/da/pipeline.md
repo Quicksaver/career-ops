@@ -43,7 +43,7 @@ Behandler URL'er til opslag, der er samlet i `users/{USER}/data/pipeline.md`. Ka
 **Særlige tilfælde:**
 - **LinkedIn**: Kan kræve login -> markér `[!]` og bed kandidaten om at indsætte teksten
 - **PDF**: Hvis URL'en peger på en PDF, så læs den direkte med Read-værktøjet
-- **Præfikset `local:`**: Læs den lokale fil. Eksempel: `local:users/{USER}/jds/linkedin-pm-ai.md` -> læs `users/{USER}/jds/linkedin-pm-ai.md`
+- **Præfikset `local:`**: Læs den lokale fil. Eksempel: `local:jds/linkedin-pm-ai.md` -> læs `users/{USER}/jds/linkedin-pm-ai.md`
 - **Jobindex / The Hub / LinkedIn DK**: Almindelige danske portaler. Playwright håndterer cookie-bannere godt
 - **Jobnet (Styrelsen for Arbejdsmarked)**: Strukturerede opslag, godt læsbare af maskine. WebFetch er som regel nok
 

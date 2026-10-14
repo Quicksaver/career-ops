@@ -1,4 +1,4 @@
-import { selectTestUser, restoreTestUser } from './user-fixture.mjs';
+import { selectTestUser, restoreTestUser, TEST_USERS_DIR } from './user-fixture.mjs';
 // tests/helpers.mjs — shared assertion helpers + counters for the test suite.
 // Moved verbatim from test-all.mjs (issue #1440); no framework by design:
 // the suite must run on a fresh clone with only Node.
@@ -32,7 +32,7 @@ export const NODE = process.execPath;
 // CAREER_OPS_PIPELINE). A test that needs the override sets its own.
 process.env.CAREER_OPS_TRACKER = '';
 // Every suite starts in a disposable user; fixtures can select another explicitly.
-const fixtureUsers = mkdtempSync(join(tmpdir(), 'career-ops-suite-users-'));
+const fixtureUsers = TEST_USERS_DIR;
 process.env.CAREER_OPS_USER = 'test';
 process.env.CAREER_OPS_USERS_DIR = fixtureUsers;
 delete process.env.CAREER_OPS_ROOT;
@@ -190,6 +190,7 @@ export async function importSuiteContained(file, rel) {
  * Moved verbatim from the tail of test-all.mjs — output must stay byte-identical.
  */
 export function finish() {
+  _rmSync(TEST_USERS_DIR, { recursive: true, force: true });
   // A discovered suite under tests/ that uses node:test reports through node's
   // own runner, which increments none of the counters above. node:test does set
   // process.exitCode = 1 when one of its tests fails, but process.exit(0) below

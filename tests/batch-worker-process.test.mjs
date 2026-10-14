@@ -1,0 +1,76 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { runWorker } from '../batch/worker-process.mjs';
+import { processAlive } from '../lib/run-artifacts.mjs';
+import { resolveRunnerCommand, terminateProcessTreeSync } from '../lib/runner-command.mjs';
+
+const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+const helper = resolve(import.meta.dirname, '../batch/worker-process.mjs');
+
+function fixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'career-ops-worker-tree-'));
+  const script = join(dir, 'worker.mjs');
+  const pids = join(dir, 'pids');
+  const artifact = join(dir, 'late-artifact');
+  writeFileSync(script, `import {spawn} from 'node:child_process';
+import {appendFileSync,writeFileSync} from 'node:fs';
+const [script, pids, artifact, rawDepth] = process.argv.slice(1);
+const depth=Number(rawDepth);
+appendFileSync(pids, process.pid+'\\n');
+if(depth<2) spawn(process.execPath,[script,pids,artifact,String(depth+1)],{stdio:'inherit',detached:process.platform!=='win32'});
+if(depth===2) setTimeout(()=>writeFileSync(artifact,'late mutation'),3000);
+setInterval(()=>{},1000);
+`);
+  return { dir, script, pids, artifact, registration: join(dir, 'worker.json'),
+    args: [script, pids, artifact, '0'],
+    readPids: () => existsSync(pids) ? readFileSync(pids, 'utf8').trim().split('\n').filter(Boolean).map(Number) : [],
+  };
+}
+
+test('worker timeout drains parent, child and detached grandchild before recovery', async () => {
+  const f = fixture();
+  try {
+    assert.equal(await runWorker(process.execPath, f.args, { timeoutSeconds: 2, registrationPath: f.registration }), 124);
+    const pids = f.readPids();
+    assert.equal(pids.length, 3, 'fixture must have started the entire tree');
+    assert.ok(pids.every(pid => !processAlive(pid)));
+    assert.equal(existsSync(f.registration), false);
+    await delay(1500);
+    assert.equal(existsSync(f.artifact), false);
+  } finally { for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('batch registration stop drains the tree and lets the supervising helper exit', async () => {
+  const f = fixture();
+  const launch = resolveRunnerCommand(process.execPath, [helper, 'run', '30', f.registration, process.execPath, ...f.args]);
+  const supervisor = spawn(launch.command, launch.args, { ...launch.options, stdio: 'ignore' });
+  const completion = new Promise(resolve => supervisor.once('close', (code, signal) => resolve({ code, signal })));
+  try {
+    for (let attempt = 0; attempt < 100 && f.readPids().length < 3; attempt++) await delay(25);
+    assert.equal(f.readPids().length, 3);
+    const stopped = spawnSync(process.execPath, [helper, 'stop', f.registration], { encoding: 'utf8', timeout: 7000 });
+    assert.equal(stopped.status, 0, stopped.stderr);
+    const outcome = await Promise.race([completion, delay(5000).then(() => null)]);
+    assert.ok(outcome, 'supervisor must drain and exit');
+    assert.ok(f.readPids().every(pid => !processAlive(pid)));
+    assert.equal(existsSync(f.registration), false);
+    assert.equal(existsSync(f.artifact), false);
+  } finally { if (processAlive(supervisor.pid)) terminateProcessTreeSync(supervisor); for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('forced stop of an outer runner includes descendants in nested POSIX groups', { skip: process.platform === 'win32' }, async () => {
+  const f = fixture();
+  const launch = resolveRunnerCommand(process.execPath, f.args);
+  const outer = spawn(launch.command, launch.args, { ...launch.options, stdio: 'ignore' });
+  try {
+    for (let attempt = 0; attempt < 100 && f.readPids().length < 3; attempt++) await delay(25);
+    assert.equal(f.readPids().length, 3);
+    terminateProcessTreeSync(outer);
+    await delay(100);
+    assert.ok(f.readPids().every(pid => !processAlive(pid)));
+  } finally { for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid); rmSync(f.dir, { recursive: true, force: true }); }
+});

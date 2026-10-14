@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { getBash, rmSync } from './helpers.mjs';
+import { getBash, rmSync, ROOT } from './helpers.mjs';
 
 const source = readFileSync(new URL('../batch/batch-runner.sh', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const functions = source.slice(source.indexOf('is_rate_limit_log() {'), source.indexOf('reserve_report_num_unlocked() {'));
@@ -94,6 +94,8 @@ function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = 'API 
     RATE_LIMIT_SLEEP=${cap}
     MAX_RETRIES=${max}
     CLI=${cli}
+    SCRIPT_DIR='${ROOT.replaceAll('\\', '/')}/batch'
+    WORKER_DIR=.
     PAUSE_FILE=pause.tsv
     BATCH_PAUSED=false
     calls=0
@@ -107,6 +109,9 @@ function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = 'API 
     }
     qwen() { claude; }
     codex() { claude; }
+    # This extracted fixture exercises classifiers and retries. Real native
+    # launch and tree ownership are covered by the worker-process fixtures.
+    node() { if [[ "$1" == "$SCRIPT_DIR/worker-process.mjs" ]]; then shift 4; "$@"; else command node "$@"; fi; }
     sleep() { [[ "$1" == 1 ]] || printf 'SLEEP:%s\n' "$1"; }
     update_state_retrying() { printf 'STATE:%s:%s:%s\n' "$3" "$8" "$9"; }
     worker() {
@@ -218,6 +223,7 @@ test('full runner resumes persisted retries and schedules paused rows only with 
     const output = invoke(`
       : > calls.log
       claude() { echo called >> calls.log; echo 'API Error: 429 Too Many Requests'; return 1; }
+      node() { if [[ "$1" == */worker-process.mjs && "$2" == run ]]; then shift 4; "$@"; else command node "$@"; fi; }
       curl() { return 1; }
       sleep() {
         [[ "$1" != 1 ]] || return 0

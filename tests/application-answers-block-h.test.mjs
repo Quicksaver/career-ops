@@ -199,7 +199,7 @@ try {
     // stderr is piped, not inherited: the refusals below fail BY DESIGN and
     // their messages belong in the assertion, not in the suite's output.
     const cli = (...extra) =>
-      run('node', ['application-answers.mjs', ...extra], { stdio: ['ignore', 'pipe', 'pipe'] });
+      run('node', ['application-answers.mjs', ...extra], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CAREER_OPS_ROOT: cliTmp, CAREER_OPS_DATA_DIR: '', CAREER_OPS_USER: 'fixture' } });
     const cliChecks = [];
 
     const draftOut = cli('--report', reportPath, '--read-draft');

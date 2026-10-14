@@ -251,17 +251,18 @@ console.log('5. empty add fails (exit 1), does not queue a blank line');
 }
 
 // ---------------------------------------------------------------------------
-console.log('6. first add on the default path self-heals .gitignore (idempotent)');
+console.log('6. first add uses the selected data root and leaves unrelated checkout ignore files unchanged');
 {
   const repo = tmp('inbox-repo-');
   writeFileSync(join(repo, '.gitignore'), 'node_modules\noutput/*\n');
   const addOnce = () => execFileSync(NODE, [CLI, 'add', 'queue a scan'], {
-    cwd: repo, env: { ...process.env, CAREER_OPS_INBOX: '' }, stdio: ['pipe', 'pipe', 'pipe'],
+    cwd: repo, env: { ...process.env, CAREER_OPS_ROOT: repo, CAREER_OPS_DATA_DIR: '', CAREER_OPS_USER: 'fixture', CAREER_OPS_INBOX: '' }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   addOnce(); addOnce();
   const gi = readFileSync(join(repo, '.gitignore'), 'utf8');
   const ruleCount = gi.split('\n').filter((l) => l.trim() === 'data/agent-inbox.md').length;
-  check('.gitignore gains exactly one data/agent-inbox.md rule', ruleCount === 1, `count=${ruleCount}`);
+  check('external user data leaves the unrelated cwd .gitignore unchanged', ruleCount === 0, `count=${ruleCount}`);
+  check('default inbox belongs to the selected data root', existsSync(join(repo, 'data', 'agent-inbox.md')));
 }
 
 // ---------------------------------------------------------------------------

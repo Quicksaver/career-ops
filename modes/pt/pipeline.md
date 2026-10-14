@@ -44,7 +44,7 @@ Processa URLs de vagas acumuladas em `users/{USER}/data/pipeline.md`. O candidat
 **Casos especiais:**
 - **LinkedIn**: Pode exigir login → marcar com `[!]` e pedir ao candidato para colar o texto
 - **PDF**: Se a URL aponta para um PDF, ler diretamente com o Read tool
-- **`local:` prefix**: Ler arquivo local. Exemplo: `local:users/{USER}/jds/linkedin-pm-ai.md` → ler `users/{USER}/jds/linkedin-pm-ai.md`
+- **`local:` prefix**: Ler arquivo local. Exemplo: `local:jds/linkedin-pm-ai.md` → ler `users/{USER}/jds/linkedin-pm-ai.md`
 - **Gupy / Greenhouse / Lever**: Plataformas comuns no Brasil. Playwright funciona bem com todas
 - **Vagas.com.br / InfoJobs / Catho**: Portais brasileiros, geralmente acessíveis via WebFetch
 - **LinkedIn BR**: Mesmas restrições do LinkedIn global — pode exigir login

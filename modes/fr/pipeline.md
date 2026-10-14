@@ -43,7 +43,7 @@ Traite les URLs d'offres accumulees dans `users/{USER}/data/pipeline.md`. Le can
 **Cas particuliers :**
 - **LinkedIn** : Peut necessiter un login -> marquer `[!]` et demander au candidat de coller le texte
 - **PDF** : Si l'URL pointe vers un PDF, le lire directement avec le Read tool
-- **Prefixe `local:`** : Lire le fichier local. Exemple : `local:users/{USER}/jds/linkedin-pm-ai.md` -> lire `users/{USER}/jds/linkedin-pm-ai.md`
+- **Prefixe `local:`** : Lire le fichier local. Exemple : `local:jds/linkedin-pm-ai.md` -> lire `users/{USER}/jds/linkedin-pm-ai.md`
 - **Welcome to the Jungle / Indeed FR / APEC** : Portails francophones courants. Playwright gere bien les cookie banners
 - **France Travail (ex-Pole emploi)** : Offres structurees, bien lisibles par machine. WebFetch suffit generalement
 

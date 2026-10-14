@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,7 +45,17 @@ func CheckoutScriptPath(name string) (string, error) {
 	return "", fmt.Errorf("dashboard actions need %s in the career-ops checkout", name)
 }
 
-func runStatusWriter(dataRoot, report, status, note string) error {
+func runStatusWriter(dataRoot, report, status, note string, selectedUser ...string) error {
+	userID := strings.TrimSpace(os.Getenv("CAREER_OPS_USER"))
+	if len(selectedUser) > 0 && selectedUser[0] != "" {
+		userID = selectedUser[0]
+	}
+	if userID == "" {
+		userID = filepath.Base(dataRoot)
+	}
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`).MatchString(userID) {
+		return fmt.Errorf("status update requires a valid selected user")
+	}
 	script, err := CheckoutScriptPath("set-status.mjs")
 	if err != nil {
 		return err
@@ -96,7 +107,7 @@ func runStatusWriter(dataRoot, report, status, note string) error {
 		}
 		return strconv.FormatInt(wait.Milliseconds(), 10)
 	}
-	cmd.Env = append(cmd.Environ(), "CAREER_OPS_ROOT="+root, "CAREER_OPS_USER=dashboard", "CAREER_OPS_DATA_DIR="+root,
+	cmd.Env = append(cmd.Environ(), "CAREER_OPS_ROOT="+root, "CAREER_OPS_USER="+userID, "CAREER_OPS_DATA_DIR="+root,
 		"CAREER_OPS_USERS_DIR="+filepath.Dir(root), "CAREER_OPS_TRACKER="+tracker,
 		"CAREER_OPS_TRACKER_LOCK_TIMEOUT_MS="+boundedWait("CAREER_OPS_TRACKER_LOCK_TIMEOUT_MS"),
 		"CAREER_OPS_FOLLOWUPS_LOCK_TIMEOUT_MS="+boundedWait("CAREER_OPS_FOLLOWUPS_LOCK_TIMEOUT_MS"))

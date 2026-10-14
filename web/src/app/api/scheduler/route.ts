@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { resolveCodeRoot } from "@/lib/core/code-root.mjs";
+import { careerOpsCoreEnv } from "@/lib/career-ops";
 import { schedulerStatus } from "@/lib/scheduler-status";
 
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ export async function POST() {
   try {
     const child = spawn(process.execPath, [script], {
       cwd: resolveCodeRoot(process.cwd(), process.env),
+      env: careerOpsCoreEnv(),
       detached: true,
       stdio: "ignore",
       windowsHide: true,

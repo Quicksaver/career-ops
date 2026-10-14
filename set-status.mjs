@@ -131,7 +131,6 @@ import { captureSlug, findCaptureForReport } from './jd-capture.mjs';
 // answered "No tracker found at <CHECKOUT>/applications.md", naming a file the
 // user never configured. Same defect #3715 fixed in the analysis scripts.
 const CODE_ROOT = dirname(fileURLToPath(import.meta.url));
-const DATA_ROOT = getCareerOpsRoot();
 const STATES_FILE = join(CODE_ROOT, 'templates/states.yml');
 const JD_ARCHIVE_TIMEOUT_MS = Math.min(
   300_000,
@@ -215,7 +214,9 @@ function renderStatesSection() {
 
 // ── argument parsing ─────────────────────────────────────────────
 
+const VALUE_FLAGS = { '--note': 'note', '--replace-note': 'replaceNote', '--role': 'role', '--on': 'on', '--row': 'row', '--report': 'report', '--report-link': 'reportLink', '--source': 'source', '--expect-tracker': 'expectTracker' };
 let userContext;
+if (wantsHelp(process.argv.slice(2))) { console.log(`${USAGE}\n${renderStatesSection()}`); process.exit(EXIT_OK); }
 try {
   userContext = getUserContext(process.argv.slice(2), {
     requireUser: !process.env.CAREER_OPS_TRACKER,
@@ -224,9 +225,10 @@ try {
   printUserContextErrorAndExit(err);
 }
 const rawArgs = userContext.args;
+const DATA_ROOT = getCareerOpsRoot();
 const positional = [];
 const flags = { note: null, replaceNote: null, role: null, on: null, row: null, report: null, reportLink: null, source: null, force: false, dryRun: false, repairStatusLog: false, repairFollowup: false, json: false, expectTracker: null };
-const VALUE_FLAGS = { '--note': 'note', '--replace-note': 'replaceNote', '--role': 'role', '--on': 'on', '--row': 'row', '--report': 'report', '--report-link': 'reportLink', '--source': 'source', '--expect-tracker': 'expectTracker' };
+
 
 /**
  * Is the caller asking for help, rather than passing "--help" as a VALUE?
@@ -241,7 +243,7 @@ const VALUE_FLAGS = { '--note': 'note', '--replace-note': 'replaceNote', '--role
 function wantsHelp(args) {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (Object.hasOwn(VALUE_FLAGS, a)) { i++; continue; } // skip this flag's value
+    if (Object.hasOwn(VALUE_FLAGS, a) || a === '--user' || a === '-u') { i++; continue; } // skip this flag's value
     if (a === '--help' || a === '-h') return true;
   }
   return false;

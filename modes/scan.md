@@ -264,14 +264,13 @@ Levels are additive — they are executed in order, and results are merged and d
    - 0 keywords de `negative` deben aparecer
    - `seniority_boost` keywords dan prioridad pero no son obligatorios
 
-6b. **Filtrar por ubicación (opcional)** usando `location_filter` de `portals.yml`:
-   - Si el bloque `location_filter` está ausente, todas las ubicaciones pasan (comportamiento por defecto)
-   - Ubicación vacía en una oferta → pasa (no penalizar datos faltantes)
-   - Cualquier keyword de `block` presente → rechazar (precedencia sobre allow)
-   - `allow` vacío → pasa (ya superó block)
-   - `allow` no vacío → debe coincidir al menos una keyword
-   - Todas las coincidencias son case-insensitive substring
-   - La ubicación se persiste como 7ª columna en `scan-history.tsv` para auditoría posterior
+6b. **Filter by location (optional)** using `location_filter` from the selected user's `portals.yml`:
+   - Without a location filter, every location passes.
+   - An empty location passes unless `strict: true` and at least one restricting tier (`allow`, `block`, or `block_hard`) is configured. A trustworthy location hint may supply the missing location.
+   - `block_hard` matches always reject.
+   - `always_allow` matches pass before ordinary `block` and `allow` checks. US country entries also enable the scanner's state-name/code matching.
+   - Ordinary `block` matches reject; otherwise an empty `allow` passes, and a nonempty `allow` requires a match.
+   - Use the canonical scanner's case-insensitive location matching, including its token boundaries for short terms. Persist location as the seventh scan-history column for auditing.
 
 6c. **Filter by Posting Age (Optional)** using `max_posting_age_days` from `portals.yml`:
    - Opt-in. If the key is absent, 0, or non-positive, all ages pass (default behavior).
@@ -332,7 +331,7 @@ Generic regex: `(.+?)(?:\s*[@|—–-]\s*|\s+at\s+)(.+?)$`
 
 If a non-publicly accessible URL is found:
 1. Save the JD in `users/{USER}/jds/{company}-{role-slug}.md`.
-2. Add to `pipeline.md` as: `- [ ] local:users/{USER}/jds/{company}-{role-slug}.md | {company} | {title}`
+2. Add to `pipeline.md` as: `- [ ] local:jds/{company}-{role-slug}.md | {company} | {title}`
 
 ## Scan History
 

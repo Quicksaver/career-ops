@@ -14,7 +14,7 @@ const runner = read('batch/batch-runner.sh');
 const resultStart = runner.indexOf('  local final_json_valid=false\n');
 const resultEnd = runner.indexOf('\n  return 0\n}\n\n# Merge tracker', resultStart);
 const schedulingStart = runner.indexOf('    local status\n    status=$(get_status "$id")');
-const schedulingEnd = runner.indexOf('\n    if (( LIMIT > 0 ))', schedulingStart);
+const schedulingEnd = runner.indexOf('\n    pending_ids+=', schedulingStart);
 assert(resultStart >= 0 && resultEnd > resultStart, 'runner result-handling boundaries');
 assert(schedulingStart >= 0 && schedulingEnd > schedulingStart, 'runner scheduling boundaries');
 const resultCode = runner.slice(resultStart, resultEnd);
@@ -68,7 +68,6 @@ append_recovery_record() {
 }
 sleep() { :; }
 ${functionCode('update_state_retrying')}
-${functionCode('has_report_file')}
 find_tracker_for_id() { [[ ! -f "$REPORTS_DIR/042-example.md" ]] || printf '%s' "$REPORTS_DIR/042-example.md"; }
 find_report_for_num() { [[ ! -f "$REPORTS_DIR/042-example.md" ]] || printf '%s' "$REPORTS_DIR/042-example.md"; }
 worker_json_field() { return 0; }

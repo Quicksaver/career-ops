@@ -16,7 +16,7 @@
  * 10. Every report file has a tracker row referencing it (warning — see #1425)
  * 11. Via channel consistency (see #1596)
  * 12. No # value reused across 2+ tracker rows (error — see #1704)
- * 13. No report number prefix is reused across active report files
+ * 12b. No report number prefix is reused across active report files
  * 13. applications.md <-> active-interviews.md status sync (see #1504)
  * 14. data/follow-ups.md table schema (see #2971)
  * 15. portals.yml entries no provider claims (see #3251)
@@ -29,6 +29,7 @@
 import { readFileSync, readdirSync, existsSync, mkdirSync, unlinkSync, statSync } from 'fs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { createHash } from 'crypto';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import {
   ensureUserDirs,
@@ -60,7 +61,7 @@ try {
 
 const JSON_OUTPUT = userContext.args.includes('--json');
 
-const APPS_FILE = process.env.CAREER_OPS_TRACKER || userPath(userContext, 'data/applications.md');
+const APPS_FILE = resolveTrackerPath(userContext.userRoot);
 const TRACKER_DIR = dirname(APPS_FILE);
 const TRACKER_ROOT = userContext.userRoot || (basename(TRACKER_DIR) === 'data' ? dirname(TRACKER_DIR) : TRACKER_DIR);
 const JDS_DIR = process.env.CAREER_OPS_JDS ? resolve(TRACKER_ROOT, process.env.CAREER_OPS_JDS) : join(TRACKER_ROOT, 'jds');
@@ -95,8 +96,14 @@ let errors = 0;
 let warnings = 0;
 const errorFindings = [];
 const warningFindings = [];
+const findingIds = new Set();
 
 function finding(level, code, id, message, details = {}) {
+  if (!id || id === code) id = `${code}:${createHash('sha256').update(JSON.stringify({ message, details })).digest('hex').slice(0, 20)}`;
+  const originalId = id;
+  let suffix = 1;
+  while (findingIds.has(`${level}:${id}`)) id = `${originalId}:${++suffix}`;
+  findingIds.add(`${level}:${id}`);
   const item = { id, code, message, details };
   if (level === 'error') {
     errors++;
@@ -121,6 +128,7 @@ if (!existsSync(APPS_FILE)) {
   if (JSON_OUTPUT) {
     console.log(JSON.stringify({
       schema_version: 1,
+      user: userContext.userId, root: userContext.userRoot, tracker: APPS_FILE,
       status: 'clean',
       errors: [],
       warnings: [],
@@ -564,7 +572,7 @@ for (const e of entries) {
     continue;
   }
   for (const lt of linkTargets) {
-    const name = lt[1].split('/').pop();
+    const name = lt[1].split(/[\\/]/).pop();
     if (REPORT_FILE_RE.test(name)) referencedReportFiles.add(name);
   }
 }
@@ -694,7 +702,7 @@ try {
   // reading the exit status (CI, a cron wrapper, a pre-push hook) that is indistinguishable from
   // the invariant holding. We do not know whether the tracker is in sync; we know we failed to
   // look. The honest report is failure.
-  error(`Sync check could not run — the tracker was NOT verified: ${err.message}`);
+  error(`Sync check could not run — the tracker was NOT verified: ${err.message}`, 'sync_check_failed', 'sync-check-failed', { error: err.message });
 }
 
 if (syncResult) {
@@ -703,13 +711,13 @@ if (syncResult) {
   const unmatchedRows = syncResult.mismatches.filter(m => m.resolution === 'unmatched');
 
   for (const m of tier1Mismatches) {
-    warn(`Sync drift (auto-resolvable): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" vs active-interviews.md="${m.activeInterviewsStatus}" -> suggest "${m.suggestedStatus}" in ${m.staleIn} (run node tracker-sync-check.mjs for details)`);
+    warn(`Sync drift (auto-resolvable): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" vs active-interviews.md="${m.activeInterviewsStatus}" -> suggest "${m.suggestedStatus}" in ${m.staleIn} (run node tracker-sync-check.mjs for details)`, 'tracker_sync_drift', `sync-drift:${m.company}:${m.role}`, m);
   }
   for (const m of tier2Mismatches) {
-    warn(`Sync drift (needs human review): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" (${m.applicationsLastModified || 'no blame info'}) vs active-interviews.md="${m.activeInterviewsStatus}" (${m.activeInterviewsLastModified || 'no blame info'})`);
+    warn(`Sync drift (needs human review): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" (${m.applicationsLastModified || 'no blame info'}) vs active-interviews.md="${m.activeInterviewsStatus}" (${m.activeInterviewsLastModified || 'no blame info'})`, 'tracker_sync_drift', `sync-drift:${m.company}:${m.role}`, m);
   }
   for (const m of unmatchedRows) {
-    warn(`Sync check: active-interviews.md row for "${m.company}" — "${m.role}" could not be matched to a tracker row (${m.note})`);
+    warn(`Sync check: active-interviews.md row for "${m.company}" — "${m.role}" could not be matched to a tracker row (${m.note})`, 'tracker_sync_unmatched', `sync-unmatched:${m.company}:${m.role}`, m);
   }
   if (tier1Mismatches.length === 0 && tier2Mismatches.length === 0 && unmatchedRows.length === 0) {
     ok(syncResult.summary.total > 0
@@ -740,13 +748,13 @@ if (!existsSync(FOLLOWUPS_FILE)) {
   if (fups.pipeLines === 0) {
     ok('follow-ups.md has no table rows yet');
   } else if (!fups.sawSeparator) {
-    error(`follow-ups.md has table rows but no header delimiter row, so every row is skipped — expected ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`);
+    error(`follow-ups.md has table rows but no header delimiter row, so every row is skipped — expected ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`, 'followups_missing_header', 'followups:missing-header');
   } else if (fups.dataRows === 0) {
     ok('follow-ups.md has no logged follow-ups yet');
   } else if (fups.parsed === 0) {
-    error(`follow-ups.md: none of its ${fups.dataRows} row(s) parse, so stats.mjs and followup-cadence.mjs will both report zero follow-ups — expected column order ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`);
+    error(`follow-ups.md: none of its ${fups.dataRows} row(s) parse, so stats.mjs and followup-cadence.mjs will both report zero follow-ups — expected column order ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`, 'followups_unparseable', 'followups:unparseable', { data_rows: fups.dataRows });
   } else if (fups.unparsedLines.length > 0) {
-    warn(`follow-ups.md: ${fups.unparsedLines.length} of ${fups.dataRows} rows will be skipped by stats.mjs and followup-cadence.mjs (line${fups.unparsedLines.length === 1 ? '' : 's'} ${fups.unparsedLines.join(', ')}) — expected ${FOLLOWUPS_COLUMNS}`);
+    warn(`follow-ups.md: ${fups.unparsedLines.length} of ${fups.dataRows} rows will be skipped by stats.mjs and followup-cadence.mjs (line${fups.unparsedLines.length === 1 ? '' : 's'} ${fups.unparsedLines.join(', ')}) — expected ${FOLLOWUPS_COLUMNS}`, 'followups_unparsed_rows', 'followups:unparsed-rows', { lines: fups.unparsedLines });
   } else {
     ok(`follow-ups.md schema valid (${fups.parsed} logged follow-up${fups.parsed === 1 ? '' : 's'})`);
   }
@@ -801,14 +809,14 @@ if (!existsSync(PORTALS_FILE)) {
     // "All N entries resolve" success line claims it as resolved anyway.
     const malformed = entries.filter(e => e && e.enabled !== false && (typeof e.name !== 'string' || !e.name.trim()));
     for (const e of malformed) {
-      warn(`portals.yml: an enabled entry has no name (careers_url: ${e.careers_url || 'none'}) — it cannot be provider-checked; give it a name`);
+      warn(`portals.yml: an enabled entry has no name (careers_url: ${e.careers_url || 'none'}) — it cannot be provider-checked; give it a name`, 'portal_missing_name', `portal-missing-name:${e.careers_url || 'none'}`, { careers_url: e.careers_url || null });
     }
 
     for (const e of unknownProvider) {
-      error(`portals.yml: "${e.name}" sets an unknown provider — ${e.error}. The entry never scans (see providers/ for valid ids)`);
+      error(`portals.yml: "${e.name}" sets an unknown provider — ${e.error}. The entry never scans (see providers/ for valid ids)`, 'portal_unknown_provider', `portal-unknown-provider:${e.name}`, e);
     }
     for (const e of silent) {
-      warn(`portals.yml: "${e.name}" is enabled but no provider claims ${e.careers_url || 'its careers_url'} — scan.mjs skips it on every run without naming it (run node audit-portals.mjs)`);
+      warn(`portals.yml: "${e.name}" is enabled but no provider claims ${e.careers_url || 'its careers_url'} — scan.mjs skips it on every run without naming it (run node audit-portals.mjs)`, 'portal_unclaimed', `portal-unclaimed:${e.name}`, { name: e.name, careers_url: e.careers_url || null });
     }
     if (silent.length === 0 && unknownProvider.length === 0 && malformed.length === 0) {
       const enabled = entries.filter(e => e && e.enabled !== false).length;
@@ -845,7 +853,7 @@ for (let i = 0; i < lines.length; i++) {
   const found = lines[i].match(CONTROL_CHARS);
   if (!found) continue;
   const points = [...new Set(found.map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`))];
-  error(`applications.md line ${i + 1}: tracker row contains invisible control character(s) ${points.join(', ')} — delete them; they render as nothing in every view but shift the positional column parse`);
+  error(`applications.md line ${i + 1}: tracker row contains invisible control character(s) ${points.join(', ')} — delete them; they render as nothing in every view but shift the positional column parse`, 'tracker_control_characters', `control-characters:${i + 1}`, { line: i + 1, points });
   controlByteRows++;
 }
 if (controlByteRows === 0) ok('No control characters in tracker cells');
@@ -865,7 +873,7 @@ const jdArchiveMissing = jdArchiveResult.findings.filter(f => f.type === 'missin
 const jdArchiveReviewDue = jdArchiveResult.findings.filter(f => f.type === 'jd-archive-review-due');
 for (const f of jdArchiveMissing) error(`${f.file}: ${f.detail}`, 'missing_jd_archive', `missing-jd:${f.file}`, { file: `reports/${f.file}` });
 for (const f of jdArchiveReviewDue) warn(`${f.file}: ${f.detail}`, 'jd_archive_review_due', `jd-review:${f.file}`, { file: `reports/${f.file}` });
-for (const w of jdArchiveResult.warnings) warn(`${w.file}: ${w.detail}`);
+for (const w of jdArchiveResult.warnings) warn(`${w.file}: ${w.detail}`, 'jd_archive_inspection_warning', `jd-inspection:${w.file}`, w);
 if (jdArchiveMissing.length === 0 && jdArchiveReviewDue.length === 0 && jdArchiveResult.warnings.length === 0) {
   ok(jdArchiveResult.reportsScanned === 0
     ? 'No reports yet — nothing to check for JD archives'
@@ -876,6 +884,7 @@ if (jdArchiveMissing.length === 0 && jdArchiveReviewDue.length === 0 && jdArchiv
 if (JSON_OUTPUT) {
   console.log(JSON.stringify({
     schema_version: 1,
+    user: userContext.userId, root: userContext.userRoot, tracker: APPS_FILE,
     status: errors > 0 ? 'errors' : warnings > 0 ? 'warnings' : 'clean',
     errors: errorFindings,
     warnings: warningFindings,

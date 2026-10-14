@@ -32,6 +32,7 @@ import {
   compactPhaseRecords,
   RUN_RETENTION_DAYS,
   workflowRunnerPidPaths,
+  processAlive,
 } from './lib/run-artifacts.mjs';
 import { runUnresolvedFindingLines } from './lib/run-summary.mjs';
 import { inspectOwnership } from './batch/runner-ownership.mjs';
@@ -186,11 +187,6 @@ function log(message) {
 function readPendingCount() {
   if (!existsSync(pipelinePath)) return 0;
   return pendingCount(readFileSync(pipelinePath, 'utf-8'));
-}
-
-function processAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
 }
 
 async function acquireLock() {
@@ -353,6 +349,18 @@ async function runCommand(name, command, args, options = {}) {
   mkdirSync(runDir, { recursive: true });
   const stdoutOutput = [];
   const errorOutput = [];
+  let stdoutBytes = 0;
+  let errorBytes = 0;
+  function capture(chunks, chunk, bytes, limit) {
+    chunks.push(chunk);
+    bytes += chunk.length;
+    while (bytes > limit && chunks.length > 1) bytes -= chunks.shift().length;
+    if (bytes > limit) {
+      chunks[0] = chunks[0].subarray(bytes - limit);
+      bytes = limit;
+    }
+    return bytes;
+  }
   const maxStdout = options.maxStdout ?? 24000;
   const stream = createWriteStream(logPath, { flags: 'a' });
   const progress = quiet || !options.progress
@@ -378,16 +386,13 @@ async function runCommand(name, command, args, options = {}) {
   child.stdout.on('data', (chunk) => {
     stream.write(chunk);
     progress?.stdout.write(chunk);
-    stdoutOutput.push(chunk.toString());
-    errorOutput.push(chunk.toString());
-    while (stdoutOutput.join('').length > maxStdout && stdoutOutput.length > 1) stdoutOutput.shift();
-    while (errorOutput.join('').length > 24000 && errorOutput.length > 1) errorOutput.shift();
+    stdoutBytes = capture(stdoutOutput, chunk, stdoutBytes, maxStdout);
+    errorBytes = capture(errorOutput, chunk, errorBytes, 24000);
   });
   child.stderr.on('data', (chunk) => {
     stream.write(chunk);
     progress?.stderr.write(chunk);
-    errorOutput.push(chunk.toString());
-    while (errorOutput.join('').length > 24000 && errorOutput.length > 1) errorOutput.shift();
+    errorBytes = capture(errorOutput, chunk, errorBytes, 24000);
   });
   if (options.stdin) child.stdin.end(options.stdin);
   else child.stdin.end();
@@ -418,14 +423,14 @@ async function runCommand(name, command, args, options = {}) {
   };
   phases.push(phase);
   log(`${name} ${phase.status}`);
-  const tail = commandTail(errorOutput);
+  const tail = commandTail([Buffer.concat(errorOutput).toString('utf8')]);
   if (phase.status === 'failed') {
     const detail = result.error?.message || tail.trim().slice(-1000) || `exit ${result.code ?? result.signal}`;
     throw Object.assign(new Error(`${name} failed: ${detail}`), {
-      phase: name, result, logPath, output: stdoutOutput.join(''), tail,
+      phase: name, result, logPath, output: Buffer.concat(stdoutOutput).toString('utf8'), tail,
     });
   }
-  return { ...result, output: stdoutOutput.join(''), logPath, phase };
+  return { ...result, output: Buffer.concat(stdoutOutput).toString('utf8'), tail, logPath, phase };
 }
 
 function parseJsonOutput(result, label) {
@@ -445,6 +450,19 @@ function loadHandoff() {
   } catch {
     return { path, count: 0, items: [], valid: false };
   }
+}
+
+async function mergeTracker(summary, name) {
+  const result = await runCommand(name, process.execPath, [systemPath('merge-tracker.mjs'), '--user', context.userId], { accept: [0, 1] });
+  if (result.code === 0) {
+    summary.manual_actions = summary.manual_actions.filter(action => action.reason !== 'addition_blocked');
+    summary.issues = summary.issues.filter(issue => issue.phase !== 'tracker-merge');
+    return;
+  }
+  if (!/NOT merged/i.test(result.output + result.tail)) throw new Error(`${name} failed: ${result.tail || 'see phase log'}`);
+  addAction(summary, { kind: 'tracker', phase: 'tracker', reason: 'addition_blocked',
+    question: `Repair the tracker additions retained by merge-tracker, then rerun. ${compactProgressValue(result.tail || result.output, 1000)}` });
+  addPhaseIssue(summary, 'tracker-merge', 'Some tracker additions remain unmerged; independent queue processing continues.');
 }
 
 function handoffPrompt(handoffPath) {
@@ -661,7 +679,7 @@ async function main() {
     const discoveredPending = readPendingCount();
     const initialBatchState = readRunBatchState(context.userRoot);
     // Finish durable output from interrupted runs before dispatching anything.
-    await runCommand('merge-tracker-initial', process.execPath, [systemPath('merge-tracker.mjs'), '--user', context.userId]);
+    await mergeTracker(summary, 'merge-tracker-initial');
     await runCommand('reconcile-pipeline-initial', process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
     if (readPendingCount() > 0) {
       await runCommand('cv-sync-check', process.execPath, [systemPath('cv-sync-check.mjs'), '--user', context.userId]);
@@ -722,7 +740,7 @@ async function main() {
           addPhaseIssue(summary, 'batch', error);
         }
         checkBatchOwner();
-        await runCommand(`merge-tracker-${pass}`, process.execPath, [systemPath('merge-tracker.mjs'), '--user', context.userId]);
+        await mergeTracker(summary, `merge-tracker-${pass}`);
         await runCommand(`reconcile-pipeline-${pass}`, process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
         for (const action of queueActions(context.userRoot, context.userId)) addAction(summary, action);
         // A quota pause applies to this CLI/session, including following jobs
@@ -761,7 +779,7 @@ async function main() {
     if (quiet) verifyArgs.push('--quiet');
     if (resumeVerify) verifyArgs.push('--resume-run', resumeVerify);
     const reviewedVerification = parseJsonOutput(
-      await runCommand('verify-reviewed', process.execPath, verifyArgs, { maxStdout: 64 * 1024 * 1024 }),
+      await runCommand('verify-reviewed', process.execPath, verifyArgs, { accept: [0, 1], maxStdout: 64 * 1024 * 1024 }),
       'verify-reviewed',
     );
     if (!['completed', 'partial', 'failed'].includes(reviewedVerification.status) ||
@@ -770,6 +788,7 @@ async function main() {
       throw new Error('verify-reviewed returned an invalid completion contract');
     }
     if (reviewedVerification.status === 'failed') {
+      summary.verification_review = reviewedVerification;
       throw new Error(`verify-reviewed failed: ${reviewedVerification.error || 'unknown failure'}`);
     }
     if (reviewedVerification.status === 'partial' && !reviewedVerification.needs_human_review) {

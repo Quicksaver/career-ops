@@ -16,7 +16,8 @@
  *   node check-liveness.mjs <url1> [url2] ...
  *   node check-liveness.mjs --file urls.txt
  *
- * Exit code: 0 if all active, 1 if any expired or uncertain
+ * --json emits one completed verdict object, including expired/uncertain results.
+ * Exit code: 0 if all active, 1 if any expired, uncertain, or operational failure.
  */
 
 import { chromium } from 'playwright';
@@ -37,8 +38,8 @@ import { localToday } from './lib/local-today.mjs';
 import { existsSync, readFileSync } from 'fs';
 
 const USAGE = `Usage:
-  node check-liveness.mjs [--no-fallback] [--throttle[=ms]] [--no-record] <url1> [url2] ...
-  node check-liveness.mjs [--no-fallback] [--throttle[=ms]] [--no-record] --file urls.txt
+  node check-liveness.mjs [--json] [--no-fallback] [--throttle[=ms]] [--no-record] <url1> [url2] ...
+  node check-liveness.mjs [--json] [--no-fallback] [--throttle[=ms]] [--no-record] --file urls.txt
   node check-liveness.mjs --no-record             # check only; write nothing to scan-history
   node check-liveness.mjs --help                  # print this usage block and exit
   node check-liveness.mjs -h                      # alias for --help`;
@@ -114,23 +115,38 @@ async function main() {
   // On a challenge we retry once in a headed browser (which clears it); pass
   // --no-fallback to stay fully headless (e.g. on a machine with no display).
   const noFallback = args.includes('--no-fallback');
+  const jsonOutput = args.includes('--json');
+  const log = (...values) => { if (!jsonOutput) console.log(...values); };
   // --throttle or --throttle=<ms>: wait base..2*base ms (jittered) between checks
   // to stay under rate-based WAF limits. pracuj.pl's Cloudflare flags the session
   // after ~2 rapid hits, so a bulk run needs spacing. Default base 5000ms.
   const throttleArg = args.find((a) => a === '--throttle' || a.startsWith('--throttle='));
   const throttleBaseMs = throttleArg ? (Number(throttleArg.split('=')[1]) || 5000) : 0;
   const record = recordingEnabled(args);
-  const positional = args.filter((a) => a !== '--no-fallback' && a !== '--no-record' && a !== throttleArg);
+  const positional = [];
+  let file = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (['--json', '--no-fallback', '--no-record'].includes(arg) || arg === throttleArg) continue;
+    if (arg === '--file') {
+      if (file || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('--file requires one filename');
+      file = args[++i];
+    } else if (arg.startsWith('--')) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else positional.push(arg);
+  }
 
-  if (positional.length === 0) {
+  if (positional.length === 0 && !file) {
+    if (jsonOutput) throw new Error('Provide posting URLs or --file');
     console.error(USAGE);
     process.exitCode = 1;
     return;
   }
 
   let urls;
-  if (positional[0] === '--file') {
-    const text = await readFile(positional[1], 'utf-8');
+  if (file) {
+    if (positional.length) throw new Error('Use posting URLs or --file, not both');
+    const text = await readFile(file, 'utf-8');
     urls = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   } else {
     urls = positional;
@@ -141,7 +157,7 @@ async function main() {
     throttleBaseMs ? `throttle ~${throttleBaseMs / 1000}-${(throttleBaseMs * 2) / 1000}s` : null,
     record ? null : 'no-record',
   ].filter(Boolean);
-  console.log(`Checking ${urls.length} URL(s)...${notes.length ? ` (${notes.join(', ')})` : ''}\n`);
+  log(`Checking ${urls.length} URL(s)...${notes.length ? ` (${notes.join(', ')})` : ''}\n`);
 
   // Lazy browser: the API rung resolves ATS postings with no browser at all, so we
   // only launch Playwright if a URL actually needs the fallback.
@@ -194,12 +210,12 @@ async function main() {
     }
 
     const icon = { active: '✅', expired: '❌', uncertain: '⚠️' }[result];
-    console.log(`${icon} ${result.padEnd(10)} ${api ? '(api) ' : '      '}${url}`);
-    if (result !== 'active') console.log(`           ${reason}`);
+    log(`${icon} ${result.padEnd(10)} ${api ? '(api) ' : '      '}${url}`);
+    if (result !== 'active') log(`           ${reason}`);
     if (result === 'active') active++;
     else if (result === 'expired') expired++;
     else uncertain++;
-    verdicts.push({ url, result, code });
+    verdicts.push({ url, result, reason, code, via: api ? 'api' : 'browser' });
 
     // Throttle only matters between browser checks (the API is cheap, not WAF-rate-limited).
     const wait = usedBrowser && i < urls.length - 1 ? jitteredDelayMs(throttleBaseMs) : 0;
@@ -209,15 +225,17 @@ async function main() {
   if (headed) await headed.close();
   if (browser) await browser.close();
 
-  console.log(`\nResults: ${active} active  ${expired} expired  ${uncertain} uncertain  (${viaApi} via API, no browser)`);
+  log(`\nResults: ${active} active  ${expired} expired  ${uncertain} uncertain  (${viaApi} via API, no browser)`);
 
   // Close the loop: the verdict is the expensive part of this run and it used
   // to die with the process. `--no-record` leaves no trace, so the write is
   // skipped entirely rather than computed and thrown away.
   if (record) {
     const recorded = await recordExpiredVerdicts(verdicts);
-    if (recorded > 0) console.log(`Recorded ${recorded} expired posting(s) in ${SCAN_HISTORY_PATH}`);
+    if (recorded > 0) log(`Recorded ${recorded} expired posting(s) in ${SCAN_HISTORY_PATH}`);
   }
+
+  if (jsonOutput) console.log(JSON.stringify({ status: 'completed', active, expired, uncertain, via_api: viaApi, results: verdicts }));
 
   if (expired > 0 || uncertain > 0) process.exitCode = 1;
 }
@@ -226,7 +244,8 @@ async function main() {
 // imported — the arg parsing above would otherwise read an importing test's argv.
 if (isMainModule(import.meta.url)) {
   main().catch(err => {
-    console.error('Fatal:', err.message);
+    if (process.argv.includes('--json')) console.log(JSON.stringify({ status: 'failed', error: err.message }));
+    else console.error('Fatal:', err.message);
     process.exitCode = 1;
   });
 }

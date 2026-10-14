@@ -1,19 +1,22 @@
 # Shared context -- career-ops (Singapore)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      PERSONALIZING THIS FILE
      ============================================================
      This file holds the shared context for all career-ops Singapore
      market modes. Before using career-ops, you MUST:
-     1. Fill in users/{USER}/config/profile.yml with your personal information
-     2. Create users/{USER}/cv.md in the project root (Markdown CV)
-     3. (Optional) Create users/{USER}/article-digest.md with your measurable proof points
+     1. Fill in {DATA_ROOT}/config/profile.yml with your personal information
+     2. Create {DATA_ROOT}/cv.md in the user data root (Markdown CV)
+     3. (Optional) Create {DATA_ROOT}/article-digest.md with your measurable proof points
      4. Adapt the sections marked [PERSONALIZE] below
      ============================================================ -->
 
 ## Sources of truth (ALWAYS read before every evaluation)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -30,13 +33,13 @@
 
 | File | Path | When |
 |------|------|------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (project root) | ALWAYS |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (if present) | ALWAYS (detailed proof points) |
-| profile.yml | `users/{USER}/config/profile.yml` | ALWAYS (identity and target roles) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (user data root) | ALWAYS |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (if present) | ALWAYS (detailed proof points) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | ALWAYS (identity and target roles) |
 
-**RULE: NEVER hardcode metrics from proof points.** Read them from `users/{USER}/cv.md` and `users/{USER}/article-digest.md` at evaluation time.
-**RULE: For article/project metrics, `users/{USER}/article-digest.md` takes precedence over `users/{USER}/cv.md`** (`users/{USER}/cv.md` may hold older data).
-**RULE: NEVER claim the candidate authored/created a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`.** Tool-of-trade conflation (using X does not mean creating X) is the most common fabrication pattern and is forbidden.
+**RULE: NEVER hardcode metrics from proof points.** Read them from `{DATA_ROOT}/cv.md` and `{DATA_ROOT}/article-digest.md` at evaluation time.
+**RULE: For article/project metrics, `{DATA_ROOT}/article-digest.md` takes precedence over `{DATA_ROOT}/cv.md`** (`{DATA_ROOT}/cv.md` may hold older data).
+**RULE: NEVER claim the candidate authored/created a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`.** Tool-of-trade conflation (using X does not mean creating X) is the most common fabrication pattern and is forbidden.
 **RULE: Keywords get reformulated, never fabricated.** Reorder, reframe, emphasize — but never invent. If a claim is not supported by an in-scope file, ask the candidate; without an answer, omit it. Silence on a topic beats a manufactured detail.
 
 ---
@@ -63,16 +66,16 @@ The system treats ALL target roles with equal care. None is primary or secondary
 
 ### Adaptive framing per archetype
 
-> **Concrete metrics: read from `users/{USER}/cv.md` and `users/{USER}/article-digest.md` at evaluation time. NEVER hardcode them here.**
+> **Concrete metrics: read from `{DATA_ROOT}/cv.md` and `{DATA_ROOT}/article-digest.md` at evaluation time. NEVER hardcode them here.**
 
 | If the role is... | Emphasize... | Proof point sources |
 |-------------------|--------------|---------------------|
-| Platform / LLMOps | Production experience, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | Multi-agent orchestration, HITL, reliability, cost optimization | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product discovery, PRDs, metrics, stakeholder management | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | System design, integrations, enterprise-ready | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | Fast delivery, customer proximity, prototype to production | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | Change management, team enablement, adoption | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | Production experience, observability, evals, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | Multi-agent orchestration, HITL, reliability, cost optimization | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product discovery, PRDs, metrics, stakeholder management | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | System design, integrations, enterprise-ready | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | Fast delivery, customer proximity, prototype to production | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | Change management, team enablement, adoption | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 <!-- [PERSONALIZE] Map your concrete projects/articles to the archetypes above -->
 
@@ -81,11 +84,11 @@ The system treats ALL target roles with equal care. None is primary or secondary
 <!-- [PERSONALIZE] Replace with your personal narrative. Examples:
      - "SaaS built and sold after 5 years. Now 100% focused on applied AI in enterprise."
      - "Lead engineer at a Series-B startup through 10x growth. Looking for the next challenge."
-     Read from users/{USER}/config/profile.yml -> narrative.exit_story -->
+     Read from {DATA_ROOT}/config/profile.yml -> narrative.exit_story -->
 
-Use the transition narrative from `users/{USER}/config/profile.yml` to frame ALL content:
+Use the transition narrative from `{DATA_ROOT}/config/profile.yml` to frame ALL content:
 - **In PDF summaries:** Bridge past and future — "Now applies the same [skills] to the [posting's] domain."
-- **In STAR stories:** Reference `users/{USER}/article-digest.md` proof points.
+- **In STAR stories:** Reference `{DATA_ROOT}/article-digest.md` proof points.
 - **In draft answers (Block H):** The transition narrative goes in the first answer.
 - **When the posting mentions "entrepreneurial", "autonomy", "builder", "end-to-end":** That is the #1 differentiator. Upweight the match.
 
@@ -102,7 +105,7 @@ Position "builder" as a professional signal — not a hobby. Real proof points m
 ### Portfolio as proof point (use in high-impact applications)
 
 <!-- [PERSONALIZE] If you have a live demo, dashboard, or public project, configure it here.
-     Read from users/{USER}/config/profile.yml -> narrative.proof_points and narrative.dashboard -->
+     Read from {DATA_ROOT}/config/profile.yml -> narrative.proof_points and narrative.dashboard -->
 
 If the candidate has a live demo or dashboard (check `profile.yml`), offer access in relevant applications.
 
@@ -162,7 +165,7 @@ Work passes, benefits, and hiring norms differ materially from the US/EU. Apply 
 
 ### Location policy
 
-<!-- [PERSONALIZE] Adapt to your situation. Read from users/{USER}/config/profile.yml -> location -->
+<!-- [PERSONALIZE] Adapt to your situation. Read from {DATA_ROOT}/config/profile.yml -> location -->
 
 **In application forms:**
 - Binary "Can you work on-site?" questions: answer from real availability in `profile.yml`
@@ -187,7 +190,7 @@ Work passes, benefits, and hiring norms differ materially from the US/EU. Apply 
 ### NEVER
 
 1. Invent experience or metrics
-2. Modify `users/{USER}/cv.md` or portfolio files
+2. Modify `{DATA_ROOT}/cv.md` or portfolio files
 3. Submit applications on the candidate's behalf without their consent
 4. Share a phone number in generated messages
 5. Recommend below-market compensation
@@ -198,7 +201,7 @@ Work passes, benefits, and hiring norms differ materially from the US/EU. Apply 
 ### ALWAYS
 
 0. **Cover letter:** If the form allows it, ALWAYS include one. PDF with the same visual design as the CV. Posting quotes mapped to proof points. Maximum 1 page. Business-English tone: direct, concrete, no flattery.
-1. Read `users/{USER}/cv.md` and `users/{USER}/article-digest.md` (if present) before evaluating a posting
+1. Read `{DATA_ROOT}/cv.md` and `{DATA_ROOT}/article-digest.md` (if present) before evaluating a posting
 1b. **First evaluation of each session:** run `node cv-sync-check.mjs` via Bash. On warnings, inform the candidate.
 2. Detect the role archetype and adapt framing
 3. Cite exact CV lines during matching
@@ -218,7 +221,7 @@ Work passes, benefits, and hiring norms differ materially from the US/EU. Apply 
 | WebSearch | Salary research, trends, company culture, LinkedIn contacts, posting fallback |
 | WebFetch | Fallback for extracting postings from static pages |
 | Playwright | Verify postings are live (browser_navigate + browser_snapshot), extract postings from SPAs. **CRITICAL: NEVER run 2+ agents in parallel with Playwright — they share the same browser instance** |
-| Read | users/{USER}/cv.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | Temporary HTML for PDF, .md reports, tracker-addition TSVs in `batch/tracker-additions/` (never `applications.md` directly) |
 | Edit | Fixes to reports and other generated content. Never the tracker table: new rows go in as a TSV merged by `node merge-tracker.mjs`; status and notes changes go through `node set-status.mjs` |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |

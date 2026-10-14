@@ -185,7 +185,7 @@ const UNFILLED_TEMPLATE_PLACEHOLDER =
 const JDS_PATH_RE = /jds\/[^\s()]+\.md/;
 const POSTED_LINE_RE = /^Posted:.*$/im;
 const POINTER_SENTENCE_RE =
-  /^See\s+jds\/[^\s()]+\.md\s+for the full archive(?:\s*\(archive-posting\.mjs\s+--report=\d+\))?\.?$/i;
+  /^See\s+(?:users\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?jds\/[^\s()]+\.md\s+for the full archive(?:\s*\(archive-posting\.mjs\s+--report=\d+\))?\.?$/i;
 
 function isPathOnlyPointer(strippedSection) {
   const withoutPostedLine = strippedSection.replace(POSTED_LINE_RE, '').trim();

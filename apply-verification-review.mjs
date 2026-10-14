@@ -5,7 +5,6 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   renameSync,
   rmSync,
 } from 'fs';
@@ -19,15 +18,20 @@ import {
 } from './lib/user-context.mjs';
 import {
   findingFingerprint,
+  assertTrackerPatchScope,
+  assertVerificationContext,
   reviewRecord,
   verificationFindings,
 } from './lib/verification-review.mjs';
-import { parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
+import { parseTrackerRow, resolveColumns, resolveTsvColumns, looksLikeTsvHeaderRow, parseMarkdownLinks, normalizeVia } from './tracker-parse.mjs';
+import { resolveTrackerPath } from './path-resolver.mjs';
+import { reserveReportNumbers, releaseReportNumbers } from './reserve-report-num.mjs';
 import { normalizeReportLink } from './tracker-links.mjs';
 import {
   acquireTrackerLock,
   canonicalizeTrackerPath,
   cell,
+  normalizeCompany,
   loadCanonicalStates,
   rebuildRow,
   resolveCanonicalState,
@@ -95,6 +99,18 @@ function decisionFinding(decision, findingMap) {
 
 function parseMergedTsv(path) {
   const lines = readFileSync(path, 'utf-8').split(/\r?\n/).filter(line => line.trim());
+  const header = lines[0]?.split('\t');
+  if (looksLikeTsvHeaderRow(header)) {
+    if (lines.length !== 2) throw new Error(`${path}: expected one header and one TSV row`);
+    const { map, missing, duplicates } = resolveTsvColumns(header);
+    if (missing.length || duplicates.length) throw new Error(`${path}: invalid TSV header`);
+    const values = lines[1].split('\t');
+    if (values.length !== header.length) throw new Error(`${path}: TSV header/row width mismatch`);
+    const entry = Object.fromEntries(Object.entries(map).map(([key, index]) => [key, values[index].trim()]));
+    const num = Number(entry.num);
+    if (!Number.isSafeInteger(num) || num < 1) throw new Error(`${path}: invalid tracker/report number`);
+    return { date: '', company: '', role: '', status: '', score: '', pdf: '', report: '', notes: '', via: '', location: '', ...entry, num };
+  }
   if (lines.length !== 1) throw new Error(`${path}: expected exactly one non-empty TSV line`);
   let parts = lines[0].split('\t');
   // Two legacy merged artifacts were written with literal "\\t" separators
@@ -156,14 +172,18 @@ function reportMetadata(reportPath) {
   const finalDecision = cleanScalar(summary.final_decision);
   const statusSource = explicitStatus || finalDecision;
   const normalizedStatus = String(statusSource).toLowerCase();
-  let status = 'Evaluated';
-  if (/\b(skip|discard|no aplicar|closed)\b/.test(normalizedStatus)) status = 'SKIP';
+  let status = explicitStatus ? resolveCanonicalState(explicitStatus, loadCanonicalStates(systemPath('templates/states.yml'))) : null;
+  if (explicitStatus && !status) throw new Error(`Report has an unsupported explicit status: ${explicitStatus}`);
+  if (status) { /* Preserve the explicit canonical lifecycle before decision defaults. */ }
+  else if (/\b(skip|discard|no aplicar)\b/.test(normalizedStatus)) status = 'SKIP';
+  else if (/\bclosed\b/.test(normalizedStatus)) status = 'Closed';
   else if (/\breject/.test(normalizedStatus)) status = 'Rejected';
   else if (/\brespond/.test(normalizedStatus)) status = 'Responded';
   else if (/\binterview/.test(normalizedStatus)) status = 'Interview';
   else if (/\boffer\b/.test(normalizedStatus)) status = 'Offer';
   else if (/\b(?:hired|accepted)\b/.test(normalizedStatus)) status = 'Hired';
   else if (/\bapplied\b/.test(normalizedStatus)) status = 'Applied';
+  else status = 'Evaluated';
   const filenameDate = basename(reportPath).match(/-(\d{4}-\d{2}-\d{2})\.md$/)?.[1] || '';
   const date = header('Date') || filenameDate;
   const via = cleanScalar(summary.via);
@@ -172,19 +192,6 @@ function reportMetadata(reportPath) {
     content, company, role, score, status, date, via,
     notes: nextAction || (finalDecision ? `Restored evaluation; decision: ${finalDecision}.` : 'Restored evaluation from verified report.'),
   };
-}
-
-function nextAvailableNumber(trackerRows) {
-  let max = 0;
-  for (const num of trackerRows.keys()) max = Math.max(max, num);
-  const reportsRoot = userPath(context, 'reports');
-  if (existsSync(reportsRoot)) {
-    for (const name of readdirSync(reportsRoot)) {
-      const num = Number.parseInt(name.match(/^(\d+)-/)?.[1] || '', 10);
-      if (Number.isInteger(num)) max = Math.max(max, num);
-    }
-  }
-  return max + 1;
 }
 
 function trackerLine(entry, colmap) {
@@ -254,11 +261,7 @@ async function main() {
       if (decision.classification !== 'actionable' || !decision.tracker_patch) {
         throw new Error(`${finding.id}: patch_tracker requires an actionable tracker_patch`);
       }
-      const supported = new Set([
-        'noncanonical_status', 'bold_status', 'dated_status', 'broken_report_link',
-        'invalid_score', 'bold_score', 'missing_via_value', 'confidential_company_placeholder',
-      ]);
-      if (!supported.has(finding.code)) throw new Error(`${finding.id}: ${finding.code} has no bounded tracker patch`);
+      assertTrackerPatchScope(finding, decision.tracker_patch);
       if (finding.details?.tracker_num !== decision.tracker_patch.tracker_num) {
         throw new Error(`${finding.id}: tracker patch number does not match deterministic verification`);
       }
@@ -281,21 +284,14 @@ async function main() {
   }));
 
   const needsTracker = orphanActions.some(item => item.decision.disposition === 'restore_orphan') || patchActions.length > 0;
-  const appsPath = canonicalizeTrackerPath(userPath(context, 'data/applications.md'));
+  const appsPath = canonicalizeTrackerPath(resolveTrackerPath(context.userRoot));
+  assertVerificationContext(verification, context, appsPath);
   const canonicalUserRoot = canonicalizeTrackerPath(context.userRoot);
   if (needsTracker && !existsSync(appsPath)) throw new Error('applications.md is missing');
-  const originalTracker = existsSync(appsPath) ? readFileSync(appsPath, 'utf-8') : '';
-  const lines = originalTracker ? originalTracker.split('\n') : [];
-  const colmap = lines.length ? resolveColumns(lines) : null;
+  let originalTracker = null;
+  let lines = [];
+  let colmap = null;
   const trackerRows = new Map();
-  if (colmap) {
-    lines.forEach((line, index) => {
-      const row = parseTrackerRow(line, colmap);
-      if (!row) return;
-      if (!trackerRows.has(row.num)) trackerRows.set(row.num, []);
-      trackerRows.get(row.num).push({ ...row, index });
-    });
-  }
 
   const states = loadCanonicalStates(systemPath('templates/states.yml'));
   const patchesByNum = new Map();
@@ -316,6 +312,10 @@ async function main() {
   const backupRoot = userPath(context, `data/verification-backups/${stamp}`);
   const moved = [];
   let lock = null;
+  let trackerWritten = false;
+  const reservations = [];
+  const allocatedNumbers = [];
+  let allocatedIndex = 0;
   let trackerRowsRestored = 0;
   let trackerRowsPatched = 0;
   let orphansArchived = 0;
@@ -323,20 +323,60 @@ async function main() {
   const actionRecords = [];
 
   try {
-    if (needsTracker) {
+    // Claim potential collision replacements before taking the outer tracker
+    // lock: the shared allocator owns that same lock and is not reentrant.
+    let required = orphanActions.filter(item => item.decision.disposition === 'restore_orphan').length;
+    while (required > 0) {
+      const count = Math.min(required, 50);
+      const numbers = await reserveReportNumbers(count, { rootDir: context.userRoot, trackerPath: appsPath });
+      reservations.push(numbers);
+      allocatedNumbers.push(...numbers);
+      required -= count;
+    }
+    if (needsTracker || orphanActions.length) {
       lock = await acquireTrackerLock(trackerLockDirFor(appsPath), { tracker: appsPath });
+      originalTracker = existsSync(appsPath) ? readFileSync(appsPath, 'utf-8') : '';
+      lines = originalTracker ? originalTracker.split('\n') : [];
+      colmap = lines.length ? resolveColumns(lines) : null;
+      if (colmap) lines.forEach((line, index) => {
+        const row = parseTrackerRow(line, colmap);
+        if (!row) return;
+        if (!trackerRows.has(row.num)) trackerRows.set(row.num, []);
+        trackerRows.get(row.num).push({ ...row, index });
+      });
       mkdirSync(backupRoot, { recursive: true });
-      copyFileSync(appsPath, join(backupRoot, 'applications.md'));
+      if (existsSync(appsPath)) copyFileSync(appsPath, join(backupRoot, 'applications.md'));
     }
 
     for (const [num, patch] of patchesByNum) {
       const candidates = trackerRows.get(num) || [];
       if (candidates.length !== 1) throw new Error(`Tracker patch requires exactly one row #${num}`);
       const row = candidates[0];
+      for (const item of patchActions.filter(item => item.decision.tracker_patch.tracker_num === num)) {
+        for (const [evidenceField, rowField] of [['status', 'status'], ['score', 'score'], ['company', 'company'], ['report_link', 'report']]) {
+          if (item.finding.details?.[evidenceField] != null && item.finding.details[evidenceField] !== row[rowField]) {
+            throw new Error(`${item.finding.id}: tracker evidence changed; rerun verification`);
+          }
+        }
+      }
       const parts = lines[row.index].split('|').map(value => value.trim());
+      const primaryLinks = parseMarkdownLinks(row.report);
+      const primaryName = primaryLinks.length === 1 ? basename(primaryLinks[0].target.replaceAll('\\', '/')) : null;
+      let metadata;
+      const primaryMetadata = () => {
+        if (!metadata) {
+          if (!primaryName || !/^\d+-[A-Za-z0-9._-]+\.md$/.test(primaryName) || !existsSync(userPath(context, `reports/${primaryName}`))) {
+            throw new Error(`Tracker #${num}: patch lacks an existing primary report as evidence; use manual_review`);
+          }
+          metadata = reportMetadata(userPath(context, `reports/${primaryName}`));
+        }
+        return metadata;
+      };
       if (patch.status != null) {
         const canonical = resolveCanonicalState(patch.status, states);
         if (!canonical) throw new Error(`Tracker #${num}: invalid canonical status ${patch.status}`);
+        const current = resolveCanonicalState(String(row.status).replace(/\*\*/g, '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim(), states);
+        if (canonical !== current) throw new Error(`Tracker #${num}: status repair lacks deterministic lifecycle evidence; use manual_review`);
         parts[colmap.status] = canonical;
       }
       if (patch.score != null) {
@@ -344,11 +384,23 @@ async function main() {
         if (!/^\d+(?:\.\d+)?\/5$/.test(score) && !['N/A', 'DUP', '—', '-'].includes(score)) {
           throw new Error(`Tracker #${num}: invalid score patch ${patch.score}`);
         }
+        const prior = String(row.score).replace(/\*\*/g, '').trim();
+        const equivalent = score === prior || (/^\d+(?:\.\d+)?\s*\/\s*5$/.test(prior) &&
+          /^\d+(?:\.\d+)?\/5$/.test(score) && Number(prior.split('/')[0]) === Number(score.split('/')[0]));
+        if (!equivalent) throw new Error(`Tracker #${num}: score repair would change the evaluation; use manual_review`);
         parts[colmap.score] = score;
       }
-      if (patch.company != null) parts[colmap.company] = cell(patch.company);
+      if (patch.company != null) {
+        if (patch.company !== '?' && normalizeCompany(patch.company) !== normalizeCompany(primaryMetadata().company)) {
+          throw new Error(`Tracker #${num}: company patch lacks report evidence; use manual_review`);
+        }
+        parts[colmap.company] = cell(patch.company);
+      }
       if (patch.via != null) {
         if (colmap.via == null) throw new Error(`Tracker #${num}: tracker has no Via column`);
+        if (!primaryMetadata().via || normalizeVia(patch.via) !== normalizeVia(primaryMetadata().via)) {
+          throw new Error(`Tracker #${num}: Via patch lacks report evidence; use manual_review`);
+        }
         parts[colmap.via] = cell(patch.via);
       }
       if (patch.report != null) {
@@ -356,6 +408,15 @@ async function main() {
         const reportFile = basename(target);
         if (!/^\d+-[A-Za-z0-9._-]+\.md$/.test(reportFile) || !existsSync(userPath(context, `reports/${reportFile}`))) {
           throw new Error(`Tracker #${num}: report patch does not name an existing report`);
+        }
+        if (reportFile !== primaryName) {
+          const source = reportMetadata(userPath(context, `reports/${reportFile}`));
+          const reportNum = Number(reportFile.match(/^\d+/)[0]);
+          const priorNum = Number(primaryName?.match(/^\d+/)?.[0]);
+          if (![row.num, priorNum].includes(reportNum) || normalizeCompany(source.company) !== normalizeCompany(row.company) ||
+              source.role.toLowerCase().trim() !== row.role.toLowerCase().trim()) {
+            throw new Error(`Tracker #${num}: replacement report does not preserve posting ownership; use manual_review`);
+          }
         }
         parts[colmap.report] = normalizeReportLink(`[${reportFile.match(/^\d+/)[0]}](reports/${reportFile})`, dirname(appsPath), canonicalUserRoot);
       }
@@ -416,7 +477,7 @@ async function main() {
           throw new Error(`${item.finding.id}: report cannot synthesize a tracker row; missing ${missing.join(', ')}`);
         }
         entry = {
-          num: collision ? nextAvailableNumber(trackerRows) : originalNum,
+          num: collision ? allocatedNumbers[allocatedIndex++] : originalNum,
           date: metadata.date,
           company: metadata.company,
           role: metadata.role,
@@ -489,11 +550,21 @@ async function main() {
       });
     }
 
-    if (needsTracker) writeFileAtomic(appsPath, lines.join('\n'));
+    if (needsTracker) {
+      writeFileAtomic(appsPath, lines.join('\n'));
+      trackerWritten = true;
+    }
 
     for (const item of orphanActions.filter(item => item.decision.disposition === 'archive_orphan')) {
       const reportFile = item.decision.orphan_resolution.report_file;
       const sourceReport = safeUserPath(reportFile, /^reports\/[A-Za-z0-9._-]+\.md$/, 'orphan report');
+      if (colmap && lines.some(line => {
+        const row = parseTrackerRow(line, colmap);
+        if (!row) return false;
+        const links = parseMarkdownLinks(`${row.report} ${row.notes}`).map(link => link.target);
+        if (!links.length && /\.md$/.test(row.report)) links.push(row.report);
+        return links.some(link => basename(link.replaceAll('\\', '/')) === basename(sourceReport));
+      })) throw new Error(`${item.finding.id}: report is now referenced by the tracker; rerun verification`);
       if (!existsSync(sourceReport)) {
         actionRecords.push({
           schema_version: 1, resolved_at: reviewedAt, run_id: runId,
@@ -552,7 +623,7 @@ async function main() {
       backup: needsTracker || moved.length ? backupRoot : null,
     };
   } catch (error) {
-    if (needsTracker && originalTracker) writeFileAtomic(appsPath, originalTracker);
+    if (lock && trackerWritten && originalTracker !== null) writeFileAtomic(appsPath, originalTracker);
     for (const item of moved.reverse()) {
       try {
         if (existsSync(item.to)) {
@@ -566,6 +637,7 @@ async function main() {
     throw error;
   } finally {
     if (lock) await lock.release();
+    for (const numbers of reservations) await releaseReportNumbers(numbers, { rootDir: context.userRoot, trackerPath: appsPath });
   }
 }
 

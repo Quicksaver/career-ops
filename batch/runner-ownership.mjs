@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, statSync, rmSync } from 'node:
 import { join } from 'node:path';
 import { acquirePipelineLock, sameLockDirectory } from '../pipeline-lock.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
+import { processAlive } from '../lib/run-artifacts.mjs';
 
 export const ownershipPath = pidFile => `${pidFile}.owner.lock`;
 export function inspectOwnership(pidFile) {
@@ -11,15 +12,15 @@ export function inspectOwnership(pidFile) {
   try { owner = JSON.parse(readFileSync(join(dir, 'owner.json'), 'utf8')); }
   catch { return { status: 'ambiguous' }; }
   if (!Number.isSafeInteger(owner?.pid) || owner.pid <= 0 || typeof owner.token !== 'string' || !owner.token) return { status: 'ambiguous' };
-  try { process.kill(owner.pid, 0); return { status: 'alive', ...owner }; }
-  catch (error) { return { status: error.code === 'ESRCH' ? 'dead' : 'ambiguous', ...owner }; }
+  try { return { status: processAlive(owner.pid) ? 'alive' : 'dead', ...owner }; }
+  catch { return { status: 'ambiguous', ...owner }; }
 }
 
 export async function acquireOwnership(pidFile, nativePid, bashPid) {
   const verdict = inspectOwnership(pidFile);
   if (verdict.status === 'ambiguous') throw new Error('Batch ownership is ambiguous; refusing to remove it');
   // The external Bash process, rather than this short-lived helper, owns the lock.
-  process.kill(nativePid, 0);
+  if (!processAlive(nativePid)) throw new Error('Batch owner PID is not alive');
   const lock = await acquirePipelineLock(`${pidFile}.owner`, { ownerPid: nativePid, timeoutMs: 200, maxWaitMs: 200, retryMs: 20, staleMs: Infinity });
   try { writeFileSync(pidFile, `${bashPid}\n`); }
   catch (error) { lock.release(); throw error; }

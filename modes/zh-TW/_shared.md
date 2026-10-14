@@ -1,15 +1,18 @@
 # 系統脈絡 -- career-ops (繁體中文版)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      此檔案由系統自動更新，請勿在此處填寫個人隱私資料。
 
-     你的個人化設定應寫入 users/{USER}/modes/_profile.md 中（絕不會被自動覆蓋）。
+     你的個人化設定應寫入 {DATA_ROOT}/modes/_profile.md 中（絕不會被自動覆蓋）。
      本檔案包含系統規則、評分邏輯與工具設定，並在後續版本中持續改進。
      ============================================================ -->
 
 ## 真實資料來源 (Sources of Truth)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -26,15 +29,15 @@
 
 | 檔案 | 路徑 | 讀取時機 |
 |---|---|---|
-| 履歷 | `users/{USER}/cv.md` (專案根目錄) | 一律讀取 |
-| 專案／文章摘要 | `users/{USER}/article-digest.md` (若存在) | 一律讀取（包含詳細的量化指標與專案佐證）|
-| 個人偏好設定 | `users/{USER}/config/profile.yml` | 一律讀取（求職者的個人身分、目標薪資與地點偏好）|
-| 個人客製策略 | `users/{USER}/modes/_profile.md` | 一律讀取（自訂原型偏好、求職敘事、談判話術）|
-| 寫作樣本目錄 | `users/{USER}/writing-samples/` | 僅在產生求職者對外文本時 — 先檢查 `_profile.md` 中快取的 `## 寫作風格`，缺少時再掃描此目錄 |
+| 履歷 | `{DATA_ROOT}/cv.md` (使用者資料根目錄) | 一律讀取 |
+| 專案／文章摘要 | `{DATA_ROOT}/article-digest.md` (若存在) | 一律讀取（包含詳細的量化指標與專案佐證）|
+| 個人偏好設定 | `{DATA_ROOT}/config/profile.yml` | 一律讀取（求職者的個人身分、目標薪資與地點偏好）|
+| 個人客製策略 | `{DATA_ROOT}/modes/_profile.md` | 一律讀取（自訂原型偏好、求職敘事、談判話術）|
+| 寫作樣本目錄 | `{DATA_ROOT}/writing-samples/` | 僅在產生求職者對外文本時 — 先檢查 `_profile.md` 中快取的 `## 寫作風格`，缺少時再掃描此目錄 |
 
-**規則：嚴禁把專案／文章的量化指標寫死在程式或模式檔中。** 必須在評估時從 `users/{USER}/cv.md` 和 `users/{USER}/article-digest.md` 動態讀取。
-**規則：關於文章與專案指標，`users/{USER}/article-digest.md` 的優先權高於 `users/{USER}/cv.md`。**
-**規則：絕不宣稱求職者是某個專案、程式碼儲存庫、函式庫、工具、框架或開源產物的作者／建立者，除非 `users/{USER}/cv.md` 或 `users/{USER}/article-digest.md` 中明確歸於求職者。** 把「使用某個工具」與「建立了它」混為一談（使用 X 不等於建立了 X）是最常見的捏造模式，嚴禁如此。
+**規則：嚴禁把專案／文章的量化指標寫死在程式或模式檔中。** 必須在評估時從 `{DATA_ROOT}/cv.md` 和 `{DATA_ROOT}/article-digest.md` 動態讀取。
+**規則：關於文章與專案指標，`{DATA_ROOT}/article-digest.md` 的優先權高於 `{DATA_ROOT}/cv.md`。**
+**規則：絕不宣稱求職者是某個專案、程式碼儲存庫、函式庫、工具、框架或開源產物的作者／建立者，除非 `{DATA_ROOT}/cv.md` 或 `{DATA_ROOT}/article-digest.md` 中明確歸於求職者。** 把「使用某個工具」與「建立了它」混為一談（使用 X 不等於建立了 X）是最常見的捏造模式，嚴禁如此。
 **規則：關鍵字只能重新表述，絕不捏造。** 可以重新排序、重新框定、強調 —— 但絕不虛構。若某項主張沒有範圍內檔案的支撐，就詢問求職者；沒有答覆則略去。對某個主題保持沉默，勝過編造細節。
 **規則：一律在讀完本檔之後才讀 `_profile.md`。`_profile.md` 中的使用者自訂內容會覆蓋此處的預設值。**
 
@@ -115,7 +118,7 @@
 | **AI 前線交付工程師 (FDE)** | "交付", "客戶對接", "原型開發", "快速上線", "現場支援" |
 | **AI 轉型專家 / 顧問** | "變革管理", "AI 導入/Adoption", "賦能", "業務轉型" |
 
-偵測到原型後，讀取 `users/{USER}/modes/_profile.md` 中求職者針對該原型的特定表達框架與專案佐證。
+偵測到原型後，讀取 `{DATA_ROOT}/modes/_profile.md` 中求職者針對該原型的特定表達框架與專案佐證。
 
 ---
 
@@ -156,7 +159,7 @@
 ### 嚴禁事項 (NEVER)
 
 1. 虛構求職者的工作經歷或量化指標。
-2. 直接修改 `users/{USER}/cv.md` 或作品集原始檔案。
+2. 直接修改 `{DATA_ROOT}/cv.md` 或作品集原始檔案。
 3. 代表求職者直接送出應徵，或按下最終的送出／投遞按鈕。
 4. 在產生的溝通話術中直接洩漏電話號碼等過度隱私的資料。
 5. 建議求職者接受低於市場合理水準的薪資。
@@ -167,7 +170,7 @@
 ### 必須事項 (ALWAYS)
 
 0. **求職信 (Cover Letter)：** 若投遞表單允許，一律提供一份。視覺設計與履歷保持一致，將 JD 關鍵字／需求一一對應到履歷中的量化指標，篇幅控制在 1 頁以內。
-1. 開始評估職缺前，先閱讀 `users/{USER}/cv.md`、`_profile.md` 和 `users/{USER}/article-digest.md`（若存在）。
+1. 開始評估職缺前，先閱讀 `{DATA_ROOT}/cv.md`、`_profile.md` 和 `{DATA_ROOT}/article-digest.md`（若存在）。
 2. 在每個會談的第一次評估前執行 `node cv-sync-check.mjs`。若出現同步警告，提示求職者。
 3. 準確辨識職缺的角色原型，並依 `_profile.md` 中的策略調整表達重點。
 4. 比對職缺需求時，標明對應履歷的具體行號作為佐證。
@@ -186,7 +189,7 @@
 
 **校準適用範圍：** 適用於產生一切需要符合求職者口吻的對外文本（如求職信、LinkedIn 溝通話術、表單開放式問答等）。不適用於內部評估報告（Block A–G 的評分及分析）。
 
-**若 `_profile.md` 中沒有快取寫作風格：** 讀取 `users/{USER}/writing-samples/` 目錄下的所有檔案（**跳過任何名為 `README.md` 的檔案**）。若找不到寫作樣本，則跳過此校準，並溫和提示求職者可以加入樣本，幫助我們更貼近他的聲線。若存在樣本，擷取以下風格特徵，並寫入 `_profile.md` 的 `## Writing Style` 區塊，供未來會談直接使用。
+**若 `_profile.md` 中沒有快取寫作風格：** 讀取 `{DATA_ROOT}/writing-samples/` 目錄下的所有檔案（**跳過任何名為 `README.md` 的檔案**）。若找不到寫作樣本，則跳過此校準，並溫和提示求職者可以加入樣本，幫助我們更貼近他的聲線。若存在樣本，擷取以下風格特徵，並寫入 `_profile.md` 的 `## Writing Style` 區塊，供未來會談直接使用。
 
 ### 風格擷取要素
 

@@ -66,24 +66,31 @@ function toEpochMs(value) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function normalizeCustomJob(job) {
+function normalizeCustomJob(job, { allowApplyUrl = false } = {}) {
   if (!job || typeof job !== 'object') return null;
   const title = normalizeWhitespace(String(job.title ?? ''));
   let url;
-  let preferred = job.url;
-  try { const employer = new URL(job.applyUrl); if (employer.protocol === 'https:' && !employer.username && !employer.password) preferred = employer.href; } catch { /* retain the board URL */ }
+  let preferred = job._dedupUrl || job.url;
+  if (allowApplyUrl) {
+    try {
+      const employer = new URL(job.applyUrl);
+      if (employer.protocol === 'https:' && !employer.username && !employer.password &&
+          !/^\/(?:careers?|jobs?|opportunities)?\/?$/i.test(employer.pathname)) preferred = employer.href;
+    } catch { /* retain the board URL */ }
+  }
   try { url = new URL(preferred); } catch { return null; }
   if (!['https:', 'http:'].includes(url.protocol) && job.sourceUrl) {
     try { url = new URL(job.sourceUrl); } catch { return null; }
   }
   if (!title || !['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
   const normalized = { ...job, title, url: url.href, company: normalizeWhitespace(String(job.company ?? '')), location: normalizeWhitespace(String(job.location ?? '')) };
+  delete normalized._dedupUrl;
   if (url.href !== job.url && !normalized.sourceUrl) normalized.sourceUrl = job.url;
   delete normalized.description;
   delete normalized.postedAt;
   const description = job.description ?? job.jobDescription;
   if (typeof description === 'string' && description.trim()) normalized.description = cleanHtmlText(description);
-  const postedAt = Number.isFinite(job.postedAt) ? job.postedAt : toEpochMs(job.postedTs ?? job.publishedAt);
+  const postedAt = Number.isFinite(job.postedAt) ? job.postedAt : [job.postedTs, job.publishedAt, job.publicationDate, job.postedDate].map(toEpochMs).find(value => value !== undefined);
   if (postedAt !== undefined) normalized.postedAt = postedAt;
   if (typeof normalized.salary === 'string') { normalized.salaryText = normalized.salary; delete normalized.salary; }
   return normalized;
@@ -101,11 +108,24 @@ export async function routeCustomBrowserRequests(context, ctx) {
       assertRequestUrl(request.url());
       const response = await ctx.fetchResponse(request.url(), {
         method: request.method(), body: request.postData(), headers: request.headers(), redirect: 'error',
+        browserResourceType: request.resourceType(),
       });
       const headers = Object.fromEntries(response.headers);
       for (const field of ['content-encoding', 'content-length', 'transfer-encoding']) delete headers[field];
       await route.fulfill({ status: response.status, headers, body: Buffer.from(await response.arrayBuffer()) });
-    } catch (error) { failure ||= error; await route.abort(); }
+    } catch (error) {
+      const type = request.resourceType();
+      let sourceRequest = false;
+      try { sourceRequest = new URL(request.url()).hostname === new URL(request.frame().url()).hostname; } catch { /* initial document has no frame URL */ }
+      const essential = type === 'document' || (['xhr', 'fetch'].includes(type) && sourceRequest);
+      const httpError = Number.isInteger(error.status) && error.status >= 300 && error.status <= 599;
+      if (!httpError || essential || error.code === 'ECAREEROPS_BLOCKED_ADDRESS') {
+        failure ||= error;
+        await route.abort();
+      } else {
+        await route.fulfill({ status: error.status, headers: error.location ? { location: error.location } : {}, body: error.body || '' });
+      }
+    }
   });
   return () => { if (failure) throw failure; };
 }
@@ -488,20 +508,13 @@ function getRemoteInEuropeConfig(company) {
     return null;
   }
 
-  let urls = [listUrl];
-
-  for (const rawCategory of toFilterArray(company.api_params?.category)) {
+  const categories = toFilterArray(company.api_params?.category);
+  const urls = categories.length ? categories.map(rawCategory => {
     const slug = normalizeWhitespace(rawCategory).toLowerCase();
-    const nextUrls = [];
-
-    for (const existingUrl of urls) {
-      const nextUrl = new URL(existingUrl.toString());
-      nextUrl.pathname = `/categories/${slug}`;
-      nextUrls.push(nextUrl);
-    }
-
-    urls = nextUrls;
-  }
+    const nextUrl = new URL(listUrl.toString());
+    nextUrl.pathname = `/categories/${slug}`;
+    return nextUrl;
+  }) : [listUrl];
 
   return {
     listUrls: urls.map(url => url.toString()),
@@ -1199,8 +1212,8 @@ function cleanFeedText(value) {
 
 function extractMetaContent(html, attribute, name) {
   const escapedName = escapeRegExp(name);
-  const match = html.match(new RegExp(`<meta[^>]+${attribute}=["']${escapedName}["'][^>]+content=["']([\s\S]*?)["'][^>]*>`, 'i'))
-    || html.match(new RegExp(`<meta[^>]+content=["']([\s\S]*?)["'][^>]+${attribute}=["']${escapedName}["'][^>]*>`, 'i'));
+  const match = html.match(new RegExp(String.raw`<meta[^>]+${attribute}=["']${escapedName}["'][^>]+content=["']([\s\S]*?)["'][^>]*>`, 'i'))
+    || html.match(new RegExp(String.raw`<meta[^>]+content=["']([\s\S]*?)["'][^>]+${attribute}=["']${escapedName}["'][^>]*>`, 'i'));
   return match ? decodeHtmlEntities(match[1]) : '';
 }
 
@@ -1651,6 +1664,18 @@ function parseItjobsPage(html, sourceUrl, seenUrls) {
   }
 
   return jobs;
+}
+
+function parseFirstHtmlPage(parser, html, sourceUrl, seenUrls) {
+  const parsed = parser(html, sourceUrl, new Set());
+  if (parsed.length === 0 && !/\b(?:no (?:jobs|vacancies|results|offers)(?: (?:found|available))?|(?:0|zero) (?:jobs|vacancies|results|offers|vagas)|nenhum(?:a)? (?:resultado|oferta|vaga)|sem (?:resultados|ofertas|vagas)|keine (?:stellen|ergebnisse|jobs)|ingen (?:job|resultater))\b/i.test(cleanHtmlText(html))) {
+    throw new Error(`Unsupported listing page at ${sourceUrl}: no job cards or explicit empty-results marker`);
+  }
+  return parsed.filter(job => {
+    if (seenUrls.has(job.url)) return false;
+    seenUrls.add(job.url);
+    return true;
+  });
 }
 
 function getItjobsPageCount(html) {
@@ -2803,7 +2828,7 @@ async function fetchItjobsJobs(url, company) {
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getItjobsPageCount(firstPageHtml);
     const maxPages = Math.min(pageLimit(company._api?.itjobs?.maxPages || ITJOBS_MAX_PAGES), pageCount);
-    jobs.push(...parseItjobsPage(firstPageHtml, listUrl, seenUrls));
+    jobs.push(...parseFirstHtmlPage(parseItjobsPage, firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
       const html = await fetchText(buildItjobsPageUrl(listUrl, pageNumber));
@@ -2843,7 +2868,7 @@ async function fetchPortalEmpregoJobs(url, company) {
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getPortalEmpregoPageCount(firstPageHtml);
     const maxPages = Math.min(pageLimit(company._api?.portalemprego?.maxPages || PORTALEMPREGO_MAX_PAGES), pageCount);
-    jobs.push(...parsePortalEmpregoPage(firstPageHtml, listUrl, seenUrls));
+    jobs.push(...parseFirstHtmlPage(parsePortalEmpregoPage, firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
       const html = await fetchText(buildPortalEmpregoPageUrl(listUrl, pageNumber));
@@ -2885,14 +2910,14 @@ async function fetchJobsInEnglishJobs(url, company) {
   for (const listUrl of listUrls) {
     if (config?.useViewAll || /\/view_all_ads\/(?:[?#]|$)/.test(listUrl)) {
       const html = await fetchText(listUrl);
-      jobs.push(...parseJobsInEnglishPage(html, listUrl, seenUrls));
+      jobs.push(...parseFirstHtmlPage(parseJobsInEnglishPage, html, listUrl, seenUrls));
       continue;
     }
 
     const firstPageHtml = await fetchText(buildJobsInEnglishPageUrl(listUrl, 1));
     const pageCount = getJobsInEnglishPageCount(firstPageHtml);
     const maxPages = Math.min(pageLimit(config?.maxPages || JOBSINENGLISH_MAX_PAGES), pageCount);
-    jobs.push(...parseJobsInEnglishPage(firstPageHtml, listUrl, seenUrls));
+    jobs.push(...parseFirstHtmlPage(parseJobsInEnglishPage, firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
       const html = await fetchText(buildJobsInEnglishPageUrl(listUrl, pageNumber));
@@ -2973,7 +2998,7 @@ async function fetchMakeItInGermanyJobs(url, company) {
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(buildMakeItInGermanyPageUrl(listUrl, 1));
     const maxPages = Math.min(pageLimit(company._api?.makeitingermany?.maxPages || MAKEITINGERMANY_MAX_PAGES), getMakeItInGermanyPageCount(firstPageHtml));
-    jobs.push(...parseMakeItInGermanyPage(firstPageHtml, listUrl, seenUrls));
+    jobs.push(...parseFirstHtmlPage(parseMakeItInGermanyPage, firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
       const html = await fetchText(buildMakeItInGermanyPageUrl(listUrl, pageNumber));
@@ -3055,7 +3080,7 @@ async function fetchRemoteInEuropeJobs(url, company) {
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getRemoteInEuropePageCount(firstPageHtml);
     const maxPages = Math.min(pageLimit(company._api?.remoteineurope?.maxPages || REMOTEINEUROPE_MAX_PAGES), pageCount);
-    jobs.push(...parseRemoteInEuropePage(firstPageHtml, listUrl, seenUrls));
+    jobs.push(...parseFirstHtmlPage(parseRemoteInEuropePage, firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
       const html = await fetchText(buildRemoteInEuropePageUrl(listUrl, pageNumber));
@@ -3366,6 +3391,9 @@ export async function fetchCustomProvider(id, entry, ctx = makeHttpCtx()) {
     assertSourceUrl(resolved.type, resolved.url);
     const company = { ...entry, _api: resolved };
     let jobs = await fetchJobs(company);
+    if (!Array.isArray(jobs)) throw new Error(`${id}: provider must return an array`);
+    jobs = jobs.map(job => normalizeCustomJob(job, { allowApplyUrl: resolved.type !== 'euremotejobs' })).filter(Boolean)
+      .map(job => ({ ...job, _dedupUrl: job.url }));
 
     if (resolved.type === 'pcsx') {
       jobs = await enrichPcsxJobs(company, jobs);
@@ -3376,7 +3404,7 @@ export async function fetchCustomProvider(id, entry, ctx = makeHttpCtx()) {
     }
 
     if (!Array.isArray(jobs)) throw new Error(`${id}: provider must return an array`);
-    return jobs.map(normalizeCustomJob).filter(Boolean);
+    return jobs.map(job => normalizeCustomJob(job)).filter(Boolean);
   });
 }
 

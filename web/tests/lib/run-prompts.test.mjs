@@ -15,6 +15,27 @@ import { grantsWriteCapability, toolScopeFor } from "../../src/lib/claude-invoca
 
 const ARGS = { input: "018", memory: "", today: "2026-08-04" };
 
+test("production worker prompts separate system reads, selected-user files and relative tracker links", () => {
+  const context = { ...ARGS, systemRoot: "/system checkout", userRoot: "/user data", userId: "fixture" };
+  const evaluate = buildPrompt({ ...context, kind: "evaluate", input: "https://example.com/job" });
+  assert.ok(evaluate.includes('/system checkout/modes/oferta.md'));
+  assert.ok(evaluate.includes('/user data/cv.md'));
+  assert.ok(evaluate.includes('/user data/modes/_profile.md'));
+  assert.ok(evaluate.includes('/user data/batch/tracker-additions/'));
+  assert.ok(evaluate.includes('[{num}](reports/{num}-{company-slug}-'));
+  for (const script of ['reserve-report-num.mjs', 'merge-tracker.mjs']) {
+    assert.ok(evaluate.includes(`node "/system checkout/${script}" --user "fixture"`));
+  }
+  const pdf = buildPrompt({ ...context, kind: "pdf" });
+  assert.ok(pdf.includes('/system checkout/modes/pdf.md'));
+  assert.ok(pdf.includes('/system checkout/templates/cv-template.html'));
+  assert.doesNotMatch(pdf, /Read modes\//);
+  const portal = buildPrompt({ ...context, kind: "fix-portal", input: "Fictional" });
+  assert.ok(portal.includes('node "/system checkout/verify-portals.mjs" --user "fixture"'));
+  assert.ok(portal.includes('/user data/portals.yml'));
+  for (const prompt of [evaluate, pdf, portal]) assert.doesNotMatch(prompt, /node [A-Za-z-]+\.mjs/);
+});
+
 test("buildPrompt: the pdf prompt asks for the envelope and forbids saving", () => {
   // Given a pdf run
   const prompt = buildPrompt({ kind: "pdf", ...ARGS });

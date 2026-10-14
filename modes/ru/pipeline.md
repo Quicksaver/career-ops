@@ -42,7 +42,7 @@
 - **hh.ru**: API доступен: `https://api.hh.ru/vacancies/{id}` — JSON с полным описанием
 - **LinkedIn**: Может требовать логин → пометить `[!]`, попросить вставить текст
 - **PDF**: Если URL на PDF — прочитать через Read tool
-- **`local:` префикс**: Читать локальный файл. Пример: `local:users/{USER}/jds/company-role.md`
+- **`local:` префикс**: Читать локальный файл. Пример: `local:jds/company-role.md`
 
 ## Нумерация
 

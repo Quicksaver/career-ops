@@ -1,24 +1,27 @@
 # Общий контекст — career-ops (Русский)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      ЭТОТ ФАЙЛ — СИСТЕМНЫЙ.
      НЕ добавляйте сюда персональные данные.
      ============================================================
-     Персонализация → users/{USER}/modes/_profile.md и users/{USER}/config/profile.yml.
+     Персонализация → {DATA_ROOT}/modes/_profile.md и {DATA_ROOT}/config/profile.yml.
      Этот файл содержит общий контекст, архетипы и правила
      для русскоязычных режимов.
      Примечание: modes/ru/ пока не включён в auto-update
      (update-system.mjs). Обновления применяются вручную.
      
      Перед использованием career-ops убедитесь:
-     1. users/{USER}/config/profile.yml заполнен вашими данными
-     2. users/{USER}/cv.md создан в корне проекта (резюме в Markdown)
-     3. (Опционально) users/{USER}/article-digest.md с proof points
+     1. {DATA_ROOT}/config/profile.yml заполнен вашими данными
+     2. {DATA_ROOT}/cv.md создан в корне данных пользователя (резюме в Markdown)
+     3. (Опционально) {DATA_ROOT}/article-digest.md с proof points
      ============================================================ -->
 
 ## Источники правды (ВСЕГДА читать перед каждой оценкой)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -35,15 +38,15 @@
 
 | Файл | Путь | Когда |
 |------|------|-------|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (корень проекта) | ВСЕГДА |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (если есть) | ВСЕГДА (детальные proof points) |
-| profile.yml | `users/{USER}/config/profile.yml` | ВСЕГДА (идентичность кандидата и целевые роли) |
-| _profile.md | `users/{USER}/modes/_profile.md` | ВСЕГДА (пользовательские архетипы, нарратив, переговоры) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (корень проекта) | ВСЕГДА |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (если есть) | ВСЕГДА (детальные proof points) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | ВСЕГДА (идентичность кандидата и целевые роли) |
+| _profile.md | `{DATA_ROOT}/modes/_profile.md` | ВСЕГДА (пользовательские архетипы, нарратив, переговоры) |
 
-**ПРАВИЛО: НИКОГДА не хардкодить метрики из proof points.** Читать их из users/{USER}/cv.md + users/{USER}/article-digest.md во время оценки.
-**ПРАВИЛО: Для метрик статей/проектов `users/{USER}/article-digest.md` имеет приоритет над `users/{USER}/cv.md`.**
+**ПРАВИЛО: НИКОГДА не хардкодить метрики из proof points.** Читать их из {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md во время оценки.
+**ПРАВИЛО: Для метрик статей/проектов `{DATA_ROOT}/article-digest.md` имеет приоритет над `{DATA_ROOT}/cv.md`.**
 **ПРАВИЛО: Читать `_profile.md` ПОСЛЕ этого файла. Пользовательские настройки в `_profile.md` перезаписывают значения по умолчанию.**
-**ПРАВИЛО: НИКОГДА не приписывать пользователю авторство проекта, репозитория, библиотеки, инструмента, фреймворка или open-source артефакта, если это явно не подтверждено в `users/{USER}/cv.md` или `users/{USER}/article-digest.md`. Пользоваться инструментом — не значит создать его.**
+**ПРАВИЛО: НИКОГДА не приписывать пользователю авторство проекта, репозитория, библиотеки, инструмента, фреймворка или open-source артефакта, если это явно не подтверждено в `{DATA_ROOT}/cv.md` или `{DATA_ROOT}/article-digest.md`. Пользоваться инструментом — не значит создать его.**
 **ПРАВИЛО: Переформулировать ключевые слова, но никогда их не выдумывать. Если утверждение о кандидате не подкреплено разрешённым источником — спросить пользователя; нет ответа — опустить. Молчание по теме лучше выдуманной детали.**
 
 ---
@@ -73,7 +76,7 @@
 | **Системный аналитик** | Бизнес-анализ, проектирование API, интеграции, документация | Того, кто переводит бизнес-задачи в технические требования |
 | **Продуктовый менеджер** | Discovery, delivery, метрики, roadmap, стейкхолдеры | Того, кто определяет что строить и почему |
 | **Тимлид / Engineering Manager** | People management, tech strategy, delivery, найм | Того, кто строит и ведёт инженерные команды |
-| **Data Engineer / ML Engineer** | ETL, Spark, Airflow, ML pipelines, feature stores | Инженера данных, строящего users/{USER}/data/ML платформы |
+| **Data Engineer / ML Engineer** | ETL, Spark, Airflow, ML pipelines, feature stores | Инженера данных, строящего {DATA_ROOT}/data/ML платформы |
 | **QA-инженер / SDET** | Автоматизация тестирования, CI/CD, нагрузочное тестирование | Инженера качества, обеспечивающего надёжность продукта |
 | **Архитектор (Solution / Enterprise)** | Системный дизайн, интеграции, масштабирование, стандарты | Того, кто проектирует архитектуру на уровне системы/компании |
 
@@ -86,18 +89,18 @@
 
 ### Адаптивный фрейминг по архетипу
 
-> **Конкретные метрики: читать во время оценки из `users/{USER}/cv.md` и `users/{USER}/article-digest.md`. НИКОГДА не хардкодить.**
+> **Конкретные метрики: читать во время оценки из `{DATA_ROOT}/cv.md` и `{DATA_ROOT}/article-digest.md`. НИКОГДА не хардкодить.**
 
 | Если роль... | Подчеркнуть о кандидате... | Источники proof points |
 |--------------|---------------------------|------------------------|
-| Platform / LLMOps | Продакшн-системы, observability, evals | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | Мульти-агентная оркестрация, HITL, надёжность | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product discovery, PRD, метрики | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | Системный дизайн, интеграции, enterprise-ready | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | Быстрая поставка, клиентский фокус, прототип → прод | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Backend-разработчик | Highload, микросервисы, масштабирование | users/{USER}/cv.md |
-| DevOps/SRE | Инфраструктура, автоматизация, мониторинг | users/{USER}/cv.md |
-| Тимлид / EM | Лидерство, найм, техническая стратегия | users/{USER}/cv.md |
+| Platform / LLMOps | Продакшн-системы, observability, evals | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | Мульти-агентная оркестрация, HITL, надёжность | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product discovery, PRD, метрики | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | Системный дизайн, интеграции, enterprise-ready | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | Быстрая поставка, клиентский фокус, прототип → прод | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Backend-разработчик | Highload, микросервисы, масштабирование | {DATA_ROOT}/cv.md |
+| DevOps/SRE | Инфраструктура, автоматизация, мониторинг | {DATA_ROOT}/cv.md |
+| Тимлид / EM | Лидерство, найм, техническая стратегия | {DATA_ROOT}/cv.md |
 
 ---
 
@@ -165,7 +168,7 @@
 ### НИКОГДА
 
 1. Выдумывать опыт или метрики
-2. Модифицировать users/{USER}/cv.md или файлы портфолио
+2. Модифицировать {DATA_ROOT}/cv.md или файлы портфолио
 3. Отправлять отклики от имени кандидата
 4. Делиться телефоном в генерируемых сообщениях
 5. Рекомендовать компенсацию ниже рынка
@@ -176,7 +179,7 @@
 ### ВСЕГДА
 
 0. **Сопроводительное письмо:** Если форма позволяет, ВСЕГДА включать. Тот же дизайн, что и CV. Цитаты из JD, привязанные к proof points. Максимум 1 страница.
-1. Читать users/{USER}/cv.md, _profile.md и users/{USER}/article-digest.md (если есть) перед оценкой
+1. Читать {DATA_ROOT}/cv.md, _profile.md и {DATA_ROOT}/article-digest.md (если есть) перед оценкой
 1b. **Первая оценка в сессии:** Запустить `node cv-sync-check.mjs`. Если предупреждения — уведомить пользователя.
 2. Определить архетип роли и адаптировать фрейминг по _profile.md
 3. Цитировать точные строки из CV при совпадении
@@ -186,7 +189,7 @@
 7. Быть прямым и конкретным — без воды
 8. Для русскоязычных вакансий: технический русский, короткие предложения, глаголы действия.
 8b. URL-ы кейсов в Professional Summary PDF (рекрутер может прочитать только это).
-9. **Добавления в трекер как TSV** — не добавлять НОВЫЕ записи в `users/{USER}/data/applications.md` напрямую; для новых записей писать TSV в `batch/tracker-additions/` и делать merge. Существующие строки тоже не править вручную: `status` и `notes` обновлять через `node set-status.mjs`. Писать сначала строку **названий колонок**, под ней — ровно одну строку данных (см. AGENTS.md, раздел «TSV Format for Tracker Additions»). Именно строка названий позволяет `merge-tracker.mjs` сопоставлять поля по ИМЕНИ, а не угадывать, какая колонка — score, а какая — status.
+9. **Добавления в трекер как TSV** — не добавлять НОВЫЕ записи в `{DATA_ROOT}/data/applications.md` напрямую; для новых записей писать TSV в `batch/tracker-additions/` и делать merge. Существующие строки тоже не править вручную: `status` и `notes` обновлять через `node set-status.mjs`. Писать сначала строку **названий колонок**, под ней — ровно одну строку данных (см. AGENTS.md, раздел «TSV Format for Tracker Additions»). Именно строка названий позволяет `merge-tracker.mjs` сопоставлять поля по ИМЕНИ, а не угадывать, какая колонка — score, а какая — status.
 10. **Включать `**URL:**` в заголовок каждого отчёта.**
 
 ### Инструменты
@@ -196,8 +199,8 @@
 | WebSearch | Исследование компенсации, тренды, культура компании, контакты в LinkedIn, fallback для JD |
 | WebFetch | Fallback для извлечения JD со статических страниц |
 | Playwright | Верификация вакансий (browser_navigate + browser_snapshot). **НИКОГДА 2+ агентов с Playwright параллельно.** |
-| Read | users/{USER}/cv.md, _profile.md, users/{USER}/article-digest.md, cv-template.html |
-| Write | Временный HTML для PDF, отчёты .md, TSV-файлы для трекера в `batch/tracker-additions/` (никогда не `users/{USER}/data/applications.md` напрямую) |
+| Read | {DATA_ROOT}/cv.md, _profile.md, {DATA_ROOT}/article-digest.md, cv-template.html |
+| Write | Временный HTML для PDF, отчёты .md, TSV-файлы для трекера в `batch/tracker-additions/` (никогда не `{DATA_ROOT}/data/applications.md` напрямую) |
 | Edit | Правки в отчётах и другом сгенерированном контенте. Таблицу трекера напрямую не редактировать: новые строки добавляются через TSV и объединяются командой `node merge-tracker.mjs`, изменения статуса и заметок выполняются через `node set-status.mjs` |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |
 

@@ -505,11 +505,12 @@ func enrichFromScanHistory(careerOpsPath string, apps []model.CareerApplication)
 				if apps[i].ListingDate == "" {
 					apps[i].ListingDate = normalizeDashboardDate(match.firstSeen)
 				}
-				continue
 			}
+			continue
 		}
 		key := normalizeCompany(apps[i].Company)
 		matches := byCompany[key]
+		apps[i].JobURLFallback = len(matches) > 0
 		if len(matches) == 1 {
 			apps[i].JobURL = matches[0].url
 			if apps[i].ListingDate == "" {
@@ -615,6 +616,7 @@ func enrichAppURLsByCompany(careerOpsPath string, apps []model.CareerApplication
 		}
 		key := normalizeCompany(apps[i].Company)
 		matches := byCompany[key]
+		apps[i].JobURLFallback = len(matches) > 0
 		if len(matches) == 1 {
 			apps[i].JobURL = matches[0].url
 		} else if len(matches) > 1 {
@@ -1018,15 +1020,15 @@ func resolveTrackerColumns(lines []string) map[string]int {
 	return legacyTrackerColumns
 }
 
-func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, newStatus string) error {
-	return UpdateApplicationStatusAndNotes(careerOpsPath, app, newStatus, "")
+func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, newStatus string, userID ...string) error {
+	return UpdateApplicationStatusAndNotes(careerOpsPath, app, newStatus, "", userID...)
 }
 
 // UpdateApplicationStatusAndNotes delegates to the canonical writer so status,
 // notes, the transition ledger and Applied follow-up seeding share one path.
 // Notes use the CLI's idempotent "; " separator; empty notes are unchanged.
 // Only the child takes the tracker lock: holding it here would deadlock.
-func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus, notesAppend string) error {
+func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus, notesAppend string, userID ...string) error {
 	if strings.ContainsAny(notesAppend, "|\r\n\t") {
 		return fmt.Errorf("notes cannot contain table delimiters or line breaks")
 	}
@@ -1044,7 +1046,7 @@ func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerAppli
 			notesAppend = stamp + "; " + notesAppend
 		}
 	}
-	return runStatusWriter(careerOpsPath, app.ReportNumber, newStatus, notesAppend)
+	return runStatusWriter(careerOpsPath, app.ReportNumber, newStatus, notesAppend, userID...)
 }
 
 // Reject malformed UI input cheaply; the writer validates against states.yml.

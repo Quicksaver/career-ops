@@ -55,6 +55,8 @@ const SCANNER_PATH_VARS = [
   'CAREER_OPS_PROFILE',
   'CAREER_OPS_PIPELINE',
   'CAREER_OPS_SCAN_HISTORY',
+  'CAREER_OPS_SCAN_HANDOFF',
+  'CAREER_OPS_TRACKER',
   // The data-root pair joined this list with CAREER_OPS_ROOT itself: they are
   // now the FIRST variables scan resolves paths from, so an ambient value
   // would redirect every "default" assertion below at once.

@@ -43,7 +43,7 @@
 **특수 케이스:**
 - **LinkedIn**: login이 필요할 수 있음 -> `[!]`로 표시하고 후보자에게 공고 text를 붙여넣어 달라고 요청
 - **PDF**: URL이 PDF를 가리키면 Read tool로 직접 읽기
-- **`local:` prefix**: 로컬 파일 읽기. 예: `local:users/{USER}/jds/linkedin-pm-ai.md` -> `users/{USER}/jds/linkedin-pm-ai.md` 읽기
+- **`local:` prefix**: 로컬 파일 읽기. 예: `local:jds/linkedin-pm-ai.md` -> `users/{USER}/jds/linkedin-pm-ai.md` 읽기
 - **원티드 / 리멤버 / 잡코리아 / 사람인 / LinkedIn KR**: 한국 시장에서 자주 쓰는 portal. cookie banner나 login wall이 있으면 Playwright로 먼저 확인
 
 ## 자동 번호 부여

@@ -157,7 +157,7 @@ Salvar avaliação completa em `users/{USER}/reports/{###}-{company-slug}-{YYYY-
 - Score: média do match (1-5)
 - Status: `Evaluated`
 - PDF: ❌ (ou ✅ se a auto-pipeline gerou PDF)
-- Report: link relativo ao report .md (ex: `[001](users/{USER}/reports/001-company-2026-01-01.md)`)
+- Report: link relativo ao report .md (ex: `[001](reports/001-company-2026-01-01.md)`)
 
 **Formato do tracker:**
 

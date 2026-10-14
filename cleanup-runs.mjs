@@ -36,7 +36,10 @@ if (rawArgs.includes('-h') || rawArgs.includes('--help')) {
   process.exit(0);
 }
 for (const arg of rawArgs) {
-  if (arg !== '--json') throw new Error(`Unknown option: ${arg}`);
+  if (arg !== '--json') {
+    console.error(`[cleanup:runs] Unknown option: ${arg}`);
+    process.exit(1);
+  }
 }
 
 const result = cleanupExpiredRuns({ userRoot: context.userRoot });

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ROOT, getBash, rmSync } from './helpers.mjs';
 import { copyBatchOwnership } from './copy-batch-ownership.mjs';
@@ -58,8 +58,9 @@ if(['success429','failed429','wrong999','success001'].includes(process.env.FIXTU
 } else { console.error('fixture ordinary failure'); process.exitCode=1; }
 `);
   const runner = join(root, 'run.sh');
-  writeFileSync(runner, '#!/usr/bin/env bash\nset -euo pipefail\ncurl() { return 1; }\ncodex() { node "$CAREER_OPS_ROOT/worker.mjs" "$@"; }\nexport -f curl codex\nexec bash "$CAREER_OPS_ROOT/batch/batch-runner.sh" --user fixture --cli codex --model fixture --defer-verification "$@"\n');
-  const env = mode => ({ ...process.env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root, CAREER_OPS_USER: 'fixture', FIXTURE_MODE: mode });
+  writeFileSync(join(root, 'bin/codex'), '#!/usr/bin/env bash\nnode "$CAREER_OPS_ROOT/worker.mjs" "$@"\n', { mode: 0o755 });
+  writeFileSync(runner, '#!/usr/bin/env bash\nset -euo pipefail\ncurl() { return 1; }\nexport -f curl\nexec bash "$CAREER_OPS_ROOT/batch/batch-runner.sh" --user fixture --cli codex --model fixture --defer-verification "$@"\n');
+  const env = mode => ({ ...process.env, PATH: join(root, 'bin') + delimiter + process.env.PATH, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root, CAREER_OPS_USER: 'fixture', FIXTURE_MODE: mode });
   const run = (args = [], mode = 'fail') => spawnSync(getBash(), [runner, ...args], { encoding: 'utf8', timeout: 30000, env: env(mode) });
   const start = (args = [], mode = 'wait') => {
     const child = spawn(getBash(), [runner, ...args], { env: env(mode) });

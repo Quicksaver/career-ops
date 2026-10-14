@@ -43,7 +43,7 @@ Memproses URL lowongan yang menumpuk di `users/{USER}/data/pipeline.md`. Kandida
 **Kasus khusus:**
 - **LinkedIn**: Bisa memerlukan login -> tandai `[!]` dan minta kandidat menempelkan teksnya
 - **PDF**: Jika URL menunjuk ke PDF, baca langsung dengan Read tool
-- **Prefiks `local:`**: Baca file lokal. Contoh: `local:users/{USER}/jds/linkedin-pm-ai.md` -> baca `users/{USER}/jds/linkedin-pm-ai.md`
+- **Prefiks `local:`**: Baca file lokal. Contoh: `local:jds/linkedin-pm-ai.md` -> baca `users/{USER}/jds/linkedin-pm-ai.md`
 - **Glints / Jobstreet / Kalibrr**: Portal Indonesia yang umum. Playwright menangani cookie banner dengan baik
 - **LinkedIn ID / Indeed ID**: Lowongan terstruktur, mudah dibaca mesin. WebFetch biasanya cukup
 

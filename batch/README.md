@@ -2,6 +2,8 @@
 
 Process job offers with headless Codex workers by default. Explicit `--cli claude` selects Claude. `CAREER_OPS_BATCH_CLI` overrides the system CLI default; a command-line `--cli` takes precedence over that environment variable.
 
+The coordinated `run` workflow supports Codex and Claude. Standalone batch retains legacy OpenCode, Gemini and Qwen dispatch with one worker; those choices do not implement the coordinated queue contract.
+
 Select a user on every invocation. User state, inputs, reports and output live under the active user data root, normally `users/{USER}/`. This directory follows the configured data-root overrides.
 
 ## Run a batch
@@ -37,6 +39,8 @@ Codex model and reasoning resolve independently from command-line `--model` / `-
 | `--answers-file PATH` | absent | Explicit user-owned exact-URL manual answers |
 | `--dry-run` | off | Preview dispatch without workers |
 | `--limit N` | unlimited when omitted | Positive maximum count; explicit zero is invalid |
+| `--start-from N` | `0` | Ignore input IDs below this value |
+| `--min-score N` | `0`, disabled | Mark completed evaluations below the threshold skipped in batch state |
 | `--retry-failed` | off | Select failed jobs, granting one additional dispatch even at the retry cap |
 | `--resume-paused` | off | Select jobs paused by Codex or Claude session/rate limits |
 | `--include-pending` | off | Internal coordinator flag that unions recovery selections with ordinary pending eligibility |
@@ -76,6 +80,8 @@ A JD answer requires nonempty `jd_text` or a public non-LinkedIn `employer_url`.
 Completed and skipped rows remain terminal and are reconciled instead of evaluated again. Retry flags never supply a user's answer. Direct recovery invocations select only the requested failed/paused states, or both when both flags are supplied. The parent adds `--include-pending` to include ordinary eligible work and grants `--retry-failed` only on its first queue pass. A failed extra attempt increments the persisted retry count, so an ordinary later run cannot renew it. Codex usage, session and rate limits persist `paused_rate_limit` without spending job retries, stop new dispatch and drain existing workers. Resume requires `--resume-paused`.
 
 Batch ownership uses the shared atomic directory/token protocol at `batch/batch-runner.pid.owner.lock/owner.json`. Its `pid` is the native OS PID of the supervising Bash process, including on Windows. The compatibility `batch-runner.pid` retains the Bash PID. Only the acquiring token can release either artifact. A native owner proven dead can be recovered; unreadable or ambiguous ownership stays locked. An illegal hold that writes artifacts is quarantined and stops the run before merging those artifacts.
+
+Reviewed verification holds this same ownership mutex. Worker launches use the shared native command resolver and separate POSIX process groups. Timeout recovery starts after the owned process tree stops; batch interruption stops registered workers before releasing ownership.
 
 ## Artifact identity
 

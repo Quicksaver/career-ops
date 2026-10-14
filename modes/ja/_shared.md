@@ -1,16 +1,19 @@
 # 共通コンテキスト -- career-ops（日本語）
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      THIS FILE IS AUTO-UPDATABLE. Don't put personal data here.
 
-     Your customizations go in users/{USER}/modes/_profile.md (never auto-updated).
+     Your customizations go in {DATA_ROOT}/modes/_profile.md (never auto-updated).
      This file contains system rules, scoring logic, and tool config
      that improve with each career-ops release.
      ============================================================ -->
 
 ## 真実のソース（EXCLUSIVE）
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -28,18 +31,18 @@
 
 | ファイル | パス | いつ |
 |---------|------|------|
-| users/{USER}/cv.md | `users/{USER}/cv.md`（プロジェクトルート） | 常に |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md`（存在する場合） | 常に（詳細な proof points） |
-| profile.yml | `users/{USER}/config/profile.yml` | 常に（アイデンティティとターゲット求人） |
-| _profile.md | `users/{USER}/modes/_profile.md` | 常に（ユーザーのアーキタイプ、ナラティブ、交渉） |
-| users/{USER}/writing-samples/ | `users/{USER}/writing-samples/` | 候補者が外部に出す文章を生成する場合。まず `_profile.md` のキャッシュ済み `## Writing Style` を確認し、存在しない場合だけファイルを読む |
-| users/{USER}/voice-dna.md | `users/{USER}/voice-dna.md`（存在する場合） | 候補者が外部に出す文章を生成する場合。AI っぽさを避ける guardrail + voice。下の Voice DNA precedence を参照 |
-| interview-prep | `users/{USER}/interview-prep/story-bank.md`, `users/{USER}/interview-prep/{company}-{role}.md` | ATS フォーム回答 / 面接コンテンツを生成する場合。ユーザー自身の STAR stories と prep notes（`users/{USER}/cv.md` と同じ信頼レベル）。`apply` / `match-star` と interview modes が使用 |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md`（ユーザーデータルート） | 常に |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md`（存在する場合） | 常に（詳細な proof points） |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | 常に（アイデンティティとターゲット求人） |
+| _profile.md | `{DATA_ROOT}/modes/_profile.md` | 常に（ユーザーのアーキタイプ、ナラティブ、交渉） |
+| {DATA_ROOT}/writing-samples/ | `{DATA_ROOT}/writing-samples/` | 候補者が外部に出す文章を生成する場合。まず `_profile.md` のキャッシュ済み `## Writing Style` を確認し、存在しない場合だけファイルを読む |
+| {DATA_ROOT}/voice-dna.md | `{DATA_ROOT}/voice-dna.md`（存在する場合） | 候補者が外部に出す文章を生成する場合。AI っぽさを避ける guardrail + voice。下の Voice DNA precedence を参照 |
+| interview-prep | `{DATA_ROOT}/interview-prep/story-bank.md`, `{DATA_ROOT}/interview-prep/{company}-{role}.md` | ATS フォーム回答 / 面接コンテンツを生成する場合。ユーザー自身の STAR stories と prep notes（`{DATA_ROOT}/cv.md` と同じ信頼レベル）。`apply` / `match-star` と interview modes が使用 |
 
-**ルール：proof point のメトリクスを絶対にハードコードしない。** 評価時に `users/{USER}/cv.md` と `users/{USER}/article-digest.md` から読み取ること。
-**ルール：記事・プロジェクトのメトリクスは、`users/{USER}/article-digest.md` が `users/{USER}/cv.md` より優先される**（`users/{USER}/cv.md` には古い数値が含まれている可能性がある）。
+**ルール：proof point のメトリクスを絶対にハードコードしない。** 評価時に `{DATA_ROOT}/cv.md` と `{DATA_ROOT}/article-digest.md` から読み取ること。
+**ルール：記事・プロジェクトのメトリクスは、`{DATA_ROOT}/article-digest.md` が `{DATA_ROOT}/cv.md` より優先される**（`{DATA_ROOT}/cv.md` には古い数値が含まれている可能性がある）。
 **ルール：このファイルの後に `_profile.md` を読む。`_profile.md` のユーザーカスタマイズはここのデフォルト値を上書きする。**
-**ルール：`users/{USER}/cv.md` または `users/{USER}/article-digest.md` で明示されていない限り、ユーザーが project、repo、library、tool、framework、open-source artifact を authored したと主張してはならない。** 「使ったツール」を「作ったもの」と混同するのが最も多い捏造パターンであり、禁止。
+**ルール：`{DATA_ROOT}/cv.md` または `{DATA_ROOT}/article-digest.md` で明示されていない限り、ユーザーが project、repo、library、tool、framework、open-source artifact を authored したと主張してはならない。** 「使ったツール」を「作ったもの」と混同するのが最も多い捏造パターンであり、禁止。
 **ルール：Keywords get reformulated, never fabricated.** 並べ替える、言い換える、強調するのはよい。ただし発明しない。根拠が in-scope file にない claim はユーザーに確認する。答えがない場合は省く。沈黙は捏造よりよい。
 
 ---
@@ -93,16 +96,16 @@ Block G は、求人が real, active opening である可能性を評価する�
 
 ## Archetype Detection
 
-> **具体的なメトリクス：評価時に `users/{USER}/cv.md` と `users/{USER}/article-digest.md` から読む。ここに絶対にハードコードしない。**
+> **具体的なメトリクス：評価時に `{DATA_ROOT}/cv.md` と `{DATA_ROOT}/article-digest.md` から読む。ここに絶対にハードコードしない。**
 
 | 求人が... | 候補者で強調するもの... | Proof Points のソース |
 |----------|----------------------|----------------------|
-| Platform / LLMOps | 本番経験、Observability、Evals、Closed-Loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | マルチエージェントのオーケストレーション、HITL、信頼性、コスト | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product Discovery、PRD、メトリクス、ステークホルダーマネジメント | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | システム設計、Integrations、Enterprise-ready | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | 高速デリバリー、クライアント密着、プロトタイプから本番へ | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | Change management、チーム Enablement、Adoption | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | 本番経験、Observability、Evals、Closed-Loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | マルチエージェントのオーケストレーション、HITL、信頼性、コスト | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product Discovery、PRD、メトリクス、ステークホルダーマネジメント | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | システム設計、Integrations、Enterprise-ready | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | 高速デリバリー、クライアント密着、プロトタイプから本番へ | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | Change management、チーム Enablement、Adoption | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 すべての求人を以下の type のいずれか（または 2 つの hybrid）に分類する：
 
@@ -115,17 +118,19 @@ Block G は、求人が real, active opening である可能性を評価する�
 | AI Forward Deployed | "client-facing", "deploy", "prototype", "fast delivery", "field" |
 | AI Transformation | "change management", "adoption", "enablement", "transformation" |
 
-Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該当 archetype に対するユーザー固有の framing と proof points を使う。
+Archetype を検出した後、`{DATA_ROOT}/modes/_profile.md` を読み、該当 archetype に対するユーザー固有の framing と proof points を使う。
 
-<!-- [PERSONALIZAR] あなた自身のナラティブに置き換えてください。例：
+## トランジションナラティブ
+
+<!-- [カスタマイズ] あなた自身のナラティブに置き換えてください。例：
      - 「5 年で自社 SaaS を構築・売却。今はエンタープライズの Applied AI に完全フォーカス。」
      - 「Series-B で 10 倍成長期のエンジニアリングリード。次の挑戦を探している。」
      - 「コンサルからプロダクトへ転身。責任の大きいロールを探している。」
-     users/{USER}/config/profile.yml -> narrative.exit_story から読む -->
+     {DATA_ROOT}/config/profile.yml -> narrative.exit_story から読む -->
 
-`users/{USER}/config/profile.yml` のトランジションナラティブを使って、すべてのコンテンツをフレーミングする：
+`{DATA_ROOT}/config/profile.yml` のトランジションナラティブを使って、すべてのコンテンツをフレーミングする：
 - **PDF サマリーで：** 過去から未来への橋渡しを作る —「同じ [スキル] を今度は [JD のドメイン] で応用する。」
-- **STAR ストーリーで：** `users/{USER}/article-digest.md` の proof point を参照する。
+- **STAR ストーリーで：** `{DATA_ROOT}/article-digest.md` の proof point を参照する。
 - **応募下書き（ブロック G）で：** トランジションナラティブを最初の回答に入れる。
 - **求人が「起業家精神」「ownership」「builder」「end-to-end」と書いている場合：** それこそが最大の差別化要因。マッチの重みを上げる。
 
@@ -141,19 +146,19 @@ Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該�
 
 ### Proof Point としてのポートフォリオ（高価値な応募で使う）
 
-<!-- [PERSONALIZAR] ライブデモ、ダッシュボード、公開プロジェクトがある場合はここに設定。
+<!-- [カスタマイズ] ライブデモ、ダッシュボード、公開プロジェクトがある場合はここに設定。
      例：
      dashboard:
        url: "https://yourdomain.dev/demo"
        password: "demo-2026"
        when_to_share: "LLMOps、AI-Platform、Observability 系の求人"
-     users/{USER}/config/profile.yml -> narrative.proof_points と narrative.dashboard から読む -->
+     {DATA_ROOT}/config/profile.yml -> narrative.proof_points と narrative.dashboard から読む -->
 
 候補者がライブデモ/ダッシュボードを持っている場合（`profile.yml` で確認）、関連する応募でアクセスを提供する。
 
 ### 報酬インテリジェンス（Comp Intelligence）
 
-<!-- [PERSONALIZAR] ターゲット求人の給与レンジを調査し、値を調整してください -->
+<!-- [カスタマイズ] ターゲット求人の給与レンジを調査し、値を調整してください -->
 
 **一般的なガイドライン：**
 - 現在の市場データのために WebSearch を使用（OpenWork、ビズリーチ、Levels.fyi、Glassdoor、Blind）
@@ -184,7 +189,7 @@ Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該�
 
 ### 交渉スクリプト
 
-<!-- [PERSONALIZAR] あなたの状況に合わせて調整 -->
+<!-- [カスタマイズ] あなたの状況に合わせて調整 -->
 
 **希望年収（汎用フレームワーク）：**
 > 「この職種の現在の市場データを踏まえると、希望年収は [profile.yml のレンジ] の範囲です。構成には柔軟性があります — 重要なのはパッケージ全体と成長機会です。」
@@ -203,7 +208,7 @@ Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該�
 
 ### ロケーションポリシー
 
-<!-- [PERSONALIZAR] あなたの状況に合わせて調整。users/{USER}/config/profile.yml -> location から読む -->
+<!-- [カスタマイズ] あなたの状況に合わせて調整。{DATA_ROOT}/config/profile.yml -> location から読む -->
 
 **フォーム記入時：**
 - 「出社可能ですか？」の yes/no 質問：`profile.yml` の実際の可用性に従って回答
@@ -225,7 +230,7 @@ Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該�
 ### 絶対にしない
 
 1. 経験やメトリクスを捏造する
-2. `users/{USER}/cv.md` やポートフォリオファイルを変更する
+2. `{DATA_ROOT}/cv.md` やポートフォリオファイルを変更する
 3. 候補者の代わりに応募を送信する
 4. 生成メッセージで電話番号を共有する
 5. 市場以下の報酬を推奨する
@@ -236,7 +241,7 @@ Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該�
 ### 常にする
 
 0. **Cover letter:** フォームが許可する場合は必ず含める。CV と同じ visual design。JD quotes を proof points に mapping。最大 1 ページ。
-1. 評価前に `users/{USER}/cv.md`、`_profile.md`、`users/{USER}/article-digest.md`（存在する場合）を読む
+1. 評価前に `{DATA_ROOT}/cv.md`、`_profile.md`、`{DATA_ROOT}/article-digest.md`（存在する場合）を読む
 1b. **各セッションの最初の評価で:** `node cv-sync-check.mjs` を実行。warnings があればユーザーに知らせる
 2. 求人の archetype を検出し、`_profile.md` に従って framing を適応させる
 3. マッチング時、CV の exact lines を引用する
@@ -256,41 +261,36 @@ Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該�
 | WebSearch | Comp research, trends, company culture, LinkedIn contacts, fallback for JDs |
 | WebFetch | Static pages から JD を抽出する fallback |
 | Playwright | 求人検証（browser_navigate + browser_snapshot）。**NEVER 2+ agents with Playwright in parallel.** |
-| Read | users/{USER}/cv.md, _profile.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, _profile.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | Temporary HTML for PDF, reports .md, `batch/tracker-additions/` の tracker 追加用 TSV（`applications.md` は直接書き換えない） |
 | Edit | report など生成済みコンテンツの修正。tracker の表は直接編集しない：新しい行は TSV で追加して `node merge-tracker.mjs` でマージし、status と notes の変更は `node set-status.mjs` で行う |
 | Canva MCP | Optional visual CV generation. Base design を duplicate し、text を edit して PDF export。`profile.yml` の `cv.canva_resume_design_id` が必要 |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |
 
-### Time-to-offer priority
-- Working demo + metrics > perfection
-- Apply sooner > learn more
-- 80/20 approach, timebox everything
-
 ---
 
 ## Voice DNA (writing guardrail)
 
-`users/{USER}/voice-dna.md` が存在する場合、生成文章の guardrail として使う。これは user-layer で optional。存在を仮定しない。なければ静かに skip する。これはユーザー個人の style の下に置かれる。AI っぽさを抑え、足りない部分を補うが、`users/{USER}/modes/_profile.md` にあるユーザー自身の voice rules を常に優先する（Precedence を参照）。
+`{DATA_ROOT}/voice-dna.md` が存在する場合、生成文章の guardrail として使う。これは user-layer で optional。存在を仮定しない。なければ静かに skip する。これはユーザー個人の style の下に置かれる。AI っぽさを抑え、足りない部分を補うが、`{DATA_ROOT}/modes/_profile.md` にあるユーザー自身の voice rules を常に優先する（Precedence を参照）。
 
 **Two-tier scope（CV の正確性を守るための分離）:**
 
 - **Tier 1 -- anti-AI-slop guardrail**（voice-dna §3 Banned List、§4 Patterns to Avoid: banned words、dead phrases、no em-dashes、no negative parallelisms、formatting rules）。HARD RULES。CV bullets と Professional Summary を含む **all generated text** に適用する。
 - **Tier 2 -- conversational voice**（voice-dna §1-2: contractions、And/But sentence openers、"I think" / "maybe" のような hedging、parenthetical asides、direct "I"/"you"）。cover letters、LinkedIn outreach、follow-up emails など conversational candidate-facing prose のみに適用する。**CV/ATS text**（PDF bullets、Professional Summary）には Tier 2 を適用しない。そこでは formal, keyword-dense register を維持する。
 
-**Accuracy always wins over style.** `users/{USER}/cv.md` と `users/{USER}/article-digest.md` の facts は voice-dna によって上書きされない。実在する metric を rhythm のために落とす、弱める、hedge することはしない。人間らしく見せるために detail を発明しない。voice-dna は wording を shaping するだけで content を変えない。
+**Accuracy always wins over style.** `{DATA_ROOT}/cv.md` と `{DATA_ROOT}/article-digest.md` の facts は voice-dna によって上書きされない。実在する metric を rhythm のために落とす、弱める、hedge することはしない。人間らしく見せるために detail を発明しない。voice-dna は wording を shaping するだけで content を変えない。
 
-**Precedence with personal style（`_profile.md` always wins）:** `users/{USER}/modes/_profile.md` の `## Writing Style` が voice と tone の authority。`users/{USER}/voice-dna.md` と `_profile.md` が衝突する場合は `_profile.md` が勝つ。例：`_profile.md` が em-dashes を使う style なら、voice-dna が避けるとしていても維持する。voice-dna の anti-AI-slop rules は `_profile.md` が silent な箇所にだけ適用する。`users/{USER}/voice-dna.md` 自体も user file なので、strict guardrail を優先したいユーザーはその preference を `_profile.md` に書かなければよい。
+**Precedence with personal style（`_profile.md` always wins）:** `{DATA_ROOT}/modes/_profile.md` の `## Writing Style` が voice と tone の authority。`{DATA_ROOT}/voice-dna.md` と `_profile.md` が衝突する場合は `_profile.md` が勝つ。例：`_profile.md` が em-dashes を使う style なら、voice-dna が避けるとしていても維持する。voice-dna の anti-AI-slop rules は `_profile.md` が silent な箇所にだけ適用する。`{DATA_ROOT}/voice-dna.md` 自体も user file なので、strict guardrail を優先したいユーザーはその preference を `_profile.md` に書かなければよい。
 
 ---
 
 ## Writing Style Calibration
 
-**まず `_profile.md` を確認する。** そこに `## Writing Style` section がある場合は直接使い、`users/{USER}/writing-samples/` を再スキャンしない。再スキャンは new samples が追加された場合、またはユーザーが明示的に recalibrate を求めた場合のみ。
+**まず `_profile.md` を確認する。** そこに `## Writing Style` section がある場合は直接使い、`{DATA_ROOT}/writing-samples/` を再スキャンしない。再スキャンは new samples が追加された場合、またはユーザーが明示的に recalibrate を求めた場合のみ。
 
 **When to apply:** ユーザーが送信または公開する文章を生成する前。cover letters、LinkedIn outreach、application form answers、follow-up emails、executive summaries、profile blurbs。Internal evaluation reports（A-F blocks、scores、analysis）には適用しない。
 
-**If no cached style in `_profile.md`:** `users/{USER}/writing-samples/` の全ファイルを読み、**`README.md` という名前のファイルは skip** する。user-provided samples が見つからなければ style calibration を skip し、writing sample（過去の cover letter、LinkedIn About、professional writing など）があると tailoring に役立つと一度だけ軽く伝える。samples がある場合、下の markers を抽出し、`_profile.md` の `## Writing Style` に書く。以後の session はこの step を skip する。
+**If no cached style in `_profile.md`:** `{DATA_ROOT}/writing-samples/` の全ファイルを読み、**`README.md` という名前のファイルは skip** する。user-provided samples が見つからなければ style calibration を skip し、writing sample（過去の cover letter、LinkedIn About、professional writing など）があると tailoring に役立つと一度だけ軽く伝える。samples がある場合、下の markers を抽出し、`_profile.md` の `## Writing Style` に書く。以後の session はこの step を skip する。
 
 ### What to extract
 
@@ -342,12 +342,12 @@ Archetype を検出した後、`users/{USER}/modes/_profile.md` を読み、該�
 
 ### Persisting the extracted style
 
-Scan 後、user-provided sample が少なくとも 1 つあった場合のみ `users/{USER}/modes/_profile.md` に書く。既存の `## Writing Style` section を見つけ、その section 全体を次の `##` heading（または EOF）まで置き換える。なければ append する。これにより canonical section は常に 1 つだけになる。Samples がなければ section を書かない、変更しない。
+Scan 後、user-provided sample が少なくとも 1 つあった場合のみ `{DATA_ROOT}/modes/_profile.md` に書く。既存の `## Writing Style` section を見つけ、その section 全体を次の `##` heading（または EOF）まで置き換える。なければ append する。これにより canonical section は常に 1 つだけになる。Samples がなければ section を書かない、変更しない。
 
 ```markdown
 ## Writing Style
 
-_Extracted from users/{USER}/writing-samples/ on {date}. Re-run if new samples are added._
+_Extracted from {DATA_ROOT}/writing-samples/ on {date}. Re-run if new samples are added._
 
 **Tone:** {e.g. conversational, confident, no hedging qualifiers}
 **Sentence length:** {e.g. short and punchy, avg 12 words}
@@ -368,7 +368,7 @@ _Extracted from users/{USER}/writing-samples/ on {date}. Re-run if new samples a
 Recruiter-side risk mapping、six-second clarity、business-value bullets、ATS reality checks については `modes/heuristics/recruiter-side.md` を読む。
 
 ### Avoid cliché phrases
-_`users/{USER}/voice-dna.md` が存在する場合、その §3 Banned List が canonical でより完全な list になり、この fallback list より優先される。_
+_`{DATA_ROOT}/voice-dna.md` が存在する場合、その §3 Banned List が canonical でより完全な list になり、この fallback list より優先される。_
 - "passionate about" / "results-oriented" / "proven track record"
 - "leveraged"（"used" または tool 名を書く）
 - "spearheaded"（"led" または "ran" を使う）

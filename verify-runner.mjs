@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import {
   createWriteStream,
   existsSync,
@@ -11,7 +12,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -21,9 +22,10 @@ import {
 import { codexReasoningConfigArg, resolveCodexSettings } from './lib/codex-config.mjs';
 import { resolveRunnerCommand, terminateProcessTreeSync } from './lib/runner-command.mjs';
 import { acquirePipelineLock } from './pipeline-lock.mjs';
+import { inspectOwnership } from './batch/runner-ownership.mjs';
 import { resolveParallel } from './lib/parallel-config.mjs';
 import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.mjs';
-import { compactCompletedRun, compactPhaseRecords } from './lib/run-artifacts.mjs';
+import { compactCompletedRun, compactPhaseRecords, processAlive } from './lib/run-artifacts.mjs';
 import {
   buildReviewLanes,
   expandActiveDuplicatePairs,
@@ -85,41 +87,55 @@ function optionValue(name, fallback = null) {
     return value;
   }
   const prefixed = rawArgs.find(arg => arg.startsWith(`${name}=`));
-  if (prefixed) return prefixed.slice(name.length + 1) || fallback;
+  if (prefixed) {
+    const value = prefixed.slice(name.length + 1);
+    if (!value) throw new Error(`${name} requires a value`);
+    return value;
+  }
   return fallback;
 }
 
-const agentCli = optionValue('--agent-cli', 'codex');
-const codexModel = optionValue('--codex-model');
-const codexReasoningEffort = optionValue('--codex-reasoning-effort');
-const parallelOverride = optionValue('--parallel');
-const maxPasses = Number.parseInt(optionValue('--max-passes', '3'), 10);
-const reviewRetries = Number.parseInt(optionValue('--review-retries', '2'), 10);
-const resumeRun = optionValue('--resume-run');
+let agentCli, codexModel, codexReasoningEffort, parallelOverride, maxPasses, reviewRetries, resumeRun;
+try {
+  agentCli = optionValue('--agent-cli', 'codex');
+  codexModel = optionValue('--codex-model');
+  codexReasoningEffort = optionValue('--codex-reasoning-effort');
+  parallelOverride = optionValue('--parallel');
+  maxPasses = Number(optionValue('--max-passes', '3'));
+  reviewRetries = Number(optionValue('--review-retries', '2'));
+  resumeRun = optionValue('--resume-run');
+  const valueOptions = new Set([
+    '--agent-cli', '--codex-model', '--codex-reasoning-effort', '--parallel',
+    '--max-passes', '--review-retries', '--resume-run',
+  ]);
+  const flagOptions = new Set(['--json', '--quiet']);
+  for (let index = 0; index < rawArgs.length; index++) {
+    const arg = rawArgs[index];
+    if (valueOptions.has(arg)) { index++; continue; }
+    if (flagOptions.has(arg) || [...valueOptions].some(name => arg.startsWith(`${name}=`))) continue;
+    throw new Error(`Unknown option: ${arg}`);
+  }
+  if (agentCli !== 'codex') throw new Error('Reviewed verification currently requires --agent-cli codex');
+  if (!Number.isInteger(maxPasses) || maxPasses < 1 || maxPasses > 10) throw new Error('--max-passes must be an integer from 1 to 10');
+  if (!Number.isInteger(reviewRetries) || reviewRetries < 0 || reviewRetries > 5) {
+    throw new Error('--review-retries must be an integer from 0 to 5');
+  }
+  if (resumeRun && !/^[A-Za-z0-9._-]+$/.test(resumeRun)) throw new Error('--resume-run is not a valid run ID');
+  if (parallelOverride !== null) resolveParallel({ override: parallelOverride });
+} catch (error) {
+  console.error(`[verify] ${error.message}`);
+  process.exit(1);
+}
 const quiet = rawArgs.includes('--quiet');
 const jsonOutput = rawArgs.includes('--json');
-const valueOptions = new Set([
-  '--agent-cli', '--codex-model', '--codex-reasoning-effort', '--parallel',
-  '--max-passes', '--review-retries', '--resume-run',
-]);
-const flagOptions = new Set(['--json', '--quiet']);
-for (let index = 0; index < rawArgs.length; index++) {
-  const arg = rawArgs[index];
-  if (valueOptions.has(arg)) { index++; continue; }
-  if (flagOptions.has(arg) || [...valueOptions].some(name => arg.startsWith(`${name}=`))) continue;
-  throw new Error(`Unknown option: ${arg}`);
-}
-if (agentCli !== 'codex') throw new Error('Reviewed verification currently requires --agent-cli codex');
-if (!Number.isInteger(maxPasses) || maxPasses < 1 || maxPasses > 10) throw new Error('--max-passes must be an integer from 1 to 10');
-if (!Number.isInteger(reviewRetries) || reviewRetries < 0 || reviewRetries > 5) {
-  throw new Error('--review-retries must be an integer from 0 to 5');
-}
-if (resumeRun && !/^[A-Za-z0-9._-]+$/.test(resumeRun)) throw new Error('--resume-run is not a valid run ID');
 
 const startedAt = new Date().toISOString();
 const runId = resumeRun || startedAt.replace(/[:.]/g, '-');
 const runDir = userPath(context, `data/verify-runs/${runId}`);
-if (resumeRun && !existsSync(runDir)) throw new Error(`Cannot resume missing verify run ${resumeRun}`);
+if (resumeRun && !existsSync(runDir)) {
+  console.error(`[verify] Cannot resume missing verify run ${resumeRun}`);
+  process.exit(1);
+}
 const lockPath = userPath(context, 'data/verify-runner.pid');
 const reviewLedgerPath = userPath(context, 'data/verification-reviews.jsonl');
 const reviewSchemaPath = systemPath('schemas/verify-review-output.schema.json');
@@ -131,6 +147,7 @@ const phaseOffset = resumeRun
 const activeChildren = new Set();
 let lockOwned = false;
 let ownershipLock = null;
+let batchOwnershipLock = null;
 let forwardingSignal = false;
 
 function log(message) {
@@ -180,15 +197,32 @@ function mergeHumanReviewItems(summary, findings, decisions) {
   summary.humanReviewRecap = [...merged.values()];
 }
 
-function processAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
 async function acquireLock() {
   mkdirSync(join(context.userRoot, 'data'), { recursive: true });
   ownershipLock = await acquirePipelineLock(lockPath, { timeoutMs: 1000, maxWaitMs: 1000 });
   try {
+    const batchPid = userPath(context, 'batch/batch-runner.pid');
+    const batchOwner = inspectOwnership(batchPid);
+    if (batchOwner.status === 'ambiguous') throw new Error('Batch ownership is ambiguous; inspect it before verification');
+    // Share the batch's authoritative mutex for the entire verification run.
+    // A concurrent batch cannot begin publishing artifacts after this check.
+    batchOwnershipLock = await acquirePipelineLock(`${batchPid}.owner`, {
+      timeoutMs: 1000, maxWaitMs: 1000, staleMs: Infinity,
+    });
+    if (batchOwner.status === 'absent' && existsSync(batchPid)) {
+      const stamp = readFileSync(batchPid, 'utf-8').trim();
+      if (!/^\d+$/.test(stamp) || !Number.isSafeInteger(Number(stamp)) || Number(stamp) <= 0) {
+        throw new Error('Legacy batch ownership is malformed; inspect it before verification');
+      }
+      let alive;
+      if (process.platform === 'win32') {
+        const launch = resolveRunnerCommand('bash', ['-c', 'kill -0 "$1" 2>/dev/null', 'verify-owner', stamp]);
+        const check = spawnSync(launch.command, launch.args, { ...launch.options, timeout: 5000 });
+        if (check.error || ![0, 1].includes(check.status)) throw new Error('Cannot establish legacy batch ownership');
+        alive = check.status === 0;
+      } else alive = processAlive(Number(stamp));
+      if (alive) throw new Error(`another batch runner is active (PID ${stamp})`);
+    }
     if (existsSync(lockPath)) {
       const pid = Number.parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
       if (processAlive(pid)) throw new Error(`another verify runner is active (PID ${pid})`);
@@ -199,6 +233,8 @@ async function acquireLock() {
     renameSync(temporary, lockPath);
     lockOwned = true;
   } catch (error) {
+    batchOwnershipLock?.release();
+    batchOwnershipLock = null;
     ownershipLock.release();
     ownershipLock = null;
     throw error;
@@ -213,6 +249,8 @@ function releaseLock() {
     lockOwned = false;
     ownershipLock?.release();
     ownershipLock = null;
+    batchOwnershipLock?.release();
+    batchOwnershipLock = null;
   }
 }
 
@@ -312,7 +350,7 @@ again; do not omit findings that were already valid in the previous attempt.
 The raw verifier intentionally reports broad possible problems. Your job is to decide each finding from concrete artifact evidence and choose exactly one disposition:
 
 - mark_seen: only for false_positive, legitimate_exception, or informational findings that need no action. The exact finding fingerprint will be recorded so an unchanged finding does not resurface in reviewed verification; changed evidence will resurface automatically.
-- resolve_duplicate: only for possible_duplicate_tracker or duplicate_reports_same_role when strong evidence proves the candidates are the same posting. Same company/title alone is insufficient. Partition every deterministic candidate exactly in duplicate_resolution; a keeper must always be one of that finding's candidates. For tracker duplicates, select the most advanced lifecycle row as keeper using Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed. For an equal-status tie where the reports prove the same canonical posting, keep the most recent complete evaluation (latest tracker/report date, then highest tracker/report number); this is the deterministic canonical-identity tie-break and does not require human review. A broad heuristic group containing distinct posting URLs is a false positive or legitimate exception and should be marked seen; exact overlapping subgroup findings carry any safe duplicate action. Conversely, when a prior confirmed broader group already contains every candidate in the current finding, classify the strict subset informational/mark_seen because the broader action fully owns the mutation; never copy the broader keeper into a subset that does not contain it.
+- resolve_duplicate: only for possible_duplicate_tracker or duplicate_reports_same_role when strong evidence proves the candidates are the same posting. Same company/title alone is insufficient. Partition every deterministic candidate exactly in duplicate_resolution; a keeper must always be one of that finding's candidates. For tracker duplicates, select the most advanced lifecycle row as keeper using Hired > Offer > Interview > Assessment > Responded > Rejected > Applied > Evaluated > Skip/Closed/Discarded. For an equal-status tie where the reports prove the same canonical posting, keep the most recent complete evaluation (latest tracker/report date, then highest tracker/report number); this is the deterministic canonical-identity tie-break and does not require human review. A broad heuristic group containing distinct posting URLs is a false positive or legitimate exception and should be marked seen; exact overlapping subgroup findings carry any safe duplicate action. Conversely, when a prior confirmed broader group already contains every candidate in the current finding, classify the strict subset informational/mark_seen because the broader action fully owns the mutation; never copy the broader keeper into a subset that does not contain it.
   - For possible_duplicate_tracker, populate only keeper_tracker_num and duplicate_tracker_nums. Set keeper_report_file to null and duplicate_report_files to [].
   - For duplicate_reports_same_role, populate only keeper_report_file and duplicate_report_files. Set keeper_tracker_num to null and duplicate_tracker_nums to [].
 - restore_orphan: for a true orphan_report whose distinct valid evaluation should remain tracked. Prefer an existing matching user-root-relative batch/tracker-additions/merged/*.tsv only after verifying that its current row number and report link identify this exact report; the batch-slot filename or report Batch ID alone is not identity because slots may be reused. If no matching TSV exists but the report itself supplies date, company, role, score, decision/status, and any required Via evidence, set tracker_tsv to null; the deterministic applier will reconstruct the row and, when the old number is occupied, assign a fresh number and rename matching report/CV artifacts. A missing or stale historical TSV is not by itself a reason for human review.
@@ -381,17 +419,33 @@ function latestPhaseJson(phaseName, predicate = value => value?.status === 'comp
   return null;
 }
 
+function actionInputDigest(paths) {
+  const hash = createHash('sha256');
+  for (const path of paths) hash.update(readFileSync(path));
+  return hash.digest('hex');
+}
+
+function saveActionResult(kind, pass, result, inputPaths) {
+  writeJsonAtomic(join(runDir, `action-result.${kind}.pass-${String(pass).padStart(2, '0')}.json`), {
+    ...result,
+    input_files: inputPaths.map(path => basename(path)),
+    input_digest: actionInputDigest(inputPaths),
+  });
+}
+
 function priorActionResult(kind, pass) {
   const checkpointPath = join(runDir, `action-result.${kind}.pass-${String(pass).padStart(2, '0')}.json`);
   if (existsSync(checkpointPath)) {
     try {
       const value = JSON.parse(readFileSync(checkpointPath, 'utf-8'));
-      if (value?.status === 'completed') return value;
+      if (value?.status === 'completed' && Array.isArray(value.input_files) &&
+          value.input_files.length === 2 && value.input_files.every(name =>
+            typeof name === 'string' && basename(name) === name && !/[\\/]/.test(name)) &&
+          value.input_digest === actionInputDigest(value.input_files.map(name => join(runDir, name)))) return value;
     } catch {}
   }
-  const phaseName = kind === 'duplicates' ? `resolve-duplicates-${pass}` : `apply-review-${pass}`;
-  return latestPhaseJson(phaseName) ||
-    (kind === 'review' ? latestPhaseJson(`apply-review-resume-${pass}`) : null);
+  // Legacy phase logs cannot prove which repair inputs produced their result.
+  return null;
 }
 
 function readJsonCheckpoint(path, predicate = () => true) {
@@ -517,7 +571,7 @@ function readValidatedCheckpoint(path, signature, chunk) {
       normalizations: normalized.normalizations,
     };
   } catch (error) {
-    log(`ignored invalid review checkpoint ${path.split('/').pop()}: ${validationErrors(error).join('; ')}`);
+    log(`ignored invalid review checkpoint ${basename(path)}: ${validationErrors(error).join('; ')}`);
     return null;
   }
 }
@@ -590,7 +644,7 @@ async function reviewLane({ lane, laneNumber, laneCount, pass, activeCount, code
         if (normalized.normalizations.length > 0) {
           writeJsonAtomic(join(runDir, `review-normalized.${suffix}${attemptLabel}.json`), {
             schema_version: 1,
-            source_output: outputPath.split('/').pop(),
+            source_output: basename(outputPath),
             normalizations: normalized.normalizations,
             review: completed,
           });
@@ -691,6 +745,7 @@ async function main() {
       log('tracker Via schema migrated; recruiter values will be reviewed as bounded row patches');
     }
     const reviewedThisRun = new Set();
+    const manualDecisions = new Map();
     let firstPass = 1;
 
     const pendingApply = loadPendingApplyCheckpoint(verification);
@@ -717,13 +772,16 @@ async function main() {
           '--verification', applyVerificationPath, '--review', applicableReviewPath,
           '--run-id', runId, '--json',
         ]), `apply-review-resume-${pass}`);
-        writeJsonAtomic(join(runDir, `action-result.review.pass-${String(pass).padStart(2, '0')}.json`), applyResult);
+        saveActionResult('review', pass, applyResult, [applyVerificationPath, applicableReviewPath]);
       }
       aggregateActions(summary.actions, applyResult);
       for (const decision of pendingApply.review.findings.filter(item => item.disposition === 'manual_review')) {
         const finding = pendingApply.expected.find(item =>
           item.level === decision.finding_level && item.id === decision.finding_id);
-        if (finding) reviewedThisRun.add(finding.fingerprint);
+        if (finding) {
+          reviewedThisRun.add(finding.fingerprint);
+          manualDecisions.set(finding.fingerprint, decision);
+        }
       }
       verification = await rawVerification(`verify-pipeline-post-review-resume-${pass}`);
       writeJsonAtomic(
@@ -749,7 +807,10 @@ async function main() {
         for (const decision of (completedPass.review?.findings || [])
           .filter(item => item.disposition === 'manual_review')) {
           const finding = currentFindings.get(`${decision.finding_level}:${decision.finding_id}`);
-          if (finding) reviewedThisRun.add(finding.fingerprint);
+          if (finding) {
+            reviewedThisRun.add(finding.fingerprint);
+            manualDecisions.set(finding.fingerprint, decision);
+          }
         }
         log(`resuming after completed pass ${pass}; deterministic actions and post-review verification reused`);
         firstPass = pass + 1;
@@ -761,13 +822,13 @@ async function main() {
       const partition = partitionReviewedFindings(verification, ledger);
       const baseActive = partition.active.filter(finding => !reviewedThisRun.has(finding.fingerprint));
       const paired = expandActiveDuplicatePairs(verification, baseActive);
-      const active = paired.findings.filter(finding => !reviewedThisRun.has(finding.fingerprint));
+      const active = paired.findings;
       if (paired.reactivated > 0) {
         log(`review pass ${pass}: reactivated ${paired.reactivated} seen exact duplicate counterpart(s) because their paired finding changed`);
       }
       if (active.length === 0) break;
       summary.passes = pass;
-      const lanes = buildReviewLanes(active, parallelSettings.parallel);
+      const lanes = buildReviewLanes(active.filter(finding => !manualDecisions.has(finding.fingerprint)), parallelSettings.parallel);
       log(`review pass ${pass}: ${active.length} active finding(s), ${lanes.length} dependency-safe lane(s), up to ${parallelSettings.parallel} concurrent reviewer(s)`);
       const laneResults = await Promise.allSettled(lanes.map((lane, index) => reviewLane({
         lane,
@@ -786,6 +847,10 @@ async function main() {
       const failedLane = laneResults.find(result => result.status === 'rejected');
       if (failedLane) throw failedLane.reason;
       const decisionsByKey = new Map();
+      for (const finding of active) {
+        const held = manualDecisions.get(finding.fingerprint);
+        if (held) decisionsByKey.set(`${finding.level}:${finding.id}`, held);
+      }
       for (const laneResult of laneResults) {
         for (const decision of laneResult.value.decisions) {
           decisionsByKey.set(`${decision.finding_level}:${decision.finding_id}`, decision);
@@ -811,7 +876,7 @@ async function main() {
       validateDuplicateConsistency(verification, review);
       mergeHumanReviewItems(summary, active, decisions);
       const reviewPath = join(runDir, `review.pass-${String(pass).padStart(2, '0')}.json`);
-      writeFileSync(reviewPath, `${JSON.stringify(review, null, 2)}\n`, 'utf-8');
+      writeJsonAtomic(reviewPath, review);
       summary.reviews.push(...decisions);
 
       const triage = duplicateTriage(review);
@@ -819,32 +884,35 @@ async function main() {
       if (triage.warnings.length > 0) {
         const triagePath = join(runDir, `duplicate-triage.pass-${String(pass).padStart(2, '0')}.json`);
         const verificationPath = join(runDir, `verification.pass-${String(pass).padStart(2, '0')}.json`);
-        writeFileSync(triagePath, `${JSON.stringify(triage, null, 2)}\n`, 'utf-8');
-        writeFileSync(verificationPath, `${JSON.stringify(verification, null, 2)}\n`, 'utf-8');
+        writeJsonAtomic(triagePath, triage);
+        writeJsonAtomic(verificationPath, verification);
         const duplicateResult = parseJson(await runCommand(`resolve-duplicates-${pass}`, process.execPath, [
           systemPath('resolve-verify-warnings.mjs'), '--user', context.userId,
           '--verification', verificationPath, '--triage', triagePath, '--json',
         ]), `resolve-duplicates-${pass}`);
-        writeJsonAtomic(join(runDir, `action-result.duplicates.pass-${String(pass).padStart(2, '0')}.json`), duplicateResult);
+        saveActionResult('duplicates', pass, duplicateResult, [verificationPath, triagePath]);
         aggregateActions(summary.actions, duplicateResult);
         verificationForApply = await rawVerification(`verify-pipeline-post-duplicates-${pass}`);
       }
 
       const applicableReview = decisionsStillPresent(active, review, verificationForApply);
       const applicableReviewPath = join(runDir, `review.applicable-${String(pass).padStart(2, '0')}.json`);
-      writeFileSync(applicableReviewPath, `${JSON.stringify(applicableReview, null, 2)}\n`, 'utf-8');
+      writeJsonAtomic(applicableReviewPath, applicableReview);
       const applyVerificationPath = join(runDir, `verification.apply-${String(pass).padStart(2, '0')}.json`);
-      writeFileSync(applyVerificationPath, `${JSON.stringify(verificationForApply, null, 2)}\n`, 'utf-8');
+      writeJsonAtomic(applyVerificationPath, verificationForApply);
       const applyResult = parseJson(await runCommand(`apply-review-${pass}`, process.execPath, [
         systemPath('apply-verification-review.mjs'), '--user', context.userId,
         '--verification', applyVerificationPath, '--review', applicableReviewPath, '--run-id', runId, '--json',
       ]), `apply-review-${pass}`);
-      writeJsonAtomic(join(runDir, `action-result.review.pass-${String(pass).padStart(2, '0')}.json`), applyResult);
+      saveActionResult('review', pass, applyResult, [applyVerificationPath, applicableReviewPath]);
       aggregateActions(summary.actions, applyResult);
 
       for (const decision of decisions.filter(item => item.disposition === 'manual_review')) {
         const finding = active.find(item => item.level === decision.finding_level && item.id === decision.finding_id);
-        if (finding) reviewedThisRun.add(finding.fingerprint);
+        if (finding) {
+          reviewedThisRun.add(finding.fingerprint);
+          manualDecisions.set(finding.fingerprint, decision);
+        }
       }
       verification = await rawVerification(`verify-pipeline-post-review-${pass}`);
       writeJsonAtomic(
@@ -908,7 +976,15 @@ async function main() {
   }
 }
 
-const summary = await main();
+const summary = await main().catch(error => {
+  releaseLock();
+  return {
+    status: 'failed', user: context.userId, run_id: runId, resumed_from: resumeRun,
+    started_at: startedAt, finished_at: new Date().toISOString(), logs: runDir,
+    error: error.message, phases, reviews: [], actions: {}, counts: null,
+    unresolved_findings: [], seen_findings: [], needs_human_review: false,
+  };
+});
 
 function compactVerifySummary(result) {
   return {

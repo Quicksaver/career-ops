@@ -120,12 +120,12 @@ test('verify cannot overwrite a competing ownership lock or compatibility PID', 
     mkdirSync(join(dir, 'test/data'), { recursive: true });
     lock = await acquirePipelineLock(lockPath);
     writeFileSync(lockPath, String(process.pid));
-    const result = spawnSync(process.execPath, [join(root, 'verify-runner.mjs'), '--user', 'test', '--quiet'], {
+    const result = spawnSync(process.execPath, [join(root, 'verify-runner.mjs'), '--user', 'test', '--quiet', '--json'], {
       env: { ...process.env, CAREER_OPS_USERS_DIR: dir, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '' },
       encoding: 'utf8', timeout: 5000,
     });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /lock|LockTimeout/i);
+    assert.match(JSON.parse(result.stdout).error, /lock|LockTimeout/i);
     assert.equal(readFileSync(lockPath, 'utf8'), String(process.pid));
     assert.equal(existsSync(lock.lockDir), true);
   } finally { lock?.release(); cleanup(dir); }

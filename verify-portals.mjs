@@ -566,6 +566,7 @@ export function boundedProbeCtx(base) {
   let used = 0;
   let tripped = false;
   const guard = (fn) => async (url, opts) => {
+    if (opts?.browserResourceType && !['document', 'xhr', 'fetch'].includes(opts.browserResourceType)) return fn(url, opts);
     if (used >= PROBE_REQUEST_BUDGET) {
       tripped = true;
       throw new ProbePageBudgetReached();
@@ -681,7 +682,10 @@ export async function verifyCompanies(
     if (providers && providers.size > 0) {
       const resolved = resolveProvider(company, providers, { skipIds: ['local-parser'] });
       if (resolved && resolved.provider) {
-        const probe = await probeProvider(company, resolved.provider, httpCtx || makeHttpCtx());
+        const probe = await probeProvider(company, resolved.provider, {
+          profilePath: process.env.CAREER_OPS_PROFILE ? resolve(process.env.CAREER_OPS_PROFILE) : join(DATA_ROOT, 'config/profile.yml'),
+          ...(httpCtx || makeHttpCtx()),
+        });
         results.push({ name, ...probe });
         continue;
       }
@@ -879,7 +883,7 @@ async function main() {
   // is read when it is absent).
   const { mergeProviderPlugins } = await import('./plugins/_engine.mjs');
   await mergeProviderPlugins(providers, { root: dirname(PROVIDERS_DIR), dataRoot: DATA_ROOT });
-  const httpCtx = makeHttpCtx();
+  const httpCtx = { ...makeHttpCtx(), profilePath: process.env.CAREER_OPS_PROFILE ? resolve(process.env.CAREER_OPS_PROFILE) : join(DATA_ROOT, 'config/profile.yml') };
   const { found, results } = await verifyPortalsFile(filePath, { fetchJson, providers, httpCtx });
   if (!found) {
     // Graceful no-op: fresh setups (and CI, which ships no portals.yml) have

@@ -1,19 +1,22 @@
 # साझा संदर्भ -- career-ops (हिन्दी)
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      इस फ़ाइल को कस्टमाइज़ करें
      ============================================================
      इस फ़ाइल में career-ops के सभी हिन्दी मोड्स के लिए
      साझा संदर्भ है। career-ops उपयोग करने से पहले आपको:
-     1. users/{USER}/config/profile.yml में अपनी व्यक्तिगत जानकारी भरें
-     2. प्रोजेक्ट की रूट में users/{USER}/cv.md बनाएं (Markdown में CV)
-     3. (वैकल्पिक) users/{USER}/article-digest.md में अपने proof points बनाएं
+     1. {DATA_ROOT}/config/profile.yml में अपनी व्यक्तिगत जानकारी भरें
+     2. प्रोजेक्ट की रूट में {DATA_ROOT}/cv.md बनाएं (Markdown में CV)
+     3. (वैकल्पिक) {DATA_ROOT}/article-digest.md में अपने proof points बनाएं
      4. नीचे [कस्टमाइज़ करें] चिह्नित अनुभाग अनुकूलित करें
      ============================================================ -->
 
 ## सत्य के स्रोत (हर मूल्यांकन से पहले अवश्य पढ़ें)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -30,13 +33,13 @@
 
 | फ़ाइल | पथ | कब |
 |-------|----|----|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (प्रोजेक्ट की रूट) | हमेशा |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (यदि मौजूद हो) | हमेशा (विस्तृत proof points के लिए) |
-| profile.yml | `users/{USER}/config/profile.yml` | हमेशा (पहचान और लक्षित भूमिकाओं के लिए) |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (प्रोजेक्ट की रूट) | हमेशा |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (यदि मौजूद हो) | हमेशा (विस्तृत proof points के लिए) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | हमेशा (पहचान और लक्षित भूमिकाओं के लिए) |
 
-**नियम: proof points की metrics को कभी hardcode न करें।** इन्हें मूल्यांकन के समय `users/{USER}/cv.md` और `users/{USER}/article-digest.md` से पढ़ें।
-**नियम: article/project metrics के लिए, `users/{USER}/article-digest.md` को `users/{USER}/cv.md` से प्राथमिकता दें** (`users/{USER}/cv.md` में पुराने आंकड़े हो सकते हैं)।
-**नियम: कभी यह दावा न करें कि उम्मीदवार किसी प्रोजेक्ट, रिपॉज़िटरी, लाइब्रेरी, टूल, फ्रेमवर्क या ओपन-सोर्स कृति का लेखक/निर्माता है, जब तक कि `users/{USER}/cv.md` या `users/{USER}/article-digest.md` में यह स्पष्ट रूप से उनके नाम दर्ज न हो।** किसी टूल का "इस्तेमाल करना" और उसे "बनाना" — इन्हें एक मान लेना (X का इस्तेमाल करना, X को बनाना नहीं है) सबसे आम मनगढ़ंत पैटर्न है और वर्जित है।
+**नियम: proof points की metrics को कभी hardcode न करें।** इन्हें मूल्यांकन के समय `{DATA_ROOT}/cv.md` और `{DATA_ROOT}/article-digest.md` से पढ़ें।
+**नियम: article/project metrics के लिए, `{DATA_ROOT}/article-digest.md` को `{DATA_ROOT}/cv.md` से प्राथमिकता दें** (`{DATA_ROOT}/cv.md` में पुराने आंकड़े हो सकते हैं)।
+**नियम: कभी यह दावा न करें कि उम्मीदवार किसी प्रोजेक्ट, रिपॉज़िटरी, लाइब्रेरी, टूल, फ्रेमवर्क या ओपन-सोर्स कृति का लेखक/निर्माता है, जब तक कि `{DATA_ROOT}/cv.md` या `{DATA_ROOT}/article-digest.md` में यह स्पष्ट रूप से उनके नाम दर्ज न हो।** किसी टूल का "इस्तेमाल करना" और उसे "बनाना" — इन्हें एक मान लेना (X का इस्तेमाल करना, X को बनाना नहीं है) सबसे आम मनगढ़ंत पैटर्न है और वर्जित है।
 **नियम: कीवर्ड को दोबारा शब्दबद्ध किया जाता है, कभी गढ़ा नहीं जाता।** क्रम बदलें, दोबारा फ़्रेम करें, ज़ोर दें — पर कभी आविष्कार न करें। यदि कोई दावा दायरे की किसी फ़ाइल से समर्थित नहीं है, तो उम्मीदवार से पूछें; उत्तर न मिलने पर उसे छोड़ दें। किसी विषय पर चुप रहना गढ़े हुए विवरण से बेहतर है।
 
 ---
@@ -63,16 +66,16 @@
 
 ### Archetype के अनुसार अनुकूली framing
 
-> **ठोस metrics: इन्हें मूल्यांकन के समय `users/{USER}/cv.md` और `users/{USER}/article-digest.md` से पढ़ें। यहाँ कभी hardcode न करें।**
+> **ठोस metrics: इन्हें मूल्यांकन के समय `{DATA_ROOT}/cv.md` और `{DATA_ROOT}/article-digest.md` से पढ़ें। यहाँ कभी hardcode न करें।**
 
 | यदि भूमिका है... | उम्मीदवार में highlight करें... | Proof points के स्रोत |
 |-----------------|--------------------------------|----------------------|
-| Platform / LLMOps | Production experience, observability, evals, closed-loop | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Agentic / Automation | Multi-agent orchestration, HITL, reliability, costs | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Technical AI PM | Product discovery, PRDs, metrics, stakeholder management | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| Solutions Architect | System design, integrations, enterprise-ready | users/{USER}/article-digest.md + users/{USER}/cv.md |
-| Forward Deployed Engineer | Rapid delivery, client proximity, prototype to production | users/{USER}/cv.md + users/{USER}/article-digest.md |
-| AI Transformation Lead | Change management, team enablement, adoption | users/{USER}/cv.md + users/{USER}/article-digest.md |
+| Platform / LLMOps | Production experience, observability, evals, closed-loop | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Agentic / Automation | Multi-agent orchestration, HITL, reliability, costs | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Technical AI PM | Product discovery, PRDs, metrics, stakeholder management | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| Solutions Architect | System design, integrations, enterprise-ready | {DATA_ROOT}/article-digest.md + {DATA_ROOT}/cv.md |
+| Forward Deployed Engineer | Rapid delivery, client proximity, prototype to production | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
+| AI Transformation Lead | Change management, team enablement, adoption | {DATA_ROOT}/cv.md + {DATA_ROOT}/article-digest.md |
 
 <!-- [कस्टमाइज़ करें] ऊपर के archetypes को अपने concrete projects/articles से map करें -->
 
@@ -81,11 +84,11 @@
 <!-- [कस्टमाइज़ करें] अपना narrative यहाँ डालें। उदाहरण:
      - "5 साल बाद SaaS बनाई और बेची। अब 100% focus applied AI पर।"
      - "Series-B में 10x growth के दौरान engineering lead। अगली challenge की तलाश।"
-     users/{USER}/config/profile.yml -> narrative.exit_story से पढ़ें -->
+     {DATA_ROOT}/config/profile.yml -> narrative.exit_story से पढ़ें -->
 
-सभी content को frame करने के लिए `users/{USER}/config/profile.yml` से transition narrative उपयोग करें:
+सभी content को frame करने के लिए `{DATA_ROOT}/config/profile.yml` से transition narrative उपयोग करें:
 - **PDF summaries में:** पास्ट और future के बीच bridge बनाएं — "अब उन्हीं [skills] को [offer के domain] में apply कर रहे हैं।"
-- **STAR stories में:** `users/{USER}/article-digest.md` के proof points का संदर्भ लें।
+- **STAR stories में:** `{DATA_ROOT}/article-digest.md` के proof points का संदर्भ लें।
 - **Draft responses (Block G) में:** पहले response में transition narrative डालें।
 - **जब offer "entrepreneurial", "autonomy", "builder", "end-to-end" mention करे:** यह differentiator #1 है। Match weight बढ़ाएं।
 
@@ -107,7 +110,7 @@ Profile को **"Demonstrable practice वाले Technical Builder"** के
        url: "https://yourwebsite.dev/demo"
        password: "demo-2026"
        when_to_share: "LLMOps, AI Platform, Observability roles"
-     users/{USER}/config/profile.yml -> narrative.proof_points और narrative.dashboard से पढ़ें -->
+     {DATA_ROOT}/config/profile.yml -> narrative.proof_points और narrative.dashboard से पढ़ें -->
 
 यदि candidate के पास live demo / dashboard है (profile.yml जाँचें), तो relevant applications में access offer करें।
 
@@ -165,7 +168,7 @@ Profile को **"Demonstrable practice वाले Technical Builder"** के
 
 ### Location Policy
 
-<!-- [कस्टमाइज़ करें] अपनी स्थिति के अनुसार adapt करें। users/{USER}/config/profile.yml -> location से पढ़ें -->
+<!-- [कस्टमाइज़ करें] अपनी स्थिति के अनुसार adapt करें। {DATA_ROOT}/config/profile.yml -> location से पढ़ें -->
 
 **Forms में:**
 - Binary "क्या आप on-site हो सकते हैं?" questions: profile.yml में वास्तविक availability के अनुसार जवाब दें
@@ -188,7 +191,7 @@ Profile को **"Demonstrable practice वाले Technical Builder"** के
 ### कभी नहीं
 
 1. Experience या metrics fabricate करना
-2. `users/{USER}/cv.md` या portfolio files modify करना
+2. `{DATA_ROOT}/cv.md` या portfolio files modify करना
 3. Candidate की तरफ से applications submit करना
 4. Generated messages में phone number share करना
 5. Market से नीचे compensation recommend करना
@@ -199,7 +202,7 @@ Profile को **"Demonstrable practice वाले Technical Builder"** के
 ### हमेशा
 
 0. **Cover letter:** यदि form allow करे, हमेशा include करें। Same design वाला PDF। Offer की lines, proof points पर mapped। Max 1 page।
-1. Offer evaluate करने से पहले `users/{USER}/cv.md` और `users/{USER}/article-digest.md` (यदि मौजूद हो) पढ़ें
+1. Offer evaluate करने से पहले `{DATA_ROOT}/cv.md` और `{DATA_ROOT}/article-digest.md` (यदि मौजूद हो) पढ़ें
 1b. **हर session का पहला evaluation:** `node cv-sync-check.mjs` via Bash run करें। Alerts पर candidate को सूचित करें
 2. Role का archetype detect करें और framing adapt करें
 3. Matching करते समय CV की exact lines quote करें
@@ -219,7 +222,7 @@ Profile को **"Demonstrable practice वाले Technical Builder"** के
 | WebSearch | Compensation research, trends, company culture, LinkedIn contacts, offer fallback |
 | WebFetch | Static pages से offers extract करने के लिए fallback |
 | Playwright | Verify if offers are active (browser_navigate + browser_snapshot), SPAs से offers extract करें। **Critical: कभी 2+ agents Playwright के साथ parallel में नहीं — वे same browser instance share करते हैं** |
-| Read | users/{USER}/cv.md, users/{USER}/article-digest.md, cv-template.html |
+| Read | {DATA_ROOT}/cv.md, {DATA_ROOT}/article-digest.md, cv-template.html |
 | Write | PDF के लिए temporary HTML, reports .md, `batch/tracker-additions/` में tracker की TSV files (`applications.md` को सीधे कभी नहीं) |
 | Edit | Reports और अन्य generated content में सुधार। Tracker table को सीधे कभी edit न करें: नई rows TSV के रूप में जोड़ें और `node merge-tracker.mjs` से merge करें, status और notes के बदलाव `node set-status.mjs` से करें |
 | Bash | `node generate-pdf.mjs`, `node merge-tracker.mjs`, `node set-status.mjs` |

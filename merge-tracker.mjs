@@ -651,8 +651,8 @@ export async function mergeTracker(options = {}) {
    * @param {number} oldScore - Score currently on the row.
    * @param {number} newScore - Score from the addition.
    * @param {string} [extraMarker] - Appended to the re-eval marker, before any
-   *   incoming notes. Used by the downgrade path to record the superseded report
-   *   (#2411). It rides on the marker rather than on `addition.notes` so that the
+   *   incoming notes. Records the new evaluation link while retaining the primary
+   *   report identity. It rides on the marker rather than on `addition.notes` so that the
    *   repeat detection below keeps comparing the user's own text against the
    *   user's own text — a generated fragment in that comparison would make every
    *   downgrade look like a new note and defeat it.
@@ -2147,37 +2147,22 @@ export async function mergeTracker(options = {}) {
         // merged/ as if it had landed (#2411). Equal scores write through too, since
         // the notes and report link are still fresher than what the row holds.
         //
-        // Because the fuzzy matcher can mis-pair genuinely different roles (see
-        // role-matcher.mjs — "Senior" is a stopword and short tokens are dropped), a
-        // downgrade records the superseded report number so a bad match stays
-        // recoverable from the tracker alone. mergeNotes() keeps the existing cell
-        // verbatim and first, so a second downgrade preserves the earlier marker
-        // rather than overwriting it.
+        // Preserve the row's primary report/PDF identity. Link the new evaluation
+        // in Notes so its revised score remains traceable after the TSV is archived.
         const downgrade = newScore < oldScore;
-        const oldReportNum = extractReportNum(duplicate.report, duplicate.notes);
-        const supersededNote = '';
+        const oldReportNum = extractReportNum(duplicate.report, '');
+        const reevaluationNote = oldReportNum && reportNum && String(reportNum) !== String(oldReportNum ?? '')
+          ? `Re-eval report ${addition.report} (${addition.score})` : '';
 
         console.log(
           `${downgrade ? '🔽' : '🔄'} Update: #${duplicate.num} ${addition.company} — ${addition.role} (${oldScore}→${newScore})`
           + (downgrade ? ' — DOWNGRADE, re-eval scored lower' : ''),
         );
-        // The PDF flag describes THE ROW'S REPORT, and this branch replaces that
-        // report link. Inheriting duplicate.pdf across a report change carried the
-        // superseded report's ✅ onto the new one: the row then claimed a tailored
-        // PDF exists for a report that has none, and the only PDF on disk belonged
-        // to the evaluation that was just superseded. Fall back to the existing
-        // flag only when the report is unchanged; when it changes, the manifest is
-        // the sole authority (#2594).
-        // "different, INCLUDING one-side-absent". Requiring both to be truthy meant
-        // a row whose report cell is `—` had oldReportNum === null, so reportChanged
-        // was falsy and the stale ✅ was inherited exactly as before this fix — and a
-        // `—` row with a ✅ is ordinary, it is what a tracker entry added before its
-        // evaluation looks like. Both absent stays "unchanged", which is correct.
-        const reportChanged = String(reportNum ?? '') !== String(oldReportNum ?? '');
+        // PDF readiness describes the retained primary report, not the new evaluation.
         const retainedReportNum = oldReportNum || reportNum;
         const pdf = retainedReportNum && pdfIndex.has(String(retainedReportNum))
           ? '✅'
-          : duplicate.pdf;
+          : oldReportNum ? duplicate.pdf : addition.pdf;
         const updatedLine = buildRow({
           num: duplicate.num, date: addition.date,
           // A corporate-form match (#3665) pairs the row with a VARIANT spelling of
@@ -2197,8 +2182,8 @@ export async function mergeTracker(options = {}) {
           via: addition.via || duplicate.via || '—',
           location: addition.location || duplicate.location || '—',
           score: addition.score, status: duplicate.status, pdf,
-          report: duplicate.report || addition.report,
-          notes: mergeNotes(duplicate.notes, addition, oldScore, newScore, supersededNote),
+          report: oldReportNum ? duplicate.report : addition.report,
+          notes: mergeNotes(duplicate.notes, addition, oldScore, newScore, reevaluationNote),
           // Preserve the row's unmapped custom-column cells across the rebuild.
           raw: duplicate.raw,
           // Carry the key forward. Without this the update path rewrites the row

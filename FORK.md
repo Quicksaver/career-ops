@@ -11,6 +11,20 @@ Generated from:
 
 The active sections also include the subsequent runner compatibility repairs in the current working tree. The refs and counts describe the committed snapshot above; uncommitted and new files are excluded from those counts. Refresh these values after the next upstream merge.
 
+## Reviewed compatibility repairs
+
+The full fork review adds production-boundary checks beyond the original runner fixtures:
+
+- Liveness now exposes the JSON interface the coordinator consumes. Expiry closes only the exact posting's Evaluated row, with a tracker snapshot precondition; later application states remain intact.
+- Verification snapshots and repair planning occur under the tracker lock. Saved reviews bind to the selected user, root, tracker, and current evidence; field-specific patches cannot alter unrelated cells. Manual duplicate decisions remain binding across overlapping groups and resumptions. Resumed action results require matching input hashes, and orphan restoration reserves report IDs through the shared allocator.
+- Reviewed verification and batch processing share authoritative ownership. Native worker launchers stop and drain descendant processes before timeout recovery or releasing ownership. Explicit manual JD text survives missing local captures, completed scores must agree across artifacts, and failed final results cannot become recovered completions.
+- Scans reopen only eligible pre-application rows after a matching live rediscovery, preserve recorded URLs and evaluation dates, write the canonical transition ledger under the tracker transaction, and use liveness before reopening when requested. Authenticated scans share canonical queue/history admission and persist missing-JD holds. HTML provider shape changes fail visibly, optional browser subresources do not abort an otherwise valid board, and pagination/categories retain posting identity.
+- Web workers load modes, templates, executable scripts, and shared locking code from the system checkout while keeping facts, tracker writes, PDFs, and manifests beneath the selected user root. Explicit data-root and marker layouts are supported. Dashboard refreshes retain report metadata and date ordering; posting URLs outrank company fallbacks. Dashboard actions carry the validated selected user even when its data folder has another name, and a per-user binary takes precedence over the working directory when inferring its owner.
+- Answer reads require user context and contained report paths. CV outputs reject symlink escapes, LaTeX arguments resolve the user before positional parsing, template defaults resolve the current profile lazily, and plugin management uses system templates with per-user installations and consent records. Reevaluations preserve the primary tracker/report identity and link the newer evaluation in Notes; reportless rows receive their first report link.
+- Agent instructions consistently resolve the user data root, local JD references, brief files, and tracker-addition links. Updater template preservation reads each configured user's profile and preserves templates from the system checkout. User-data guards permit only exact system scaffolds and named batch modules.
+
+Validation uses disposable fictional users and offline provider/worker fixtures. Paid production evaluations, real providers, and user datasets are outside this review's validation scope. Windows process-tree and Git Bash behavior are exercised natively; POSIX-specific process-group tests require a POSIX host.
+
 ## Merge Policy
 
 Upstream changes are the baseline. When merging future `upstream/main`, keep the new upstream behavior by default and adapt the customizations below around it.
@@ -370,7 +384,7 @@ Conflict notes from this merge:
 - `modes/apply.md`: adopted upstream's persistent Application Answers workflow and Section H wording while keeping searches, CV reads, tracker updates, and example commands user-scoped under `users/{USER}/...`.
 - `application-answers.mjs`: adopted upstream's additive report-section formatter/upsert helper, then wrapped CLI writes in the fork's active-user resolver so relative report paths resolve under `users/{USER}` and absolute report paths outside the active user root are rejected.
 - `scan-ats-full.mjs`: adopted upstream `--seeds` VC portfolio discovery and `runSeedScan(...)`, then kept the fork's `configureScanUserPaths(...)`, `CAREER_OPS_USERS_DIR`, and user-scoped portal/cache/pipeline/history routing. The startup summary now includes both the user id and selected ATS/seed sources.
-- `update-system.mjs`: added upstream `application-answers.mjs` and `seeds/` to system path coverage while preserving fork-only system entries such as `extract-jd.mjs`, `extract-pdf.mjs`, `scan-auth.mjs`, and `scan-auth/linkedin.mjs`.
+- `update-system.mjs`: added upstream `application-answers.mjs` and `seeds/` to system path coverage while preserving fork-only authenticated scanning entries. The hardcoded posting extraction helpers were subsequently removed.
 - `providers/higheredjobs.mjs`, `templates/portals.example.yml`, `docs/SUPPORTED_JOB_BOARDS.md`, and `test-all.mjs`: the follow-up upstream HigherEdJobs commit merged cleanly with no conflict. No active-user adaptation was required because the provider is stateless and only reads the configured portal entry passed by `scan.mjs`; the example remains a system-layer template for copying into `users/{USER}/portals.yml`.
 - `.github/workflows/test.yml`, `liveness-api.mjs`, and `test-all.mjs`: the Ashby liveness and CI follow-up merged cleanly with no conflict. No user-path adaptation was required because `liveness-api.mjs` is stateless URL classification/fetch code, and the new tests mock `globalThis.fetch` rather than reading user-layer files.
 - `plugins.mjs`, `plugins/_engine.mjs`, `docs/PLUGIN_REVIEW.md`, `docs/PLUGINS.md`, `plugins/README.md`, and `test-all.mjs`: combined upstream's seed/successor model and plugin registry docs with the fork's user-scoped plugin root. `resolveSuccessorIds(root, userRoot)` now reads the system registry from the repo but checks `plugins.local` and `plugins.lock` under the active user root; `plugins.mjs list/run/skill` passes that override set into discovery, and tests cover user-root successor resolution.
@@ -642,7 +656,7 @@ What this customizes:
 Future merge notes:
 
 - Keep the prompt, final JSON schema, artifact validator, runner gate, and tracker merge guard synchronized. Adding or renaming a cross-artifact field in only one layer weakens the completion contract or causes every worker to fail.
-- Do not simplify the TSV rule to exactly nine fields. The first nine columns are required; tagged `via=` metadata is part of the integrity model for agency and confidential listings.
+- Do not simplify the TSV rule to exactly nine fields. Batch additions require the canonical header and posting URL identity. Legacy standalone headerless rows remain supported by the merger. Tagged `via=` metadata is part of the integrity model for agency and confidential listings.
 - Keep deterministic repair evidence-preserving and one-directional: a missing tracker Via may be copied from the report, but the validator must not invent a Via, overwrite a conflicting value, or mutate the report to match the tracker.
 - Keep reservation sentinels out of report discovery. Do not reintroduce a first-match `NNN-*.md` lookup: directory ordering is not a completion contract, and selecting `NNN-RESERVED.md` falsely reports a missing Machine Summary even when the worker's real report is valid.
 - Preserve pending TSVs on merge integrity failures so operators can inspect or retry them. Do not silently discard, merge, or renumber a blocked confidential-employer row.
@@ -756,7 +770,8 @@ What this customizes:
 - `scan.mjs` parses tracker rows by header names, splits company/title dedupe state into active, closed, and reopenable rows, and keeps the exact company/title key as the duplicate identity for this behavior.
 - If a provider returns a live posting whose company/title matches a `Closed` row and no normal active row exists, the scanner counts it as a duplicate, does not append it to `users/{USER}/data/pipeline.md`, and reopens the original row in `users/{USER}/data/applications.md` by setting status to canonical `Evaluated`.
 - Reopening updates the original tracker row's date to the scan date and appends `Reopened {YYYY-MM-DD}: duplicate live posting found at {URL}` to the notes column. The row number, score, PDF marker, report link, company, and role are preserved.
-- If the scanner later finds a duplicate of an already reopened duplicate, it still updates the same original tracker row and appends the newer URL instead of creating a second row or ignoring the fresher posting.
+- If the scanner later finds another URL for an already reopened opportunity, it appends that URL only while the row remains Evaluated, preserving its original date. Applied, Responded, Assessment, Interview, Offer, Hired, Rejected, Discarded and SKIP decisions remain intact. An already-recorded or expired URL does not reopen the row. Requested liveness verification includes reopening candidates and requires an active verdict before reopening.
+- Reopening uses the shared tracker transaction, rechecks the current status under the lock, and records only applied URL changes in scan history. Actual Closed-to-Evaluated transitions enter the status ledger with the existing `correction` source and a scanner note.
 - Reopened duplicate URLs are written to `users/{USER}/data/scan-history.tsv` with status `reopened_closed_duplicate`, so URL enrichment and audit trails can see the fresh listing without turning it into a new application.
 - Dashboard parsing extracts reopened URLs from tracker notes and uses the last reopened URL as the current job URL. This intentionally beats stale `**URL:**` values in old reports whose original posting has closed.
 - Regression coverage lives in `test-all.mjs` for repeated scanner duplicate reopen writes and in `dashboard/internal/data/career_test.go` for latest-reopened-URL selection.
@@ -1224,7 +1239,7 @@ What this customizes:
 - Preserves `verify-pipeline.mjs` as the broad raw detector: every error and warning is still emitted. `verify-runner.mjs` filters only findings whose level, stable ID, and complete canonical payload SHA-256 match a prior `mark_seen` record, then reviews every remaining finding, applies supported deterministic decisions, and runs the raw verifier again for up to three passes.
 - Stores verified false positives, legitimate exceptions, and informational findings in the append-only user ledger `data/verification-reviews.jsonl`. An exact unchanged finding no longer resurfaces in reviewed verification, while any changed message/details payload gets a new fingerprint and is reviewed again. Raw verification never hides these findings.
 - Resolves confirmed duplicate tracker/report groups through the existing duplicate resolver, which validates exact candidate partitions, merges tracker history, archives losing reports/output artifacts, backs up state, and records `data/duplicate-resolutions.jsonl`.
-- Preserves duplicate lifecycle order as `Hired > Offer > Interview > Responded > Rejected > Applied > Evaluated > Skip/Closed`. The most advanced row becomes the keeper together with its existing tracker ID, report, HTML, PDF, and links. Equal-status copies proven to be the same canonical posting keep the most recent complete evaluation, then the highest ID, without escalating a safe identity tie to human review. Losing notes are merged and losing artifacts are backed up and archived. The ledger records the reviewer keeper, effective lifecycle keeper, and override.
+- Preserves duplicate lifecycle order as `Hired > Offer > Interview > Assessment > Responded > Rejected > Applied > Evaluated > Skip/Closed/Discarded`. The most advanced row becomes the keeper together with its existing tracker ID, report, HTML, PDF, and links. Equal-status copies proven to be the same canonical posting keep the most recent complete evaluation, then the highest ID, without escalating a safe identity tie to human review. Losing notes are merged and losing artifacts are backed up and archived. The ledger records the reviewer keeper, effective lifecycle keeper, and override.
 - Adds deterministic orphan handling: restore a valid lost tracker row from a matching preserved `batch/tracker-additions/merged/*.tsv` when available, or reconstruct date/company/role/score/status/Via from a complete verified report when the historical TSV no longer exists or its reusable batch slot now contains another job. The applier revalidates the TSV row number and linked report at mutation time, falls back without failing the run when provenance is stale or malformed, and records the requested TSV, actual source, and fallback reason in `data/verification-actions.jsonl`. An occupied report number receives a fresh ID and its report plus matching HTML/PDF/TeX artifacts are renamed as one backed-up transaction. Confirmed redundant/obsolete orphan reports and matching output artifacts are archived. Bounded tracker patches cover company, Via, canonical status, score, and report-link findings. These actions use timestamped backups.
 - Makes orphan action metadata deterministic after the reviewer chooses the outcome. For `archive_orphan`, `verify-runner.mjs` derives `report_file` from the raw verifier finding and fixes `tracker_tsv` to `null`; the model cannot omit the required object or redirect an archive to another path. Restore report paths are fixed to verifier evidence and optional tracker TSV paths are canonicalized from project-relative `users/{USER}/batch/...` output to the user-root-relative `batch/tracker-additions/merged/*.tsv` contract before semantic validation. A null TSV explicitly selects report-derived restoration; the model never selects the resulting number or rename targets. The restore parser also accepts the two historical merged artifacts whose separators were stored as literal `\t` text; current batch artifact validation continues to reject that malformed representation, so this compatibility path does not weaken new writes.
 - Makes duplicate action metadata type-specific before checkpointing. Tracker duplicate findings retain only `keeper_tracker_num` and `duplicate_tracker_nums`; report duplicate findings retain only `keeper_report_file` and `duplicate_report_files`. Redundant cross-type fields are mechanically cleared, report paths are canonicalized to the exact `reports/...` candidates emitted by the verifier, exact warning candidates are semantically revalidated, and tracker/report plans with the same exact candidate report set must still agree on canonical identity. A broader report warning may contain orphaned reports beyond a tracker-backed subset; its whole-group decision therefore does not override an evidence-backed decision for that exact subset. This prevents a valid duplicate judgment from failing late because a reviewer copied the combined identity or user-root paths into both warning types.
@@ -1308,25 +1323,9 @@ Future merge notes:
 - Preserve the data-contract intent even if upstream reorganizes user-layer folders.
 - If upstream starts tracking a generic story-bank template, keep the template outside ignored user-specific paths.
 
-## Utility Extraction Scripts
+## Posting extraction
 
-The fork currently includes two small Playwright extraction helpers.
-
-Files:
-
-- `extract-jd.mjs`
-- `extract-pdf.mjs`
-
-What this customizes:
-
-- `extract-jd.mjs` opens a hardcoded English Job Search clickout URL and prints the final page text.
-- `extract-pdf.mjs` opens a hardcoded PDF URL and tries to read browser-rendered PDF text.
-
-Future merge notes:
-
-- Treat these as local debugging utilities, not core product surface.
-- Remove or replace them if upstream adds generic JD/PDF extraction commands.
-- If keeping them long-term, make them parameterized instead of hardcoded.
+The personal `extract-jd.mjs` and `extract-pdf.mjs` helpers were removed because they navigated to hardcoded postings on every invocation. Use upstream `fetch-jd.mjs` or `browser-extract.mjs` with an explicit target.
 
 ## Repository Icon Synchronization
 

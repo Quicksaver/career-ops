@@ -70,7 +70,7 @@ import { childFailureExcerpt } from './lib/failure-excerpt.mjs';
 import { copyBatchOwnership } from './tests/copy-batch-ownership.mjs';
 import { SCRATCH_PREFIX, markScratchOwner, sweepScratchDirs } from './lib/scratch-dirs.mjs';
 
-const TEST_USERS_DIR = mkdtempSync(join(tmpdir(), 'career-ops-users-'));
+import { TEST_USERS_DIR } from './tests/user-fixture.mjs';
 const TEST_USER_ENV = {
   ...process.env,
   CAREER_OPS_USERS_DIR: TEST_USERS_DIR,
@@ -2083,6 +2083,142 @@ try {
   fail(`Liveness classification tests crashed: ${e.message}`);
 }
 
+// Archive-specific offline browser egress wiring, restored from upstream.
+try {
+  const { archiveUrl, installEgressGuard } = await import(
+    pathToFileURL(join(ROOT, 'archive-posting.mjs')).href
+  );
+  const { setHostResolver } = await import(
+    pathToFileURL(join(ROOT, 'liveness-browser.mjs')).href
+  );
+
+  const restoreOfflineArchiveResolver = setHostResolver(async () => ['93.184.216.34']);
+  try {
+  // Stop each run the moment navigation starts: everything after goto() is PDF
+  // rendering and a writeFile into jds/, which these assertions don't need and
+  // must not perform.
+  const STOP = 'archive-guard-test-stop';
+
+  // Records what the guard did, and never lets the flow reach page.pdf().
+  function makeMockBrowser({ landedUrl = 'https://example.com/job/1' } = {}) {
+    const state = { routeCallback: null, contextCreated: false, closed: false };
+    const context = {
+      async route(pattern, callback) {
+        state.pattern = pattern;
+        state.routeCallback = callback;
+      },
+      async newPage() {
+        return {
+          async goto() {
+            if (state.stopAtGoto) throw new Error(STOP);
+            return { status: () => 200 };
+          },
+          url: () => landedUrl,
+          async waitForTimeout() { throw new Error(STOP); },
+          async title() { return ''; },
+          async $eval() { return ''; },
+        };
+      },
+      async close() { state.closed = true; },
+    };
+    const browser = {
+      async newContext() {
+        state.contextCreated = true;
+        return context;
+      },
+    };
+    return { browser, state };
+  }
+
+  // Drives a registered route handler and reports the verdict it reached.
+  async function runGuard(requestUrl) {
+    const { browser, state } = makeMockBrowser();
+    state.stopAtGoto = true;
+    await archiveUrl(browser, 'https://example.com/job/1').catch(() => {});
+    if (!state.routeCallback) return { registered: false };
+    let verdict = null;
+    await state.routeCallback({
+      request: () => ({ url: () => requestUrl }),
+      abort: async (code) => { verdict = { action: 'abort', code }; },
+      continue: async () => { verdict = { action: 'continue' }; },
+    });
+    return { registered: true, verdict, pattern: state.pattern };
+  }
+
+  // 1. Pre-navigation refusal — an obviously-internal target must not reach
+  //    Playwright at all, so no context is ever created.
+  const { browser: preBrowser, state: preState } = makeMockBrowser();
+  let preError = null;
+  await archiveUrl(preBrowser, 'http://169.254.169.254/latest/meta-data/')
+    .catch((err) => { preError = err; });
+  if (preError && /restricted destination/.test(preError.message) && !preState.contextCreated) {
+    pass('archive-posting refuses a private-IP target before opening a browser context');
+  } else {
+    fail(`archive-posting pre-navigation guard failed: error=${preError?.message ?? 'none'}, contextCreated=${preState.contextCreated}`);
+  }
+
+  // 2. The guard is registered on the context for every request, not just the
+  //    page's first hop — a page-scoped route wouldn't cover the whole flow.
+  const registration = await runGuard('https://example.com/assets/logo.png');
+  if (registration.registered && registration.pattern === '**/*') {
+    pass('archive-posting registers the egress guard on the context for all requests');
+  } else {
+    fail(`archive-posting did not register a context-wide route: ${JSON.stringify(registration)}`);
+  }
+
+  // 3. Legitimate subresources still go through — a guard that blocks
+  //    everything would pass a naive block-only test while breaking archiving.
+  if (registration.verdict?.action === 'continue') {
+    pass('archive-posting egress guard allows legitimate public requests');
+  } else {
+    fail(`archive-posting egress guard blocked a legitimate request: ${JSON.stringify(registration.verdict)}`);
+  }
+
+  // 4. Redirect hop straight to a literal private address.
+  const literalHop = await runGuard('http://10.0.0.5/internal');
+  if (literalHop.verdict?.action === 'abort' && literalHop.verdict.code === 'blockedbyclient') {
+    pass('archive-posting egress guard blocks a redirect hop to a literal private IP');
+  } else {
+    fail(`archive-posting egress guard let a private-IP hop through: ${JSON.stringify(literalHop.verdict)}`);
+  }
+
+  // 5. The case the literal-host check cannot see: a public-looking hostname
+  //    that resolves into loopback. Without the DNS layer this hop is allowed,
+  //    which is the whole reason validateUrlSecurity is reused here.
+  const restoreArchiveResolver = setHostResolver(async (hostname) => (
+    hostname === 'ssrf-blocked-host.local' ? ['127.0.0.1'] : ['93.184.216.34']
+  ));
+  try {
+    const dnsHop = await runGuard('http://ssrf-blocked-host.local/sensitive-internal');
+    if (dnsHop.verdict?.action === 'abort' && dnsHop.verdict.code === 'blockedbyclient') {
+      pass('archive-posting egress guard blocks a hostname that resolves to loopback');
+    } else {
+      fail(`archive-posting egress guard missed a DNS-resolved private target: ${JSON.stringify(dnsHop.verdict)}`);
+    }
+  } finally {
+    restoreArchiveResolver();
+  }
+
+  // 6. Landed-URL re-check after navigation. A first-hop-only check is the
+  //    classic miss, so the settled URL is asserted too.
+  const { browser: landedBrowser } = makeMockBrowser({ landedUrl: 'http://169.254.169.254/latest/meta-data/' });
+  let landedError = null;
+  await archiveUrl(landedBrowser, 'https://example.com/job/1')
+    .catch((err) => { landedError = err; });
+  if (landedError && /after redirect/.test(landedError.message)) {
+    pass('archive-posting refuses to render a page that landed on a private address');
+  } else {
+    fail(`archive-posting landed-URL guard failed: ${landedError?.message ?? 'no error'}`);
+  }
+
+  if (typeof installEgressGuard !== 'function') {
+    fail('archive-posting does not export installEgressGuard');
+  }
+  } finally { restoreOfflineArchiveResolver(); }
+} catch (e) {
+  fail(`archive-posting egress guard tests crashed: ${e.message}`);
+}
+
 // ── 6. CUSTOM PROVIDER TRANSPORT ────────────────────────────────
 
 console.log('\n6. Custom provider transport');
@@ -3440,7 +3576,7 @@ const markersAppearInOrder = (text, markers) => {
   return true;
 };
 if (
-  shared.includes('| _custom.md | `modes/_custom.md` (if exists) |') &&
+  shared.includes('| _custom.md | `{DATA_ROOT}/modes/_custom.md` (if exists) |') &&
   markersAppearInOrder(shared, [
     'Read _profile.md AFTER this file',
     'Read _custom.md (if it exists) AFTER _profile.md',
@@ -8489,7 +8625,7 @@ try {
       '| 7 | 2026-06-01 | Acme | Platform Engineer | 4.1/5 | Closed | ❌ | [7](../reports/007-acme.md) | posting expired |\n' +
       '| 8 | 2026-06-10 | Beta | Data Engineer | 4.0/5 | Evaluated | ❌ | [8](../reports/008-beta.md) | Reopened 2026-06-10: duplicate live posting found at https://jobs.example.com/beta-old |\n');
     configureScanUserPaths({ userRoot: reopenTmp });
-    const reopened = reopenClosedDuplicateApplications([
+    const reopened = await reopenClosedDuplicateApplications([
       {
         url: 'https://jobs.example.com/platform-engineer-new',
         company: 'Acme',
@@ -8515,7 +8651,7 @@ try {
       tracker.includes('| 7 | 2026-06-28 | Acme | Platform Engineer | 4.1/5 | Evaluated |') &&
       tracker.includes('Reopened 2026-06-28: duplicate live posting found at https://jobs.example.com/platform-engineer-new') &&
       tracker.includes('Reopened 2026-06-28: duplicate live posting found at https://jobs.example.com/platform-engineer-newer') &&
-      tracker.includes('| 8 | 2026-06-28 | Beta | Data Engineer | 4.0/5 | Evaluated |') &&
+      tracker.includes('| 8 | 2026-06-10 | Beta | Data Engineer | 4.0/5 | Evaluated |') &&
       tracker.includes('Reopened 2026-06-28: duplicate live posting found at https://jobs.example.com/beta-new') &&
       !tracker.includes('| Closed |')
     ) {
@@ -13186,8 +13322,8 @@ try {
     fail(`re-eval changed the stable report/PDF identity: ${staleRow.trim()}`);
   }
 
-  // The report-less variant follows the same identity rule: re-evaluation does
-  // not introduce a second report ID into an established tracker row.
+  // A reportless row acquires its first report without changing its tracker ID.
+  // A prior PDF flag with no report does not establish PDF readiness for that report.
   const dashRow = '| 4 | 2026-01-04 | Acme | Backend Engineer, Payments | 4.5/5 | Evaluated | ✅ | — | backfilled |';
   const dashFlag = runPdfSyncFixture(
     'reeval-dash',
@@ -13196,10 +13332,10 @@ try {
     [reevalTsv(2)],
   );
   const dashResult = dashFlag.merged.split('\n').find((l) => l.startsWith('| 4 ')) || '';
-  if (dashFlag.result !== null && /\| ✅ \| — \|/.test(dashResult)) {
-    pass('a report-less row keeps its existing report/PDF identity on re-eval');
+  if (dashFlag.result !== null && /\| ❌ \| \[2\]\(.*reports\/002-/.test(dashResult)) {
+    pass('a report-less row keeps its tracker ID and gains its first report with verified PDF readiness');
   } else {
-    fail(`re-eval changed a report-less row identity: ${dashResult.trim()}`);
+    fail(`re-eval failed to backfill the first report: ${dashResult.trim()}`);
   }
 
   const keptFlag = runPdfSyncFixture(
@@ -17790,7 +17926,7 @@ console.log('\n20. Path resolution layer and overrides');
 try {
   const { getCareerOpsRoot } = await import(pathToFileURL(join(ROOT, 'path-resolver.mjs')).href);
 
-  // 1. Unset env vars should resolve to codebase root (ROOT)
+  // 1. Without data-root overrides, resolve the explicitly selected fixture user
   const originalRoot = process.env.CAREER_OPS_ROOT;
   const originalDataDir = process.env.CAREER_OPS_DATA_DIR;
   delete process.env.CAREER_OPS_ROOT;
@@ -17798,10 +17934,10 @@ try {
 
   try {
     const defaultRoot = getCareerOpsRoot();
-    if (defaultRoot === join(process.env.CAREER_OPS_USERS_DIR, process.env.CAREER_OPS_USER)) {
-      pass('getCareerOpsRoot() defaults to codebase root when environment variables are unset');
+    if (defaultRoot === join(TEST_USERS_DIR, 'test')) {
+      pass('getCareerOpsRoot() defaults to the selected fixture user when data-root overrides are unset');
     } else {
-      fail(`getCareerOpsRoot() returned ${defaultRoot}, expected ${ROOT}`);
+      fail(`getCareerOpsRoot() returned ${defaultRoot}, expected ${join(TEST_USERS_DIR, 'test')}`);
     }
 
     // 2. CAREER_OPS_ROOT should override the resolved path

@@ -42,7 +42,6 @@ import { getCareerOpsRoot } from './path-resolver.mjs';
 
 // The USER's data root, not this file's directory — same defect, same fix as
 // set-status.mjs above it in this change.
-const DATA_ROOT = getCareerOpsRoot();
 
 // LOCK_TIMEOUT is not destructured here — that exit path is raised inside
 // acquireTrackerLockForCli() itself (tracker-utils.mjs), via CLI_EXIT.LOCK_TIMEOUT.
@@ -57,12 +56,14 @@ const USAGE = `Usage: node mark-pdf-ready.mjs <report#> [--dry-run] [--json]
 // ── argument parsing ─────────────────────────────────────────────
 
 let userContext;
+if (process.argv.slice(2).includes('--help') || process.argv.slice(2).includes('-h')) { console.log(USAGE); process.exit(0); }
 try {
   userContext = getUserContext(process.argv.slice(2), { requireUser: !process.env.CAREER_OPS_TRACKER });
 } catch (err) {
   printUserContextErrorAndExit(err);
 }
 const rawArgs = userContext.args;
+const DATA_ROOT = getCareerOpsRoot();
 const positional = [];
 const flags = { dryRun: false, json: false };
 

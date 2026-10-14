@@ -52,7 +52,7 @@
 **特殊情況處理：**
 - **LinkedIn**：先遵守 AGENTS.md → **LinkedIn JD loading guard (#4121)**，跨模式共用一次瀏覽器嘗試。正文仍為載入佔位或無法讀取時，不再導覽重試；保留原始 URL，標記為 `[!]`，請求職者貼上 JD 全文或提供合規的雇主/ATS 來源。載入失敗不代表職缺關閉。
 - **PDF 檔案**：若 URL 直接指向一份 PDF 文件，使用 Read 工具讀取該二進位檔案。
-- **本機檔案前綴 `local:`**：若是本機路徑，直接讀取對應檔案。例如：`local:users/{USER}/jds/linkedin-pm-ai.md` 代表讀取本機的 `users/{USER}/jds/linkedin-pm-ai.md`。
+- **本機檔案前綴 `local:`**：若是本機路徑，直接讀取對應檔案。例如：`local:jds/linkedin-pm-ai.md` 代表讀取本機的 `users/{USER}/jds/linkedin-pm-ai.md`。
 
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import * as artifactPath from 'node:path';
+import { pathIsInsideCanonical } from './tracker-utils.mjs';
 
 // Deterministic HTML CV renderer (#557 — the HTML twin of build-cv-latex.mjs).
 //
@@ -951,8 +951,7 @@ async function runMarkdown(args) {
   const absInput = resolve(inputPath);
   const absOutput = resolve(outputPath);
   const activeOutputRoot = getCareerOpsRoot();
-  const activeOutputRelative = artifactPath.relative(activeOutputRoot, absOutput);
-  if (!activeOutputRelative || activeOutputRelative === '..' || activeOutputRelative.startsWith(`..${artifactPath.sep}`) || artifactPath.isAbsolute(activeOutputRelative)) {
+  if (absOutput === resolve(activeOutputRoot) || !pathIsInsideCanonical(absOutput, activeOutputRoot)) {
     throw new Error(`Refusing to write outside the active user root: ${absOutput}`);
   }
   const templatePath = templateArg ? resolve(templateArg) : TEMPLATE_PATH;
@@ -1040,8 +1039,7 @@ async function main() {
   const absInput = resolve(inputPath);
   const absOutput = resolve(outputPath);
   const activeOutputRoot = getCareerOpsRoot();
-  const activeOutputRelative = artifactPath.relative(activeOutputRoot, absOutput);
-  if (!activeOutputRelative || activeOutputRelative === '..' || activeOutputRelative.startsWith(`..${artifactPath.sep}`) || artifactPath.isAbsolute(activeOutputRelative)) {
+  if (absOutput === resolve(activeOutputRoot) || !pathIsInsideCanonical(absOutput, activeOutputRoot)) {
     throw new Error(`Refusing to write outside the active user root: ${absOutput}`);
   }
   const templatePath = templateArg ? resolve(templateArg) : TEMPLATE_PATH;

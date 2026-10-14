@@ -87,7 +87,8 @@ test('Remote in Europe bounds details and falls back from unusable employer alte
     }});
     assert.equal(details,expected);
     assert.equal(jobs.length,2);
-    assert.equal(jobs[0].url,alternative.startsWith('https:')?alternative:'https://remoteineurope.com/job/1');
+    assert.equal(jobs[0].url,'https://remoteineurope.com/job/1');
+    if (expected) assert.equal(jobs[0].applyUrl, alternative);
     if(expected)assert.equal(jobs[0].description,'Build systems');
   }
 });
@@ -193,8 +194,8 @@ for (const [id, api, html] of [
     }});
     assert.equal(calls,1);
     if(id==='rustjobs') {
-      assert.equal(jobs[0].url,'https://employer.example/job');
-      assert.equal(jobs[0].sourceUrl,'https://rustjobs.dev/jobs/fixture');
+      assert.equal(jobs[0].url,'https://rustjobs.dev/jobs/fixture');
+      assert.equal(jobs[0].applyUrl,'https://employer.example/job');
       assert.equal(jobs[0].postedAt,Date.parse('2026-01-02'));
     } else assert.deepEqual(jobs,[]);
   });
@@ -245,4 +246,58 @@ test('Working Nomads retains list descriptions and publication dates',async()=>{
   const [job]=await workingnomads.fetch({name:'Fixture'},{fetchJson:async()=>[{title:'Engineer',url:'https://employer.example/job',description:'<p>Build systems</p>',pub_date:'2026-01-02'}]});
   assert.equal(job.description,'Build systems');
   assert.equal(job.postedAt,Date.parse('2026-01-02'));
+});
+
+test('Remote in Europe fetches every configured category from the original base', async () => {
+  const calls = [];
+  await fetchCustomProvider('remoteineurope', { name: 'Fixture', api: boards.remoteineurope, api_params: { category: ['programming', 'marketing'] } }, {
+    fetchText: async url => { calls.push(url); return '<p>No jobs found</p>'; },
+  });
+  assert.deepEqual(calls, ['https://remoteineurope.com/categories/programming', 'https://remoteineurope.com/categories/marketing']);
+});
+
+test('generic employer careers links preserve separate board posting identities', async () => {
+  const jobs = await fetchCustomProvider('devitjobs', { name: 'Fixture', api: boards.devitjobs }, ctx(async () => [
+    { name: 'Engineer', jobUrl: 'one', company: 'Fixture', redirectJobUrl: 'https://employer.example/careers' },
+    { name: 'Engineer', jobUrl: 'two', company: 'Fixture', redirectJobUrl: 'https://employer.example/careers' },
+  ]));
+  assert.deepEqual(jobs.map(job => job.url), ['https://devitjobs.uk/jobs/one', 'https://devitjobs.uk/jobs/two']);
+  assert.equal(jobs[0].applyUrl, 'https://employer.example/careers');
+});
+
+test('first-page parser failures differ from explicit no-results responses', async () => {
+  for (const id of ['itjobs', 'portalemprego', 'remoteineurope', 'jobsinenglish', 'makeitingermany']) {
+    const entry = { name: 'Fixture', api: boards[id] };
+    await assert.rejects(fetchCustomProvider(id, entry, { fetchText: async () => '<html>Unexpected redesign</html>' }), /Unsupported listing page/);
+    assert.deepEqual(await fetchCustomProvider(id, entry, { fetchText: async () => '<html>No jobs found</html>' }), []);
+  }
+});
+
+test('optional browser resource HTTP errors retain the page, while source XHR and guards fail it', async () => {
+  for (const [type, url, error, fatal] of [
+    ['script', 'https://cdn.example/script.js', { status: 404, body: 'missing' }, false],
+    ['stylesheet', 'https://cdn.example/theme.css', { status: 302, location: 'https://cdn.example/new.css' }, false],
+    ['xhr', 'https://rustjobs.dev/api/jobs', { status: 404 }, true],
+    ['script', 'https://cdn.example/blocked.js', { code: 'ECAREEROPS_BLOCKED_ADDRESS' }, true],
+  ]) {
+    let handler, fulfilled, aborted = false;
+    const assertTransport = await routeCustomBrowserRequests({ route: async (_pattern, fn) => { handler = fn; } }, {
+      fetchResponse: async () => { throw Object.assign(new Error('fixture transport error'), error); },
+    });
+    await handler({ request: () => ({ ...fakeRequest(url), resourceType: () => type, frame: () => ({ url: () => 'https://rustjobs.dev/' }) }),
+      fulfill: async value => { fulfilled = value; }, abort: async () => { aborted = true; } });
+    if (fatal) { assert.equal(aborted, true); assert.throws(assertTransport); }
+    else { assert.equal(fulfilled.status, error.status); assertTransport(); }
+  }
+});
+
+test('browser scripts and stylesheets do not consume the document/API probe budget', async () => {
+  let calls = 0;
+  const request = async () => { calls++; return new Response('fixture'); };
+  const { ctx: bounded, wasTripped } = boundedProbeCtx({ fetchJson: request, fetchText: request, fetchResponse: request });
+  for (let index = 0; index < 8; index++) await bounded.fetchResponse('https://example.com/script.js', { browserResourceType: 'script' });
+  for (let index = 0; index < 4; index++) await bounded.fetchResponse('https://example.com/', { browserResourceType: 'document' });
+  await assert.rejects(bounded.fetchResponse('https://example.com/api/jobs', { browserResourceType: 'xhr' }));
+  assert.equal(calls, 12);
+  assert.equal(wasTripped(), true);
 });

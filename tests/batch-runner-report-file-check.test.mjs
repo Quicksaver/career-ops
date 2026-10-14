@@ -11,7 +11,7 @@
 // failed even with its report on disk. merge-tracker.mjs then refused those
 // reports as possibly fabricated, so good evaluations were stranded.
 //
-// This test extracts the REAL has_report_file() out of batch/batch-runner.sh and
+// This test extracts the REAL find_report_for_num() out of batch/batch-runner.sh and
 // runs it in a bash with compgen disabled, rather than restating it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,9 +22,9 @@ import { tmpdir } from 'node:os';
 import { ROOT, getBash, rmSync } from './helpers.mjs';
 
 const SRC = readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf-8').replace(/\r\n/g, '\n');
-const FN = SRC.match(/^has_report_file\(\) \{\n[\s\S]*?\n\}\n/m);
+const FN = SRC.match(/^find_report_for_num\(\) \{\n[\s\S]*?\n\}\n/m);
 
-// Run has_report_file for `num` against a reports/ dir holding `files`, in a
+// Run find_report_for_num for `num` against a reports/ dir holding `files`, in a
 // bash where `compgen` does not exist. Returns the function's exit status.
 function check(files, num) {
   const root = mkdtempSync(join(tmpdir(), 'batch-report-check-'));
@@ -35,7 +35,7 @@ function check(files, num) {
       'enable -n compgen 2>/dev/null || true',
       `REPORTS_DIR=${JSON.stringify(root)}`,
       FN[0],
-      `if has_report_file ${JSON.stringify(num)}; then echo yes; else echo no; fi`,
+      `if [[ -n "$(find_report_for_num ${JSON.stringify(num)} || true)" ]]; then echo yes; else echo no; fi`,
     ].join('\n');
     const r = spawnSync(getBash(), ['-c', script], { encoding: 'utf8', timeout: 10000 });
     assert.ifError(r.error);
@@ -44,8 +44,8 @@ function check(files, num) {
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
-test('has_report_file is defined in batch-runner.sh', () => {
-  assert.ok(FN, 'could not find has_report_file() in batch/batch-runner.sh — this test needs updating');
+test('find_report_for_num is defined in batch-runner.sh', () => {
+  assert.ok(FN, 'could not find find_report_for_num() in batch/batch-runner.sh — this test needs updating');
 });
 
 test('batch-runner.sh does not call compgen', () => {

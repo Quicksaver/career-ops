@@ -86,7 +86,7 @@ export function postingIdentity(value) {
 
 export function allowedPostingIdentities(expectedUrl, userRoot, answersPath, user) {
   const allowed = new Set([postingIdentity(expectedUrl)].filter(Boolean));
-  if (userRoot && validLocal(expectedUrl, userRoot)) {
+  if (userRoot && validLocal(expectedUrl, userRoot) && existsSync(resolve(userRoot, expectedUrl.slice(6)))) {
     const text = readFileSync(resolve(userRoot, expectedUrl.slice(6)), 'utf8');
     const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
     if (frontmatter) {
@@ -181,6 +181,8 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
 
   const reportScore = report.score == null || clean(report.score) === '' ? NaN : typeof report.score === 'number' ? report.score : Number(report.score);
   const trackerScore = scoreNumber(tracker.score);
+  if (strictWorkflow && (!Number.isFinite(reportScore) || reportScore < 0 || reportScore > 5)) errors.push('completed report score must be finite and between 0 and 5');
+  if (strictWorkflow && (trackerScore === null || !Number.isFinite(trackerScore) || trackerScore < 0 || trackerScore > 5)) errors.push('completed tracker score must be a valid score between 0 and 5');
   if (Number.isFinite(reportScore) && trackerScore !== null && Math.abs(reportScore - trackerScore) > 0.0001) {
     errors.push(`tracker score ${tracker.score} disagrees with report score ${report.score}`);
   }
@@ -188,6 +190,8 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
   if (finalPath) {
     const final = JSON.parse(readFileSync(finalPath, 'utf8'));
     if (final.status === 'completed') {
+      if (typeof final.score !== 'number' || !Number.isFinite(final.score) || final.score < 0 || final.score > 5) errors.push('completed final JSON score must be finite and between 0 and 5');
+      if (Number.isFinite(reportScore) && final.score !== reportScore) errors.push('final JSON score disagrees with report');
       if (clean(final.company) !== reportCompany) errors.push('final JSON company disagrees with Machine Summary');
       if (clean(final.role) !== reportRole) errors.push('final JSON role disagrees with Machine Summary');
       if (!sameVia(final.via, reportVia)) errors.push('final JSON via disagrees with Machine Summary');
@@ -199,7 +203,6 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
         if (String(final.report_num) !== String(reportNum ?? tracker.num)) errors.push('final JSON number disagrees with reserved report number');
         if (!clean(final.report)) errors.push('completed final JSON must include the report path');
         if (final.id !== undefined && String(final.id) !== basename(trackerPath, '.tsv')) errors.push('final JSON job ID disagrees with tracker addition');
-        if (final.score !== undefined && Number.isFinite(reportScore) && final.score !== reportScore) errors.push('final JSON score disagrees with report');
         if ((final.pdf !== null) !== (tracker.pdf === '✅')) errors.push('final JSON PDF disagrees with tracker PDF');
         if (final.pdf !== null) {
           const expected = resolve(userRoot || dirname(dirname(reportPath)), 'output', basename(reportPath).replace(/\.md$/, '.pdf'));

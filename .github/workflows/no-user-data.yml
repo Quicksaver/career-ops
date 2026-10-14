@@ -81,6 +81,7 @@ jobs:
             // keepers and dir READMEs, and narrowing this globally would fail
             // every PR that touches one.
             const EXACT_SCAFFOLD = {
+              'users/': new Set(),
               'batch/': new Set([
                 'batch/README.md',
                 'batch/aggregate-tokens.mjs',
@@ -90,6 +91,7 @@ jobs:
                 'batch/validate-worker-artifacts.mjs',
                 'batch/manual-inputs.mjs',
                 'batch/runner-ownership.mjs',
+                'batch/worker-process.mjs',
                 'batch/logs/.gitkeep',
                 'batch/tracker-additions/.gitkeep',
               ]),

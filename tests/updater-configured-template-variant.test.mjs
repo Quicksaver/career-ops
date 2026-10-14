@@ -158,19 +158,19 @@ if (REEXEC_FALLBACK_FILES.includes('cv-templates.mjs')
       fail(`lazy wiring returned ${JSON.stringify(configured)}`);
     }
     const snapshot = await snapshotConfiguredTemplateVariants({
-      dataRoot: dir,
+      dataRoot: dir, systemRoot: dir,
       remoteFiles: ['templates/cv-template.bw.html'],
       readRemoteContent: () => '<h1>upstream variant</h1>\n',
     });
     if (snapshot.preservedPaths.length === 1 && snapshot.preservedPaths[0] === 'templates/cv-template.bw.html') {
-      pass('apply snapshot reads the configured variant from the temporary data root and preserves it before checkout');
+      pass('apply snapshot reads the configured variant from the explicit system checkout and preserves it before checkout');
     } else {
       fail(`apply snapshot did not preserve the data-root variant: ${JSON.stringify(snapshot.preservedPaths)}`);
     }
     mkdirSync(join(dir, 'templates', 'my-pack'), { recursive: true });
     writeFileSync(join(dir, 'templates', 'my-pack', 'cv-template.bw.html'), '<h1>packed user variant</h1>\n');
     const packedSnapshot = await snapshotConfiguredTemplateVariants({
-      dataRoot: dir,
+      dataRoot: dir, systemRoot: dir,
       remoteFiles: ['templates/my-pack/cv-template.bw.html'],
       readRemoteContent: () => '<h1>upstream packed variant</h1>\n',
     });
@@ -181,7 +181,7 @@ if (REEXEC_FALLBACK_FILES.includes('cv-templates.mjs')
       fail(`apply snapshot did not preserve the packed variant: ${JSON.stringify(packedSnapshot.preservedPaths)}`);
     }
     const unreadableSnapshot = await snapshotConfiguredTemplateVariants({
-      dataRoot: dir,
+      dataRoot: dir, systemRoot: dir,
       remoteFiles: ['templates/cv-template.bw.html'],
       readRemoteContent: () => { throw new Error('upstream blob unavailable'); },
     });
@@ -194,7 +194,7 @@ if (REEXEC_FALLBACK_FILES.includes('cv-templates.mjs')
     let unreadableLocalRejected = false;
     try {
       await snapshotConfiguredTemplateVariants({
-        dataRoot: dir,
+        dataRoot: dir, systemRoot: dir,
         remoteFiles: ['templates/cv-template.bw.html'],
         readLocalContent: () => { throw new Error('local template unavailable'); },
         localPathExists: () => true,
@@ -212,7 +212,7 @@ if (REEXEC_FALLBACK_FILES.includes('cv-templates.mjs')
     let malformedProfileRejected = false;
     try {
       await snapshotConfiguredTemplateVariants({
-        dataRoot: dir,
+        dataRoot: dir, systemRoot: dir,
         remoteFiles: ['templates/cv-template.bw.html'],
       });
     } catch (err) {

@@ -1,16 +1,19 @@
 # سياق النظام المشترك -- career-ops
 
+`{DATA_ROOT}` is the selected user data root resolved by the router; it may be outside this checkout. All user fact files below use that root. System modes and templates remain in the checkout.
+
+
 <!-- ============================================================
      هذا الملف قابل للتحديث التلقائي. لا تضع بياناتك الشخصية هنا.
      
-     تخصيصاتك الشخصية توضع في ملف users/{USER}/modes/_profile.md (الذي لا يتم تحديثه تلقائياً).
+     تخصيصاتك الشخصية توضع في ملف {DATA_ROOT}/modes/_profile.md (الذي لا يتم تحديثه تلقائياً).
      يحتوي هذا الملف على القواعد المشتركة، منطق التقييم، وتكوينات الأدوات
      التي يتم تحسينها مع كل إصدار جديد من career-ops.
      ============================================================ -->
 
 ## مصادر الحقيقة (Sources of Truth)
 <!-- guardrail:authorship -->
-**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `users/{USER}/cv.md` or `users/{USER}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
+**RULE: NEVER claim the user authored a project, repo, library, tool, framework, or open-source artefact unless explicitly attributed to them in `{DATA_ROOT}/cv.md` or `{DATA_ROOT}/article-digest.md`. Tool-of-trade conflation (the user uses X -> the user built X) is forbidden.**
 
 <!-- guardrail:no-fabrication -->
 **RULE: Keywords get reformulated, never fabricated.** If a claim is not supported by the approved source files, omit it or ask the user; do not invent it.
@@ -27,15 +30,15 @@
 
 | الملف | المسار | متى يتم الرجوع إليه |
 |:---|:---|:---|
-| users/{USER}/cv.md | `users/{USER}/cv.md` (جذر المشروع) | دائماً |
-| users/{USER}/article-digest.md | `users/{USER}/article-digest.md` (إذا وُجد) | دائماً (نقاط إثبات تفصيلية) |
-| profile.yml | `users/{USER}/config/profile.yml` | دائماً (هوية المتقدم للوظيفة والأهداف) |
-| _profile.md | `users/{USER}/modes/_profile.md` | دائماً (الأنماط الوظيفية المخصصة للمستخدم، السرد، والتفاوض) |
-| users/{USER}/writing-samples/ | `users/{USER}/writing-samples/` | عند إنشاء نصوص موجهة للمستخدم — افحص `_profile.md` أولاً بحثاً عن `## Writing Style` المخزن؛ لا تقم بمسح الملفات إلا إذا كان غائباً |
+| {DATA_ROOT}/cv.md | `{DATA_ROOT}/cv.md` (جذر المشروع) | دائماً |
+| {DATA_ROOT}/article-digest.md | `{DATA_ROOT}/article-digest.md` (إذا وُجد) | دائماً (نقاط إثبات تفصيلية) |
+| profile.yml | `{DATA_ROOT}/config/profile.yml` | دائماً (هوية المتقدم للوظيفة والأهداف) |
+| _profile.md | `{DATA_ROOT}/modes/_profile.md` | دائماً (الأنماط الوظيفية المخصصة للمستخدم، السرد، والتفاوض) |
+| {DATA_ROOT}/writing-samples/ | `{DATA_ROOT}/writing-samples/` | عند إنشاء نصوص موجهة للمستخدم — افحص `_profile.md` أولاً بحثاً عن `## Writing Style` المخزن؛ لا تقم بمسح الملفات إلا إذا كان غائباً |
 
-**قاعدة: لا تقم أبداً بكتابة أرقام ونسب الإنجازات (metrics) بشكل ثابت. اقرأها دائماً من ملف users/{USER}/cv.md و users/{USER}/article-digest.md وقت التقييم.**
-**قاعدة: بالنسبة للمشاريع والمقالات، يكون لملف users/{USER}/article-digest.md الأولوية على users/{USER}/cv.md.**
-**قاعدة: لا تدّعِ أبداً أن المرشح هو مؤلف/منشئ مشروع أو مستودع أو مكتبة أو أداة أو إطار عمل أو أثر مفتوح المصدر، ما لم يكن ذلك منسوباً إليه صراحةً في ملف users/{USER}/cv.md أو users/{USER}/article-digest.md.** الخلط بين "استخدام أداة" و"إنشائها" (استخدام X ليس إنشاءً لـ X) هو أكثر أنماط التلفيق شيوعاً وهو ممنوع.
+**قاعدة: لا تقم أبداً بكتابة أرقام ونسب الإنجازات (metrics) بشكل ثابت. اقرأها دائماً من ملف {DATA_ROOT}/cv.md و {DATA_ROOT}/article-digest.md وقت التقييم.**
+**قاعدة: بالنسبة للمشاريع والمقالات، يكون لملف {DATA_ROOT}/article-digest.md الأولوية على {DATA_ROOT}/cv.md.**
+**قاعدة: لا تدّعِ أبداً أن المرشح هو مؤلف/منشئ مشروع أو مستودع أو مكتبة أو أداة أو إطار عمل أو أثر مفتوح المصدر، ما لم يكن ذلك منسوباً إليه صراحةً في ملف {DATA_ROOT}/cv.md أو {DATA_ROOT}/article-digest.md.** الخلط بين "استخدام أداة" و"إنشائها" (استخدام X ليس إنشاءً لـ X) هو أكثر أنماط التلفيق شيوعاً وهو ممنوع.
 **قاعدة: تُعاد صياغة الكلمات المفتاحية، ولا تُختلق أبداً.** أعد الترتيب، أعد التأطير، شدِّد — لكن لا تخترع أبداً. إذا لم يكن ادّعاء ما مدعوماً بملف ضمن النطاق، فاسأل المرشح؛ وإن لم يصل رد، فاحذفه. الصمت حيال موضوع ما أفضل من تفصيل مُلفَّق.
 **قاعدة: اقرأ ملف _profile.md بعد قراءة هذا الملف. إعدادات وتخصيصات المستخدم في _profile.md تلغي وتتفوق على الإعدادات الافتراضية هنا.**
 
@@ -105,7 +108,7 @@
 | **AI Forward Deployed** | "client-facing", "deploy", "prototype", "fast delivery", "field", "hands-on" |
 | **AI Transformation** | "change management", "adoption", "enablement", "transformation", "training", "scaling" |
 
-بعد تحديد النمط، اقرأ ملف `users/{USER}/modes/_profile.md` للحصول على الصياغة المخصصة ونقاط الإثبات الخاصة بالمستخدم لهذا النمط.
+بعد تحديد النمط، اقرأ ملف `{DATA_ROOT}/modes/_profile.md` للحصول على الصياغة المخصصة ونقاط الإثبات الخاصة بالمستخدم لهذا النمط.
 
 ---
 
@@ -114,7 +117,7 @@
 ### يمنع تماماً (NEVER)
 
 1. اختراع أو تزييف خبرات أو أرقام إنجازات للمرشح.
-2. تعديل ملف users/{USER}/cv.md أو ملفات معرض الأعمال مباشرة دون توجيه صريح.
+2. تعديل ملف {DATA_ROOT}/cv.md أو ملفات معرض الأعمال مباشرة دون توجيه صريح.
 3. تقديم الطلبات نيابة عن المرشح (النظام لا يضغط على زر الإرسال أبداً).
 4. مشاركة رقم الهاتف في الرسائل التلقائية المولدة (حافظ على الخصوصية).
 5. التوصية براتب أو حزمة تعويضات أقل من سعر السوق.
@@ -125,7 +128,7 @@
 ### يجب دائماً (ALWAYS)
 
 0. **خطاب التغطية (Cover Letter):** إذا كان نموذج التقديم يسمح به، قم بتوليده دائماً بنفس التصميم البصري للسيرة الذاتية، ومطابقة اقتباسات متطلبات الوظيفة مع نقاط الإثبات الخاصة بالمرشح. صفحة واحدة كحد أقصى.
-1. قراءة users/{USER}/cv.md و _profile.md و users/{USER}/article-digest.md (إذا وُجد) قبل البدء بالتقييم.
+1. قراءة {DATA_ROOT}/cv.md و _profile.md و {DATA_ROOT}/article-digest.md (إذا وُجد) قبل البدء بالتقييم.
 1b. **التقييم الأول في كل جلسة:** قم بتشغيل `node cv-sync-check.mjs`. إذا ظهرت تحذيرات، نبه المستخدم.
 2. تحديد النمط الوظيفي للدور وتعديل الصياغة وفقاً لملف _profile.md.
 3. الاستشهاد بالسطور الدقيقة من السيرة الذاتية عند مطابقة المتطلبات.
@@ -147,7 +150,7 @@
 | **WebSearch** | أبحاث الرواتب، اتجاهات السوق، ثقافة الشركة، جهات الاتصال في LinkedIn، والبحث البديل عن تفاصيل الوظيفة. |
 | **WebFetch** | استخراج متطلبات الوظيفة من الصفحات الساكنة كخيار احتياطي. |
 | **Playwright** | التحقق من نشاط الوظائف وحيويتها (`browser_navigate` + `browser_snapshot`). يمنع تشغيل وكيلين بالتوازي يستخدمان Playwright. |
-| **Read** | قراءة users/{USER}/cv.md، _profile.md، users/{USER}/article-digest.md، و cv-template.html. |
+| **Read** | قراءة {DATA_ROOT}/cv.md، _profile.md، {DATA_ROOT}/article-digest.md، و cv-template.html. |
 | **Write** | إنشاء ملفات HTML المؤقتة لتوليد PDF، وتقارير التقييم بصيغة md، وملفات TSV لإضافات التتبع في `batch/tracker-additions/` (لا تكتب في ملف applications.md مباشرة أبداً). |
 | **Edit** | تصحيح التقارير والمحتوى المولَّد الآخر. لا تعدّل جدول التتبع مباشرة أبداً: الأسطر الجديدة تُضاف عبر ملف TSV يُدمج بالأمر `node merge-tracker.mjs`، وتغييرات الحالة والملاحظات تتم عبر `node set-status.mjs`. |
 | **Canva MCP** | توليد وتصدير السيرة الذاتية بصرياً من خلال التعديل على تصميم Canva الأساسي وتصديره كـ PDF (اختياري). |
@@ -161,7 +164,7 @@
 
 **متى يُطبق الأسلوب المعاير:** يُطبق قبل إنشاء أي نص سيقوم المستخدم بإرساله أو نشره — مثل خطابات التغطية، رسائل LinkedIn، إجابات النماذج، رسائل البريد الإلكتروني للمتابعة، والملخص المهني. لا ينطبق على تقارير التقييم الداخلية للوظائف.
 
-**إذا لم يكن هناك أسلوب مخزن في ملف `_profile.md`:** قم بقراءة كافة الملفات في مجلد `users/{USER}/writing-samples/` مع **تخطي أي ملف يحمل الاسم `README.md`**. إذا لم توجد عينات، تجاوز هذه الخطوة واقترح بلطف على المستخدم تزويدك بعينات لاحقاً. إذا وُجدت عينات، قم باستخلاص المؤشرات أدناه واكتب النتيجة في `_profile.md` تحت العنوان `## Writing Style` لتسريع العمل في الجلسات القادمة.
+**إذا لم يكن هناك أسلوب مخزن في ملف `_profile.md`:** قم بقراءة كافة الملفات في مجلد `{DATA_ROOT}/writing-samples/` مع **تخطي أي ملف يحمل الاسم `README.md`**. إذا لم توجد عينات، تجاوز هذه الخطوة واقترح بلطف على المستخدم تزويدك بعينات لاحقاً. إذا وُجدت عينات، قم باستخلاص المؤشرات أدناه واكتب النتيجة في `_profile.md` تحت العنوان `## Writing Style` لتسريع العمل في الجلسات القادمة.
 
 ### المؤشرات المستخلصة:
 
