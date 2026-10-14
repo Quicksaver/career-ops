@@ -37,8 +37,8 @@
  *     isolation): the legacy hard `missing-jd-archive` finding — there is no
  *     retroactive corpus to reason about, so every report is presumptively
  *     the "going forward" case and gets full enforcement.
- *   - Tracker row resolves to a TERMINAL state (Rejected, Discarded, SKIP,
- *     Hired): no finding at all, not even a warning. The application is
+ *   - Tracker row resolves to an inactive state (Rejected, Discarded, SKIP,
+ *     Hired, Closed): no finding at all, not even a warning. The application is
  *     done; a dead JD carries no further risk.
  *   - Tracker row resolves to a LIVE state (Evaluated, Applied, Responded, Assessment,
  *     Interview, Offer), OR the join can't resolve the row (no match,
@@ -98,7 +98,9 @@ const STATES_FILE = join(CAREER_OPS, 'templates/states.yml');
 // lifecycle-ordering purposes (tracker-sync-check.mjs) — an offer in hand is
 // still an active, undecided application, not a closed file, and the JD may
 // still be needed for negotiation or comparison.
-const RETROACTIVE_TERMINAL_LABELS = new Set(['Rejected', 'Discarded', 'SKIP', 'Hired']);
+// Closed is inactive only while the posting remains closed. Scanner reopening
+// returns it to Evaluated, which restores archive coverage checking.
+const RETROACTIVE_TERMINAL_LABELS = new Set(['Rejected', 'Discarded', 'SKIP', 'Hired', 'Closed']);
 
 // Below this many non-whitespace characters, a "## Job Description" section
 // is treated as an unfilled placeholder, not an archive — a bare heading

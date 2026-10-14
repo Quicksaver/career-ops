@@ -845,6 +845,12 @@ Future merge notes:
 - If upstream adds native rich-text fields, migrate existing `**...**` payload support without losing `<strong>` output in saved HTML previews or PDFs.
 - Do not implement the two-page limit through automatic truncation. Strict overflow should trigger an editorial rewrite and rerender; one-page output remains an explicit opt-in.
 
+## CV experience parsing
+
+The shared `lib/cv-markdown.mjs` parser also accepts experience headings written as `### Title, Company, YYYY-YYYY`, including commas inside company names. `cv-title-check.mjs`, `verify-cv-structure.mjs`, and the doctor's CV shape check use this interpretation. An explicit parenthesized Freelance, Self-employed, or Independent label supplies the employer key when a separate employer is absent; the source's literal title and dates remain intact. Locations and missing employers are not inferred. These entries remain scoped to recognized Experience sections and participate in title and chronological-order checks alongside upstream company/location headings. Regression tests use fictional source data in `tests/cv-inline-experience.test.mjs`.
+
+Preserve this format support when merging upstream CV parser changes. Candidate CV files remain authoritative and do not require reformatting to make these checks run.
+
 ## CV Theme Overrides
 
 The fork makes the HTML/PDF CV palette configurable from `config/profile.yml`.
@@ -1356,6 +1362,10 @@ Future merge notes:
 
 - Treat documentation conflicts as a signal to check whether the underlying customization still exists.
 - Remove local documentation lines when the corresponding code customization is removed.
+
+## Closed postings and JD archives
+
+`check-jd-archive.mjs` treats canonical `Closed` postings as inactive for historical archive coverage, alongside Rejected, Discarded, SKIP, and Hired. It leaves the shared lifecycle definition unchanged, so the scanner can still reopen a Closed entry. Returning that entry to Evaluated restores the archive warning; Applied, Interview, and Offer entries retain coverage checks. Fresh reports without a tracker still require an archived JD. `tests/jd-archive-closed.test.mjs` covers closure, aliases, reactivation, and active applications. Keep this distinction when updating upstream archive rules; blanket report-age exemptions must not suppress findings on active applications.
 
 ## Retired fork patches
 

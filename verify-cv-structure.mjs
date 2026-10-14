@@ -54,7 +54,7 @@ const DEFAULT_SOURCE = 'cv.md';
 
 /**
  * Parse cv.md's Experience entries (any EXPERIENCE_HEADING_NAMES section)
- * from its `### Company {—|–|--|-} Location[ · descriptor]` headers, in file
+ * from company/location or explicit role/company/date headings, in file
  * order
  * (which IS the ground-truth
  * chronological order — cv.md is user-authored, never generated).

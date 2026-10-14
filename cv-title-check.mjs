@@ -63,7 +63,7 @@ import { normalizeCompany } from './tracker-utils.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import {
-  boldLineText, findExperienceSections, headingText, toPlainText, EXPERIENCE_HEADING_NAMES,
+  boldLineText, findExperienceSections, headingText, toPlainText, EXPERIENCE_HEADING_NAMES, parseRoleFirstHeading,
 } from './lib/cv-markdown.mjs';
 
 const CV_PATH = join(getCareerOpsRoot(), 'cv.md');
@@ -89,6 +89,9 @@ const CV_PATH = join(getCareerOpsRoot(), 'cv.md');
 // Lines go through lib/cv-markdown.mjs first, so the same entry written as
 // Pandoc Markdown (`### **Acme** --- City`, `**Title**\`, `**2020 -- 2024**`,
 // `## **[Professional Experience]{.smallcaps}**`) parses identically (#4879).
+// A role-first `### Title, Company, YYYY-YYYY` heading carries all three
+// comparison fields on one line. Explicit freelance labels support a heading
+// without a separate employer; literal titles and dates remain unchanged.
 
 export function parseCvExperience(cvText) {
   const entries = [];
@@ -98,6 +101,11 @@ export function parseCvExperience(cvText) {
   // the CV (e.g. under Projects) never gets misread as a job.
   for (const lines of findExperienceSections(cvText)) {
     for (let i = 0; i < lines.length; i++) {
+      const inline = parseRoleFirstHeading(lines[i]);
+      if (inline) {
+        entries.push({ company: inline.company, title: inline.title, dates: inline.dates });
+        continue;
+      }
       const heading = headingText(lines[i], 3);
       if (heading === null) continue;
 
