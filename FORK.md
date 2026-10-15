@@ -4,10 +4,10 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `8aafd1252c14d08b00f0c4e8c2f7f778db80bce9`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `738ba5f26bf672f49637dd45d1797acf1155089b`, including the `run` rename and adopted full-fork compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `219`.
-- Diff size against the incorporated base at that snapshot: `693 files changed, 29415 insertions(+), 7074 deletions(-)`.
+- Incorporated upstream base: `77027cc5cb22f588ecba56a4d834afa58c8695ae`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `48571430e7e90b633a79397d4a654db793d52584`, including this upstream integration, the interactive runner and compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `228`.
+- Diff size against the incorporated base at that snapshot: `718 files changed, 31457 insertions(+), 7549 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
@@ -27,6 +27,8 @@ This update incorporates the 104 commits from `8aafd1252c14d08b00f0c4e8c2f7f778d
 - Fork providers now use the shared `BROWSER_LIKE_USER_AGENT` instead of embedded browser identity literals. Upstream's test data-root sandbox and drift guard are retained alongside fictional-user fixtures; each fixture explicitly selects its own layout instead of inheriting the suite's scratch root.
 
 Compatibility evidence includes the real Windows Git Bash/CLI path, owned process-tree cleanup, executable queue and interactive fixtures, live-pool throttling and real web report persistence through core scripts into an external fictional user root. Raw pipeline verification uses an isolated fictional user. Paid evaluations, real providers, user profiles and POSIX-only containment were not exercised on this Windows host.
+
+Validation for this integration passed `node test-all.mjs --quick --jobs 8` with 15,240 checks, zero failures and 14 warnings, all dashboard Go packages, 1,570 web tests with 16 optional skips, and a production web build without an active user. The warnings cover missing user fixtures, upstream maintainer-text matches, opt-in live/token checks and Windows permission/symlink limitations. Focused queue/interactive/CLI/process-tree suites and the real web-to-core persistence fixture passed. The latest tracker-liveness JSON, missing-tracker and mixed-input checks also passed. Raw `verify-pipeline.mjs --user fixture --json` returned clean with zero warnings/errors against an isolated empty tracker; it does not certify a personal pipeline.
 
 ## Reviewed compatibility repairs
 
