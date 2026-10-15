@@ -22,7 +22,7 @@ npm run dev
 
 Set `CAREER_OPS_USER=<username>` in `web/.env.local` before starting either server mode. The app requires a valid explicit user and reads that user's CV, pipeline, reports, chat history, and scheduled jobs from `users/<username>/`. You can then open http://localhost:3000. A production build does not require a user; a running server does.
 
-The server binds IPv4 loopback, so reach it as `localhost` or `127.0.0.1`;
+By default the server binds IPv4 loopback, so reach it as `localhost` or `127.0.0.1`;
 `http://[::1]:3000` has nothing listening on it.
 
 ## What works today
@@ -104,6 +104,17 @@ Pass one-off flags through npm's `--`: `npm run dev -- -p 4000`.
 
 ### Exposing it beyond this machine
 
+To persist network settings, put them in the ignored `web/.env.local`. The launcher loads Next's environment files before choosing the bind, using development files for `dev` and production files for `start`; existing shell variables take precedence. User selection remains separate, so the file need not contain `CAREER_OPS_USER`.
+
+For Tailnet access on one interface, substitute this machine's Tailscale DNS name and IPv4 address:
+
+```dotenv
+CAREER_OPS_WEB_ALLOWED_HOSTS=desktop.example.ts.net
+CAREER_OPS_WEB_BIND_HOST=100.64.1.2
+```
+
+Then start normally, with the user selected explicitly in your shell. `CAREER_OPS_WEB_BIND_HOST` accepts one local unicast IP, without a port or URL. It keeps the listener on that interface even when the allowed host is a DNS name. Wildcard, multicast, and unscoped IPv6 link-local addresses are rejected, and a non-loopback bind requires a non-loopback allowed host. Update the saved address if the machine's Tailscale IP changes. This bind does not also serve `localhost`. Explicit `-H`/`--hostname` flags override the saved bind for that run.
+
 `CAREER_OPS_WEB_ALLOWED_HOSTS` is the list of hosts allowed to reach the
 dashboard. Unset (or blank) the server binds `127.0.0.1`; name a host it cannot
 already reach on loopback and the socket opens, with the guard answering for
@@ -117,7 +128,7 @@ It is not an on/off switch, and it is not read as one: `off`, `false`, `no` and
 `0` are all valid hostnames, so treating them as words would have opened the
 socket to the whole network for someone typing the word for "closed". They are
 refused, as is anything else that cannot be read as a hostname or an IP address.
-To stay on loopback, unset the variable.
+To stay on loopback, unset both network variables or explicitly bind `127.0.0.1`.
 
 `0.0.0.0` and `::` are refused too. They name every interface, which is a bind
 target rather than a host anyone is addressed by: accepting one would open the
@@ -146,11 +157,7 @@ Naming only loopback (`localhost`, `127.0.0.1`, `::1`) is not an opt-in and
 changes nothing — the guard already answers for those, so widening the socket
 would expose every interface while granting no host that wasn't already allowed.
 
-Set through `CAREER_OPS_WEB_ALLOWED_HOSTS`, neither layer can widen without the
-other — the bind and the allow-list are derived from that one value. They are not
-equivalent, and two things move them apart: the guard also answers for loopback,
-which no bind address changes, and a `-H` of your own moves the bind while the
-allow-list stays as it was (see below).
+Without a bind override, the bind and the allow-list are derived from `CAREER_OPS_WEB_ALLOWED_HOSTS`. They are not equivalent: the guard also answers for loopback, which no bind address changes. `CAREER_OPS_WEB_BIND_HOST` selects one interface while preserving the allow-list and requires an explicit non-loopback allowed host before it can expose a non-loopback interface. A `-H` of your own also moves the bind while leaving the allow-list as it was (see below).
 
 Understand what you are turning on. Once the socket is open, **everything the
 dashboard serves — your CV, pipeline and reports — is reachable by anyone who can

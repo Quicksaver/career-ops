@@ -34,10 +34,11 @@ const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
  * @param {string} [options.body]     the stub next's source; defaults to printing its argv
  * @param {boolean} [options.install] false to omit node_modules/next entirely
  */
-function stubbedWebRoot({ body, install = true } = {}) {
+function stubbedWebRoot({ body, install = true, envFiles = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "career-ops-launcher-"));
   cpSync(join(WEB_ROOT, "server.mjs"), join(root, "server.mjs"));
   cpSync(join(WEB_ROOT, "src", "lib"), join(root, "src", "lib"), { recursive: true });
+  for (const [name, content] of Object.entries(envFiles)) writeFileSync(join(root, name), content);
   if (!install) return root;
 
   const nextDir = join(root, "node_modules", "next");
@@ -52,6 +53,20 @@ function stubbedWebRoot({ body, install = true } = {}) {
     join(nextDir, "dist", "bin", "next.js"),
     body ?? "console.log(JSON.stringify(process.argv.slice(2)));\n",
   );
+  // Stub the dependency contract, not Next's dotenv implementation. Distinct
+  // mode files prove the launcher supplies its own root and the correct mode;
+  // Node's loader preserves shell values, as Next's loader does.
+  const envDir = join(nextDir, "node_modules", "@next", "env");
+  mkdirSync(envDir, { recursive: true });
+  writeFileSync(join(envDir, "index.js"), `
+    const { join } = require('node:path');
+    exports.loadEnvConfig = (root, dev) => {
+      for (const file of [dev ? '.env.development.local' : '.env.production.local', '.env.local']) {
+        try { process.loadEnvFile(join(root, file)); }
+        catch (err) { if (err.code !== 'ENOENT') throw err; }
+      }
+    };
+  `);
   return root;
 }
 
@@ -89,6 +104,41 @@ test("with no opt-in, next is told to bind loopback", () => {
   assert.deepEqual(run.argv, ["dev", "-H", "127.0.0.1"]);
   assert.ok(run.stderr.includes("binding 127.0.0.1"), `stderr was: ${run.stderr}`);
   assert.ok(run.stderr.includes("loopback only"), "a loopback bind should be stated plainly");
+});
+
+for (const command of ["dev", "start"]) {
+  test(`${command} loads saved network settings before choosing the bind`, () => {
+    const run = launch({ args: [command], envFiles: { ".env.local":
+      "CAREER_OPS_WEB_ALLOWED_HOSTS=dashboard.test\nCAREER_OPS_WEB_BIND_HOST=100.64.1.2\n" } });
+    assert.equal(run.status, 0);
+    assert.deepEqual(run.argv, [command, "-H", "100.64.1.2"]);
+    assert.ok(run.stderr.includes("dashboard.test"));
+    assert.ok(run.stderr.includes("binding 100.64.1.2"));
+  });
+
+  test(`${command} selects the matching Next environment mode`, () => {
+    const run = launch({ args: [command], envFiles: {
+      ".env.development.local": "CAREER_OPS_WEB_ALLOWED_HOSTS=100.64.1.3\n",
+      ".env.production.local": "CAREER_OPS_WEB_ALLOWED_HOSTS=100.64.1.4\n",
+    } });
+    assert.deepEqual(run.argv, [command, "-H", command === "dev" ? "100.64.1.3" : "100.64.1.4"]);
+  });
+}
+
+test("shell settings override saved network defaults", () => {
+  const run = launch({ envFiles: { ".env.local":
+    "CAREER_OPS_WEB_ALLOWED_HOSTS=saved.test\nCAREER_OPS_WEB_BIND_HOST=100.64.1.2\n" },
+    env: { CAREER_OPS_WEB_ALLOWED_HOSTS: "override.test", CAREER_OPS_WEB_BIND_HOST: "100.64.1.9" } });
+  assert.deepEqual(run.argv, ["dev", "-H", "100.64.1.9"]);
+  assert.ok(run.stderr.includes("override.test"));
+});
+
+test("invalid saved network settings fail before starting Next", () => {
+  const run = launch({ envFiles: { ".env.local":
+    "CAREER_OPS_WEB_ALLOWED_HOSTS=dashboard.test\nCAREER_OPS_WEB_BIND_HOST=0.0.0.0\n" } });
+  assert.equal(run.status, 1);
+  assert.equal(run.argv, null);
+  assert.ok(run.stderr.includes("CAREER_OPS_WEB_BIND_HOST"));
 });
 
 test("a blank opt-in is not an opt-in", () => {
@@ -239,7 +289,7 @@ test("a missing next install is reported as a missing install", () => {
   assert.ok(run.stderr.includes("run `npm ci` in web/"), `stderr was: ${run.stderr}`);
   // And the bind was still announced first, so a broken install does not hide
   // the fact that this run would have been network-reachable
-  assert.ok(run.stderr.includes("loopback only"), "the bind is reported before next is resolved");
+  assert.ok(run.stderr.includes("loopback only"), "the planned bind is reported before the startup error");
 });
 
 test("the child's exit code is forwarded", () => {

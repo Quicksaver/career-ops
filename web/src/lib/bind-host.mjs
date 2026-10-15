@@ -293,6 +293,8 @@ export function hasHostFlag(extra) {
 /**
  * The argv for a `next` run, plus what it will actually expose.
  *
+ * CAREER_OPS_WEB_BIND_HOST can select one interface independently of the host
+ * allow-list. A non-loopback address still requires a non-loopback allowed host.
  * The bind is injected only when the caller supplied no hostname flag of their
  * own. `-H` is theirs to pass — they typed it deliberately and next accepts it —
  * so rather than appending a second one and relying on how commander resolves the
@@ -304,12 +306,13 @@ export function hasHostFlag(extra) {
  * @param {string|undefined} input.command   argv[2] — a NEXT_COMMANDS entry
  * @param {string[]} [input.extra]           remaining argv, forwarded verbatim
  * @param {string|undefined} input.envValue  CAREER_OPS_WEB_ALLOWED_HOSTS
+ * @param {string|undefined} [input.bindValue] CAREER_OPS_WEB_BIND_HOST, one local unicast IP
  * @returns {{ok: true, argv: string[], bindHost: string, hostFlagSupplied: boolean,
  *            widened: boolean, allowedHosts: string[], grantsNoNewHost: boolean,
  *            loopbackUnreachable: boolean}
  *          | {ok: false, error: string}}
  */
-export function planNextRun({ command, extra = [], envValue }) {
+export function planNextRun({ command, extra = [], envValue, bindValue }) {
   if (!NEXT_COMMANDS.includes(command)) {
     return {
       ok: false,
@@ -323,8 +326,19 @@ export function planNextRun({ command, extra = [], envValue }) {
   if (!validation.ok) return validation;
 
   const { hosts: allowedHosts } = validation;
-  const bindHost = resolveBindHost(envValue);
   const hostFlagSupplied = hasHostFlag(extra);
+  // A saved interface address can accompany a DNS allow-list without widening
+  // to every interface. Explicit CLI hostname flags remain the per-run override.
+  const configuredBind = hostFlagSupplied ? "" : String(bindValue ?? "").trim();
+  if (configuredBind && (!isIPLiteral(configuredBind) || isWildcardAddress(configuredBind)
+    || isUnscopedLinkLocalV6(configuredBind) || isNonUnicastAddress(configuredBind))) {
+    return { ok: false, error: "CAREER_OPS_WEB_BIND_HOST must be one unicast IP address on this machine, without a port or URL." };
+  }
+  if (configuredBind && !isLoopbackHost(configuredBind)
+    && !allowedHosts.some((host) => !isLoopbackHost(host))) {
+    return { ok: false, error: "A non-loopback CAREER_OPS_WEB_BIND_HOST requires CAREER_OPS_WEB_ALLOWED_HOSTS to name the hosts allowed to reach it." };
+  }
+  const bindHost = configuredBind || resolveBindHost(envValue);
   const widened = isWidenedBind(bindHost);
 
   return {

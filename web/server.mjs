@@ -19,20 +19,36 @@ import { planNextRun } from "./src/lib/bind-host.mjs";
 
 const requireHere = createRequire(import.meta.url);
 const [command, ...extra] = process.argv.slice(2);
+const webRoot = dirname(fileURLToPath(import.meta.url));
+
+// The bind must see the same .env files as Next, before a socket is opened.
+// Resolve Next's own env loader so its mode, expansion and shell precedence
+// stay identical even when the dependency is nested under next/node_modules.
+// Use Next's declared JS entry: Windows npm shims need a shell, which would
+// reparse the forwarded arguments.
+let nextEntry;
+let startupError;
+try {
+  const manifest = requireHere.resolve("next/package.json");
+  const { loadEnvConfig } = createRequire(manifest)("@next/env");
+  loadEnvConfig(webRoot, command === "dev", { info() {}, error: console.error });
+  nextEntry = join(dirname(manifest), requireHere(manifest).bin.next);
+} catch (err) {
+  startupError = err;
+}
 
 const plan = planNextRun({
   command,
   extra,
   envValue: process.env.CAREER_OPS_WEB_ALLOWED_HOSTS,
+  bindValue: process.env.CAREER_OPS_WEB_BIND_HOST,
 });
 if (!plan.ok) {
   console.error(plan.error);
   process.exit(1);
 }
 
-// Reported before next is resolved: a user whose install is broken should still
-// learn their run would have been network-reachable, and the required CI job has
-// no web/node_modules, so anything below the resolve is untestable there.
+// Report the planned exposure even when a broken install prevents startup.
 if (plan.hostFlagSupplied) {
   // No bind was injected, so next resolves the flag itself and this process does
   // not know the answer. Saying "may be" is the whole point: the alternative is
@@ -62,21 +78,15 @@ if (plan.hostFlagSupplied) {
   if (plan.loopbackUnreachable) {
     console.error(
       `career-ops web: one socket carries one address, so http://localhost:PORT will not answer — ` +
-        `open it at ${plan.bindHost}. Name a loopback host alongside it to bind every interface instead.`,
+        `open it at ${plan.bindHost}.`,
     );
   }
 } else {
   console.error(`career-ops web: binding ${plan.bindHost} — loopback only.`);
 }
 
-// next's declared entry, not the private dist path: node_modules/.bin/next is a
-// .cmd on Windows that spawn() cannot exec without a shell, and a shell would
-// reparse every forwarded argument.
-let nextEntry;
-try {
-  const manifest = requireHere.resolve("next/package.json");
-  nextEntry = join(dirname(manifest), requireHere(manifest).bin.next);
-} catch (err) {
+if (startupError) {
+  const err = startupError;
   console.error(
     err.code === "MODULE_NOT_FOUND"
       ? "Cannot find next — run `npm ci` in web/ and retry."
@@ -93,7 +103,7 @@ try {
 // do meanwhile. The terminal delivers SIGINT to the whole foreground group, so
 // next shuts itself down; re-signalling it from here would only double up.
 const result = spawnSync(process.execPath, [nextEntry, ...plan.argv], {
-  cwd: dirname(fileURLToPath(import.meta.url)),
+  cwd: webRoot,
   stdio: "inherit",
 });
 

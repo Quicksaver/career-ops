@@ -556,6 +556,10 @@ Files to reconcile together are `lib/user-context.mjs`, `path-resolver.mjs`, `li
 
 Files:
 
+- `web/server.mjs`
+- `web/src/lib/bind-host.mjs`
+- `web/tests/lib/bind-host.test.mjs`
+- `web/tests/lib/server-launcher.test.mjs`
 - `web/src/lib/user-context.mjs`
 - `web/src/lib/career-ops.ts`
 - `web/next.config.mjs`
@@ -566,6 +570,8 @@ Files:
 
 What this customizes:
 
+- Loads Next's environment files before the launcher chooses its network bind, with development/production mode selection and shell-variable precedence preserved. Network defaults can live in the ignored `web/.env.local` without persisting a user ID. User selection remains explicit and independent of network configuration.
+- Adds optional `CAREER_OPS_WEB_BIND_HOST` for one local unicast IP, paired with `CAREER_OPS_WEB_ALLOWED_HOSTS` for accepted hostnames. This lets a machine persist its Tailscale interface address and DNS name without opening other interfaces. Invalid, wildcard, multicast, and unscoped IPv6 link-local binds fail before Next starts; a non-loopback bind requires an explicit non-loopback allowed host. CLI `-H`/`--hostname` overrides the saved bind. With no network settings, the upstream loopback default remains. A specific interface bind does not also serve localhost, and a changed Tailscale IP requires updating the local setting. Machine addresses stay out of committed code; configuration examples are in `web/README.md`.
 - Requires `CAREER_OPS_USER` for development and production servers and for every candidate-data root or child-process environment. Missing or invalid IDs fail with configuration guidance before data access; they never select the legacy root layout.
 - Validates user IDs with the CLI's format: 1-64 characters, starting with a letter or number and continuing with letters, numbers, dots, underscores, or hyphens. Path-like IDs, including `.` and `..`, are rejected.
 - Resolves candidate files under `users/{USER}/`. `CAREER_OPS_ROOT` selects system code, and `CAREER_OPS_USERS_DIR` selects an alternate users directory; relative overrides resolve against the system checkout and the child CLI receives that same absolute directory.

@@ -29,6 +29,36 @@ import {
   planNextRun,
 } from "../../src/lib/bind-host.mjs";
 
+test("a saved bind address keeps a DNS allow-list on one interface", () => {
+  const plan = planNextRun({ command: "start", envValue: "desktop.test", bindValue: "100.64.1.2" });
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.argv, ["start", "-H", "100.64.1.2"]);
+  assert.equal(plan.widened, true);
+  assert.equal(plan.loopbackUnreachable, true);
+});
+
+test("saved bind addresses fail closed for invalid or ambiguous interfaces", () => {
+  for (const bindValue of ["0.0.0.0", "::", "239.1.2.3", "255.255.255.255", "ff02::1", "fe80::1", "desktop.test", "100.64.1.2:3000", "http://100.64.1.2", "100.64.1.999"]) {
+    const plan = planNextRun({ command: "start", envValue: "desktop.test", bindValue });
+    assert.equal(plan.ok, false, bindValue);
+    assert.match(plan.error, /CAREER_OPS_WEB_BIND_HOST/);
+  }
+});
+
+test("a saved non-loopback bind requires an explicit allowed host", () => {
+  for (const envValue of [undefined, "", "localhost"]) {
+    assert.equal(planNextRun({ command: "start", envValue, bindValue: "100.64.1.2" }).ok, false);
+  }
+  assert.equal(planNextRun({ command: "start", bindValue: "127.0.0.1" }).ok, true);
+});
+
+test("CLI hostname overrides a saved bind and a blank saved bind uses the usual default", () => {
+  assert.deepEqual(planNextRun({ command: "start", envValue: "desktop.test", bindValue: "invalid", extra: ["-H", "127.0.0.1"] }).argv,
+    ["start", "-H", "127.0.0.1"]);
+  assert.deepEqual(planNextRun({ command: "start", envValue: "100.64.1.2", bindValue: " " }).argv,
+    ["start", "-H", "100.64.1.2"]);
+});
+
 // --- validateAllowedHosts -------------------------------------------------
 
 test("a value that reads as a switch is refused, not treated as a host", () => {
