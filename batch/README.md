@@ -58,6 +58,8 @@ Parallelism resolves as `--parallel`, profile `batch.parallel`, then `1` for bot
 
 A missing JD or unconfirmed agency is `needs_confirmation`, with reason `jd_unavailable` or `agency_confirmation`. It is held outside automatic retries and produces no evaluation, tracker, CV or application artifact. Per-job handoffs are saved in `batch/logs/{id}.hold.json`, including user, exact URL, reason and question. The parent can collect these alongside `batch-state.tsv`.
 
+Agency confirmation is the default. Set the selected user's `config/profile.yml` → `batch.agency_confirmation: posting_evidence` to delegate identification to the worker instead. Workers then proceed from posting evidence without asking for an agency confirmation or a direct-employer URL. Unknown identities remain unknown and normal legitimacy checks apply. `run` also supplies exact-posting standing-policy answers for old agency holds on restart; the standalone runner can consume those through `--answers-file`. This policy never supplies missing JD text or verifies an undisclosed employer.
+
 Headless batch never bulk-fetches LinkedIn through curl, WebFetch, guest endpoints or API bypasses. Without archived or explicitly supplied JD text or an employer URL, it returns a `jd_unavailable` hold before launching a worker. The original posting URL remains the job identity and provenance.
 
 Supply a read-only answer file explicitly:

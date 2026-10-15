@@ -35,6 +35,8 @@ If `users/{USER}/data/blacklist.md` exists, check both the posting's company and
 
 ## Agency confirmation gate (#1596, #4359)
 
+First apply `modes/_shared.md` → **Standing policy override**. When the user delegates agency identification through `batch.agency_confirmation: posting_evidence` or `_custom.md`, proceed from the posting evidence without requesting agency confirmation or a direct URL. The following gate is the default for users without that delegation.
+
 Before Block A or any tracker, report, or CV write, if the JD suggests an agency/recruiter intermediary ("our client", agency domain, no employer named), ask which agency this posting came through and wait for an explicit answer. Follow `modes/_shared.md` → **Agency confirmation handoff**: a delegated/headless worker returns `needs_confirmation` with the posting identity, evidence, and question, then stops without artifacts. The parent asks and resumes only with the user's explicit answer for this posting. Never write `Company: ?` / Via first and seek confirmation afterward. After confirmation, retain `?` for an unknown employer and the confirmed agency in Via.
 
 ## Bounded Research Budget

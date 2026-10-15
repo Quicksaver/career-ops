@@ -165,6 +165,7 @@ spend_tier: standard
 # An explicit --parallel argument wins. Valid range: 1-32.
 # batch:
 #   parallel: 1
+#   agency_confirmation: required # or posting_evidence: let the agent identify agencies without asking
 # (Optional) Paper size for every generated PDF: "letter" or "a4".
 # One setting for the CV, the cover letter and the HTML body width, so they
 # cannot disagree. Absent means letter. An explicit --format flag or a payload

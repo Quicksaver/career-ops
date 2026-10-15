@@ -41,6 +41,7 @@ import { RunInteractive } from './lib/run-interactive.mjs';
 import { synchronizeBatch } from './lib/run-batch-sync.mjs';
 import { answerFingerprint } from './lib/run-live-inputs.mjs';
 import { cleanRunText, createRunOutput } from './lib/run-output.mjs';
+import { prepareAgencyAnswers } from './lib/agency-policy.mjs';
 
 const HELP = `career-ops deterministic workflow runner
 
@@ -556,6 +557,7 @@ async function main() {
     summary.parallel = parallelSettings.parallel;
     summary.parallel_source = parallelSettings.source;
     let answerPath = answersFile ? resolve(context.projectRoot, answersFile) : null;
+    answerPath = prepareAgencyAnswers({ userRoot: context.userRoot, user: context.userId, answersFile: answerPath });
     let answers = readRunAnswers(answerPath, context.userId, context.userRoot);
     const retries = new Map();
     const pendingAnswers = new Map();
