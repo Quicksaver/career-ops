@@ -37,6 +37,13 @@ console.log('\u0060\u0060\u0060json\\n'+JSON.stringify(result)+'\\n\u0060\u0060\
   writeFileSync(join(bin, 'codex'), '#!/usr/bin/env bash\necho unexpected-codex-worker >&2\nexit 99\n', { mode: 0o755 });
   writeFileSync(join(batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${url}\tfixture\t\n2\thttps://example.com/other\tfixture\t\n`);
   const calls = join(root, 'calls');
+  writeFileSync(join(root, 'browser-extract.mjs'), `import {appendFileSync,existsSync,readFileSync} from 'node:fs';
+import {join} from 'node:path';
+appendFileSync(process.env.FIXTURE_CALLS+'.browser',JSON.stringify(process.argv.slice(2))+'\\n');
+const output=join(import.meta.dirname,'browser-result.json');
+if(existsSync(output)) process.stdout.write(readFileSync(output));
+else process.exitCode=1;
+`);
   const run = (args, cli = 'claude', envCli = '') => spawnSync(getBash(), ['-c', 'export PATH="$1:$PATH"\nshift\nexec bash "$@"', 'batch-fixture', toBashPath(bin), join(batch, 'batch-runner.sh'), '--user', 'fixture', ...(cli ? ['--cli', cli, '--model', 'fixture'] : []), '--defer-verification', ...args], {
     encoding: 'utf8', timeout: 30000,
     env: { ...process.env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root, CAREER_OPS_USER: 'fixture', CAREER_OPS_BATCH_CLI: envCli, PATH: bin + delimiter + process.env.PATH, FIXTURE_CALLS: calls, FIXTURE_WORKER: join(root, 'fixture-worker.mjs'), FIXTURE_CURL_JS: join(root, 'curl-stub.mjs'), FIXTURE_RESULT: JSON.stringify({ ...hold, reason: 'agency_confirmation', question: 'Which agency?' }) },
@@ -161,6 +168,7 @@ test('LinkedIn holds before fetch/worker; queues isolate dispatch and valid JD a
     let result = f.run(['--queue-file', queue]);
     assert.ifError(result.error); assert.equal(result.status, 0, result.stderr);
     assert.equal(existsSync(f.calls), false); assert.equal(existsSync(`${f.calls}.worker`), false);
+    assert.equal(existsSync(`${f.calls}.browser`), false);
     const persisted = JSON.parse(readFileSync(join(f.batch, 'logs/1.hold.json'), 'utf8'));
     assert.equal(persisted.reason, 'jd_unavailable'); assert.equal(persisted.url, url); assert.equal(persisted.user, 'fixture');
     assert.doesNotMatch(readFileSync(join(f.batch, 'batch-state.tsv'), 'utf8'), /example.com\/other/);
@@ -173,6 +181,7 @@ test('LinkedIn holds before fetch/worker; queues isolate dispatch and valid JD a
     result = f.run(['--queue-file', queue, '--answers-file', answersPath, '--retry-failed']);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(existsSync(f.calls), false, 'pasted JD must not trigger curl');
+    assert.equal(existsSync(`${f.calls}.browser`), false, 'pasted JD must not launch a browser');
     const worker = readFileSync(`${f.calls}.worker`, 'utf8');
     assert.match(worker, /pasted verbatim/);
     assert.equal(readFileSync(`${f.calls}.jd`, 'utf8'), jd);
@@ -194,7 +203,69 @@ test('the HTTP prefetch reaches the worker without being erased by the local bra
     const result = f.run(['--queue-file', queue]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(`${f.calls}.jd`, 'utf8'), jd, result.stdout + result.stderr);
+    assert.equal(existsSync(`${f.calls}.browser`), false, 'HTTP success must not launch a browser');
   } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('browser fallback supplies rendered JD bytes to the real worker launch after HTTP/API miss', () => {
+  const f = fixture();
+  try {
+    const posting = 'https://board.example/job/123?source=fixture&role=Angular';
+    const queue = join(f.root, 'queue.txt'); writeFileSync(queue, posting + '\n');
+    writeFileSync(join(f.batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${posting}\tfixture\t\n`);
+    writeFileSync(join(f.root, 'fetch-jd.mjs'), 'process.exitCode=1;\n');
+    const jd = 'Angular Engineer\n\n' + 'Build accessible interfaces with TypeScript and test production code. '.repeat(20) + '\nOriginal formatting retained.\n';
+    writeFileSync(join(f.root, 'browser-result.json'), JSON.stringify({ url: posting, title: 'Angular Engineer', text: jd }));
+    const result = f.run(['--queue-file', queue]);
+    assert.ifError(result.error); assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.match(result.stdout, /words from browser extraction/);
+    assert.equal(readFileSync(`${f.calls}.jd`, 'utf8'), jd);
+    assert.match(readFileSync(`${f.calls}.worker`, 'utf8'), /Internal batch locator: https:\/\/board.example\/job\/123\?source=fixture&role=Angular/);
+    const calls = readFileSync(`${f.calls}.browser`, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(calls, [['--user', 'fixture', posting, '--mode', 'jd', '--timeout', '15000', '--max-chars', '100000']]);
+    assert.ok(existsSync(join(f.batch, 'logs/1.jd-browser.log')));
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('browser failures, invalid JSON, thin text and truncated text leave the worker fallback available', async t => {
+  for (const [name, output] of [
+    ['unavailable browser', null], ['malformed JSON', '{'],
+    ['thin text', JSON.stringify({ text: 'Loading, please wait.' })],
+    ['error payload', JSON.stringify({ error: 'navigation failed', text: 'invalid '.repeat(100) })],
+    ['truncated JD', JSON.stringify({ text: 'partial '.repeat(100) + '…' })],
+  ]) await t.test(name, () => {
+    const f = fixture();
+    try {
+      const posting = 'https://board.example/job/456';
+      const queue = join(f.root, 'queue.txt'); writeFileSync(queue, posting + '\n');
+      writeFileSync(join(f.batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${posting}\tfixture\t\n`);
+      if (output !== null) writeFileSync(join(f.root, 'browser-result.json'), output);
+      const result = f.run(['--queue-file', queue]);
+      assert.ifError(result.error); assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.match(result.stdout, /browser extraction unavailable/);
+      assert.equal(readFileSync(`${f.calls}.jd`, 'utf8'), '');
+      assert.equal(readFileSync(`${f.calls}.browser`, 'utf8').trim().split('\n').length, 1);
+      assert.equal(JSON.parse(readFileSync(join(f.batch, 'logs/1.hold.json'), 'utf8')).reason, 'agency_confirmation', 'worker still runs with its own retrieval/hold gates');
+    } finally { rmSync(f.root, { recursive: true, force: true }); }
+  });
+});
+
+test('an ATS API hit or a local JD bypasses browser fallback', async t => {
+  for (const local of [false, true]) await t.test(local ? 'local JD' : 'API JD', () => {
+    const f = fixture();
+    try {
+      const posting = local ? 'local:jds/role.md' : 'https://board.example/job/789';
+      const jd = 'Verbatim requirements and role responsibilities. '.repeat(25);
+      const queue = join(f.root, 'queue.txt'); writeFileSync(queue, posting + '\n');
+      writeFileSync(join(f.batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${posting}\tfixture\t\n`);
+      if (local) writeFileSync(join(f.root, 'jds/role.md'), jd);
+      else writeFileSync(join(f.root, 'fetch-jd.mjs'), `process.stdout.write(${JSON.stringify(jd)});\n`);
+      const result = f.run(['--queue-file', queue]);
+      assert.ifError(result.error); assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.equal(readFileSync(`${f.calls}.jd`, 'utf8'), jd);
+      assert.equal(existsSync(`${f.calls}.browser`), false);
+    } finally { rmSync(f.root, { recursive: true, force: true }); }
+  });
 });
 
 test('exact local agency answers resume only that held posting and survive empty state fields', () => {

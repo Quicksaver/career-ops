@@ -72,6 +72,18 @@ const WORKDAY_TIMEOUT_MS = 10_000;
 // company with no open roles.
 const MIN_JD_TEXT_CHARS = 200;
 
+// This reader has no authenticated session. LinkedIn belongs to scan-auth's
+// user-owned session, never to generic browser prefetch, including redirects.
+export function rejectExtractionUrl(url) {
+  const guard = rejectPrivateOrInvalid(url);
+  if (guard) return guard;
+  const host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+  if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) {
+    return { code: 'linkedin_requires_auth', reason: 'LinkedIn requires the authenticated scanner or a supplied JD/employer URL' };
+  }
+  return null;
+}
+
 // Anchor labels that are navigation chrome, not job postings. Kept small and
 // lowercase; matched against the trimmed label.
 const NAV_LABEL_STOPWORDS = new Set([
@@ -929,7 +941,7 @@ async function main() {
     process.exit(1);
   }
 
-  const guard = rejectPrivateOrInvalid(url);
+  const guard = rejectExtractionUrl(url);
   if (guard) {
     console.error(JSON.stringify({ error: guard.reason, code: guard.code }));
     process.exit(1);
@@ -966,7 +978,7 @@ async function main() {
     // URL isn't enough once we return page CONTENT: a server-side redirect could
     // otherwise steer the browser at internal infrastructure (SSRF).
     await context.route('**/*', (route) => {
-      if (rejectPrivateOrInvalid(route.request().url())) return route.abort('blockedbyclient');
+      if (rejectExtractionUrl(route.request().url())) return route.abort('blockedbyclient');
       return route.continue();
     });
     const page = await context.newPage();
@@ -975,7 +987,7 @@ async function main() {
 
     // Belt-and-suspenders: never emit content read from a private final URL.
     const finalUrl = page.url();
-    const finalGuard = rejectPrivateOrInvalid(finalUrl);
+    const finalGuard = rejectExtractionUrl(finalUrl);
     if (finalGuard) {
       console.error(JSON.stringify({ error: `blocked final URL: ${finalGuard.reason}`, code: finalGuard.code }));
       process.exitCode = 1;

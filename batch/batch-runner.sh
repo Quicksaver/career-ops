@@ -1458,9 +1458,8 @@ process_offer() {
   # the rendered JS shell rather than the actual JD text. curl returns the raw
   # HTML in a single round-trip; for static boards that is exactly the JD.
   # For JS-rendered boards the file will be thin (JS shell only), which the
-  # sufficiency check below detects — the file is then truncated to 0 bytes so
-  # the worker's Step-1 WebFetch fallback fires exactly as designed.
-  # If curl is absent or fails, $jd_file stays empty and WebFetch fires too.
+  # sufficiency check below detects. Empty files fall through to ATS API and
+  # browser extraction before the worker needs its own retrieval tools.
   # Minimum visible word count to treat a fetched page as a real JD rather than
   # a JS shell. A JS app shell (Workday, Phenom, iCIMS) has near-zero visible
   # words after HTML stripping; a real JD has hundreds. 80 is a conservative
@@ -1584,7 +1583,7 @@ process_offer() {
       jd_prefetch_words="${jd_prefetch_words:-0}"
       if [[ "$jd_prefetch_words" -lt "$prefetch_min_words" ]]; then
         : > "$jd_file"
-        echo "    ℹ️  JD prefetch: thin content (${jd_prefetch_words} words) — worker will WebFetch"
+        echo "    ℹ️  JD prefetch: thin content (${jd_prefetch_words} words) — trying API/browser fallback"
       else
         echo "    ℹ️  JD prefetch: ${jd_prefetch_words} words written to JD file"
       fi
@@ -1614,6 +1613,45 @@ process_offer() {
       fi
     fi
     rm -f "$jd_api_tmp"
+  fi
+
+  # Render once before delegating extraction to an agent. Worker browser tools
+  # vary by CLI/session; the repository reader is available to both supported
+  # CLIs. Use the existing owner/timeout supervisor so a stopped run also drains
+  # Chromium. The reader blocks private destinations and LinkedIn on every hop.
+  if [[ ! -s "$jd_file" && "$url" != local:* && -f "$PROJECT_DIR/browser-extract.mjs" ]]; then
+    local jd_browser_tmp jd_browser_rc=0 jd_browser_words=0
+    jd_browser_tmp="$(mktemp "$jd_tmp_dir/batch-browser-${id}.XXXXXX")"
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*) jd_browser_tmp="$(cygpath -m "$jd_browser_tmp")" ;;
+    esac
+    echo "    ℹ️  JD prefetch: trying browser extraction (one attempt, 35s limit)"
+    node "$SCRIPT_DIR/worker-process.mjs" run 35 "$WORKER_DIR/$id.json" \
+      node "$PROJECT_DIR/browser-extract.mjs" --user "$USER_ID" "$url" \
+      --mode jd --timeout 15000 --max-chars 100000 \
+      < /dev/null > "$jd_browser_tmp" 2> "$LOGS_DIR/$id.jd-browser.log" || jd_browser_rc=$?
+    if [[ "$jd_browser_rc" -eq 0 ]]; then
+      jd_browser_words=$(node -e '
+        const fs = require("fs");
+        try {
+          const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+          const text = result.text;
+          if (result.error || typeof text !== "string" || text.endsWith("…")) process.exit(1);
+          const words = text.trim().split(/\s+/).filter(Boolean).length;
+          if (words < Number(process.argv[3])) process.exit(1);
+          fs.writeFileSync(process.argv[2], text);
+          process.stdout.write(String(words));
+        } catch { process.exitCode = 1; }
+      ' "$jd_browser_tmp" "$jd_file" "$prefetch_min_words") || jd_browser_words=0
+    fi
+    rm -f "$jd_browser_tmp"
+    # A failed containment check or interruption must not launch another worker.
+    case "$jd_browser_rc" in 125|130|137|143) return 2 ;; esac
+    if [[ "$jd_browser_words" -gt 0 ]]; then
+      echo "    ℹ️  JD prefetch: ${jd_browser_words} words from browser extraction"
+    else
+      echo "    ℹ️  JD prefetch: browser extraction unavailable — worker will try its retrieval tools"
+    fi
   fi
 
   if [[ "$url" == local:* && ! -s "$jd_file" ]]; then

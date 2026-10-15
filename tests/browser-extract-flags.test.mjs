@@ -41,7 +41,20 @@ function run(args) {
   }
 }
 
-const { parseArgs } = await import(pathToFileURL(SCRIPT).href);
+const { parseArgs, rejectExtractionUrl } = await import(pathToFileURL(SCRIPT).href);
+
+// The same guard gates the initial URL, routed requests/redirects and final URL.
+for (const url of ['https://linkedin.com/jobs/view/1', 'https://www.linkedin.com./jobs/view/1', 'https://uk.linkedin.com/jobs/view/1']) {
+  const r = run([url]);
+  if (r.code !== 0 && /linkedin_requires_auth/.test(r.out)) pass('LinkedIn is rejected before API/browser launch');
+  else fail(`LinkedIn unexpectedly attempted extraction: ${r.out}`);
+}
+for (const url of ['http://127.0.0.1/admin', 'https://www.linkedin.com/jobs/view/1']) {
+  if (rejectExtractionUrl(url)) pass(`request guard rejects ${url}`);
+  else fail(`request guard allowed ${url}`);
+}
+if (rejectExtractionUrl('https://board.example/job/1') === null) pass('request guard permits public posting URLs');
+else fail('request guard rejected a public posting URL');
 
 // ── 1. A mistyped flag is refused, and the message names it ──────────────
 // Before: `5000` became the URL and the caller was told the URL was invalid.

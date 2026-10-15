@@ -24,6 +24,8 @@ id	url	source	notes
 
 The worker loads the current shared, evaluation and output modes. It runs A-G evaluation, archives the JD, generates the configured CV format when gates permit, and writes a labeled tracker addition. The runner validates artifacts, merges tracker additions, reconciles pipeline state and verifies integrity. A parent coordinator can use `--defer-verification` to own the final verification pass.
 
+Before launching the worker, an empty HTTP/API prefetch triggers one read-only `browser-extract.mjs` attempt, with a 35-second process limit and owned browser cleanup. Substantive, untruncated text reaches the worker through its JD file; extraction errors, missing Playwright and thin pages leave the worker's normal retrieval/confirmation gates available. Diagnostics go to `batch/logs/{id}.jd-browser.log`. Supplied JD text and local captures bypass this fallback. LinkedIn remains on the authenticated scanner/manual-input path, and the generic extractor blocks LinkedIn requests and redirects.
+
 Codex model and reasoning resolve independently from command-line `--model` / `--reasoning-effort`, then `codex.model` / `codex.reasoning_effort` in the active profile, then `gpt-6.1-sol` / `medium`. Claude resolves its model from `--model`, then the profile's `spend_tier`.
 
 Parallelism resolves as `--parallel`, profile `batch.parallel`, then `1` for both CLIs. After a transient rate limit, the owning batch pool reduces new dispatch to one worker for the rest of that batch. Active workers drain normally; quota/session holds still require explicit recovery.
