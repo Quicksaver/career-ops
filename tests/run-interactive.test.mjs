@@ -208,3 +208,72 @@ test('broker failure questions use the selector default retry ceiling', t => {
   t.after(() => broker.close());
   assert.deepEqual(broker.questions.map(item => item.url), [B]);
 });
+
+test('invalid historical IDs cannot claim canonical ownership before valid duplicate rows', t => {
+  const userRoot = root(t), controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');
+  writeFileSync(controlPath, JSON.stringify({ schema_version: 1, user: 'fictional', owner_pid: process.pid, status: 'open', retries: [] }));
+  writeFileSync(answersPath, JSON.stringify({ schema_version: 1, user: 'fictional', answers: [] }));
+  writeFileSync(queuePath, A + '\n');
+  const input = join(userRoot, 'batch/batch-input.tsv');
+  writeFileSync(input, `id\turl\tsource\tnotes\nold-import\t${A}\t\t\n2\t${A}\tvalid\t\n`);
+  const next = () => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath });
+  assert.equal(next().selected.id, '2'); assert.equal(next().status, 'idle');
+  writeFileSync(input, `id\turl\tsource\tnotes\n1\t${A}\tnew duplicate\t\n2\t${A}\tvalid\t\n`);
+  writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `2\t${A}\tfailed\t\t\t\t\t\t1\n`);
+  assert.equal(next().selected.id, '2', 'later input changes cannot override the ledger-pinned valid identity');
+  assert.equal(next().status, 'idle');
+});
+
+test('a duplicate ID cannot bypass an unanswered hold and exact answers resume the held identity', t => {
+  for (const reason of ['agency_confirmation', 'jd_unavailable']) {
+    const userRoot = root(t), controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');
+    const control = { schema_version: 1, user: 'fictional', owner_pid: process.pid, status: 'open', retries: [] };
+    writeFileSync(controlPath, JSON.stringify(control)); writeFileSync(queuePath, `${A}\n${B}\n`);
+    const writeAnswers = answers => writeFileSync(answersPath, JSON.stringify({ schema_version: 1, user: 'fictional', answers }));
+    writeAnswers([]);
+    writeFileSync(join(userRoot, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\told\t\n2\t${A}\theld\t\n3\t${B}\tindependent\t\n`);
+    const state = (first = 'failed', held = 'needs_confirmation', retries = 1) => writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header +
+      `1\t${A}\t${first}\t\t\t\t\t\t1\n2\t${A}\t${held}\t\t\t\t\t\t${retries}\n`);
+    state(); hold(userRoot, '2', A, reason);
+    const next = options => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath, ...options });
+    assert.equal(next().selected.url, B, 'independent work passes the held duplicate');
+    writeFileSync(queuePath, A + '\n');
+    assert.equal(next().status, 'idle');
+    state('pending'); assert.equal(next().status, 'idle', 'a pending duplicate also cannot bypass the hold');
+    control.retries = [{ url: A, token: 'explicit' }]; writeFileSync(controlPath, JSON.stringify(control));
+    assert.equal(next({ retryFailed: true, resumePaused: true }).status, 'idle', 'retry flags never answer a hold');
+    writeAnswers([{ url: B, reason, answer: 'Wrong posting', ...(reason === 'jd_unavailable' ? { jd_text: 'Wrong posting JD' } : {}) }]);
+    assert.equal(next().status, 'idle');
+    writeAnswers([{ url: A, reason: reason === 'agency_confirmation' ? 'jd_unavailable' : 'agency_confirmation', answer: 'Wrong reason', jd_text: 'Unrelated JD' }]);
+    assert.equal(next().status, 'idle');
+    const answer = { url: A, reason, answer: 'Exact answer', ...(reason === 'jd_unavailable' ? { jd_text: 'Build reliable applications for a fictional employer in Europe.' } : {}) };
+    writeAnswers([answer]);
+    assert.equal(next({ activeUrls: [A] }).status, 'idle', 'the hold publisher must exit first');
+    const selected = next().selected;
+    assert.equal(selected.id, '2'); assert.equal(selected.resetHold, true);
+    assert.equal(next().status, 'idle', 'the same answer cannot be consumed again');
+    control.retries = []; writeFileSync(controlPath, JSON.stringify(control));
+    state('pending', 'failed', 1);
+    assert.equal(next().selected.id, '2', 'follow-up failure retries stay under the held identity');
+    state('pending', 'completed'); assert.equal(next().status, 'idle', 'completed held identity protects the whole URL');
+  }
+});
+
+test('conflicting held identities stop explicitly instead of silently dispatching another ID', t => {
+  const userRoot = root(t), controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');
+  writeFileSync(controlPath, JSON.stringify({ schema_version: 1, user: 'fictional', owner_pid: process.pid, status: 'open', retries: [] }));
+  writeFileSync(answersPath, JSON.stringify({ schema_version: 1, user: 'fictional', answers: [] }));
+  writeFileSync(queuePath, A + '\n');
+  const input = join(userRoot, 'batch/batch-input.tsv');
+  writeFileSync(input, `id\turl\tsource\tnotes\n1\t${A}\t\t\n2\t${A}\t\t\n`);
+  writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tneeds_confirmation\t\t\t\t\t\t0\n2\t${A}\tneeds_confirmation\t\t\t\t\t\t0\n`);
+  const next = options => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath, ...options });
+  assert.throws(next, /Conflicting confirmation identities/);
+  writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `2\t${A}\tneeds_confirmation\t\t\t\t\t\t0\n`);
+  writeFileSync(`${controlPath}.dispatch.json`, JSON.stringify([{ id: '1', url: A, token: 'initial', answer_token: null }]));
+  assert.throws(next, /Conflicting confirmation identities/, 'already-dispatched identity cannot silently change');
+  writeFileSync(`${controlPath}.dispatch.json`, '[]');
+  writeFileSync(input, `id\turl\tsource\tnotes\n1\t${A}\t\t\n`);
+  assert.throws(next, /Conflicting confirmation identities/, 'held ID must exist in the input');
+  assert.equal(next({ activeUrls: [A] }).status, 'idle', 'in-flight publication keeps the posting unavailable');
+});

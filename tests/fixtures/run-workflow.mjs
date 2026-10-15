@@ -65,7 +65,7 @@ export function fixture(t, { rows = [A], ...config } = {}) {
   };
   const startInteractive = (args = ['--skip-scan']) => {
     const preload = join(root, 'fixture-tty.mjs');
-    writeFileSync(preload, `if(process.argv[1]?.endsWith('run-workflow.mjs')) { for(const stream of [process.stdin,process.stdout]) Object.defineProperty(stream,'isTTY',{value:true}); process.stdin.setRawMode=raw=>{process.stdin.isRaw=raw;}; Object.defineProperty(process.stdout,'columns',{value:120});Object.defineProperty(process.stdout,'rows',{value:30}); }`);
+    writeFileSync(preload, `for(const stream of [process.stdin,process.stdout]) Object.defineProperty(stream,'isTTY',{value:true}); process.stdin.setRawMode=raw=>{process.stdin.isRaw=raw;}; Object.defineProperty(process.stdout,'columns',{value:120});Object.defineProperty(process.stdout,'rows',{value:30});`);
     const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(root, 'run-workflow.mjs'), '--user', 'fictional', '--interactive', ...args], { cwd: root, env, windowsHide: true });
     let output = ''; child.stdout.on('data', data => output += data); child.stderr.on('data', data => output += data);
     const timer = setTimeout(() => terminateProcessTreeSync(child), 30000);

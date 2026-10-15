@@ -19,7 +19,7 @@ async function until(predicate, output) {
   assert.fail(output());
 }
 
-test('production Bash pool resumes an answered LinkedIn hold before its other worker exits', async t => {
+for (const duplicateHold of [false, true]) test(`production Bash pool resumes an answered LinkedIn hold before its other worker exits${duplicateHold ? ' under the held historical ID' : ''}`, async t => {
   const root = mkdtempSync(join(tmpdir(), 'run-live-batch-'));
   for (const dir of ['batch', 'bin', 'config', 'jds', 'reports']) mkdirSync(join(root, dir));
   copyBatchOwnership(root); copyGraph(root, 'lib/run-live-inputs.mjs');
@@ -31,7 +31,13 @@ test('production Bash pool resumes an answered LinkedIn hold before its other wo
   for (const name of ['merge-tracker', 'reconcile-pipeline']) writeFileSync(join(root, `${name}.mjs`), '// offline only');
   writeFileSync(join(root, 'jds/slow.md'), 'A local fictional job description. '.repeat(100));
   const linkedIn = 'https://www.linkedin.com/jobs/view/1234567';
-  writeFileSync(join(root, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\tlocal:jds/slow.md\tfixture\t\n2\t${linkedIn}\tfixture\t\n3\thttps://example.org/historical\told\t\n`);
+  const duplicate = duplicateHold ? `old-import\t${linkedIn}\tinvalid\t\n4\t${linkedIn}\tolder duplicate\t\n` : '';
+  writeFileSync(join(root, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\tlocal:jds/slow.md\tfixture\t\n${duplicate}2\t${linkedIn}\tfixture\t\n3\thttps://example.org/historical\told\t\n`);
+  if (duplicateHold) {
+    mkdirSync(join(root, 'batch/logs'), { recursive: true });
+    writeFileSync(join(root, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n2\t${linkedIn}\tneeds_confirmation\t\t\t\t\t\t0\n`);
+    writeFileSync(join(root, 'batch/logs/2.hold.json'), JSON.stringify({ schema_version: 1, user: 'fictional', id: '2', url: linkedIn, status: 'needs_confirmation', reason: 'jd_unavailable', question: 'Provide the exact JD.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));
+  }
   const queuePath = join(root, 'queue.txt'), answersPath = join(root, 'answers.json'), controlPath = join(root, 'live.json');
   writeFileSync(queuePath, `local:jds/slow.md\n${linkedIn}\n`);
   const control = status => writeFileAtomic(controlPath, JSON.stringify({ schema_version: 1, user: 'fictional', owner_pid: process.pid, status, retries: [] }));
@@ -66,6 +72,7 @@ console.error('ordinary fixture failure after launch');process.exitCode=1;`);
   const states = parseBatchState(readFileSync(join(root, 'batch/batch-state.tsv'), 'utf8'));
   assert.deepEqual(states.map(row => [row.id, row.status, row.retries]).sort(), [['1', 'failed', '1'], ['2', 'failed', '1']]);
   assert.equal(existsSync(join(root, 'ready-3')), false);
+  assert.equal(existsSync(join(root, 'ready-4')), false, 'the unheld historical ID cannot take over the posting');
   assert.equal(inspectOwnership(join(root, 'batch/batch-runner.pid')).status, 'absent');
   assert.match(output, /Pending: live queue/);
   assert.match(output, /remaining -/);
