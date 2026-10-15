@@ -597,7 +597,6 @@ async function main() {
             summary.manual_actions = summary.manual_actions.filter(item => !(item.kind === action.kind && item.phase === action.phase));
             summary.issues = summary.issues.filter(item => item.phase !== (action.kind === 'tracker' ? 'tracker-merge' : action.phase));
           }
-          if (action.reason === 'rate_limit' && action.url) resumePaused = true;
           requested = true;
         },
       });
@@ -792,8 +791,8 @@ async function main() {
           kind: 'batch', phase: 'batch', reason: 'rate_limit',
           question: 'The batch is paused for a quota/session limit. Resolve it, then rerun the workflow with --resume-paused.',
         });
-        for (let pass = 1; pass <= maxQueuePasses && (!priorBatchPause || resumePaused); pass++) {
-          const queue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused })
+        for (let pass = 1; pass <= maxQueuePasses && (!priorBatchPause || resumePaused || retries.size > 0); pass++) {
+          const queue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused, retryUrls: [...retries.keys()] })
             .filter(row => !interactive || !batchLimit || admittedUrls.size < Number(batchLimit) || admittedUrls.has(row.url));
           if (queue.length === 0 && !(interactive?.active && readRunQueue(context.userRoot).pending.length && interactive.questions.some(action => action.kind === 'job'))) break;
           checkBatchOwner();
@@ -818,10 +817,6 @@ async function main() {
           if (batchCli === 'codex' && codexSettings.reasoningEffort) {
             batchArgs.push('--reasoning-effort', codexSettings.reasoningEffort);
           }
-          if (interactive) {
-            const all = readRunQueue(context.userRoot);
-            writeFileAtomic(queueFile, [...new Set(all.pending.map(row => row.url))].join('\n') + '\n');
-          }
           log(`batch queue pass ${pass}: ${queue.length} runnable job(s)`);
           summary.queue_passes++;
           try {
@@ -829,12 +824,15 @@ async function main() {
             let monitorError = null;
             let liveControlPath = null;
             let monitorTask = null;
-            if (interactive?.active) {
+            if (interactive) {
               // Keep consumed answers/retry tokens across verification and
               // source-retry cycles within this workflow invocation.
               const controlPath = join(runDir, 'live-inputs.json');
               liveControlPath = controlPath;
               let monitoring = false;
+              const publishIfChanged = (path, text) => {
+                if (!existsSync(path) || readFileSync(path, 'utf8') !== text) writeFileAtomic(path, text);
+              };
               const publish = async () => {
                 if (monitoring) return;
                 monitoring = true;
@@ -843,7 +841,7 @@ async function main() {
                   const synced = await synchronizeBatch({ userRoot: context.userRoot, user: context.userId, pipelinePath });
                   if (synced.status !== 'completed') throw new Error(synced.error);
                   const all = readRunQueue(context.userRoot);
-                  writeFileAtomic(queueFile, [...new Set(all.pending.map(row => row.url))].join('\n') + '\n');
+                  publishIfChanged(queueFile, [...new Set(all.pending.map(row => row.url))].join('\n') + '\n');
                   if (existsSync(`${controlPath}.dispatch.json`)) {
                     for (const item of JSON.parse(readFileSync(`${controlPath}.dispatch.json`, 'utf8'))) admittedUrls.add(item.url);
                   }
@@ -851,18 +849,18 @@ async function main() {
                   const statusPath = `${controlPath}.status.json`;
                   const feedback = existsSync(statusPath) ? JSON.parse(readFileSync(statusPath, 'utf8')) : null;
                   const finish = !interactive.active || (feedback?.status === 'idle' && !interactive.questions.length && !interactive.tasks.size);
-                  writeFileAtomic(controlPath, JSON.stringify({ schema_version: 1, user: context.userId, owner_pid: process.pid,
+                  publishIfChanged(controlPath, JSON.stringify({ schema_version: 1, user: context.userId, owner_pid: process.pid,
                     status: finish ? 'finish' : 'open', admitted_urls: [...admittedUrls], retries: [...retries].map(([url, token]) => ({ url, token })) }));
                 } catch (error) {
                   monitorError = error;
-                  writeFileAtomic(controlPath, JSON.stringify({ schema_version: 1, user: context.userId, owner_pid: process.pid, status: 'finish', retries: [] }));
+                  publishIfChanged(controlPath, JSON.stringify({ schema_version: 1, user: context.userId, owner_pid: process.pid, status: 'finish', retries: [] }));
                 } finally { monitoring = false; }
               };
               await publish();
               batchArgs.push('--live-inputs', controlPath);
               monitor = setInterval(() => {
                 if (!monitorTask) monitorTask = publish().finally(() => { monitorTask = null; });
-              }, 250);
+              }, 1000);
             }
             try { await runCommand(`batch-${pass}`, systemPath('batch/batch-runner.sh'), batchArgs, { progress: true }); }
             finally {

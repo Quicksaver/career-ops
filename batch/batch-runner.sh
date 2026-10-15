@@ -2245,7 +2245,7 @@ watch_status() {
 # The coordinator can publish new answers while this one owner keeps its pool.
 # Preparation still runs outside conditional lists, preserving errexit.
 process_live_offers() {
-  local -a pids=()
+  local -a pids=() active_urls=()
   local rc=0 worker_rc=0 running=0 selection mode id url source notes reset_hold explicit_retry
   while true; do
     for j in "${!pids[@]}"; do
@@ -2254,24 +2254,27 @@ process_live_offers() {
         wait "${pids[$j]}" 2>/dev/null || worker_rc=$?
         if (( worker_rc != 0 )); then rc=$worker_rc; fi
         unset 'pids[j]'
+        unset 'active_urls[j]'
       fi
     done
     pids=(${pids[@]+"${pids[@]}"})
+    active_urls=(${active_urls[@]+"${active_urls[@]}"})
     running=${#pids[@]}
     if (( rc != 0 )) || [[ -f "$PAUSE_FILE" ]]; then break; fi
     # Also check coordinator ownership while every slot is occupied.
-    selection=$(node "$PROJECT_DIR/lib/run-live-inputs.mjs" "$LIVE_INPUTS" "$USER_ROOT" "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$running" "$MAX_RETRIES" "$LIMIT" "$RETRY_FAILED" "$RESUME_PAUSED" "$PARALLEL") || { rc=125; break; }
+    selection=$(node "$PROJECT_DIR/lib/run-live-inputs.mjs" "$LIVE_INPUTS" "$USER_ROOT" "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$running" "$MAX_RETRIES" "$LIMIT" "$RETRY_FAILED" "$RESUME_PAUSED" "$PARALLEL" ${active_urls[@]+"${active_urls[@]}"}) || { rc=125; break; }
     IFS=$'\x1f' read -r mode id url source notes reset_hold explicit_retry <<< "$selection"
     if [[ "$mode" == "job" ]]; then
       if [[ "$reset_hold" == "true" ]]; then
-        update_state_retrying "$id" "$url" pending "" "" "-" "-" "" 0 || { rc=125; break; }
+        update_state_retrying "$id" "$url" pending "" "" "-" "-" "" "$(get_retries "$id")" || { rc=125; break; }
       fi
-      RETRY_FAILED="$explicit_retry" process_offer "$id" "$url" "$source" "$notes" 0 &
+      RETRY_FAILED="$explicit_retry" process_offer "$id" "$url" "$source" "$notes" - &
       pids+=("$!")
+      active_urls+=("$url")
       continue
     fi
     if [[ "$mode" == "done" ]]; then break; fi
-    sleep 0.25
+    sleep 1
   done
   # On fatal failure the EXIT trap drains owned workers. Do not wait forever
   # for a worker after coordinator loss or a failed preparation step.
@@ -2461,7 +2464,8 @@ main() {
     exit 0
   fi
 
-  echo "Pending: $pending_count offers"
+  if [[ -n "$LIVE_INPUTS" ]]; then echo "Pending: live queue (updated by coordinator)";
+  else echo "Pending: $pending_count offers"; fi
   echo ""
 
   # Dry run: just list

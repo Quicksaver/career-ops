@@ -67,4 +67,78 @@ console.error('ordinary fixture failure after launch');process.exitCode=1;`);
   assert.deepEqual(states.map(row => [row.id, row.status, row.retries]).sort(), [['1', 'failed', '1'], ['2', 'failed', '1']]);
   assert.equal(existsSync(join(root, 'ready-3')), false);
   assert.equal(inspectOwnership(join(root, 'batch/batch-runner.pid')).status, 'absent');
+  assert.match(output, /Pending: live queue/);
+  assert.match(output, /remaining -/);
+});
+
+test('production live loop retains active URL exclusion through reap and failure budget across holds', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'run-live-loop-'));
+  mkdirSync(join(root, 'batch/logs'), { recursive: true });
+  copyGraph(root, 'lib/run-live-inputs.mjs'); copyGraph(root, 'pipeline-lock.mjs');
+  cpSync(join(repo, 'tracker-aliases.json'), join(root, 'tracker-aliases.json'));
+  assert.equal(linkNodeModules(root), null);
+  const a = 'https://example.org/jobs/a', b = 'https://example.org/jobs/b';
+  const controlPath = join(root, 'live.json'), answersPath = join(root, 'answers.json');
+  const control = status => writeFileAtomic(controlPath, JSON.stringify({ schema_version: 1, user: 'fictional', owner_pid: process.pid, status, retries: [] }));
+  control('open');
+  writeFileSync(answersPath, JSON.stringify({ schema_version: 1, user: 'fictional', answers: [] }));
+  writeFileSync(join(root, 'queue.txt'), `${a}\n${b}\n`);
+  writeFileSync(join(root, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${a}\t\t\n2\t${b}\t\t\n`);
+  writeFileSync(join(root, 'state.mjs'), `import {existsSync,readFileSync,writeFileSync} from 'node:fs';
+import {withPipelineLock} from './pipeline-lock.mjs';
+const [id,url,status,retries]=process.argv.slice(2), path=process.env.CAREER_OPS_ROOT+'/batch/batch-state.tsv';
+await withPipelineLock(path,()=>{const lines=existsSync(path)?readFileSync(path,'utf8').trimEnd().split('\\n'):['id\\turl\\tstatus\\tstarted\\tcompleted\\treport\\tscore\\terror\\tretries'];
+writeFileSync(path,lines.filter((line,index)=>!index||line.split('\\t')[0]!==id).concat([[id,url,status,'','','','','',retries].join('\\t')]).join('\\n')+'\\n');});`);
+  const production = readFileSync(join(repo, 'batch/batch-runner.sh'), 'utf8').replace(/\r\n/g, '\n');
+  const loop = production.slice(production.indexOf('process_live_offers() {'), production.indexOf('\n# Main\n'));
+  const shell = join(root, 'loop.sh');
+  writeFileSync(shell, `#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_DIR="$CAREER_OPS_ROOT"; USER_ROOT="$PROJECT_DIR"; USER_ID=fictional
+LIVE_INPUTS="$PROJECT_DIR/live.json"; ANSWERS_FILE="$PROJECT_DIR/answers.json"; QUEUE_FILE="$PROJECT_DIR/queue.txt"
+MAX_RETRIES=2; LIMIT=0; RETRY_FAILED=false; RESUME_PAUSED=false; PARALLEL=2; PAUSE_FILE="$PROJECT_DIR/pause"
+get_retries() { awk -F '\\t' -v id="$1" '$1==id{print $9; found=1} END{if(!found) print 0}' "$PROJECT_DIR/batch/batch-state.tsv"; }
+update_state_retrying() { node "$PROJECT_DIR/state.mjs" "$1" "$2" "$3" "$9"; }
+process_offer() {
+  local id="$1" url="$2" attempt=0
+  [[ ! -f "$PROJECT_DIR/count-$id" ]] || attempt=$(cat "$PROJECT_DIR/count-$id")
+  attempt=$((attempt+1)); echo "$attempt" > "$PROJECT_DIR/count-$id"
+  if [[ "$id" == 2 ]]; then node "$PROJECT_DIR/state.mjs" "$id" "$url" completed 0; touch "$PROJECT_DIR/independent-done"; return; fi
+  if (( attempt == 1 )); then
+    node "$PROJECT_DIR/state.mjs" "$id" "$url" failed 1; touch "$PROJECT_DIR/failure-published"
+    while [[ ! -f "$PROJECT_DIR/reap-first" ]]; do sleep 0.1; done
+  elif (( attempt == 2 )); then
+    cp "$PROJECT_DIR/hold.json" "$PROJECT_DIR/batch/logs/1.hold.json"
+    node "$PROJECT_DIR/state.mjs" "$id" "$url" needs_confirmation 1; touch "$PROJECT_DIR/hold-published"
+    while [[ ! -f "$PROJECT_DIR/reap-hold" ]]; do sleep 0.1; done
+  else
+    local retries; retries=$(get_retries "$id")
+    node "$PROJECT_DIR/state.mjs" "$id" "$url" failed "$((retries+1))"; touch "$PROJECT_DIR/final-failure"
+  fi
+}
+${loop}
+process_live_offers
+`);
+  writeFileSync(join(root, 'hold.json'), JSON.stringify({ schema_version: 1, user: 'fictional', id: '1', url: a, status: 'needs_confirmation', reason: 'agency_confirmation', question: 'Name the agency.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^CAREER_OPS_/i.test(key)));
+  env.CAREER_OPS_ROOT = root;
+  const child = spawn(getBash(), [shell], { cwd: root, env, detached: process.platform !== 'win32' });
+  let output = ''; child.stdout.on('data', data => output += data); child.stderr.on('data', data => output += data);
+  const completion = new Promise(resolve => child.once('close', resolve));
+  t.after(() => { if (child.exitCode === null) terminateProcessTreeSync(child); rmSync(root, { recursive: true, force: true }); });
+  await until(() => existsSync(join(root, 'failure-published')) && existsSync(join(root, 'independent-done')), () => output);
+  await delay(1300);
+  assert.equal(readFileSync(join(root, 'count-1'), 'utf8').trim(), '1', 'published failure cannot overlap its still-running process');
+  writeFileSync(join(root, 'reap-first'), 'release');
+  await until(() => existsSync(join(root, 'hold-published')), () => output);
+  writeFileAtomic(answersPath, JSON.stringify({ schema_version: 1, user: 'fictional', answers: [{ url: a, reason: 'agency_confirmation', answer: 'Fictional agency' }] }));
+  await delay(1300);
+  assert.equal(readFileSync(join(root, 'count-1'), 'utf8').trim(), '2', 'answer cannot overlap the still-running hold publisher');
+  writeFileSync(join(root, 'reap-hold'), 'release');
+  await until(() => existsSync(join(root, 'final-failure')), () => output);
+  await delay(1300); control('finish');
+  assert.equal(await completion, 0, output);
+  assert.equal(readFileSync(join(root, 'count-1'), 'utf8').trim(), '3');
+  const state = parseBatchState(readFileSync(join(root, 'batch/batch-state.tsv'), 'utf8')).find(row => row.id === '1');
+  assert.equal(state.retries, '2', `the hold must not reset the failure budget: ${output}`);
 });

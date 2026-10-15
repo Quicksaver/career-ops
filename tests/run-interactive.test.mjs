@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import { RunTerminal } from '../lib/run-terminal.mjs';
 import { RunInteractive } from '../lib/run-interactive.mjs';
-import { nextLiveInput } from '../lib/run-live-inputs.mjs';
+import { DEFAULT_MAX_RETRIES, nextLiveInput } from '../lib/run-live-inputs.mjs';
 
 function terminal(t) {
   const input = new PassThrough(), output = new PassThrough();
@@ -128,4 +128,67 @@ test('duplicate historical input IDs cannot dispatch the same posting twice in t
   const next = () => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath });
   assert.equal(next().selected.id, '1');
   assert.equal(next().status, 'idle');
+});
+
+test('unchanged footer state does not render, but refreshed callbacks and visible changes do', async t => {
+  const f = terminal(t), calls = [];
+  const question = { key: 'a', title: 'Agency', question: 'Who?', position: 1, total: 1, hint: 'Enter', submit: () => calls.push('old') };
+  f.ui.setStatus('waiting'); f.ui.setQuestion(question);
+  const before = f.text();
+  f.ui.setStatus('waiting');
+  f.ui.setQuestion({ ...question, submit: () => calls.push('new') });
+  assert.equal(f.text(), before, 'polls with identical visible content must be silent');
+  f.ui.key('Agency', {}); await new Promise(resolve => setImmediate(resolve));
+  await f.ui.submit(); assert.deepEqual(calls, ['new']);
+  let previous = f.text();
+  for (const change of [{ total: 2 }, { position: 2 }, { hint: 'Updated instructions' }, { question: 'Updated question' }, { title: 'Updated title' }, { url: A }, { multiline: true }]) {
+    Object.assign(question, change); f.ui.setQuestion({ ...question });
+    assert.notEqual(f.text(), previous); previous = f.text();
+  }
+});
+
+test('broker keeps the active multiline question when source or reordered job questions arrive', t => {
+  const userRoot = root(t), f = terminal(t);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [!] ${A} | JD unavailable\n\n## Processed\n`);
+  const summary = { run_id: 'fixture', manual_actions: [] };
+  const broker = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary, onAnswer() {}, onRetry() {} });
+  t.after(() => broker.close());
+  f.ui.key('Draft job description\nStill editing', {});
+  const key = f.ui.question.key, draft = f.ui.draft.join('');
+  summary.manual_actions.unshift({ kind: 'source', phase: 'scan', reason: 'source_login', question: 'Log in' });
+  broker.refresh();
+  assert.equal(f.ui.question.key, key); assert.equal(f.ui.draft.join(''), draft);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [!] ${B} | confirm agency\n- [!] ${A} | JD unavailable\n\n## Processed\n`);
+  broker.refresh();
+  assert.equal(f.ui.question.key, key); assert.equal(f.ui.draft.join(''), draft);
+  assert.equal(f.ui.question.total, 3); assert.equal(f.ui.question.position, 3);
+});
+
+test('live selection excludes active processes and pins one posting ID across mixed duplicate states', t => {
+  const userRoot = root(t), controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');
+  writeFileSync(controlPath, JSON.stringify({ schema_version: 1, user: 'fictional', owner_pid: process.pid, status: 'open', retries: [] }));
+  writeFileSync(answersPath, JSON.stringify({ schema_version: 1, user: 'fictional', answers: [] }));
+  writeFileSync(queuePath, `${A}\n${B}\n`);
+  writeFileSync(join(userRoot, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\t\t\n2\t${A}\tduplicate\t\n3\t${B}\t\t\n`);
+  const next = options => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath, ...options });
+  assert.equal(next().selected.id, '1');
+  writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tfailed\t\t\t\t\t\t1\n2\t${A}\tfailed\t\t\t\t\t\t0\n`);
+  assert.equal(next({ activeUrls: [A], running: 1, capacity: 2 }).selected.url, B);
+  assert.equal(next({ activeUrls: [A] }).status, 'idle');
+  assert.equal(next().selected.id, '1', 'reap releases the canonical ID only');
+  assert.equal(next().status, 'idle', 'different automatic tokens on a duplicate ID cannot bypass canonical ownership');
+  for (const status of ['completed', 'skipped', 'processing']) {
+    writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tfailed\t\t\t\t\t\t1\n2\t${A}\t${status}\t\t\t\t\t\t0\n`);
+    writeFileSync(controlPath, JSON.stringify({ schema_version: 1, user: 'fictional', owner_pid: process.pid, status: 'open', retries: [{ url: A, token: status }] }));
+    assert.equal(next().status, 'idle', `${status} on another ID protects the entire posting`);
+  }
+});
+
+test('broker failure questions use the selector default retry ceiling', t => {
+  const userRoot = root(t), f = terminal(t);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [ ] ${A}\n- [ ] ${B}\n\n## Processed\n`);
+  writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tfailed\t\t\t\t\t\t${DEFAULT_MAX_RETRIES - 1}\n2\t${B}\tfailed\t\t\t\t\t\t${DEFAULT_MAX_RETRIES}\n`);
+  const broker = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'fixture', manual_actions: [] }, onAnswer() {}, onRetry() {} });
+  t.after(() => broker.close());
+  assert.deepEqual(broker.questions.map(item => item.url), [B]);
 });

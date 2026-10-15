@@ -30,6 +30,10 @@ else if (phase === 'scan') {
   if (config.login) { console.error('login required: not logged in'); process.exitCode = 1; }
   else emit({ added: 0, errors: [] });
 } else if (phase === 'pipeline-liveness') {
+  if (config.waitForLiveness) {
+    writeFileSync(join(root, 'liveness-waiting'), 'waiting');
+    while (!existsSync(join(root, 'release-liveness'))) await new Promise(resolve => setTimeout(resolve, 25));
+  }
   emit({ status: config.livenessFailure ? 'failed' : 'completed', checked: 0, expired: 0 });
   if (config.livenessFailure) process.exitCode = 1;
 }
@@ -52,7 +56,7 @@ else if (phase === 'codex-mock') {
   emit({ offline: true });
   writeFileSync(value('--output-last-message'), JSON.stringify({ status: config.handoffPartial ? 'partial' : 'completed', processed_items: 1, added: config.malformedHandoff ? 1 : 0, duplicates: config.handoffPartial ? 0 : 1, expired: 0, errors: config.handoffPartial ? [{ item: 'Fictional', message: 'offline source unavailable', recoverable: true }] : [], requires_user_action: false, user_action: null }));
 } else if (phase === 'batch-mock' && args.includes('--live-inputs')) {
-  const controlPath = value('--live-inputs'), active = new Set();
+  const controlPath = value('--live-inputs'), active = new Map();
   const pausePath = join(root, 'batch/batch-runner.paused'); rmSync(pausePath, { force: true });
   const statePath = join(root, 'batch/batch-state.tsv');
   const setState = (row, status) => {
@@ -63,7 +67,7 @@ else if (phase === 'codex-mock') {
   while (true) {
     if (existsSync(pausePath)) break;
     if (active.size < Number(value('--parallel'))) {
-      const next = nextLiveInput({ controlPath, userRoot: root, user: 'fictional', answersPath: value('--answers-file'), queuePath: value('--queue-file'), running: active.size, resumePaused: args.includes('--resume-paused'), limit: args.includes('--limit') ? Number(value('--limit')) : 0 });
+      const next = nextLiveInput({ controlPath, userRoot: root, user: 'fictional', answersPath: value('--answers-file'), queuePath: value('--queue-file'), running: active.size, activeUrls: [...active.values()], resumePaused: args.includes('--resume-paused'), limit: args.includes('--limit') ? Number(value('--limit')) : 0 });
       if (next.selected) {
         const row = next.selected; setState(row, 'processing');
         const task = (async () => {
@@ -89,14 +93,14 @@ else if (phase === 'codex-mock') {
             appendFileSync(join(root, 'completed.jsonl'), JSON.stringify({ url: row.url, at: Date.now() }) + '\n');
           }
         })();
-        active.add(task); task.finally(() => active.delete(task));
+        active.set(task, row.url); task.finally(() => active.delete(task));
         continue;
       }
       if (next.status === 'done') break;
     }
     await new Promise(resolve => setTimeout(resolve, 30));
   }
-  await Promise.all(active);
+  await Promise.all(active.keys());
 } else if (phase === 'batch-mock') {
   if (!args.includes('--queue-file')) throw new Error('run must provide a queue-file');
   const queue = loadQueue(value('--queue-file'), root);

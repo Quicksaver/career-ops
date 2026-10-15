@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture } from './fixtures/run-workflow.mjs';
 import { spawnSync } from 'node:child_process';
@@ -188,4 +188,63 @@ test('explicit interactive mode rejects non-terminal and JSON invocations', asyn
   const f = fixture(t, { rows: [] });
   const result = spawnSync(process.execPath, [join(f.root, 'run-workflow.mjs'), '--user', 'fictional', '--interactive'], { cwd: f.root, env: f.env, encoding: 'utf8' });
   assert.equal(result.status, 1); assert.match(result.stderr, /requires an input\/output terminal/);
+});
+
+test('retrying one paused job cannot resume a deferred paused sibling', async t => {
+  const f = fixture(t, { rows: [A, B] });
+  writeFileSync(join(f.user, 'batch/batch-state.tsv'), 'id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n' +
+    `1\t${A}\tpaused_rate_limit\t\t\t\t\t\t0\n2\t${B}\tpaused_rate_limit\t\t\t\t\t\t0\n`);
+  writeFileSync(join(f.user, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\t\t\n2\t${B}\t\t\n`);
+  writeFileSync(join(f.user, 'batch/batch-runner.paused'), 'old quota');
+  const run = f.startInteractive();
+  await until(() => run.output().includes('rate limit'), 'quota question never appeared');
+  run.send('retry\r');
+  await until(() => f.dispatched().includes(A), 'exact paused retry did not dispatch');
+  run.send('/later\r');
+  const result = await run.completion;
+  assert.equal(result.code, 2, result.output.slice(-8000));
+  assert.deepEqual(f.dispatched(), [A]);
+  assert.ok(f.calls().filter(item => item.phase === 'batch-mock').every(item => !item.args.includes('--resume-paused')));
+  assert.equal(result.result.remaining, 1);
+});
+
+test('leaving input during a later liveness pass retains the invocation job limit', async t => {
+  const f = fixture(t, { rows: [A, B], review: true });
+  const run = f.startInteractive(['--skip-scan', '--limit', '1']);
+  await until(() => run.output().includes('integrity review'), 'verification question never appeared');
+  writeFileSync(join(f.user, 'fixture.json'), JSON.stringify({ review: false, waitForLiveness: true }));
+  run.send('retry\r');
+  await until(() => existsSync(join(f.user, 'liveness-waiting')) || run.child.exitCode !== null, 'later liveness pass did not start');
+  assert.ok(existsSync(join(f.user, 'liveness-waiting')), run.output().slice(-10000));
+  // A correction exposes a failed admitted job again alongside an unadmitted
+  // sibling. The live ledger must still own both eligibility and the limit.
+  writeFileSync(join(f.user, 'data/pipeline.md'), `## Pending\n- [ ] ${A}\n- [ ] ${B}\n\n## Processed\n`);
+  writeFileSync(join(f.user, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n1\t${A}\tfailed\t\t\t\t\t\t2\n`);
+  run.send('\x04');
+  await until(() => run.output().includes('finishing without input'), 'leave input was not acknowledged');
+  writeFileSync(join(f.user, 'release-liveness'), 'release');
+  const result = await run.completion;
+  assert.equal(result.code, 2, result.output.slice(-8000));
+  assert.deepEqual(f.dispatched(), [A]);
+  assert.equal(result.result.remaining, 2);
+  assert.equal(f.calls().filter(item => item.phase === 'batch-mock').length, 2);
+  assert.ok(f.calls().filter(item => item.phase === 'batch-mock').every(item => item.args.includes('--live-inputs')));
+});
+
+test('unchanged live queue and control files retain their timestamps while workers are busy', async t => {
+  const f = fixture(t, { rows: [A], waitFor: [A] });
+  const run = f.startInteractive();
+  let runDir;
+  await until(() => {
+    if (!f.dispatched().includes(A)) return false;
+    runDir = join(f.user, 'data/workflow-runs', readdirSync(join(f.user, 'data/workflow-runs')).at(-1));
+    return JSON.parse(readFileSync(join(runDir, 'live-inputs.json'))).admitted_urls.includes(A);
+  }, 'coordinator did not acknowledge dispatch');
+  const paths = ['live-inputs.json', 'queue-1-1.txt'].map(name => join(runDir, name));
+  const stamps = paths.map(path => statSync(path).mtimeMs);
+  await delay(2300);
+  assert.deepEqual(paths.map(path => statSync(path).mtimeMs), stamps, 'unchanged publications must not rewrite files');
+  writeFileSync(join(f.user, 'release-live-workers'), 'release');
+  const result = await run.completion;
+  assert.equal(result.code, 0, result.output.slice(-5000));
 });
