@@ -39,7 +39,7 @@ try {
   const runJson = (fixture) => {
     const out = run(NODE, [join(ROOT, 'jd-skill-gap.mjs'), '--user', 'test', fixture, '--json'], {
       cwd: dir,
-      env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir },
+      env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: usersDir },
     });
     if (out === null) return null;
     try {

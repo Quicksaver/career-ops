@@ -85,7 +85,7 @@ try {
     join(ROOT, 'sync-pipeline-batch.mjs'), '--user', 'test', '--json',
   ], {
     cwd: ROOT,
-    env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir },
+    env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: usersDir },
     encoding: 'utf-8',
   });
   const sync = JSON.parse(syncOut);
@@ -99,7 +99,7 @@ try {
     join(ROOT, 'sync-pipeline-batch.mjs'), '--user', 'test', '--json',
   ], {
     cwd: ROOT,
-    env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir },
+    env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: usersDir },
     encoding: 'utf-8',
   }));
   if (second.added === 0) pass('pipeline-to-batch sync is idempotent by URL');
@@ -135,7 +135,7 @@ try {
     join(ROOT, 'verify-pipeline.mjs'), '--user', 'test', '--json',
   ], {
     cwd: ROOT,
-    env: { ...process.env, CAREER_OPS_USERS_DIR: warningUsers },
+    env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: warningUsers },
     encoding: 'utf-8',
   }));
   const warningCodes = new Set(verification.warnings.map(item => item.code));
@@ -207,7 +207,7 @@ try {
     '--verification', verificationPath, '--triage', triagePath, '--json',
   ], {
     cwd: ROOT,
-    env: { ...process.env, CAREER_OPS_USERS_DIR: warningUsers },
+    env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: warningUsers },
     encoding: 'utf-8',
   }));
   const repairedTracker = readFileSync(join(warningRoot, 'data/applications.md'), 'utf-8');
@@ -223,7 +223,7 @@ try {
     join(ROOT, 'verify-pipeline.mjs'), '--user', 'test', '--json',
   ], {
     cwd: ROOT,
-    env: { ...process.env, CAREER_OPS_USERS_DIR: warningUsers },
+    env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: warningUsers },
     encoding: 'utf-8',
   }));
   const resolutionChecks = {
@@ -277,7 +277,7 @@ try {
       '--verification', forbiddenVerificationPath, '--triage', forbiddenTriagePath, '--json',
     ], {
       cwd: ROOT,
-      env: { ...process.env, CAREER_OPS_USERS_DIR: warningUsers },
+      env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: warningUsers },
       encoding: 'utf-8',
       stdio: 'pipe',
     });
@@ -401,7 +401,7 @@ try {
     ], {
       cwd: batchTmp,
       env: {
-        ...process.env,
+        ...process.env, CAREER_OPS_ROOT: "", CAREER_OPS_DATA_DIR: "",
         PATH: `${fakeBin}${delimiter}${process.env.PATH}`,
         CAREER_OPS_USERS_DIR: join(batchTmp, 'users'),
         CODEX_ARGV_FILE: argvPath,

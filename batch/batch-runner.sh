@@ -30,6 +30,7 @@ RECOVERY_DIR=""
 PROFILE_FILE=""
 DISCARD_LOG=""
 APPLICATIONS_FILE=""
+
 STATE_LOCK_TIMEOUT_SECONDS=30
 MAIN_PID="${BASHPID:-$$}"
 OWNER_TOKEN=""
@@ -39,6 +40,7 @@ WORKER_DIR=""
 PARALLEL=""
 PARALLEL_EXPLICIT=false
 PARALLEL_SOURCE=""
+
 DRY_RUN=false
 RETRY_FAILED=false
 RESUME_PAUSED=false
@@ -84,6 +86,7 @@ Options:
   --live-inputs PATH  Internal run coordinator control file for live answers
   --user ID           Required. User folder under users/ID
   --parallel N         Worker-count override (profile batch.parallel, then 1)
+
   --dry-run            Show what would be processed, don't execute
   --retry-failed       Select failed offers, allowing one extra attempt at the retry cap
   --resume-paused      Select offers paused by a session/rate limit
@@ -266,6 +269,7 @@ configure_user_paths() {
 	APPLICATIONS_FILE="$USER_ROOT/data/applications.md"
   LOCK_FILE="$BATCH_DIR/batch-runner.pid"
   PAUSE_FILE="$BATCH_DIR/batch-runner.paused"
+  THROTTLE_FILE="$BATCH_DIR/batch-runner.throttled"
   STATE_LOCK_DIR="$BATCH_DIR/.batch-state.lock"
   STATE_LOCK_PID_FILE="$STATE_LOCK_DIR/pid"
   RECOVERY_DIR="$BATCH_DIR/batch-state-recovery.d"
@@ -275,6 +279,7 @@ configure_user_paths() {
   export CAREER_OPS_USERS_DIR="$USERS_DIR"
   export CAREER_OPS_ROOT="$USER_ROOT"
 }
+
 
 if ! [[ "$RATE_LIMIT_SLEEP" =~ ^[0-9]+$ ]]; then
   echo "ERROR: --rate-limit-sleep must be a non-negative integer (seconds)."
@@ -1804,6 +1809,7 @@ process_offer() {
         terminal_failure_recorded=true
         break
       fi
+      : > "$THROTTLE_FILE"
       retries=$((retries + 1))
       local retry_completed_at
       retry_completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -2261,6 +2267,10 @@ process_live_offers() {
     active_urls=(${active_urls[@]+"${active_urls[@]}"})
     running=${#pids[@]}
     if (( rc != 0 )) || [[ -f "$PAUSE_FILE" ]]; then break; fi
+    if (( PARALLEL > 1 )) && [[ -f "${THROTTLE_FILE:-}" ]]; then
+      PARALLEL=1
+      echo "=== Rate limited: running the remaining offers on 1 worker. ==="
+    fi
     # Also check coordinator ownership while every slot is occupied.
     selection=$(node "$PROJECT_DIR/lib/run-live-inputs.mjs" "$LIVE_INPUTS" "$USER_ROOT" "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$running" "$MAX_RETRIES" "$LIMIT" "$RETRY_FAILED" "$RESUME_PAUSED" "$PARALLEL" ${active_urls[@]+"${active_urls[@]}"}) || { rc=125; break; }
     IFS=$'\x1f' read -r mode id url source notes reset_hold explicit_retry <<< "$selection"
@@ -2328,7 +2338,7 @@ main() {
 
   if [[ "$DRY_RUN" == "false" ]]; then
     acquire_lock
-    rm -f "$PAUSE_FILE"
+    rm -f "$PAUSE_FILE" "$THROTTLE_FILE"
   fi
 
   init_state
@@ -2517,6 +2527,11 @@ main() {
         break
       fi
 
+      if (( PARALLEL > 1 )) && [[ -f "${THROTTLE_FILE:-}" ]]; then
+        PARALLEL=1
+        echo "=== Rate limited: running the remaining offers on 1 worker. ==="
+      fi
+
       # Wait if we're at parallel limit
       while (( running >= PARALLEL )); do
         # Wait for any child to finish
@@ -2541,6 +2556,10 @@ main() {
         if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
           echo "=== Batch paused: session/rate limit reached. Waiting for running workers, not scheduling new offers. ==="
           break
+        fi
+        if (( PARALLEL > 1 )) && [[ -f "${THROTTLE_FILE:-}" ]]; then
+          PARALLEL=1
+          echo "=== Rate limited: running the remaining offers on 1 worker. ==="
         fi
         sleep 1
       done

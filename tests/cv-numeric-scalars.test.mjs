@@ -37,7 +37,7 @@ try {
   writeFileSync(input, JSON.stringify(PAYLOAD));
 
   if (run(NODE, [join(ROOT, 'build-cv-html.mjs'), '--user', 'test', input, output], {
-    env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir },
+    env: { ...process.env, CAREER_OPS_ROOT: "", CAREER_OPS_DATA_DIR: "", CAREER_OPS_USERS_DIR: usersDir },
   }) === null) {
     const f = lastRunFailure();
     fail(`build-cv-html.mjs crashed (exit ${f?.status}) - ${(f?.stderr || '').trim().split('\n').pop()}`);

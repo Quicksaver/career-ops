@@ -121,7 +121,7 @@ try {
     join(ROOT, 'cleanup-runs.mjs'), '--user', 'test', '--json',
   ], {
     cwd: ROOT,
-    env: { ...process.env, CAREER_OPS_USERS_DIR: join(tmp, 'users') },
+    env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: join(tmp, 'users') },
     encoding: 'utf-8',
   }));
   if (cliResult.status === 'completed' && cliResult.deleted.some(item => item.run_id === '2000-01-01T00-00-00-000Z') &&

@@ -76,7 +76,8 @@ type ProgressMetrics struct {
 	AvgScore    float64
 	TopScore    float64
 	TotalOffers int
-	ActiveApps  int // not skip/rejected/closed/discarded
+	ActiveApps  int // applied, responded, assessment, interview or offer
+
 }
 
 // FunnelStage represents one stage of the application funnel.

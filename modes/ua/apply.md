@@ -108,6 +108,7 @@
 
 Якщо кандидат підтвердив відправку:
 
-1. Оновити статус на "Applied" через канонічний CLI: `node set-status.mjs <report#> Applied` (не редагувати таблицю `users/{USER}/data/applications.md` вручну)
+1. Оновити статус на "Applied" через канонічний CLI: `node set-status.mjs --user {USER} --report <report#> Applied` (не редагувати таблицю `users/{USER}/data/applications.md` вручну)
+
 2. Оновити секцію G звіту фінальними відповідями
 3. Запропонувати: `/career-ops contacto` для LinkedIn outreach

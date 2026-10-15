@@ -129,7 +129,7 @@ test('two offers with different URLs/report numbers/dates/IDs resolve to a byte-
     chmodSync(join(binDir, 'curl'), 0o755);
 
     const env = {
-      ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: dir,
+      ...process.env, CAREER_OPS_ROOT: "", CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: dir,
       PATH: `${binDir}${delimiter}${process.env.PATH}`,
       CAPTURE_DIR: captureDir,
     };

@@ -20,7 +20,9 @@ Keep research inline within this worker and follow the canonical bounded researc
 
 ## Evaluation and artifacts
 
-Execute the canonical A-G evaluation from `oferta`, including source evidence, the single two-pass requirement table, legitimacy, risk summary, verdict, extracted keywords, and YAML Machine Summary. Apply user score caps and hard stops. Save the report at `{{USER_ROOT}}/reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. The coordinator reserves the tracker number `{{REPORT_NUM}}`; use it exactly and never calculate max+1. Include Date, URL, Batch ID and Legitimacy headers.
+Execute the canonical A-G evaluation from `oferta`, including source evidence, the single two-pass requirement table, legitimacy, risk summary, verdict, extracted keywords, Keyword Coverage, and YAML Machine Summary. Apply user score caps and hard stops. Save the report at `{{USER_ROOT}}/reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. The coordinator reserves the tracker number `{{REPORT_NUM}}`; use it exactly and never calculate max+1. Include Date, URL, Batch ID and Legitimacy headers.
+
+Run `node keyword-match.mjs --user {{USER}} {report-path}` after saving the report and paste its `## Keyword Coverage` block after the keyword list, as the loaded `oferta` mode requires. Apply its new recruiter-identity Signal 18 when outreach is recorded in the input notes.
 
 The report MUST contain `## Job Description (archived verbatim)` with substantive full JD text and `## Machine Summary` with canonical YAML keys. Keep these two headings in English for parsers. Archive a secondary JD under `{{USER_ROOT}}/jds/` keyed to the same report when the selected output mode requires it; preserve visible posting date or `Posted: not visible in source`, and source URL/provenance. Reports and JD archives must remain available after temporary prefetch files are removed.
 
@@ -35,6 +37,7 @@ The primary flat HTML/PDF basename is `{{REPORT_NUM}}-{company-slug}-{{DATE}}`. 
 ## Machine Summary (canonical report schema)
 
 Use the report headings and their order from the loaded `oferta` mode, including Verdict (lead), Risk Summary, Score Evidence and extracted keywords. The YAML schema below is the sole batch Machine Summary schema; do not copy a second schema from a report template. Create a machine-readable summary from the completed A-G evaluation and global score. Keep field names exact, use YAML, and do not add prose inside the fence.
+
 
 ```yaml
 company: "{company}"
@@ -94,7 +97,7 @@ Rules:
 - `advertised_comp` is the JD's **own** figure, verbatim; `null` when the JD states nothing — never estimate it and never substitute researched market data (Block D research stays in Block D). Batch workers never write `{{USER_ROOT}}/data/salary-observations.tsv` — the report itself is the advertised observation (`salary-gap.mjs` reads it).
 - Do not invent missing data. If confidence is limited, set `confidence: "Low"` and explain the limitation in the human-readable sections.
 - `work_auth` reflects the Block A work-authorization tier: `no_sponsorship` only when the JD **explicitly** refuses sponsorship for a role outside the candidate's `authorized_in`; `unstated` when the JD is silent (neutral, not a blocker); `not_needed` when the role is within `authorized_in` or sponsorship isn't required; `sponsors` when the JD explicitly offers it.
-- `requirement_importance` mirrors Block B's table row by row — same rows, same verdicts, snake_cased. `evidence: stated` **requires** a non-null verbatim `jd_signal`; `jd_signal: null` is legal only for `structural` and `inferred`. `importance` is never `critical` or `high` when `evidence: inferred` — that is Block B's gate, machine-checkable here. `match` is `strong | partial | missing | na`, mirroring ✅ / ⚠️ / ❌ / ➖. Use `[]` when the JD yields no usable requirement list. No consumer reads this key yet; it is allowlisted so it round-trips.
+- `requirement_importance` mirrors Block B's table row by row — same rows, same verdicts, snake_cased. `evidence: stated` **requires** a non-null verbatim `jd_signal`; `jd_signal: null` is legal only for `structural` and `inferred`. `importance` is never `critical` or `high` when `evidence: inferred` — that is Block B's gate, machine-checkable here. `match` is `strong | partial | missing | na`, mirroring ✅ / ⚠️ / ❌ / ➖. Use `[]` when the JD yields no usable requirement list. `upskill.mjs` reads it through `skip-blockers.mjs` to rank the requirements behind recent skips.
 - `risk_summary` mirrors the `## Risk Summary` block row by row — same source verdicts, snake_cased: `legitimacy` from the Block G tier (`high_confidence` / `proceed_with_caution` / `suspicious`), `culture` from the Block A Culture screen (`pass` / `caution` / `fail`), `interview_redflags` from the red-flag file's warning level (`none` / `caution` / `warning`), `ai_screening_disclosure` from the Block G AI-screening disclosure signal (`disclosed` when the posting names AI/automated screening, `corroborating_only` when the jurisdiction requires disclosure and the posting is silent, `no_match` when the candidate's jurisdiction has no table row), `fixed_term` from Signal 16 (`detected` / `not_detected`), and `relocation_purchasing_power` from the Block G relocation signal (Signal 17, #4694) — `computed` when `node salary-gap.mjs --relocation` resolved both jurisdictions and returned `ok: true`; `no_jurisdiction_match` ONLY when the script's `reason` is specifically `no-jurisdiction-match` (the posting's or candidate's jurisdiction has no row in `templates/jurisdiction-relocation-tax.yml`); `not_evaluated` for every other `ok: false` reason — `same-jurisdiction`, `cross-country-not-supported`, `currency-mismatch` (the gross figure's currency didn't match the matched jurisdiction's table currency), or a data-level reason like `no-gross-amount`/`no-table` — as well as when the Risk Summary row itself renders `— not evaluated` (or `— no interview sessions yet`). A `same-jurisdiction` or `currency-mismatch` result must never be written as `no_jurisdiction_match`; both jurisdictions resolved fine, the comparison itself just didn't apply. Never invent a value the block does not show.
 
 ## Tracker contract
@@ -113,6 +116,7 @@ Use reserved num, date, canonical company/role, `SKIP` for Skip/hard stops or `E
 ## Final result contract
 
 Verify the actual report and tracker paths exist before returning completed. Use a JSON serializer, never raw interpolation. Emit the final object as the last real fenced `json` block for Claude, or the schema-constrained final object for Codex. Every result includes all keys below, matching `batch/batch-output-schema.json`:
+
 
 ```json
 {

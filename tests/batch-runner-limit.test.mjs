@@ -19,7 +19,7 @@ function fixture() {
   writeFileSync(join(bin, 'claude'), '#!/usr/bin/env bash\necho unexpected-worker >&2\nexit 99\n', { mode: 0o755 });
   return { root, batch, run: args => spawnSync(getBash(), [join(batch, 'batch-runner.sh'), '--cli', 'claude', ...args], {
     encoding: 'utf8', timeout: 10000,
-    env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: root, PATH: bin + delimiter + process.env.PATH },
+    env: { ...process.env, CAREER_OPS_ROOT: "", CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: root, PATH: bin + delimiter + process.env.PATH },
   }) };
 }
 

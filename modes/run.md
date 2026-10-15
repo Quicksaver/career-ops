@@ -32,7 +32,7 @@ Answers match the exact user, posting URL and reason. Keep original posting iden
 
 Automatic agent phases default to Codex GPT 6.1 Sol with medium reasoning. Model and reasoning each resolve as explicit runner argument, selected-user `codex` profile setting, then that system default; the resolved values reach handoff, verification, and every Codex batch worker. Batch workers may explicitly use Claude. OpenCode, Gemini, and Qwen remain upstream direct-batch capabilities and are deliberately unsupported by this fork's `run` coordinator.
 
-Parallelism resolves as `--parallel`, selected-user `batch.parallel`, then `1`. Review lanes are read-only; deterministic repair/ledger writes remain serialized. User files stay under the active user's data root; system modes/scripts/templates remain under the checkout.
+Parallelism resolves as `--parallel`, selected-user `batch.parallel`, then `1`. After a transient rate limit, the active batch pool reduces dispatch to one worker while existing workers drain. Review lanes are read-only; deterministic repair/ledger writes remain serialized. User files stay under the active user's data root; system modes/scripts/templates remain under the checkout.
 
 ## Supervision and completion
 

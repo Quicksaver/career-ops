@@ -30,7 +30,7 @@ import { execFileSync } from 'child_process';
 import { normalizeReportLink as normalizeLink } from './tracker-links.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
-import { parsePdfIndex, livePdfIndex } from './find.mjs';
+import { parsePdfIndex, livePdfIndex, normNum } from './find.mjs';
 import { LEGACY_COLMAP, TSV_REQUIRED_FIELDS, detectColumns, isHeaderRow, resolveScoreStatus, looksLikeTsvHeaderRow, resolveTsvColumns, looksLikeScoreCell, normalizeVia, normalizeTextKey, SEPARATOR_ROW_RE, extractReqNumber, extractCellUrl, parseMarkdownLinks } from './tracker-parse.mjs';
 // The ATS vendor table shared with analyze-patterns.mjs and the scanners, so
 // the URL cell's label and the per-vendor analysis name a board identically.
@@ -40,12 +40,13 @@ import { atsVendorOf } from './ats-vendor.mjs';
 // list is how company identity drifts between scripts (#2445, #3665).
 import { LEGAL_SUFFIXES, GENERIC_DESCRIPTORS } from './invite-match.mjs';
 import { resolveTrackerPath, resolveWorkspaceRoot, resolvePdfIndexPath, trackerLockDirFor, acquireTrackerLock, writeFileAtomic, normalizeCompany, cell, loadCanonicalStates, findDeadReportLink, rebuildRow } from './tracker-utils.mjs';
-// Canonical posting-URL key. Kept in its own module so scan.mjs / scan-history
-// can adopt the same key later without the definitions drifting.
-import { normalizeUrl, isAggregatorUrl, aggregatorPostingId } from './url-key.mjs';
+// Canonical posting-URL key and URL comparison, shared with the other tracker
+// scripts and scan.mjs so the definitions cannot drift apart.
+import { normalizeUrl, isAggregatorUrl, aggregatorPostingId, postingUrlRelation } from './url-key.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { syncTrackerPdfFlags } from './sync-pdf-flags.mjs';
+import { withPipelineLock } from './pipeline-lock.mjs';
 
 const MERGE_TRACKER_USAGE = `Usage: node merge-tracker.mjs [options]
 
@@ -729,10 +730,13 @@ export async function mergeTracker(options = {}) {
    *
    * @returns {Map<string,string>} Normalized report# → PDF path.
    */
+  let indexedPdfReports = new Set();
   function loadPdfIndex() {
     if (!existsSync(PDF_INDEX_FILE)) return new Map();
+    const entries = parsePdfIndex(readFileSync(PDF_INDEX_FILE, 'utf-8'));
+    indexedPdfReports = new Set(entries.keys());
     return livePdfIndex(
-      parsePdfIndex(readFileSync(PDF_INDEX_FILE, 'utf-8')),
+      entries,
       DATA_ROOT,
       (message) => console.warn(`⚠️  ${message}`),
     );
@@ -1926,6 +1930,12 @@ export async function mergeTracker(options = {}) {
       // stay UNKNOWN, so slug-vs-id spellings and uk./www. region hosts keep
       // collapsing and #3652 is preserved. Gating on the HOST instead was measured
       // to split one posting across two rows, which is why the ID is the gate.
+      //
+      // Between two employer-controlled URLs, a language param on ONE side is not
+      // proof of two postings: the bare URL and one that asks for a language are
+      // the same page, and the bare URL does not say which language it serves.
+      // Two known, different languages are two language versions, which stay
+      // two rows (postingUrlRelation in url-key.mjs).
       const urlDiffers = (cand) => {
         const candUrl = normalizeUrl(cand.url);
         if (!candUrl || !addUrl) return false;   // unknown → not evidence
@@ -1936,7 +1946,7 @@ export async function mergeTracker(options = {}) {
           // says the two BOARDS differ, which is the non-signal above.
           return Boolean(candId && addId && candId.domain === addId.domain && candId.id !== addId.id);
         }
-        return candUrl !== addUrl;
+        return postingUrlRelation(cand.url, addition.url) === 'distinct';
       };
 
       // The heuristic tiers additionally refuse to let an UNKEYED addition claim a
@@ -1947,8 +1957,16 @@ export async function mergeTracker(options = {}) {
       // append a duplicate row. Tiers 2 and 3 match on an entry number or a fuzzy
       // title, which are guesses; there, "this row is a specific known posting and
       // you have not told me which posting you are" is a good reason to stay out.
+      //
+      // A language param on one side only blocks these tiers too. It is not
+      // proof of two postings, so the report tiers above may still match across
+      // it, but it is not proof of one either: a bare row SKIPped for its German
+      // text and an incoming evaluation of the English version share a title,
+      // and folding them would bury the English one under the SKIP.
       const urlBlocksHeuristic = (cand) => {
         if (urlDiffers(cand)) return true;
+        if (!isAggregatorUrl(cand.url) && !isAggregatorUrl(addition.url)
+          && postingUrlRelation(cand.url, addition.url) === 'one-sided-language') return true;
         return Boolean(normalizeUrl(cand.url)) && !addUrl;
       };
 
@@ -2161,8 +2179,9 @@ export async function mergeTracker(options = {}) {
         // PDF readiness describes the retained primary report, not the new evaluation.
         const retainedReportNum = oldReportNum || reportNum;
         const pdf = retainedReportNum && pdfIndex.has(String(retainedReportNum))
+
           ? '✅'
-          : oldReportNum ? duplicate.pdf : addition.pdf;
+          : indexedPdfReports.has(String(retainedReportNum)) ? '❌' : oldReportNum ? duplicate.pdf : addition.pdf;
         const updatedLine = buildRow({
           num: duplicate.num, date: addition.date,
           // A corporate-form match (#3665) pairs the row with a VARIANT spelling of

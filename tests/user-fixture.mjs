@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+export const INHERITED_DATA_ENV = { ...process.env };
 export const TEST_USERS_DIR = mkdtempSync(path.join(tmpdir(), 'career-ops-fixture-users-'));
 mkdirSync(path.join(TEST_USERS_DIR, 'test'), { recursive: true });
 process.once('exit', () => rmSync(TEST_USERS_DIR, { recursive: true, force: true }));
@@ -12,6 +13,8 @@ delete process.env.CAREER_OPS_DATA_DIR;
 // Give an upstream flat fixture an explicit user without changing its layout.
 export function userFixtureEnv(env, explicitSelection = false) {
   if (explicitSelection) return env;
+  const inheritedSandbox = env.CAREER_OPS_TEST_DATA_ROOT && env.CAREER_OPS_ROOT === env.CAREER_OPS_TEST_DATA_ROOT;
+  if (inheritedSandbox && env.CAREER_OPS_TRACKER) env = { ...env, CAREER_OPS_ROOT: "", CAREER_OPS_DATA_DIR: "" };
   const tracker = env.CAREER_OPS_TRACKER;
   const trackerDir = tracker ? path.dirname(tracker) : '';
   const root = env.CAREER_OPS_ROOT?.trim() || env.CAREER_OPS_DATA_DIR?.trim() ||

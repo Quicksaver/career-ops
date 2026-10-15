@@ -36,6 +36,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run rollback` | `update-system.mjs rollback` | Rollback last update |
 | `node update-system.mjs status` | `update-system.mjs status` | Print installed version + short SHA |
 | `npm run liveness` | `check-liveness.mjs` | Test if job URLs are still active |
+| `node check-liveness.mjs --tracker [--status=Evaluated,Applied]` | `check-liveness.mjs` | Check the postings of open tracker rows (`Evaluated` and `Applied` by default). Each row's posting is its URL cell or its report's `**URL:**`. Rows with neither are listed by number |
 | `npm run extract` | `browser-extract.mjs` | Headless read-only page extractor (opt-in `scan.extractor: cli`) — compact JSON for scan/JD; Greenhouse, Lever, Ashby and Workday postings are read from their public JSON endpoints instead of the client-rendered page, and an empty jd extraction exits 1 with `code: empty_text` |
 | `node fetch-jd.mjs <url>` | `fetch-jd.mjs` | JD text on stdout from a known ATS API (Greenhouse/Lever/Ashby/Workday) — exit 1 with empty stdout when the host has no JD-bearing API, so a caller falls back to its browser/WebFetch path |
 | `npm run scan` | `scan.mjs` | Zero-token portal scanner |
@@ -466,6 +467,8 @@ node analyze-patterns.mjs --self-test
 ## upskill
 
 Aggregates skill gaps across every tracked report or analyzes one target JD. It extracts skill tokens from each report's Machine Summary `hard_stops`/`soft_gaps` and Gap table, removes skills already present in `users/{USER}/cv.md` and `users/{USER}/config/profile.yml` (exact-alias matching only — an umbrella term never suppresses a specific skill), and weights each aggregate gap by inverse report score (`5.0 − score`, counted once per report). Tiers use the share of low-fit reports naming the gap; schema and coverage metadata keep comparisons honest. Targeted mode accepts a URL or local JD file and applies an SSRF egress guard before fetching. The script emits data only; the `upskill` mode may layer a web-searched, free-first learning plan onto the aggregate result.
+
+The output also carries `skipBlockers` from `skip-blockers.mjs`. It reads `requirement_importance` from the last 20 SKIP or Discarded reports and ranks each critical or high requirement marked `missing` or `partial`. A skip whose report has no `requirement_importance` rows still counts toward those 20. A requirement shows only when at least two of those skips name it, and the list stops at the top five. Tool names group by skill, a short theme table groups people management, pre-sales, security clearance, and PhD, and any other requirement groups by its wording. `--summary` prints it as a second table, and the CV page shows it under the gap map.
 
 ```bash
 npm run upskill -- --user <username>
@@ -1355,6 +1358,7 @@ These have no `npm run` binding — modes and agents call them with
 | `node agent-inbox.mjs list [--all]` | List pending (or all) queued items by stable number — gaps mean already resolved |
 | `node agent-inbox.mjs resolve <n> [--expect "..."] [--result "..."]` | Tick item `n` and stamp a one-line result; `--expect` aborts unless the item contains that substring |
 | `node generate-latex.mjs <input.tex> [output.pdf] [--compile-only] [--help]` | Validate and compile a generated `.tex` CV via tectonic or pdflatex; `--compile-only` skips career-ops template validation so a user-owned `.tex` compiles as-is (`latex-tex` mode) |
+| `node install-latex-engine.mjs [--check] [--force] [--json] [--help]` | Opt-in local LaTeX engine: downloads a pinned tectonic release for this platform, verifies its SHA-256 before extracting, and places it in the repo root (gitignored) where `generate-latex.mjs` looks first. Downloads are bounded by a timeout and a size cap. No-op when tectonic is already available (a pdflatex-only host still gets tectonic, which the CJK template needs); `--check` never downloads |
 | `node classify-tier.mjs` | Classify a job title into intern / entry / mid / senior |
 | `node ats-payload.mjs <payload.json> [--summary]` | ATS payload transform: folds `competencies[]` into `skills[]` (one safe, idempotent transform) and reports three judgement calls it deliberately does not apply. Payload on stdout, findings on stderr |
 | `node plugins.mjs list\|run <id> [hook]` | CLI host for non-provider plugin hooks (see [PLUGINS.md](PLUGINS.md)) |

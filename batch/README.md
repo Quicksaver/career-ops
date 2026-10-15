@@ -26,6 +26,8 @@ The worker loads the current shared, evaluation and output modes. It runs A-G ev
 
 Codex model and reasoning resolve independently from command-line `--model` / `--reasoning-effort`, then `codex.model` / `codex.reasoning_effort` in the active profile, then `gpt-6.1-sol` / `medium`. Claude resolves its model from `--model`, then the profile's `spend_tier`.
 
+Parallelism resolves as `--parallel`, profile `batch.parallel`, then `1` for both CLIs. After a transient rate limit, the owning batch pool reduces new dispatch to one worker for the rest of that batch. Active workers drain normally; quota/session holds still require explicit recovery.
+
 ## Options
 
 | Flag | Default | Purpose |

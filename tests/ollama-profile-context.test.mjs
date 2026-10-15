@@ -9,7 +9,7 @@ import {
   copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { pass, fail, NODE, ROOT } from './helpers.mjs';
+import { pass, fail, ownRootEnv, NODE, ROOT } from './helpers.mjs';
 
 console.log('\nollama-eval — includes profile.yml and _profile.md in model context (#2488)');
 
@@ -113,7 +113,8 @@ try {
     execFile(
       NODE,
       [join(fixtureRoot, 'ollama-eval.mjs'), '--user', 'test', '--url', `http://127.0.0.1:${port}`, '--no-save', 'On-site role.'],
-      { timeout: 30000, env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir } },
+      { timeout: 30000, env: ownRootEnv({ CAREER_OPS_USERS_DIR: usersDir }) },
+
       (error, stdout, stderr) => resolve({ error, stdout, stderr }),
     );
   });

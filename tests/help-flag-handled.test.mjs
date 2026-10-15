@@ -175,7 +175,7 @@ test('-h is accepted wherever --help is, and suppresses the same work', () => {
 // Each of these has the same defect the six fixed here had: an unrecognised
 // flag is discarded, so `--help` falls through and the script runs.
 const KNOWN_WITHOUT_HELP = new Set([
-  'batch-evaluate-gemini.mjs', 'cv-templates.mjs', 'fetch-jd.mjs', 'followup-seed.mjs',
+  'batch-evaluate-gemini.mjs', 'cv-templates.mjs', 'fetch-jd.mjs',
   'generate-cover-letter.mjs', 'generate-pdf.mjs', 'intake.mjs',
   'match-star.mjs', 'plugins.mjs',
   'seed-fixture.mjs',

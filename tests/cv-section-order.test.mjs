@@ -8,7 +8,7 @@ import { userFixtureEnv } from './user-fixture.mjs';
 // Assertions run against rendered HTML rather than source patterns: the reorder
 // has to survive nested markup, comments, absent optional sections and a second
 // application, and none of that is observable from the source text.
-import { pass, fail, linkRepoPackage, ROOT, NODE } from './helpers.mjs';
+import { pass, fail, linkRepoPackage, ownRootEnv, ROOT, NODE, SANDBOX_DATA_ROOT } from './helpers.mjs';
 import { spawnSync } from 'child_process';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
@@ -990,7 +990,10 @@ ${sections.join('\n')}</div>
 //    shape tests/generate-pdf-batch.test.mjs uses), so the assertion reads the
 //    order that was actually about to be PRINTED, not the order of the input file.
 {
-  const outputRoot = join(ROOT, 'output');
+  // Under the suite's own data root, not the checkout's output/: that
+  // directory is the developer's, and an interrupted run left this fixture in
+  // it (#5113).
+  const outputRoot = join(SANDBOX_DATA_ROOT, 'output');
   mkdirSync(outputRoot, { recursive: true });
   // realpathSync: see tests/generate-pdf-page-budget.test.mjs -- argv[1] keeps the
   // caller's spelling while import.meta.url is realpathed, so a symlinked
@@ -1086,6 +1089,7 @@ export const chromium = {
 
     const run = spawnSync(NODE, [script, `--batch=${manifest}`], {
       cwd: sandbox, encoding: 'utf-8', timeout: 60_000, env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_ROOT: sandbox },
+
     });
     const outPdf = join(sandbox, 'out', 'in.pdf');
 
@@ -1131,7 +1135,10 @@ export const chromium = {
 //    The fixture puts the profile ONLY in the external workspace, so an
 //    __dirname-anchored read finds nothing and silently applies no order.
 {
-  const outputRoot = join(ROOT, 'output');
+  // Under the suite's own data root, not the checkout's output/: that
+  // directory is the developer's, and an interrupted run left this fixture in
+  // it (#5113).
+  const outputRoot = join(SANDBOX_DATA_ROOT, 'output');
   mkdirSync(outputRoot, { recursive: true });
   // realpathSync: see tests/generate-pdf-page-budget.test.mjs -- argv[1] keeps the
   // caller's spelling while import.meta.url is realpathed, so a symlinked
@@ -1232,6 +1239,7 @@ export const chromium = {
       encoding: 'utf-8',
       timeout: 60_000,
       env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: join(ws, 'data', 'applications.md') }, false),
+
     });
     const outPdf = join(ws, 'out', 'in.pdf');
 

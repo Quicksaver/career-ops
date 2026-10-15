@@ -89,7 +89,7 @@ function renderWithEmail(emailUrl, overrides = {}) {
     const outPath = join(userRoot, 'cv.tex');
     writeFileSync(inPath, JSON.stringify({ ...CV_JSON, email: { url: emailUrl, display: 'test@example.com' }, ...overrides }), 'utf-8');
     if (run(NODE, [join(ROOT, 'build-cv-latex.mjs'), '--user', 'test', inPath, outPath], {
-      env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir },
+      env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: usersDir },
     }) === null) return null;
     return readFileSync(outPath, 'utf-8');
   } finally {

@@ -96,7 +96,7 @@ function sweep(dir, dnsCode, extraArgs = []) {
     cwd: dir,
     // Pacing would only add wall-clock time to a run whose every lookup fails.
     env: {
-      ...process.env,
+      ...process.env, CAREER_OPS_ROOT: "", CAREER_OPS_DATA_DIR: "",
       STUB_DNS_CODE: dnsCode,
       CAREER_OPS_DNS_LOOKUPS_PER_MIN: '0',
       CAREER_OPS_USERS_DIR: dirname(dir),

@@ -2,7 +2,8 @@
 import { pass, fail, run, NODE, ROOT, lastRunFailure } from './helpers.mjs';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
+
 import { tmpdir } from 'os';
 import assert from 'node:assert/strict';
 
@@ -294,18 +295,46 @@ try {
     fail('stats.mjs --summary missing header');
   }
 
-  // --summary cold-classification integration (#2123): exercise the CLI
-  // against an isolated active user's tracker and follow-up log.
-  const coldUsersDir = mkdtempSync(join(tmpdir(), 'career-ops-stats-cold-'));
-  const coldDataDir = join(coldUsersDir, 'test', 'data');
-  const liveAppsFile = join(coldDataDir, 'applications.md');
-  const liveFupsFile = join(coldDataDir, 'follow-ups.md');
+  // --help smoke: must print usage, exit 0, and not read any data file.
+  const helpOut = run(NODE, [join(ROOT, 'stats.mjs'), '--help']);
+  if (helpOut && helpOut.includes('Usage:') && helpOut.includes('--summary') && helpOut.includes('--help|-h')) {
+    pass('stats.mjs --help prints the usage block and exits 0');
+  } else {
+    fail(`stats.mjs --help missing usage output: ${helpOut}`);
+  }
+
+  // -h alias smoke: same behavior as --help.
+  const hOut = run(NODE, [join(ROOT, 'stats.mjs'), '-h']);
+  if (hOut && hOut.includes('Usage:') && hOut.includes('--help|-h')) {
+    pass('stats.mjs -h prints the usage block and exits 0');
+  } else {
+    fail(`stats.mjs -h missing usage output: ${hOut}`);
+  }
+
+  // Unknown flag smoke: must fail cleanly and report the invalid-flag message.
+  const bogusOut = run(NODE, [join(ROOT, 'stats.mjs'), '--bogus']);
+  const bogusFailure = lastRunFailure();
+  const bogusOutput = `${bogusFailure?.stdout ?? ''}\n${bogusFailure?.stderr ?? ''}`;
+  if (bogusOut === null && bogusFailure?.status !== 0 && /invalid|unrecognized|unknown/i.test(bogusOutput)) {
+    pass('stats.mjs --bogus rejects unknown flags with a non-zero exit status');
+  } else {
+    fail(`stats.mjs --bogus did not fail as expected: exit=${bogusFailure?.status ?? 'null'} output=${bogusOutput.trim()}`);
+  }
+
+  // --summary cold-classification integration (#2123): the CLI resolves its
+  // tracker and follow-ups through the data root, so give it a root of its own.
+  // This used to overwrite the checkout's live data/applications.md and
+  // data/follow-ups.md and put them back from a variable in `finally` — which
+  // an interrupted run never reaches, leaving the fixture where the tracker
+  // was, in a directory git does not track (#5113).
+  const coldRoot = mkdtempSync(join(tmpdir(), 'co-stats-cold-'));
   try {
-    mkdirSync(coldDataDir, { recursive: true });
-    writeFileSync(liveAppsFile, coldTrackerMd);
-    writeFileSync(liveFupsFile, coldFollowupsMd);
-    const coldSummaryOut = run(NODE, [join(ROOT, 'stats.mjs'), '--user', 'test', '--summary'], {
-      env: { ...process.env, CAREER_OPS_USERS_DIR: coldUsersDir },
+    mkdirSync(join(coldRoot, 'data'));
+    writeFileSync(join(coldRoot, 'data', 'applications.md'), coldTrackerMd);
+    writeFileSync(join(coldRoot, 'data', 'follow-ups.md'), coldFollowupsMd);
+    const coldSummaryOut = run(NODE, [join(ROOT, 'stats.mjs'), '--summary'], {
+      env: { ...process.env, CAREER_OPS_ROOT: coldRoot, CAREER_OPS_DATA_DIR: '' },
+
     });
     if (coldSummaryOut && coldSummaryOut.includes('3 active (2 live, 1 cold)')) {
       pass('stats.mjs --summary integrates live/cold counts into the existing Tracker line');
@@ -313,7 +342,8 @@ try {
       fail(`stats.mjs --summary missing live/cold breakdown: ${coldSummaryOut}`);
     }
   } finally {
-    rmSync(coldUsersDir, { recursive: true, force: true });
+    rmSync(coldRoot, { recursive: true, force: true });
+
   }
 } catch (e) {
   fail(`stats.mjs tests crashed: ${e.message}`);

@@ -38,7 +38,7 @@ function fixture() {
     root, batch, marker,
     run: (args) => spawnSync(getBash(), [join(batch, 'batch-runner.sh'), '--cli', 'claude', ...args], {
       encoding: 'utf8', timeout: 60000,
-      env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: root, PATH: bin + delimiter + process.env.PATH },
+      env: { ...process.env, CAREER_OPS_ROOT: "", CAREER_OPS_USER: 'fixture', CAREER_OPS_DATA_DIR: root, PATH: bin + delimiter + process.env.PATH },
     }),
   };
 }

@@ -97,6 +97,7 @@ function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = 'API 
     SCRIPT_DIR='${ROOT.replaceAll('\\', '/')}/batch'
     WORKER_DIR=.
     PAUSE_FILE=pause.tsv
+    THROTTLE_FILE=throttle.marker
     BATCH_PAUSED=false
     calls=0
     echo 0 > calls.count

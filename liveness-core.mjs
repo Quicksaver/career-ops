@@ -1,3 +1,5 @@
+import { resolveColumns, parseTrackerRow, extractTrackerReportNumbers, reportUrlForNumbers } from './tracker-parse.mjs';
+
 // Portals write closure banners with typographic punctuation and accents:
 // WTTJ renders "Cette offre n’est plus disponible." with U+2019, not ASCII "'".
 // A pattern spelled with a plain apostrophe silently never matches, so a clearly
@@ -63,6 +65,9 @@ const HARD_EXPIRED_PATTERNS = [
   /(?<!\bbe\s)closed on \d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
   /(?<!\bbe\s)closed on (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}/i,
   /diese stelle (ist )?(nicht mehr|bereits) besetzt/i,
+  // VDAB keeps a closed vacancy's page, "Solliciteer nu" button and all, under
+  // this banner.
+  /deze vacature is niet meer gepubliceerd/i,
   // French closure banners. Spelled accent-free on purpose: normalizeForMatch
   // strips diacritics, so "expiree" here matches "expirée" on the page.
   /offre (expiree|n'est plus disponible)/i,
@@ -143,6 +148,8 @@ const APPLY_PATTERNS = [
   /panelu aplikowania/i,
   // Accent-free: apply controls go through normalizeForMatch too ("wyślij" → "wyslij").
   /wyslij (cv|aplikacj)/i,
+  // Dutch (VDAB, Recruitee career sites in Dutch): "Solliciteer nu", "Solliciteren".
+  /\bsollicit(?:eer|eren)\b/i,
   // Chinese MokaHR and Feishu Jobs detail pages use these exact control texts.
   // Keep them narrow: bare “申请” appears in descriptive prose, while longer
   // labels containing “投递” can be status/history controls rather than Apply.
@@ -369,4 +376,36 @@ export function planExpiredHistoryRows(scanHistoryText = '', verdicts = [], norm
     }
   }
   return rows;
+}
+
+export const DEFAULT_TRACKER_STATUSES = ['evaluated', 'applied'];
+
+const isWebUrl = (url) => /^https?:\/\//i.test(url);
+
+/**
+ * Which tracker rows a liveness sweep checks, and at which posting URL: the
+ * row's own URL cell, else the **URL:** of its report.
+ *
+ * @param {string} trackerText applications.md contents
+ * @param {{statuses?: string[], reportsRoot?: string}} options
+ * @returns {{targets: {num: number, company: string, role: string, status: string, url: string}[], noUrl: number[]}}
+ */
+export function trackerLivenessTargets(trackerText, { statuses = DEFAULT_TRACKER_STATUSES, reportsRoot } = {}) {
+  const wanted = new Set(statuses.map((s) => s.trim().toLowerCase()).filter(Boolean));
+  const lines = String(trackerText ?? '').split(/\r?\n/);
+  const colmap = resolveColumns(lines);
+  const targets = [];
+  const noUrl = [];
+  const seen = new Set();
+  for (const line of lines) {
+    const row = parseTrackerRow(line, colmap);
+    if (!row || !wanted.has(row.status.trim().toLowerCase())) continue;
+    const url = isWebUrl(row.url) ? row.url
+      : reportUrlForNumbers(extractTrackerReportNumbers(row.report, row.notes), reportsRoot, isWebUrl);
+    if (!url) { noUrl.push(row.num); continue; }
+    if (seen.has(url)) continue;
+    seen.add(url);
+    targets.push({ num: row.num, company: row.company, role: row.role, status: row.status, url });
+  }
+  return { targets, noUrl };
 }

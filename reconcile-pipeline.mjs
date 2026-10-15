@@ -46,15 +46,14 @@ validateFlags(args, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS, requireOperan
 
 const DRY_RUN = args.includes('--dry-run');
 
-// Constrain user-supplied --state/--pipeline paths to the repository tree, so a
-// crafted path cannot read from or overwrite files outside the project.
+// Pipeline and batch state stay inside the selected user's data root.
 // Symlinks are resolved first (realpathSync) so an in-repo symlink cannot
 // smuggle the real target outside the tree past a purely lexical check.
-function resolveInsideRepo(inputPath, fallbackPath, flag) {
+function resolveInsideRepo(inputPath, fallbackPath, flag, roots = [CAREER_OPS]) {
   const abs = resolve(inputPath || fallbackPath);
-  let repoReal, targetReal;
+  let repoRoots, targetReal;
   try {
-    repoReal = realpathSync(CAREER_OPS);
+    repoRoots = roots.map(root => realpathSync(root));
     // The target may not exist yet (e.g. a fresh --pipeline path); fall back to
     // its parent directory so the symlink-resolved boundary check still applies.
     targetReal = existsSync(abs) ? realpathSync(abs) : realpathSync(dirname(abs));
@@ -62,8 +61,10 @@ function resolveInsideRepo(inputPath, fallbackPath, flag) {
     console.error(`Invalid ${flag}: cannot resolve path (${abs})`);
     process.exit(1);
   }
-  const rel = relative(repoReal, targetReal);
-  if (rel.startsWith('..') || isAbsolute(rel)) {
+  if (!repoRoots.some(root => {
+    const rel = relative(root, targetReal);
+    return !rel.startsWith('..') && !isAbsolute(rel);
+  })) {
     console.error(`Invalid ${flag}: path must stay inside the repository (${abs})`);
     process.exit(1);
   }

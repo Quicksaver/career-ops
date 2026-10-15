@@ -23,7 +23,7 @@ mkdirSync(reportsDir, { recursive: true });
 mkdirSync(mergedDir, { recursive: true });
 mkdirSync(outputDir, { recursive: true });
 
-const env = { ...process.env, CAREER_OPS_USERS_DIR: usersDir };
+const env = { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: usersDir };
 const trackerPath = join(dataDir, 'applications.md');
 writeFileSync(trackerPath, [
   '# Applications Tracker', '',

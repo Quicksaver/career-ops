@@ -32,7 +32,7 @@ const run = (script, payload, out) =>
     cwd: ROOT,
     encoding: 'utf-8',
     maxBuffer: 10 * 1024 * 1024,
-    env: { ...process.env, CAREER_OPS_USERS_DIR: dirname(dirname(payload)) },
+    env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '', CAREER_OPS_USERS_DIR: dirname(dirname(payload)) },
   });
 
 test("build-cv-latex: a $' in a bullet does not splice the template", () => {

@@ -78,7 +78,7 @@ function build(label, templateArg) {
   const args = [join(ROOT, 'build-cv-html.mjs'), '--user', 'test', input, output];
   if (templateArg) args.push(templateArg);
 
-  if (run(NODE, args, { env: { ...process.env, CAREER_OPS_USERS_DIR: usersDir } }) === null) {
+  if (run(NODE, args, { env: { ...process.env, CAREER_OPS_ROOT: "", CAREER_OPS_DATA_DIR: "", CAREER_OPS_USERS_DIR: usersDir } }) === null) {
     const f = lastRunFailure();
     const diagnostic = (f?.stderr || '').trim().replace(/\s*\n\s*/g, ' | ');
     fail(`${label}: build-cv-html.mjs crashed (exit ${f?.status}) - ${diagnostic}`);

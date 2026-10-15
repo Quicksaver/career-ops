@@ -28,4 +28,15 @@ test('real liveness CLI accepts JSON and file flags in either order without brow
   assert.equal(failed.status, 1);
   assert.equal(JSON.parse(failed.stdout).status, 'failed');
   assert.match(JSON.parse(failed.stdout).error, /ENOENT/);
+  const mixed = run(['--json', '--no-record', '--file', file, 'https://example.org/job']);
+  assert.equal(mixed.status, 1);
+  assert.match(JSON.parse(mixed.stdout).error, /posting URLs or --file, not both/);
+  const noTracker = run(['--json', '--tracker', '--no-record']);
+  assert.equal(noTracker.status, 1);
+  assert.match(JSON.parse(noTracker.stdout).error, /No tracker/);
+  mkdirSync(join(user, 'data'));
+  writeFileSync(join(user, 'data/applications.md'), '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n|---|---|---|---|---|---|---|---|---|\n');
+  const tracker = run(['--tracker', '--json', '--no-record']);
+  assert.equal(tracker.status, 0, tracker.stderr);
+  assert.deepEqual(JSON.parse(tracker.stdout), { status: 'completed', active: 0, expired: 0, uncertain: 0, via_api: 0, results: [] });
 });

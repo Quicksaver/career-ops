@@ -282,9 +282,11 @@ func parseApplications(careerOpsPath string, enrichReports bool) ([]model.Career
 	// 3. report_num -> batch-state completed mapping (legacy)
 	// 4. scan-history.tsv (pipeline scan entries matched by company+role)
 	// 5. company name fallback from batch-input.tsv
+	inputPath := batchFilePath(careerOpsPath, "batch-input.tsv")
 	if enrichReports {
-		batchURLs := loadBatchInputURLs(careerOpsPath)
-		reportNumURLs := loadJobURLs(careerOpsPath)
+		statePath := batchFilePath(careerOpsPath, "batch-state.tsv")
+		batchURLs := loadBatchInputURLs(inputPath)
+		reportNumURLs := loadJobURLs(inputPath, statePath)
 
 		for i := range apps {
 			if apps[i].ReportPath == "" {
@@ -336,14 +338,18 @@ func parseApplications(careerOpsPath string, enrichReports bool) ([]model.Career
 	enrichFromScanHistory(careerOpsPath, apps)
 
 	// Strategy 5: company name fallback from batch-input.tsv
-	enrichAppURLsByCompany(careerOpsPath, apps)
+	enrichAppURLsByCompany(inputPath, apps)
 
 	return apps, nil
 }
 
+// Batch bookkeeping belongs to the selected user, including external data roots.
+func batchFilePath(careerOpsPath, name string) string {
+	return filepath.Join(careerOpsPath, "batch", name)
+}
+
 // loadBatchInputURLs reads batch-input.tsv and returns a map of batch ID -> job URL.
-func loadBatchInputURLs(careerOpsPath string) map[string]string {
-	inputPath := filepath.Join(careerOpsPath, "batch", "batch-input.tsv")
+func loadBatchInputURLs(inputPath string) map[string]string {
 	inputData, err := os.ReadFile(inputPath)
 	if err != nil {
 		return nil
@@ -383,9 +389,8 @@ type batchEntry struct {
 // loadJobURLs reads batch TSV files and returns a map of report_num -> job URL.
 // Uses two strategies: (1) report_num mapping for completed jobs, (2) company name
 // matching as fallback for failed/missing jobs.
-func loadJobURLs(careerOpsPath string) map[string]string {
+func loadJobURLs(inputPath, statePath string) map[string]string {
 	// Read batch-input.tsv: id \t url \t source \t notes
-	inputPath := filepath.Join(careerOpsPath, "batch", "batch-input.tsv")
 	inputData, err := os.ReadFile(inputPath)
 	if err != nil {
 		return nil
@@ -429,7 +434,6 @@ func loadJobURLs(careerOpsPath string) map[string]string {
 	}
 
 	// Read batch-state.tsv: id \t url \t status \t ... \t report_num \t ...
-	statePath := filepath.Join(careerOpsPath, "batch", "batch-state.tsv")
 	stateData, err := os.ReadFile(statePath)
 	if err != nil {
 		return nil
@@ -566,8 +570,7 @@ func normalizeCompany(name string) string {
 
 // enrichAppURLsByCompany fills in JobURL for apps that didn't get one via report_num mapping.
 // It matches by company name from batch-input.tsv notes.
-func enrichAppURLsByCompany(careerOpsPath string, apps []model.CareerApplication) {
-	inputPath := filepath.Join(careerOpsPath, "batch", "batch-input.tsv")
+func enrichAppURLsByCompany(inputPath string, apps []model.CareerApplication) {
 	inputData, err := os.ReadFile(inputPath)
 	if err != nil {
 		return
@@ -1158,7 +1161,9 @@ func ComputeProgressMetrics(apps []model.CareerApplication, history ...map[int]i
 		if norm == "offer" || norm == "hired" {
 			pm.TotalOffers++
 		}
-		if norm != "skip" && norm != "rejected" && norm != "closed" && norm != "discarded" {
+		switch norm {
+		case "applied", "responded", "assessment", "interview", "offer":
+
 			pm.ActiveApps++
 		}
 	}

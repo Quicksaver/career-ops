@@ -4,6 +4,7 @@ import { execFileSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { findColumn } from './process-quality.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
 import { normalizeCompanyName, companySimilarity } from './invite-match.mjs';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
@@ -64,6 +65,7 @@ import { loadCanonicalStates, resolveCanonicalStateId, foldStatusInput } from '.
  */
 
 import * as yaml from 'js-yaml';
+
 
 
 
@@ -317,13 +319,6 @@ export function parseActiveInterviewsWithLines(content) {
 function loadActiveInterviewsWithLines(interviewsFile) {
   if (!existsSync(interviewsFile)) return [];
   return parseActiveInterviewsWithLines(readFileSync(interviewsFile, 'utf-8'));
-}
-
-// Case-insensitive column lookup — same rationale as process-quality.mjs's
-// findColumn: header wording ("Notes" vs "notes") is candidate-editable.
-function findColumn(row, name) {
-  const key = Object.keys(row || {}).find(k => k.trim().toLowerCase() === name);
-  return key ? String(row[key] ?? '') : '';
 }
 
 // --- git blame timestamp (Tier 2 tiebreak) ---

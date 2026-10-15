@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -18,6 +18,40 @@ async function until(predicate, output) {
   while (Date.now() < deadline) { if (predicate()) return; await delay(30); }
   assert.fail(output());
 }
+
+test('live pool reduces capacity after a rate limit while draining its active worker', t => {
+  const root = mkdtempSync(join(tmpdir(), 'run-live-throttle-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const production = readFileSync(join(repo, 'batch/batch-runner.sh'), 'utf8').replace(/\r\n/g, '\n');
+  const loop = production.slice(production.indexOf('process_live_offers() {'), production.indexOf('\n# Main\n'));
+  const shell = join(root, 'throttle.sh');
+  writeFileSync(shell, `set -euo pipefail
+PROJECT_DIR=.; USER_ROOT=.; USER_ID=fictional
+LIVE_INPUTS=control; ANSWERS_FILE=answers; QUEUE_FILE=queue
+MAX_RETRIES=2; LIMIT=0; RETRY_FAILED=false; RESUME_PAUSED=false
+PARALLEL=3; PAUSE_FILE=pause; THROTTLE_FILE=throttle
+node() {
+  printf '%s\\n' "\${12}" >> capacities
+  if [[ ! -f offered ]]; then
+    touch offered
+    printf 'job\\0371\\037https://example.org/job\\037fixture\\037notes\\037false\\037false\\n'
+  elif [[ -f throttle ]]; then
+    echo done
+  else
+    echo busy
+  fi
+}
+process_offer() { touch throttle; sleep 1; touch drained; }
+${loop}
+process_live_offers
+[[ -f drained ]]
+`);
+  const output = execFileSync(getBash(), [shell], { cwd: root, encoding: 'utf8', timeout: 15000 });
+  assert.match(output, /Rate limited: running the remaining offers on 1 worker/);
+  const capacities = readFileSync(join(root, 'capacities'), 'utf8').trim().split('\n');
+  assert.equal(capacities[0], '3');
+  assert.equal(capacities.at(-1), '1');
+});
 
 for (const duplicateHold of [false, true]) test(`production Bash pool resumes an answered LinkedIn hold before its other worker exits${duplicateHold ? ' under the held historical ID' : ''}`, async t => {
   const root = mkdtempSync(join(tmpdir(), 'run-live-batch-'));

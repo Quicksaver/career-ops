@@ -28,7 +28,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, copyFileSync, readFileSync, existsSync, realpathSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
-import { pass, fail } from './helpers.mjs';
+import { pass, fail, ownRootEnv } from './helpers.mjs';
 
 console.log('\ncontacts.mjs — phonebook and vCard export');
 
@@ -365,7 +365,7 @@ try {
   copyFileSync(join(dirname(scriptPath), 'lib', 'user-context.mjs'), join(tmpRoot, 'lib', 'user-context.mjs'));
   const usersDir = join(tmpRoot, 'users');
   const userRoot = join(usersDir, 'test');
-  const cliEnv = { ...process.env, CAREER_OPS_USER: 'test', CAREER_OPS_USERS_DIR: usersDir };
+  const cliEnv = ownRootEnv({ CAREER_OPS_USER: 'test', CAREER_OPS_USERS_DIR: usersDir });
   const execContacts = (args = [], options = {}) => execFileSync('node', [tmpScript, ...args], {
     encoding: 'utf-8', timeout: 10000, env: cliEnv, ...options,
   });
@@ -380,6 +380,7 @@ try {
   ].join('\n'));
 
   const jsonOut = JSON.parse(execContacts());
+
   eq('default JSON: total = 2', jsonOut.total, 2);
   eq('default JSON: contacts array present', jsonOut.contacts.length, 2);
   ok('default JSON: quality object present', 'quality' in jsonOut);
@@ -390,6 +391,7 @@ try {
 
   execContacts(['--vcf']);
   const vcfPath = join(userRoot, 'output/contacts.vcf');
+
   ok('--vcf writes output/contacts.vcf by default', existsSync(vcfPath));
   const written = readFileSync(vcfPath, 'utf-8');
   ok('written vcf uses CRLF', written.includes('\r\n') && !/[^\r]\n/.test(written));
@@ -398,12 +400,14 @@ try {
   ok('default FN has no caller-id suffix', written.includes('FN:Jane Doe\r\n'));
 
   execContacts(['--vcf', '--caller-id']);
+
   ok('--vcf --caller-id renders annotated FN', readFileSync(vcfPath, 'utf-8').includes('FN:Jane Doe (Acme recruiter)'));
 
   // --vcf surfaces the quality report on stderr (same never-silently-dropped
   // contract as JSON/--summary) while the export itself still succeeds.
   writeFileSync(join(userRoot, 'data/contacts.tsv'), '\n' + row(['', 'NoName GmbH', 'recruiter', 'TA']), { flag: 'a' });
   const flawedRun = spawnContacts(['--vcf']);
+
   eq('--vcf with a flawed store still exits 0', flawedRun.status, 0);
   ok('--vcf reports quality issues on stderr', flawedRun.stderr.includes('data-quality') && flawedRun.stderr.includes('missing name or company'));
   ok('--vcf keeps stdout for the write confirmation only', flawedRun.stdout.includes('Wrote') && !flawedRun.stdout.includes('data-quality'));
@@ -415,6 +419,7 @@ try {
   // previously ignored because indexOf('--vcf') returned -1 for that token.
   const eqFormOut = execFileSync('node', [tmpScript, '--vcf=output/eq-form.vcf'], { encoding: 'utf-8', timeout: 10000, cwd: tmpRoot, env: cliEnv });
   ok('--vcf=path (attached =) writes to the specified path', existsSync(join(userRoot, 'output/eq-form.vcf')));
+
   ok('--vcf=path confirmation message names the eq-form path', eqFormOut.includes('eq-form.vcf'));
   ok('--vcf=path file contains valid vCard content', readFileSync(join(userRoot, 'output/eq-form.vcf'), 'utf-8').includes('BEGIN:VCARD'));
 
@@ -430,6 +435,7 @@ try {
     let escaped = false;
     try {
       execContacts(['--vcf', escapePath]);
+
       escaped = true;
     } catch (e) {
       ok('--vcf refuses a path escaping the project dir (exit 1)', e.status === 1);
@@ -466,6 +472,7 @@ try {
       let symEscaped = false;
       try {
         execContacts(['--vcf', symlinkEscapePath]);
+
         symEscaped = true;
       } catch (e) {
         ok('--vcf refuses a symlinked-dir path escaping the project (exit 1)', e.status === 1);
@@ -490,11 +497,12 @@ try {
   copyFileSync(join(dirname(scriptPath), 'path-resolver.mjs'), join(emptyRoot, 'path-resolver.mjs'));
   copyFileSync(join(dirname(scriptPath), 'lib', 'user-context.mjs'), join(emptyRoot, 'lib', 'user-context.mjs'));
   const emptyUsersDir = join(emptyRoot, 'users');
-  const emptyEnv = { ...process.env, CAREER_OPS_USER: 'test', CAREER_OPS_USERS_DIR: emptyUsersDir };
+  const emptyEnv = ownRootEnv({ CAREER_OPS_USER: 'test', CAREER_OPS_USERS_DIR: emptyUsersDir });
   const emptyJson = JSON.parse(execFileSync('node', [join(emptyRoot, 'contacts.mjs')], { encoding: 'utf-8', timeout: 10000, env: emptyEnv }));
   eq('missing store: JSON total = 0', emptyJson.total, 0);
   eq('missing store: contacts = []', emptyJson.contacts, []);
   const emptyVcfOut = execFileSync('node', [join(emptyRoot, 'contacts.mjs'), '--vcf'], { encoding: 'utf-8', timeout: 10000, env: emptyEnv });
+
   ok('missing store: --vcf exits 0 with a clear message', emptyVcfOut.includes('No contacts to export'));
   ok('missing store: --vcf writes no file', !existsSync(join(emptyUsersDir, 'test', 'output/contacts.vcf')));
 } finally {

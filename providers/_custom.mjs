@@ -7,7 +7,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { safeEncodeURIComponent } from './_safe-url.mjs';
-import { fetchJsonWithRetry, fetchTextWithRetry, makeHttpCtx, sleep } from './_http.mjs';
+import { fetchJsonWithRetry, fetchTextWithRetry, makeHttpCtx, sleep, BROWSER_LIKE_USER_AGENT } from './_http.mjs';
 import { decodeEntities as decodeHtmlEntities } from './_html-entities.mjs';
 import { htmlToText } from './_html-to-text.mjs';
 
@@ -147,7 +147,7 @@ const RUSTJOBS_MAX_PAGES = 20;
 const DEVJOBSDE_NAVIGATION_TIMEOUT_MS = 45_000;
 const RUSTJOBS_NAVIGATION_TIMEOUT_MS = 45_000;
 const DEVITJOBS_FAMILY_DEFAULT_BASE_URL = 'https://swissdevjobs.ch';
-const DEVJOBSDE_BROWSER_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const DEVJOBSDE_BROWSER_USER_AGENT = BROWSER_LIKE_USER_AGENT;
 const DEVITJOBS_FAMILY_API_RE = /^https?:\/\/(?:www\.)?(?:swissdevjobs\.ch|germantechjobs\.de|devitjobs\.uk|devitjobs\.nl)\/api\//;
 
 const DEVJOBSDE_WORKING_MODELS = new Set(['Full Remote', 'Hybrid', 'Onsite']);
@@ -2169,7 +2169,7 @@ function buildFetchJsonHeaders(url) {
 
   if (DEVITJOBS_FAMILY_API_RE.test(url)) {
     const origin = new URL(url).origin;
-    headers['user-agent'] = 'Mozilla/5.0';
+    headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
     headers['accept'] = 'application/json,text/plain,*/*';
     headers['accept-language'] = 'en-US,en;q=0.9';
     headers['referer'] = `${origin}/`;
@@ -2188,29 +2188,29 @@ async function fetchText(url) {
     assertRequestUrl(url);
     const headers = {};
     if (/https?:\/\/emprego\.sapo\.pt\//.test(url)) {
-      headers['user-agent'] = 'Mozilla/5.0';
+      headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
       headers['accept-language'] = 'pt-PT,pt;q=0.9,en;q=0.8';
     }
 
     if (/https?:\/\/(?:www\.)?dice\.com\//.test(url)) {
-      headers['user-agent'] = 'Mozilla/5.0';
+      headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
       headers['accept-language'] = 'en-US,en;q=0.9';
     }
 
     if (/https?:\/\/(?:www\.)?jobs\.ch\//.test(url)) {
-      headers['user-agent'] = 'Mozilla/5.0';
+      headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
       headers['accept-language'] = 'en-US,en;q=0.9';
     }
 
     if (/https?:\/\/(?:www\.)?make-it-in-germany\.com\//.test(url)) {
-      headers['user-agent'] = 'Mozilla/5.0';
+      headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
       headers['accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
       headers['accept-language'] = 'en-US,en;q=0.9';
       headers['referer'] = 'https://www.make-it-in-germany.com/en/working-in-germany/job-listings';
     }
 
     if (/https?:\/\/(?:www\.)?jobsinenglish\.dk\//.test(url)) {
-      headers['user-agent'] = 'Mozilla/5.0';
+      headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
       headers['accept-language'] = 'en-US,en;q=0.9';
 
       if (/https?:\/\/(?:www\.)?jobsinenglish\.dk\/view_all_ads\//.test(url)) {
