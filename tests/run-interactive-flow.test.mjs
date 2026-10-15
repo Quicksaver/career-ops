@@ -15,6 +15,17 @@ async function until(predicate, message) {
 }
 const actions = f => existsSync(join(f.user, 'data/manual-actions.json')) ? JSON.parse(f.read('data/manual-actions.json')).actions : [];
 
+test('real handoff dispatch colours queue counts, task details and numbered agent progress', async t => {
+  const f = fixture(t, { rows: [A], handoff: true, progressDiagnostics: true });
+  const run = f.startInteractive(['--skip-linkedin'], { color: true });
+  const result = await run.completion;
+  assert.equal(result.code, 0, stripVTControlCharacters(result.output).slice(-5000));
+  assert.match(result.output, /\x1b\[36mscan-handoff queued 1 task\(s\)\x1b\[0m/);
+  assert.match(result.output, /\x1b\[36mscan-handoff task 1\/1: Fictional/);
+  assert.match(result.output, /\x1b\[36m\[handoff-progress\] 1\/1: Fictional/);
+  assert.match(result.output, /\x1b\[32mscan-handoff processed 1\/1/);
+});
+
 test('terminal colours cover phases, forwarded child diagnostics and the final summary without colouring logs', async t => {
   const f = fixture(t, { rows: [A], progressDiagnostics: true, waitFor: [A] });
   const run = f.startInteractive(['--skip-scan'], { color: true });

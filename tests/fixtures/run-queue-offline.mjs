@@ -53,6 +53,7 @@ else if (phase === 'merge-tracker' && config.blockedAddition) {
 }
 else if (phase === 'codex-mock') {
   await new Promise(resolve => { process.stdin.resume(); process.stdin.on('end', resolve); });
+  if (config.progressDiagnostics) console.error('[handoff-progress] 1/1: Fictional (websearch) — fictional jobs');
   emit({ offline: true });
   writeFileSync(value('--output-last-message'), JSON.stringify({ status: config.handoffPartial ? 'partial' : 'completed', processed_items: 1, added: config.malformedHandoff ? 1 : 0, duplicates: config.handoffPartial ? 0 : 1, expired: 0, errors: config.handoffPartial ? [{ item: 'Fictional', message: 'offline source unavailable', recoverable: true }] : [], requires_user_action: false, user_action: null }));
 } else if (phase === 'batch-mock' && args.includes('--live-inputs')) {

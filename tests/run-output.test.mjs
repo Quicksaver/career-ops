@@ -32,9 +32,47 @@ test('coordinator and accessory diagnostics use consistent semantic colours', ()
     ['[run:scan-auth] Errors: 0', 'muted'], ['[run:scan-auth] Errors: 2', 'error'],
     ['[run:scan] Total jobs found: 120', 'progress'],
     ['[run] unresolved error, broken_link: report missing', 'error'],
-    ['[run:batch-1] Company role: error handling engineer', 'normal'],
+    ['[run:batch-1] Company role: error handling engineer', 'progress'],
     ['https://example.org/jobs/failed-role-429', 'normal'],
   ]) assert.equal(runLineTone(line), tone, line);
+});
+
+test('handoff queue, numbered tasks, agent progress and completion all receive colours', () => {
+  const output = createRunOutput({ stream: { isTTY: true }, env: {} });
+  for (const line of [
+    '[run] scan-handoff queued 12 task(s)',
+    '[run] scan-handoff task 1/12: Fictional (websearch)',
+    '[handoff-progress] 1/12: Fictional (websearch) — fictional jobs',
+    '[run:scan-handoff-agent] [handoff-progress] 1/12: Fictional (websearch) — fictional jobs',
+    '[run:scan-handoff-agent] Agent output: [handoff-progress] 1/12: Fictional',
+  ]) {
+    assert.equal(runLineTone(line), 'progress', line);
+    assert.match(output.format(line), /\x1b\[36m/);
+    assert.equal(stripVTControlCharacters(output.format(line)), line);
+  }
+  const done = '[run] scan-handoff processed 12/12 task(s), added 3 pending job(s)';
+  assert.equal(runLineTone(done), 'success');
+  assert.match(output.format(done), /\x1b\[32m/);
+});
+
+test('every child phase has a progress fallback and recognises nested severity tags', () => {
+  const output = createRunOutput({ stream: { isTTY: true }, env: {} });
+  for (const phase of ['doctor', 'scan', 'scan-handoff-agent', 'scan-auth-linkedin', 'scan-full', 'scan-hn',
+    'scan-dayforce', 'scan-interamt', 'merge-tracker-initial', 'reconcile-pipeline-2', 'cv-sync-check',
+    'pipeline-liveness', 'sync-pipeline-batch-2', 'batch-2', 'verify-reviewed', 'future-script']) {
+    for (const [message, tone, code] of [
+      ['source-specific activity', 'progress', '36'],
+      ['[new-script-version] source-specific activity', 'progress', '36'],
+      ['[new-script-version] WARN: source unavailable', 'warning', '33'],
+      ['[new-script-version] [ERROR] request failed', 'error', '1;31'],
+      ['[new-script-version] completed 1/1', 'success', '32'],
+    ]) {
+      const line = `[run:${phase}] ${message}`;
+      assert.equal(runLineTone(line), tone, line);
+      assert.ok(output.format(line).includes(`\x1b[${code}m`), line);
+      assert.equal(stripVTControlCharacters(output.format(line)), line);
+    }
+  }
 });
 
 test('formatting adds only trusted SGR without changing visible text or source identity', () => {
