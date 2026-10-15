@@ -43,6 +43,7 @@ These files contain your personal data, customizations, and work product. Update
 | `users/{USER}/data/manual-actions.json` | Persisted exact-posting questions and user actions collected by the workflow coordinator |
 | `users/{USER}/data/manual-answers.json` | User answers saved by the interactive workflow, scoped to the exact posting URL and hold reason; includes pasted JD text when supplied |
 | `users/{USER}/data/scan-handoff.json` | Latest unsupported-source handoff for the selected user's scanner |
+| `users/{USER}/data/posting-context/*.json` | URL-keyed snapshots of provider descriptions and source metadata, saved before publishing inbox rows. External posting evidence only; never candidate facts or user answers. Safe to delete, but original source context may then require recovery. |
 | `users/{USER}/data/verification-reviews.jsonl` | Exact finding fingerprints, review decisions and accepted exceptions |
 | `users/{USER}/data/verification-actions.jsonl` | Verification repair records and artifact provenance |
 | `users/{USER}/data/duplicate-resolutions.jsonl` | Duplicate keeper decisions, lifecycle overrides and archive locations |

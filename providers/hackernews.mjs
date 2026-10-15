@@ -11,9 +11,9 @@
 //      are individual job posts left as top-level comments.
 //   3. Parse each comment: the first non-empty line is treated as the title/header
 //      (many follow "Company | Role | Location | URL" but this is free-form, so
-//      we extract defensively — a URL is pulled out wherever it appears; the
-//      first line becomes the title; company/location are left empty when the
-//      format doesn't match the pipe-delimited convention).
+//      the first line becomes the title; company/location are left empty when
+//      the format doesn't match the pipe-delimited convention). Each individual
+//      comment is the posting URL; the full body retains external/apply links.
 //
 // Wire in via a `job_boards:` entry with `provider: hackernews`.
 //
@@ -61,7 +61,7 @@ import { decodeEntities } from './_html-entities.mjs';
  *
  * @param {string} text  Raw comment text (may contain HTML; tags are stripped).
  * @param {string} threadUrl  Fallback url (the HN thread) if no URL in comment.
- * @returns {{ title: string, url: string, company: string, location: string } | null}
+ * @returns {{ title: string, url: string, company: string, location: string, description: string } | null}
  *   null when the comment is empty, deleted, or carries no usable title.
  */
 export function parseHnComment(text, threadUrl = '') {
@@ -110,7 +110,7 @@ export function parseHnComment(text, threadUrl = '') {
   const url = extractUrl(plain) || threadUrl;
   if (!url) return null;
 
-  return { title, url, company, location };
+  return { title, url, company, location, description: plain.trim() };
 }
 
 /**
@@ -146,8 +146,6 @@ export default {
       throw new Error('hackernews: could not find "Ask HN: Who is hiring?" thread in search results');
     }
 
-    const threadHnUrl = `https://news.ycombinator.com/item?id=${threadId}`;
-
     // Step 2: Fetch the thread item (children = top-level job comments).
     const item = await ctx.fetchJson(itemUrl(threadId), { redirect: 'error' });
     if (!item || typeof item !== 'object') {
@@ -164,13 +162,21 @@ export default {
       if (!child || child.deleted || child.dead) continue;
       const text = typeof child.text === 'string' ? child.text : '';
       if (!text.trim()) continue;
+      const id = String(child.id ?? child.objectID ?? '');
+      if (!/^[1-9]\d*$/.test(id)) continue;
+      const commentUrl = `https://news.ycombinator.com/item?id=${id}`;
 
-      const parsed = parseHnComment(text, threadHnUrl);
+      const parsed = parseHnComment(text, commentUrl);
       if (!parsed) continue;
 
       jobs.push({
         title: parsed.title,
-        url: parsed.url,
+        // The hiring comment is the posting. Its first external link may be a
+        // homepage, GitHub project or tool mentioned in the JD. Preserve all
+        // of those links in the description instead of making one the identity.
+        url: commentUrl,
+        description: parsed.description,
+        externalId: id,
         company: parsed.company || (entry.name || 'HN Hiring'),
         location: parsed.location,
         // Algolia returns created_at as ISO string.

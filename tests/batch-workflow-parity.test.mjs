@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { ROOT, getBash, toBashPath, rmSync } from './helpers.mjs';
 import { loadAnswers, loadQueue, validLocal, validateHold, canResume, writeHold, JD_SKIP_REASON } from '../batch/manual-inputs.mjs';
 import { validateWorkerArtifacts, parseTrackerAddition } from '../batch/validate-worker-artifacts.mjs';
+import { savePostingContext } from '../lib/posting-context.mjs';
 
 const url = 'https://www.linkedin.com/jobs/view/123';
 const hold = { status: 'needs_confirmation', id: '1', url, report_num: '001', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null, question: 'Paste JD text or employer URL', reason: 'jd_unavailable' };
@@ -224,6 +225,34 @@ test('browser fallback supplies rendered JD bytes to the real worker launch afte
     const calls = readFileSync(`${f.calls}.browser`, 'utf8').trim().split('\n').map(JSON.parse);
     assert.deepEqual(calls, [['--user', 'fixture', posting, '--mode', 'jd', '--timeout', '15000', '--max-chars', '100000']]);
     assert.ok(existsSync(join(f.batch, 'logs/1.jd-browser.log')));
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('the real batch forwards original source/notes and saved HN text before requesting any JD fetch', async () => {
+  const f = fixture();
+  try {
+    for (const name of ['lib/posting-context.mjs', 'lib/scan-history-columns.mjs', 'lib/tsv-formula-escape.mjs', 'providers/hackernews.mjs', 'providers/_html-entities.mjs', 'path-resolver.mjs', 'url-key.mjs']) {
+      mkdirSync(join(f.root, name, '..'), { recursive: true });
+      copyFileSync(join(ROOT, name), join(f.root, name));
+    }
+    const posting = 'https://news.ycombinator.com/item?id=123';
+    const text = 'Example | Engineer | Remote\n\n' + 'Build production services in Rust. Apply by email to jobs@example.org. '.repeat(20);
+    await savePostingContext(f.root, { url: posting, title: 'Example | Engineer | Remote', source: 'hackernews-api', description: text });
+    const notes = 'Example | Engineer | Remote | posted: 2026-10-02';
+    const queue = join(f.root, 'queue.txt'); writeFileSync(queue, posting + '\n');
+    writeFileSync(join(f.batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${posting}\tpipeline\t${notes}\n`);
+    const result = f.run(['--queue-file', queue]);
+    assert.ifError(result.error); assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(existsSync(f.calls), false, 'saved original JD bypasses HTTP retrieval');
+    assert.equal(existsSync(`${f.calls}.browser`), false);
+    assert.ok(readFileSync(`${f.calls}.jd`, 'utf8').endsWith(text));
+    const prompt = readFileSync(`${f.calls}.worker`, 'utf8');
+    assert.ok(prompt.includes(JSON.stringify({ source: 'pipeline', notes })));
+    assert.match(prompt, /Posting context file:/);
+    const context = JSON.parse(readFileSync(join(f.batch, 'logs/1.source.json'), 'utf8'));
+    assert.equal(context.snapshot.description, text);
+    assert.equal(context.recovery, 'scanner_snapshot');
+    assert.equal(context.url, posting);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 

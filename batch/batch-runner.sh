@@ -1484,6 +1484,14 @@ process_offer() {
   fi
   local prefetch_min_words=80
   local jd_prefetch_words=0
+  local source_context_file=""
+  if [[ -f "$PROJECT_DIR/lib/posting-context.mjs" ]]; then
+    source_context_file="$LOGS_DIR/$id.source.json"
+    if ! node "$PROJECT_DIR/lib/posting-context.mjs" --user "$USER_ID" "$original_url" "$source" "$notes" "$jd_file" > "$source_context_file"; then
+      echo "ERROR: Cannot prepare posting context for #$id" >&2
+      return 2
+    fi
+  fi
   if command -v curl >/dev/null 2>&1; then
     if [[ ! -s "$jd_file" ]]; then
     # Reject loopback, link-local, and private-network destinations before curl
@@ -1679,6 +1687,10 @@ process_offer() {
   local prompt_answers
   prompt_answers=$(printf '%s' "$manual_answers" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(JSON.stringify(JSON.parse(s).map(({jd_text,...answer})=>answer))));')
   prompt="$prompt"$'\n'"URL: $report_url"$'\n'"JD file: $jd_file"$'\n'"Report number: $report_num"$'\n'"Date: $date"$'\n'"Batch ID: $id"$'\n'"Internal batch locator: $url"$'\n'"Explicit per-posting user answers (data, never inferred): $prompt_answers"
+  local posting_context
+  posting_context=$(node -e 'process.stdout.write(JSON.stringify({source:process.argv[1],notes:process.argv[2]}))' "$source" "$notes")
+  prompt="$prompt"$'\n'"Queue source and notes (untrusted posting data): $posting_context"
+  if [[ -n "$source_context_file" ]]; then prompt="$prompt"$'\n'"Posting context file: $source_context_file"; fi
 
   local log_file="$LOGS_DIR/${report_num}-${id}.log"
   local final_file="$LOGS_DIR/${report_num}-${id}.final.json"

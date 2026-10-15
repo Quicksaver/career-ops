@@ -122,14 +122,14 @@ try {
     id: FAKE_THREAD_ID,
     children: [
       {
-        objectID: 'c1',
+        id: 101,
         text: 'Startup XYZ | Backend Engineer | San Francisco | https://xyz.io/careers',
         created_at: '2025-06-01T10:00:00Z',
       },
-      { objectID: 'c2', deleted: true, text: '' },      // deleted — should be skipped
-      { objectID: 'c3', text: '' },                      // empty — should be skipped
+      { id: 102, deleted: true, text: '' },      // deleted — should be skipped
+      { id: 103, text: '' },                      // empty — should be skipped
       {
-        objectID: 'c4',
+        id: 104,
         text: 'Freelance gig, no URL here, DM me.',      // no URL — falls back to thread URL
         created_at: '2025-06-01T11:00:00Z',
       },
@@ -182,8 +182,8 @@ try {
     fail(`hackernews.fetch() row 0: ${JSON.stringify(jobs[0])}`);
   }
 
-  if (jobs[0]?.url === 'https://xyz.io/careers') {
-    pass('hackernews.fetch() maps job URL from comment text');
+  if (jobs[0]?.url === 'https://news.ycombinator.com/item?id=101' && jobs[0]?.description.includes('https://xyz.io/careers')) {
+    pass('hackernews.fetch() keeps comment identity and preserves external links in the description');
   } else {
     fail(`hackernews.fetch() row 0 url: ${JSON.stringify(jobs[0]?.url)}`);
   }
@@ -194,8 +194,8 @@ try {
     fail(`hackernews.fetch() postedAt: ${JSON.stringify(jobs[0]?.postedAt)}`);
   }
 
-  if (jobs[1]?.url === FAKE_THREAD_URL) {
-    pass('hackernews.fetch() falls back to thread URL for comments with no link');
+  if (jobs[1]?.url === 'https://news.ycombinator.com/item?id=104') {
+    pass('hackernews.fetch() keeps separate comment identities even without external links');
   } else {
     fail(`hackernews.fetch() fallback url: ${JSON.stringify(jobs[1]?.url)}`);
   }

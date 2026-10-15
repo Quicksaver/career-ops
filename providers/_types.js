@@ -30,6 +30,9 @@
  *                               `descriptionPlain`; most providers omit it.
  *                               Consumed by scan.mjs's content_filter; an
  *                               empty/absent value always passes the filter.
+ *                               Retained in a user-scoped posting-context
+ *                               snapshot when the job is added to the inbox,
+ *                               so downstream workers retain source evidence.
  * @property {number} [postedAt] Epoch ms when the posting was published.
  *                               Omitted when the source doesn't expose a
  *                               usable date. scan.mjs ignores it; consumers

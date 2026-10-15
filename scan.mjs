@@ -106,6 +106,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { randomUUID } from 'crypto';
+import { savePostingContext } from './lib/posting-context.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import * as yaml from 'js-yaml';
@@ -3484,6 +3485,7 @@ export async function appendToPipeline(offers, { pipelinePath = PIPELINE_PATH } 
   if (offers.length === 0) return;
 
   await withPipelineLock(pipelinePath, async () => {
+    for (const offer of offers) await savePostingContext(activeDataRoot, offer);
     // Auto-create with standard skeleton if missing (fresh-install guard).
     let text = existsSync(pipelinePath)
       ? readFileSync(pipelinePath, 'utf-8')
