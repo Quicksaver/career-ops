@@ -17,6 +17,11 @@ appendFileSync(join(root, 'calls.jsonl'), JSON.stringify({ phase, args }) + '\n'
 
 if (phase === 'doctor') emit({ onboardingNeeded: false });
 else if (phase === 'scan') {
+  if(config.diagnosticBurst) {
+    console.error('offline provider diagnostic retained');
+    await new Promise(r=>setTimeout(r,20));
+    process.stdout.write('x'.repeat(100000)); process.exit(1);
+  }
   if (config.handoff) writeFileSync(join(root, 'data/scan-handoff.json'), JSON.stringify({ count: 1, items: [{ company: 'Fictional', method: 'websearch', query: 'fictional jobs' }] }));
   emit({ version: 'careerops.scan.receipt@1', added: 0, errors: config.scanError ? [{ company: 'Fictional', error: 'offline provider failure' }] : [] });
   process.exitCode = config.scanError ? 2 : 0;
@@ -37,6 +42,7 @@ else if (phase === 'verify-runner') {
   if (config.verification === 'failed') process.exitCode = 1;
 }
 else if (phase === 'merge-tracker' && config.blockedAddition) {
+  if(config.diagnosticBurst) {console.error('merge diagnostic retained');await new Promise(r=>setTimeout(r,20));process.stdout.write('x'.repeat(100000));}
   console.log('Summary: 1 addition NOT merged; retained for correction');
   process.exitCode = 1;
 }

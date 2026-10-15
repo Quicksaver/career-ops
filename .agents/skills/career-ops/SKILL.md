@@ -266,7 +266,7 @@ Applies to: `triage`
 
 Run `run`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serially in the root agent. Keep the current root turn active through completion, including browser interaction, monitoring, recovery, reconciliation, and verification.
 
-For a direct pipeline with three or more pending URLs, launch one subagent per URL and coordinate the fan-out from the root agent. Give each worker `ACTIVE_USER`, `USER_ROOT=users/{ACTIVE_USER}`, one URL, and the loaded shared/profile/custom/mode instructions. State that all user-layer relative paths resolve inside `USER_ROOT`. Each worker completes its assigned URL directly, keeps research inline and bounded, and returns its terminal result to the root coordinator.
+For a direct pipeline with three or more pending URLs, launch one subagent per URL and coordinate the fan-out from the root agent. Give each worker `ACTIVE_USER`, the already-resolved absolute `USER_ROOT` from user selection, one URL, and the loaded shared/profile/custom/mode instructions. State that all user-layer relative paths resolve inside `USER_ROOT`. Each worker completes its assigned URL directly, keeps research inline and bounded, and returns its terminal result to the root coordinator.
 
 Run one `batch/batch-runner.sh` invocation at a time directly from the root agent and supervise it through its terminal outcome. Treat any configured `--parallel N` workers as internal batch-runner activity under that single root-owned invocation. Commands such as `scan.mjs`, `scan-auth.mjs`, and liveness checks follow the same root-owned subprocess model.
 

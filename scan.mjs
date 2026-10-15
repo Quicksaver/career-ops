@@ -200,8 +200,9 @@ function configureUserPaths(ctx) {
   PORTAL_HEALTH_PATH = userPath(ctx, 'data/portal-health.tsv');
 }
 
-export function configureScanUserPaths(ctx) {
+export function configureScanUserPaths(ctx, { historyPath } = {}) {
   configureUserPaths(ctx);
+  if (historyPath) SCAN_HISTORY_PATH = path.resolve(historyPath);
 }
 
 // Provider loading + routing live in providers/_registry.mjs so the portal
@@ -2973,12 +2974,6 @@ function parseTrackerApplicationLine(line, lineIndex, colMap = LEGACY_TRACKER_CO
   };
 }
 
-function companyRoleKey(company, role) {
-  const normalizedCompany = String(company ?? '').trim().toLowerCase();
-  const normalizedRole = String(role ?? '').trim().toLowerCase();
-  return normalizedCompany && normalizedRole ? `${normalizedCompany}::${normalizedRole}` : '';
-}
-
 function isClosedTrackerStatus(status) {
   const clean = String(status ?? '')
     .replace(/\*\*/g, '')
@@ -4079,21 +4074,21 @@ const KNOWN_FLAGS = [
 const VALUE_FLAGS = ['--company', '--posted-after', '--posted-before', '--since'];
 
 const USAGE = `Usage:
-  node scan.mjs                              # scan all enabled companies
-  node scan.mjs --dry-run                    # preview without writing files
-  node scan.mjs --company Cohere             # scan a single company
-  node scan.mjs --verify                     # API-first liveness check; use Playwright when inconclusive
-  node scan.mjs --verify --headed-fallback   # retry anti-bot-blocked URLs in a headed browser (needs a display)
-  node scan.mjs --verify --throttle          # jittered ~5-10s gap between browser checks
-  node scan.mjs --verify --throttle=8000     # custom base gap in ms (waits base..2*base)
-  node scan.mjs --rediscover-404             # re-verify tracked URLs that 404/410 (rides on --verify)
-  node scan.mjs --include-blacklisted        # let data/blacklist.md matches through (annotated)
-  node scan.mjs --since 7                    # postings from the last 7 days
-  node scan.mjs --posted-after 2026-07-01    # absolute lower bound on posting date
-  node scan.mjs --posted-before 2026-08-01   # absolute upper bound on posting date
-  node scan.mjs --json                       # emit one machine-readable receipt on stdout
-  node scan.mjs --quiet                      # suppress the manifesto footer
-  node scan.mjs --help                       # print this usage block and exit`;
+  node scan.mjs --user <id>                              # scan all enabled companies
+  node scan.mjs --user <id> --dry-run                    # preview without writing files
+  node scan.mjs --user <id> --company Cohere             # scan a single company
+  node scan.mjs --user <id> --verify                     # API-first liveness check; use Playwright when inconclusive
+  node scan.mjs --user <id> --verify --headed-fallback   # retry anti-bot-blocked URLs in a headed browser (needs a display)
+  node scan.mjs --user <id> --verify --throttle          # jittered ~5-10s gap between browser checks
+  node scan.mjs --user <id> --verify --throttle=8000      # custom base gap in ms (waits base..2*base)
+  node scan.mjs --user <id> --rediscover-404              # re-verify tracked URLs that 404/410 (rides on --verify)
+  node scan.mjs --user <id> --include-blacklisted         # let data/blacklist.md matches through (annotated)
+  node scan.mjs --user <id> --since 7                     # postings from the last 7 days
+  node scan.mjs --user <id> --posted-after 2026-07-01     # absolute lower bound on posting date
+  node scan.mjs --user <id> --posted-before 2026-08-01    # absolute upper bound on posting date
+  node scan.mjs --user <id> --json                        # emit one machine-readable receipt on stdout
+  node scan.mjs --user <id> --quiet                       # suppress the manifesto footer
+  node scan.mjs --user <id> --help                        # print this usage block and exit`;
 
 async function main() {
   const rawArgs = process.argv.slice(2);

@@ -1,46 +1,95 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
-import { extname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync, renameSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { resolveRunnerCommand, terminateProcessTreeSync } from '../lib/runner-command.mjs';
 
-function stopRegisteredWorker(path) {
-  if (!existsSync(path)) return;
-  const owner = JSON.parse(readFileSync(path, 'utf8'));
-  if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0 || !Number.isSafeInteger(owner.owner_pid) || owner.owner_pid <= 0) throw new Error('Invalid worker ownership');
-  terminateProcessTreeSync(owner.pid);
+function alive(pid) {
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { if (error.code === 'ESRCH') return false; if (error.code === 'EPERM') return true; throw error; }
 }
 
-export async function runWorker(command, args, { timeoutSeconds, registrationPath }) {
-  const seconds = Number(timeoutSeconds);
-  if (!Number.isFinite(seconds) || seconds < 0) throw new Error('Invalid worker timeout');
-  let launch = resolveRunnerCommand(command, args);
-  // Disposable Git Bash fixtures can use extensionless Bash executables.
-  // Launch their script explicitly; npm wrappers still use the trusted resolver.
-  if (process.platform === 'win32' && !extname(launch.command) && existsSync(launch.command) &&
-      /^#![^\r\n]*\bbash(?:\s|$)/.test(readFileSync(launch.command, 'utf8').slice(0, 256).split('\n')[0])) {
-    launch = resolveRunnerCommand('bash', [launch.command, ...args]);
+function registration(path) {
+  const owner = JSON.parse(readFileSync(path, 'utf8'));
+  if (!Number.isSafeInteger(owner.owner_pid) || owner.owner_pid <= 0 ||
+      (owner.pid != null && (!Number.isSafeInteger(owner.pid) || owner.pid <= 0))) throw new Error('Invalid worker ownership');
+  return owner;
+}
+
+function workerTreeAlive(pid) {
+  return alive(pid) || (process.platform !== 'win32' && pid && alive(-pid));
+}
+
+export function stopRegisteredWorker(path) {
+  if (!existsSync(path)) return;
+  const owner = registration(path);
+  // The supervisor is owned before any CLI exists, including the spawn window.
+  if (alive(owner.owner_pid)) terminateProcessTreeSync(owner.owner_pid);
+  if (owner.pid && owner.pid !== owner.owner_pid && workerTreeAlive(owner.pid)) terminateProcessTreeSync(owner.pid);
+  if (alive(owner.owner_pid) || workerTreeAlive(owner.pid)) throw new Error('Worker cleanup did not drain');
+  unlinkSync(path);
+}
+
+function guardStaleWorkers(batchDir) {
+  if (!existsSync(batchDir)) return;
+  for (const dir of readdirSync(batchDir, { withFileTypes: true })) {
+    if (!dir.isDirectory() || !dir.name.startsWith('.workers-')) continue;
+    for (const name of readdirSync(join(batchDir, dir.name)).filter(name => name.endsWith('.json') && !name.endsWith('.job-result.json'))) {
+      const path = join(batchDir, dir.name, name);
+      const owner = registration(path);
+      if (alive(owner.owner_pid) || workerTreeAlive(owner.pid)) throw new Error(`Prior worker still owns processing: ${path}`);
+      // Only proven dead registrations can be recovered by a new batch owner.
+      unlinkSync(path);
+    }
   }
-  const child = spawn(launch.command, launch.args, { ...launch.options, stdio: 'inherit' });
-  let timeout = null;
-  let timedOut = false;
-  let stoppingError = null;
+}
+
+export async function runWorker(command, args, { timeoutSeconds, registrationPath, terminateTree = terminateProcessTreeSync }) {
+  const seconds = Number(timeoutSeconds);
+  if (!String(timeoutSeconds).trim() || !Number.isFinite(seconds) || seconds < 0) throw new Error('Invalid worker timeout');
+  let child, timeout;
+  let timedOut = false, interrupted = false, drained = false, stopped = false, stoppingError;
+  const record = { owner_pid: process.pid, pid: null, state: 'starting' };
+  const save = () => {
+    const pending = `${registrationPath}.pending`;
+    writeFileSync(pending, JSON.stringify(record));
+    renameSync(pending, registrationPath);
+  };
+  save();
   const stop = () => {
-    try { terminateProcessTreeSync(child); }
+    try { if (child) terminateTree(child); stopped = true; }
     catch (error) { stoppingError = error; }
   };
-  const interrupt = () => { stop(); };
+  const interrupt = () => { interrupted = true; stop(); };
   process.on('SIGINT', interrupt);
   process.on('SIGTERM', interrupt);
+  const resultPath = `${registrationPath}.job-result.json`;
   try {
+    let launch = resolveRunnerCommand(command, args);
+    // Disposable Git Bash fixtures use extensionless Bash executables.
+    if (process.platform === 'win32' && !extname(launch.command) && existsSync(launch.command) &&
+        /^#![^\r\n]*\bbash(?:\s|$)/.test(readFileSync(launch.command, 'utf8').slice(0, 256).split('\n')[0])) {
+      launch = resolveRunnerCommand('bash', [launch.command, ...args]);
+    }
+    if (interrupted) { drained = true; return 130; }
+    if (process.platform === 'win32') {
+      if (existsSync(resultPath)) unlinkSync(resultPath);
+      const payload = Buffer.from(JSON.stringify({ command: launch.command, args: launch.args,
+        verbatim: !!launch.options.windowsVerbatimArguments, ownerPid: process.pid })).toString('base64');
+      launch = { command: join(process.env.SystemRoot || 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+        args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+          join(import.meta.dirname, '../lib/windows-job-worker.ps1'), '-Payload', payload, '-ResultFile', resultPath],
+        options: { shell: false, windowsHide: true } };
+    }
+    child = spawn(launch.command, launch.args, { ...launch.options, stdio: 'inherit' });
     const closed = new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', (code, signal) => resolve({ code, signal }));
     });
-    if (child.pid) {
-      try { writeFileSync(registrationPath, JSON.stringify({ owner_pid: process.pid, pid: child.pid })); }
-      catch (error) { stop(); await closed; throw error; }
-      // Check elapsed time rather than handing an oversized delay to setTimeout.
+    record.pid = child.pid || null; record.state = 'running';
+    try { save(); } catch (error) { stop(); await closed; throw error; }
+    if (seconds > 0) {
       const deadline = Date.now() + seconds * 1000;
       timeout = setInterval(() => {
         if (Date.now() < deadline || timedOut) return;
@@ -52,24 +101,45 @@ export async function runWorker(command, args, { timeoutSeconds, registrationPat
     }
     const result = await closed;
     if (stoppingError) throw stoppingError;
-    // A POSIX CLI can exit before its subprocesses. Its detached group remains
-    // ours until completion, so drain that group before accepting artifacts.
-    if (process.platform !== 'win32') terminateProcessTreeSync(child);
-    return timedOut ? 124 : result.code ?? 130;
+    if (!drained) {
+      if (process.platform === 'win32' && !stopped) {
+        const completion = existsSync(resultPath) ? JSON.parse(readFileSync(resultPath, 'utf8')) : null;
+        if (completion?.drained !== true) throw new Error('Windows worker job did not confirm cleanup');
+      } else if (process.platform !== 'win32') {
+        if (!stopped) terminateTree(child);
+        const deadline = Date.now() + 5000;
+        while (workerTreeAlive(child.pid)) {
+          if (Date.now() >= deadline) throw new Error('Worker process group did not drain');
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+      }
+      drained = true;
+    }
+    return timedOut ? 124 : interrupted ? 130 : result.code ?? 130;
+  } catch (error) {
+    if (!child?.pid) drained = true;
+    throw error;
   } finally {
     clearInterval(timeout);
     process.removeListener('SIGINT', interrupt);
     process.removeListener('SIGTERM', interrupt);
-    if (existsSync(registrationPath)) unlinkSync(registrationPath);
+    if (drained) {
+      if (existsSync(registrationPath)) unlinkSync(registrationPath);
+    } else {
+      record.state = 'cleanup_failed'; record.error = stoppingError?.message || 'Worker tree cleanup unconfirmed';
+      save();
+    }
   }
 }
 
 if (isMainModule(import.meta.url)) {
-  if (process.argv[2] === '--help' || process.argv[2] === '-h') console.log('Usage: worker-process.mjs stop REGISTRATION | run SECONDS REGISTRATION COMMAND [ARGS...]');
+  if (process.argv[2] === '--help' || process.argv[2] === '-h') console.log('Usage: worker-process.mjs stop REGISTRATION | stop-pid PID | guard BATCH_DIR | run SECONDS REGISTRATION COMMAND [ARGS...]');
   else {
     try {
       const [mode, ...args] = process.argv.slice(2);
       if (mode === 'stop' && args.length === 1) stopRegisteredWorker(args[0]);
+      else if (mode === 'stop-pid' && args.length === 1) terminateProcessTreeSync(Number(args[0]));
+      else if (mode === 'guard' && args.length === 1) guardStaleWorkers(args[0]);
       else if (mode === 'run' && args.length >= 3) {
         const [timeoutSeconds, registrationPath, command, ...workerArgs] = args;
         process.exitCode = await runWorker(command, workerArgs, { timeoutSeconds, registrationPath });

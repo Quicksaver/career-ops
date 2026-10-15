@@ -103,8 +103,12 @@ func TestNarrowTabsShowActiveFilter(t *testing.T) {
 
 func TestLegacyOpenLoadsReportBeforeCompanyFallback(t *testing.T) {
 	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, "reports"), 0o755)
-	os.WriteFile(filepath.Join(root, "reports", "001.md"), []byte("**URL:** https://example.com/exact\n"), 0o644)
+	if err := os.MkdirAll(filepath.Join(root, "reports"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "reports", "001.md"), []byte("**URL:** https://example.com/exact\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	app := model.CareerApplication{Number: 1, Company: "Example", Status: "Evaluated", ReportPath: "reports/001.md", JobURL: "https://example.com/other", JobURLFallback: true}
 	pm := NewPipelineModel(theme.NewTheme("auto"), []model.CareerApplication{app}, model.PipelineMetrics{}, root, 120, 40)
 	_, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})

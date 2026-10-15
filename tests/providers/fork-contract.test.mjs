@@ -7,9 +7,20 @@ import { detectCustomProvider, fetchCustomProvider, routeCustomBrowserRequests }
 import { makeHttpCtx } from '../../providers/_http.mjs';
 import { normalizeJob } from '../../providers/arbeitsagentur.mjs';
 import workingnomads from '../../providers/workingnomads.mjs';
+import { loadProviders, resolveProvider } from '../../providers/_registry.mjs';
 import { boundedProbeCtx } from '../../verify-portals.mjs';
 
 const entry = { name: 'Fixture', api: 'https://careers.example/api/pcsx/search?domain=fixture' };
+
+test('retired custom branches route through direct provider modules while active custom adapters remain available', async () => {
+  const {fileURLToPath}=await import('node:url');
+  const providers=await loadProviders(fileURLToPath(new URL('../../providers/',import.meta.url)));
+  for(const id of ['landingjobs','nodesk','workingnomads','greenhouse','ashby','lever','pcsx']) {
+    const resolved=resolveProvider({name:'Fixture',provider:id},providers);
+    assert.equal(resolved.provider,providers.get(id));
+    assert.equal(resolved.provider.id,id);
+  }
+});
 const position = (id, extra = {}) => ({ id, name: 'Engineer', locations: ['Berlin'], ...extra });
 const payload = (positions, count = positions.length) => ({ data: { positions, count } });
 const ctx = fetchJson => ({ fetchJson, sleep: async () => {} });
@@ -153,6 +164,14 @@ test('concurrent provider calls keep independent transport contexts', async () =
   assert.equal(a[0].externalId,'first');
   assert.equal(a[0].description,'First detail');
   assert.equal(b[0].externalId,'second');
+});
+
+test('PCSX detail content and posting date supersede listing metadata, with missing-detail fallback', async () => {
+  for(const detail of [position('enriched',{jobDescription:'Complete detail',postedTs:1767312000}),position('enriched',{jobDescription:'',postedTs:null})]) {
+    const [job]=await fetchCustomProvider('pcsx',{...entry,fetchDetails:true},ctx(async url=>url.includes('position_details')?{data:detail}:payload([position('enriched',{jobDescription:'Listing summary',postedTs:1767225600})])));
+    assert.equal(job.description,detail.jobDescription || 'Listing summary');
+    assert.equal(job.postedAt,(detail.postedTs ?? 1767225600)*1000);
+  }
 });
 
 test('shared retries honor Retry-After and stop on nonretryable errors', async () => {

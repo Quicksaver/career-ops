@@ -366,6 +366,10 @@ function cmdTrust(args) {
 function cmdRemove(args) {
   const id = args[0];
   if (!id) { console.error('Usage: node plugins.mjs remove <id>'); process.exit(1); }
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+    console.error('Invalid plugin ID. Use lowercase letters, numbers, and hyphens.');
+    process.exit(1);
+  }
   const dir = path.join(DATA_ROOT, 'plugins.local', id);
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   removeLockEntry(DATA_ROOT, id);

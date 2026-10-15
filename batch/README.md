@@ -45,7 +45,7 @@ Codex model and reasoning resolve independently from command-line `--model` / `-
 | `--resume-paused` | off | Select jobs paused by Codex or Claude session/rate limits |
 | `--include-pending` | off | Internal coordinator flag that unions recovery selections with ordinary pending eligibility |
 | `--max-retries N` | `2` | Bound retry attempts |
-| `--worker-timeout N` | `900` | Bound worker execution time in seconds |
+| `--worker-timeout N` | `900` | Finite nonnegative seconds; zero disables the timeout and decimals are accepted |
 | `--rate-limit-sleep N` | `300` | Maximum adaptive Claude retry delay; zero pauses immediately |
 | `--skip-pdf` | off | Disable PDF rendering |
 | `--recover-artifact-failures` | off | Revalidate known false artifact failures without workers |
@@ -81,7 +81,7 @@ Completed and skipped rows remain terminal and are reconciled instead of evaluat
 
 Batch ownership uses the shared atomic directory/token protocol at `batch/batch-runner.pid.owner.lock/owner.json`. Its `pid` is the native OS PID of the supervising Bash process, including on Windows. The compatibility `batch-runner.pid` retains the Bash PID. Only the acquiring token can release either artifact. A native owner proven dead can be recovered; unreadable or ambiguous ownership stays locked. An illegal hold that writes artifacts is quarantined and stops the run before merging those artifacts.
 
-Reviewed verification holds this same ownership mutex. Worker launches use the shared native command resolver and separate POSIX process groups. Timeout recovery starts after the owned process tree stops; batch interruption stops registered workers before releasing ownership.
+Reviewed verification holds this same ownership mutex. Worker launches use the shared native command resolver and separate POSIX process groups. On Windows, a PowerShell helper assigns workers to an owned Job Object before they execute, then drains descendants even when the launcher exits normally. This requires Windows 10 or later and Windows PowerShell. Timeout recovery starts after the owned process tree stops. Batch interruption owns offer supervisors before child registration exists and drains both pending supervisors and registered workers before releasing ownership. Unconfirmed cleanup retains its registration and stops processing with exit 125; a later run refuses recovery while an earlier worker owner remains alive or ambiguous. Required preparation and quarantine failures also stop sequential processing before merge.
 
 ## Artifact identity
 

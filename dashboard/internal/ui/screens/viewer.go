@@ -126,17 +126,20 @@ func parseCoverLetterPath(lines []string, careerOpsPath string) string {
 }
 
 // resolveJobURL returns the posting URL for the open report: the tracker row's
-// JobURL when it is a usable web URL, else the first usable **URL:** header
-// line in the report. Anything else (a hostless "https://?x", a local:jds/
+// explicit JobURL, then a usable **URL:** report header, then the tracker's
+// company URL fallback. Anything else (a hostless "https://?x", a local:jds/
 // pointer) is skipped rather than handed to the platform opener.
 func resolveJobURL(app model.CareerApplication, lines []string) string {
-	if isWebURL(app.JobURL) {
+	if !app.JobURLFallback && isWebURL(app.JobURL) {
 		return app.JobURL
 	}
 	for _, line := range lines {
 		if sm := reReportURLLine.FindStringSubmatch(strings.TrimSpace(line)); sm != nil && isWebURL(sm[1]) {
 			return sm[1]
 		}
+	}
+	if isWebURL(app.JobURL) {
+		return app.JobURL
 	}
 	return ""
 }

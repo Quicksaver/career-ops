@@ -189,3 +189,15 @@ test("an unresolvable checkout yields the base template rather than throwing", a
 
   assert.equal(await resolveCvTemplate(root), BASE_CV_TEMPLATE);
 });
+
+test("system ROOT never selects the default profile over the explicit user root", {skip: !coreUsable}, async () => {
+  const root=fakeCheckout();
+  const priorRoot=process.env.CAREER_OPS_ROOT;
+  try {
+    process.env.CAREER_OPS_ROOT=root;
+    fs.mkdirSync(path.join(root,'config'),{recursive:true});
+    fs.writeFileSync(path.join(root,'config/profile.yml'),'cv:\n  template: standard\n');
+    const rel=await asDashboard(root,undefined,()=>resolveCvTemplate(root,{userRoot:path.join(root,'candidate')}));
+    assert.equal(rel,'templates/cv-template.mine.html');
+  } finally { if(priorRoot===undefined)delete process.env.CAREER_OPS_ROOT;else process.env.CAREER_OPS_ROOT=priorRoot; }
+});

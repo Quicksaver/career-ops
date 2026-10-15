@@ -269,7 +269,7 @@ Levels are additive — they are executed in order, and results are merged and d
    - An empty location passes unless `strict: true` and at least one restricting tier (`allow`, `block`, or `block_hard`) is configured. A trustworthy location hint may supply the missing location.
    - `block_hard` matches always reject.
    - `always_allow` matches pass before ordinary `block` and `allow` checks. US country entries also enable the scanner's state-name/code matching.
-   - Ordinary `block` matches reject; otherwise an empty `allow` passes, and a nonempty `allow` requires a match.
+   - Ordinary `block` matches reject; otherwise an empty `allow` passes. A nonempty `allow` passes on a location match or, as the final fallback, an explicitly remote title. The remote-title fallback does not bypass the earlier strict empty-location or block gates.
    - Use the canonical scanner's case-insensitive location matching, including its token boundaries for short terms. Persist location as the seventh scan-history column for auditing.
 
 6c. **Filter by Posting Age (Optional)** using `max_posting_age_days` from `portals.yml`:

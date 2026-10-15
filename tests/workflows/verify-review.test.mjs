@@ -736,11 +736,11 @@ try {
     '# Evaluation: Missing Report Co — Engineer', '',
     '**URL:** https://example.com/jobs/missing-report', '',
   ].join('\n'));
-  const missingReportWarning = {
-    id: 'possible-duplicate-tracker:30:31', code: 'possible_duplicate_tracker',
-    message: 'Missing losing report fixture',
-    details: { tracker_nums: [30, 31] },
-  };
+  const missingReportChecked = spawnSync(process.execPath, [join(ROOT, 'verify-pipeline.mjs'), '--user', missingReportUser, '--json'], {
+    cwd: ROOT, encoding: 'utf8', env: { ...env, CAREER_OPS_ROOT: missingReportRoot,
+      CAREER_OPS_TRACKER: join(missingReportRoot, 'data/applications.md') },
+  });
+  const missingReportWarning = JSON.parse(missingReportChecked.stdout).warnings.find(finding => finding.id === 'possible-duplicate-tracker:30:31');
   const missingReportVerificationPath = join(tmp, 'missing-report-verification.json');
   const missingReportTriagePath = join(tmp, 'missing-report-triage.json');
   writeFileSync(missingReportVerificationPath, JSON.stringify({ user: missingReportUser, root: missingReportRoot,

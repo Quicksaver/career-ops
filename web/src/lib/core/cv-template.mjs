@@ -1,5 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { resolveDataRoot } from "./data-root.mjs";
 import { BASE_CV_TEMPLATE } from "../run-prompts.mjs";
 
 /**
@@ -41,17 +43,21 @@ import { BASE_CV_TEMPLATE } from "../run-prompts.mjs";
  * @param {string} root Absolute path to the career-ops checkout (careerOpsRoot()).
  * @returns {Promise<string>} Repo-relative template path, forward-slashed.
  */
-export async function resolveCvTemplate(root) {
+export async function resolveCvTemplate(root, { userRoot } = {}) {
   const file = path.join(root, "cv-templates.mjs");
   try {
     const mod = await import(/* webpackIgnore: true */ pathToFileURL(file).href);
     if (typeof mod?.resolveTemplate !== "function") return BASE_CV_TEMPLATE;
     const profile = process.env.CAREER_OPS_PROFILE?.trim();
+    const marker = path.join(root, '.career-ops-data');
+    const profilePath = profile ? path.resolve(root, profile) : path.join(userRoot || resolveDataRoot(
+      root, () => existsSync(marker) ? readFileSync(marker, 'utf8') : null,
+      process.env, path.resolve, path.join,
+    ), 'config/profile.yml');
     const abs = mod.resolveTemplate("cv", null, {
       fallback: true,
-      // undefined keeps cv-templates.mjs's own default, rather than restating it
-      // here where it would drift.
-      profilePath: profile ? path.resolve(root, profile) : undefined,
+      // Core ROOT and the selected user's data root differ in the web process.
+      profilePath,
     });
     if (typeof abs !== "string" || !abs) return BASE_CV_TEMPLATE;
     // The prompt names a repo-relative path, and always with forward slashes:

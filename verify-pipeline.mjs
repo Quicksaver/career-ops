@@ -40,10 +40,11 @@ import {
 } from './lib/user-context.mjs';
 import {
   looksLikeScoreCell, isSeparatorRow, isHeaderRow, resolveColumns,
-  normalizeTextKey, normalizeVia,
+  normalizeTextKey, normalizeVia, extractCellUrl,
 } from './tracker-parse.mjs';
 import { CONTROL_CHARS, findDeadReportLink } from './tracker-utils.mjs';
 import { normalizeUrl } from './url-key.mjs';
+import { findingFingerprint } from './lib/verification-review.mjs';
 import { checkTrackerSync } from './tracker-sync-check.mjs';
 import { normalizeStatus } from './followup-cadence.mjs';
 import { checkFollowupsSchema } from './stats.mjs';
@@ -100,6 +101,10 @@ const findingIds = new Set();
 
 function finding(level, code, id, message, details = {}) {
   if (!id || id === code) id = `${code}:${createHash('sha256').update(JSON.stringify({ message, details })).digest('hex').slice(0, 20)}`;
+  else if (code.startsWith('portal_') || code.startsWith('tracker_sync_')) {
+    // Name-scoped resource IDs need a discriminator even when emitted alone.
+    id = `${id}:${findingFingerprint(level, { id, code, message: '', details }).slice(0, 20)}`;
+  }
   const originalId = id;
   let suffix = 1;
   while (findingIds.has(`${level}:${id}`)) id = `${originalId}:${++suffix}`;
@@ -175,6 +180,7 @@ for (const line of lines) {
     status: parts[COLMAP.status],
     pdf: parts[COLMAP.pdf],
     report: parts[COLMAP.report],
+    url: COLMAP.url != null ? parts[COLMAP.url] : '',
     notes: COLMAP.notes != null ? (parts[COLMAP.notes] || '') : '',
   });
 }
@@ -299,6 +305,8 @@ function emitTrackerDuplicate(group, extraDetails = {}) {
         score: e.score,
         status: e.status,
         report: e.report,
+        url: canonicalPostingUrl(extractCellUrl(e.url)),
+        report_url: postingUrlForEntry(e),
         notes: e.notes,
       })),
       ...extraDetails,

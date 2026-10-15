@@ -433,7 +433,7 @@ function saveActionResult(kind, pass, result, inputPaths) {
   });
 }
 
-function priorActionResult(kind, pass) {
+function priorActionResult(kind, pass, expectedInputPaths = null) {
   const checkpointPath = join(runDir, `action-result.${kind}.pass-${String(pass).padStart(2, '0')}.json`);
   if (existsSync(checkpointPath)) {
     try {
@@ -441,7 +441,8 @@ function priorActionResult(kind, pass) {
       if (value?.status === 'completed' && Array.isArray(value.input_files) &&
           value.input_files.length === 2 && value.input_files.every(name =>
             typeof name === 'string' && basename(name) === name && !/[\\/]/.test(name)) &&
-          value.input_digest === actionInputDigest(value.input_files.map(name => join(runDir, name)))) return value;
+          value.input_digest === actionInputDigest(value.input_files.map(name => join(runDir, name))) &&
+          (!expectedInputPaths || value.input_digest === actionInputDigest(expectedInputPaths))) return value;
     } catch {}
   }
   // Legacy phase logs cannot prove which repair inputs produced their result.
@@ -518,8 +519,11 @@ function loadPendingApplyCheckpoint(currentVerification) {
         expected,
         review: normalized.review,
         normalizations: normalized.normalizations,
-        duplicateResult: priorActionResult('duplicates', pass),
-        applyResult: priorActionResult('review', pass),
+        duplicateResult: priorActionResult('duplicates', pass, [
+          join(runDir, `verification.pass-${String(pass).padStart(2, '0')}.json`),
+          join(runDir, `duplicate-triage.pass-${String(pass).padStart(2, '0')}.json`),
+        ]),
+        applyResult: priorActionResult('review', pass, [verificationPath, reviewPath]),
       };
     } catch (error) {
       log(`ignored invalid pending apply checkpoint for pass ${pass}: ${validationErrors(error).join('; ')}`);

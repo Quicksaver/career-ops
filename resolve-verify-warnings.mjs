@@ -77,6 +77,19 @@ function sameMembers(left, right) {
   return a.length === b.length && a.every((value, index) => String(value) === String(b[index]));
 }
 
+function duplicateIdentity(finding) {
+  const details = finding.details || {};
+  if (finding.code === 'possible_duplicate_tracker') {
+    return (details.entries || []).map(entry => ({
+      num: entry.tracker_num, company: entry.company || '', role: entry.role || '',
+      report: entry.report || '', url: entry.url || '', report_url: entry.report_url || '',
+    })).sort((a, b) => a.num - b.num);
+  }
+  const identities = new Map((details.posting_identities || []).map(item => [item.file, item.canonical_url || '']));
+  return (details.files || []).map(file => ({ file, url: identities.get(file) || details.canonical_url || '' }))
+    .sort((a, b) => a.file.localeCompare(b.file));
+}
+
 function reportTarget(reportCell) {
   const match = String(reportCell || '').match(/\]\(([^)]+)\)/);
   return match ? basename(match[1]) : null;
@@ -194,7 +207,8 @@ async function main() {
     for (const plan of [...trackerPlans, ...reportPlans]) {
       const current = freshWarnings.get(plan.warning.id);
       const field = plan.warning.code === 'possible_duplicate_tracker' ? 'tracker_nums' : 'files';
-      if (!current || current.code !== plan.warning.code || !sameMembers(current.details?.[field] || [], plan.warning.details?.[field] || [])) {
+      if (!current || current.code !== plan.warning.code || !sameMembers(current.details?.[field] || [], plan.warning.details?.[field] || []) ||
+          JSON.stringify(duplicateIdentity(current)) !== JSON.stringify(duplicateIdentity(plan.warning))) {
         throw new Error(`${plan.warning.id}: duplicate identity changed; rerun verification`);
       }
     }

@@ -6,7 +6,6 @@ import { renameSyncWithRetry } from './tracker-utils.mjs';
 import { makeHttpCtx, isRefusedRedirectError } from './providers/_http.mjs';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
 import { DEFAULT_SMALL_THRESHOLD, isSmallBoard, smallBoardDetail } from './lib/small-board.mjs';
 /**
  * discover-ats.mjs — Company-list → scannable ATS board resolver for career-ops

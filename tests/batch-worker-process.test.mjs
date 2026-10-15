@@ -74,3 +74,51 @@ test('forced stop of an outer runner includes descendants in nested POSIX groups
     assert.ok(f.readPids().every(pid => !processAlive(pid)));
   } finally { for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid); rmSync(f.dir, { recursive: true, force: true }); }
 });
+
+test('normal launcher exit drains its surviving descendants before unregistering', async () => {
+  const f = fixture();
+  writeFileSync(f.script, `import {spawn} from 'node:child_process';
+import {appendFileSync,writeFileSync,existsSync} from 'node:fs';
+const [script,pids,artifact,depth]=process.argv.slice(1);
+appendFileSync(pids,process.pid+'\\n');
+if(depth==='0') {
+  const child=spawn(process.execPath,[script,pids,artifact,'1'],{stdio:'ignore',detached:process.platform==='win32'}); child.unref();
+  while(!existsSync(artifact+'.ready')) await new Promise(r=>setTimeout(r,10));
+} else { writeFileSync(artifact+'.ready','ready'); setTimeout(()=>writeFileSync(artifact,'late'),1500); setInterval(()=>{},1000); }
+`);
+  try {
+    assert.equal(await runWorker(process.execPath, f.args, { timeoutSeconds: 0, registrationPath: f.registration }), 0);
+    assert.equal(f.readPids().length, 2);
+    assert.ok(f.readPids().every(pid => !processAlive(pid)), 'normal completion owns and drains orphaned descendants');
+    assert.equal(existsSync(f.registration), false);
+    await delay(1700);
+    assert.equal(existsSync(f.artifact), false);
+  } finally { for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('cleanup failure retains ownership and blocks recovery until the tree is proven dead', async () => {
+  const f = fixture();
+  writeFileSync(f.script, "setTimeout(()=>{process.exitCode=0},2000);\n");
+  try {
+    await assert.rejects(runWorker(process.execPath, f.args, {
+      timeoutSeconds: 1.5, registrationPath: f.registration,
+      terminateTree() { throw new Error('fixture cleanup denied'); },
+    }), /fixture cleanup denied/);
+    const owner = JSON.parse(readFileSync(f.registration, 'utf8'));
+    assert.equal(owner.state, 'cleanup_failed');
+    assert.equal(owner.owner_pid, process.pid);
+    const workers = join(f.dir, '.workers-fixture');
+    const { mkdirSync, renameSync } = await import('node:fs');
+    mkdirSync(workers); renameSync(f.registration, join(workers, 'worker.json'));
+    const blocked = spawnSync(process.execPath, [helper, 'guard', f.dir], { encoding: 'utf8' });
+    assert.equal(blocked.status, 125); assert.match(blocked.stderr, /Prior worker still owns processing/);
+    writeFileSync(join(workers, 'worker.json'), JSON.stringify({owner_pid:2147483000,pid:null,state:'cleanup_failed'}));
+    const recovered = spawnSync(process.execPath, [helper, 'guard', f.dir], { encoding: 'utf8' });
+    assert.equal(recovered.status, 0, recovered.stderr);
+    assert.equal(existsSync(join(workers, 'worker.json')), false);
+  } finally {
+    if (existsSync(f.registration)) { const owner=JSON.parse(readFileSync(f.registration,'utf8')); if(processAlive(owner.pid)) terminateProcessTreeSync(owner.pid); }
+    for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid);
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as artifactPath from 'node:path';
 import { getCareerOpsRoot } from './path-resolver.mjs';
+import { pathIsInsideCanonical } from './tracker-utils.mjs';
 
 import { readFile, writeFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -173,7 +174,7 @@ async function main() {
   const absOutput = resolve(outputPath);
   const activeOutputRoot = getCareerOpsRoot();
   const activeOutputRelative = artifactPath.relative(activeOutputRoot, absOutput);
-  if (!activeOutputRelative || activeOutputRelative === '..' || activeOutputRelative.startsWith(`..${artifactPath.sep}`) || artifactPath.isAbsolute(activeOutputRelative)) {
+  if (!activeOutputRelative || activeOutputRelative === '..' || activeOutputRelative.startsWith(`..${artifactPath.sep}`) || artifactPath.isAbsolute(activeOutputRelative) || !pathIsInsideCanonical(absOutput, activeOutputRoot)) {
     throw new Error(`Refusing to write outside the active user root: ${absOutput}`);
   }
   const outDir = dirname(absOutput);

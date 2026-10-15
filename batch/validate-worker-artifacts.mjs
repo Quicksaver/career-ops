@@ -187,7 +187,8 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
     errors.push(`tracker Via ${JSON.stringify(tracker.via)} disagrees with report Via ${JSON.stringify(reportVia)}`);
   }
 
-  const reportScore = report.score == null || clean(report.score) === '' ? NaN : typeof report.score === 'number' ? report.score : Number(report.score);
+  const reportScore = typeof report.score === 'number' ? report.score
+    : typeof report.score === 'string' && report.score.trim() !== '' ? Number(report.score) : NaN;
   const trackerScore = scoreNumber(tracker.score);
   if (strictWorkflow && (!Number.isFinite(reportScore) || reportScore < 0 || reportScore > 5)) errors.push('completed report score must be finite and between 0 and 5');
   if (strictWorkflow && (trackerScore === null || !Number.isFinite(trackerScore) || trackerScore < 0 || trackerScore > 5)) errors.push('completed tracker score must be a valid score between 0 and 5');
@@ -235,7 +236,7 @@ if (invokedDirectly) {
     const trackerPath = option(args, '--tracker');
     const finalPath = option(args, '--final');
     if (!reportPath || !trackerPath) throw new Error('--report and --tracker are required');
-    const result = validateWorkerArtifacts({ reportPath, trackerPath, finalPath, repair: args.includes('--repair'), strictWorkflow: args.includes('--strict-workflow'), userRoot: option(args, '--user-root'), reportNum: option(args, '--report-num'), expectedUrl: option(args, '--expected-url'), answersPath: option(args, '--answers-file'), user: option(args, '--user') });
+    const result = validateWorkerArtifacts({ reportPath, trackerPath, finalPath, repair: args.includes('--repair'), strictWorkflow: args.includes('--strict-workflow'), userRoot: option(args, '--user-root'), reportNum: option(args, '--report-num'), expectedUrl: option(args, '--expected-url'), answersPath: option(args, '--answers-file'), user: option(args, '--user') || process.env.CAREER_OPS_USER });
     if (!result.valid) {
       console.error(result.errors.join('; '));
       process.exitCode = 1;

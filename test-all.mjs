@@ -3704,7 +3704,7 @@ for (const skillPath of ['.claude/skills/career-ops/SKILL.md', '.agents/skills/c
   const delegatedModeOrder = sectionOrder(
     '### Execution ownership for long-running modes',
     'Execute the instructions from the loaded mode file.',
-    ['ACTIVE_USER', 'USER_ROOT=users/{ACTIVE_USER}', 'loaded shared/profile/custom/mode instructions'],
+    ['ACTIVE_USER', 'already-resolved absolute `USER_ROOT`', 'loaded shared/profile/custom/mode instructions'],
   );
 
   if (

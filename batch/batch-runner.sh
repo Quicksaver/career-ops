@@ -176,7 +176,9 @@ while [[ $# -gt 0 ]]; do
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
     --cli) CLI="$2"; shift 2 ;;
-    --worker-timeout) WORKER_TIMEOUT_SECONDS="$2"; shift 2 ;;
+    --worker-timeout)
+      [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: --worker-timeout requires an argument"; exit 1; }
+      WORKER_TIMEOUT_SECONDS="$2"; shift 2 ;;
     --skip-pdf) SKIP_PDF=true; shift ;;
     --rate-limit-sleep)
       [[ $# -ge 2 ]] || { echo "ERROR: --rate-limit-sleep requires an argument"; exit 1; }
@@ -201,6 +203,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
+
+if ! node -e 'const value = process.argv[1]; if (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0) process.exit(1)' "$WORKER_TIMEOUT_SECONDS"; then
+  echo "ERROR: worker timeout must be a finite nonnegative number of seconds (0 disables the timeout)"
+  exit 1
+fi
 
 if [[ -n "$REASONING_EFFORT" ]]; then
   case "$REASONING_EFFORT" in
@@ -286,6 +293,7 @@ fi
 
 # Lock file to prevent double execution
 acquire_lock() {
+  node "$SCRIPT_DIR/worker-process.mjs" guard "$BATCH_DIR" || exit 125
   # Legacy locks use the Bash PID namespace. Never unlink an incumbent here.
   if [[ -f "$LOCK_FILE" && ! -d "$LOCK_FILE.owner.lock" ]]; then
     local old_pid
@@ -325,8 +333,25 @@ release_lock() {
 stop_owned_workers() {
   [[ -n "$WORKER_DIR" && -d "$WORKER_DIR" ]] || return 0
   local registration rc=0
+  # The offer jobs exist before Node can register a CLI. Stop their native
+  # trees too, including a supervisor paused during module startup.
+  local offer_pid native_offer_pid
+  for offer_pid in $(jobs -pr); do
+    kill -0 "$offer_pid" 2>/dev/null || continue
+    native_offer_pid="$offer_pid"
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*)
+        if ! native_offer_pid=$(cat "/proc/$offer_pid/winpid" 2>/dev/null); then
+          kill -0 "$offer_pid" 2>/dev/null && rc=1
+          continue
+        fi ;;
+    esac
+    node "$SCRIPT_DIR/worker-process.mjs" stop-pid "$native_offer_pid" || rc=1
+    wait "$offer_pid" 2>/dev/null || true
+  done
   for registration in "$WORKER_DIR/"*.json; do
     [[ -f "$registration" ]] || continue
+    [[ "$registration" != *.job-result.json ]] || continue
     node "$SCRIPT_DIR/worker-process.mjs" stop "$registration" || rc=1
   done
   return "$rc"
@@ -341,7 +366,7 @@ interrupt_batch() {
   exit 130
 }
 
-trap release_lock EXIT
+trap 'release_lock || exit 125' EXIT
 trap interrupt_batch INT TERM
 
 # Validate prerequisites
@@ -1718,6 +1743,10 @@ process_offer() {
     esac
     local worker_pid=$!
     wait "$worker_pid" || exit_code=$?
+    if [[ "$exit_code" == 125 ]]; then
+      echo "ERROR: Worker supervisor could not establish or drain ownership; no retry or artifact merge is safe." >&2
+      return 125
+    fi
     if [[ "$exit_code" == 124 && -f "$worker_registration.timeout" ]]; then
       timed_out=true
       echo "WARN: Worker #$id timed out after ${WORKER_TIMEOUT_SECONDS}s; its process tree was stopped before artifact recovery." >> "$log_file"
@@ -2396,9 +2425,15 @@ main() {
   # Process offers
   if (( PARALLEL <= 1 )); then
     # Sequential processing
+    local -a pids=()
     for i in "${!pending_ids[@]}"; do
       local worker_rc=0
-      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))" || worker_rc=$?
+      # Run outside a conditional list so errexit remains active in preparation
+      # and quarantine steps. The parent owns and waits for this offer job.
+      process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))" &
+      pids=("$!")
+      wait "${pids[0]}" || worker_rc=$?
+      pids=()
       if (( worker_rc != 0 )); then
         echo "ERROR: a sequential worker failed fatally; tracker merge skipped. Inspect the worker log and repair state before rerunning." >&2
         return "$worker_rc"

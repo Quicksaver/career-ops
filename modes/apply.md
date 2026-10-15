@@ -149,7 +149,7 @@ Before drafting answers, read the matched report's Block G fixed-term finding an
 4. If there is a `## Application Answers` section → recover it through the strict reader, never by re-reading the rendered markdown as prose:
 
    ```bash
-   node application-answers.mjs --report reports/NNN-company-role-date.md --read --strict
+   node application-answers.mjs --user {USER} --report reports/NNN-company-role-date.md --read --strict
    ```
 
    - **Exit 0** → the JSON on stdout is the base snapshot of previous answers. `null` means the report has no section; treat it as a fresh application.
@@ -157,7 +157,7 @@ Before drafting answers, read the matched report's Block G fixed-term finding an
    - A **Section H** (`## H) Draft Application Answers`, drafted during evaluation before any form was seen) has its own reader, because its body is a convention rather than a format this repo writes:
 
      ```bash
-     node application-answers.mjs --report reports/NNN-company-role-date.md --read-draft
+   node application-answers.mjs --user {USER} --report reports/NNN-company-role-date.md --read-draft
      ```
 
      - Prints `{"freeText": [...]}`, or `null` when the report has no Block H. There is no `--strict` counterpart: an empty `freeText` means the block exists but did not follow the convention, which is an expected outcome and not a corrupted report.

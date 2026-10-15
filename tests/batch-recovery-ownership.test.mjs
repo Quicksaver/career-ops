@@ -8,6 +8,9 @@ import { ROOT, getBash, rmSync } from './helpers.mjs';
 import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 import { inspectOwnership, ownershipPath, releaseOwnership } from '../batch/runner-ownership.mjs';
 import { validateWorkerArtifacts } from '../batch/validate-worker-artifacts.mjs';
+import { pathToFileURL } from 'node:url';
+import { processAlive } from '../lib/run-artifacts.mjs';
+import { terminateProcessTreeSync } from '../lib/runner-command.mjs';
 
 const stateHeader = 'id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries\n';
 const posting = id => `https://example.com/jobs/${id}`;
@@ -62,8 +65,8 @@ if(['success429','failed429','wrong999','success001'].includes(process.env.FIXTU
   writeFileSync(runner, '#!/usr/bin/env bash\nset -euo pipefail\ncurl() { return 1; }\nexport -f curl\nexec bash "$CAREER_OPS_ROOT/batch/batch-runner.sh" --user fixture --cli codex --model fixture --defer-verification "$@"\n');
   const env = mode => ({ ...process.env, PATH: join(root, 'bin') + delimiter + process.env.PATH, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root, CAREER_OPS_USER: 'fixture', FIXTURE_MODE: mode });
   const run = (args = [], mode = 'fail') => spawnSync(getBash(), [runner, ...args], { encoding: 'utf8', timeout: 30000, env: env(mode) });
-  const start = (args = [], mode = 'wait') => {
-    const child = spawn(getBash(), [runner, ...args], { env: env(mode) });
+  const start = (args = [], mode = 'wait', extraEnv = {}) => {
+    const child = spawn(getBash(), [runner, ...args], { env: {...env(mode),...extraEnv} });
     let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
     const completion = new Promise(resolve => child.on('close', code => resolve({ code, output })));
     return { child, completion };
@@ -85,7 +88,7 @@ test('native Git Bash ownership survives rejected concurrent runner and token mi
       const mapped = spawnSync(getBash(), ['-c', 'cat "/proc/$1/winpid"', 'native-owner', compat.trim()], {encoding:'utf8'});
       assert.equal(Number(mapped.stdout), owner.pid);
     }
-    const rejected = f.run(['--limit', '1']); assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+    const rejected = f.run(['--limit', '1']); assert.notEqual(rejected.status, 0, rejected.stdout + rejected.stderr);
     assert.equal(inspectOwnership(f.pid).token, owner.token);
     assert.equal(readFileSync(f.pid, 'utf8'), compat);
     assert.equal(releaseOwnership(f.pid, 'wrong-token'), false);
@@ -101,6 +104,48 @@ test('native Git Bash ownership survives rejected concurrent runner and token mi
   } finally {
     if (running && !existsSync(join(f.root, 'release'))) { writeFileSync(join(f.root, 'release'), 'release'); await running.completion; }
     rmSync(f.root, {recursive:true,force:true});
+  }
+});
+
+test('interrupt before supervisor registration drains the pending supervisor before unlocking', async () => {
+  const f=fixture(); let running, supervisorPid;
+  const preload=join(f.root,'startup-barrier.mjs');
+  writeFileSync(preload,`import {writeFileSync} from 'node:fs';
+if(process.argv[1]?.endsWith('worker-process.mjs')&&process.argv[2]==='run') {writeFileSync(${JSON.stringify(join(f.root,'startup-ready'))},String(process.pid));Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,15000);}\n`);
+  try {
+    running=f.start(['--limit','1'],'fail',{NODE_OPTIONS:`--import=${pathToFileURL(preload).href}`});
+    for(let i=0;i<400&&!existsSync(join(f.root,'startup-ready'));i++)await delay(25);
+    assert.ok(existsSync(join(f.root,'startup-ready')),'supervisor reached the pre-registration barrier');
+    supervisorPid=Number(readFileSync(join(f.root,'startup-ready'),'utf8'));
+    const compat=readFileSync(f.pid,'utf8').trim();
+    const signal=spawnSync(getBash(),['-c','kill -TERM "$1"','stop-fixture',compat],{encoding:'utf8'});
+    assert.equal(signal.status,0,signal.stderr);
+    const outcome=await Promise.race([running.completion,delay(7000).then(()=>null)]);
+    assert.ok(outcome,'batch interruption must drain without waiting for the barrier');
+    assert.notEqual(outcome.code,0); assert.equal(processAlive(supervisorPid),false);
+    assert.equal(existsSync(join(f.root,'calls')),false,'no paid CLI boundary was reached');
+    assert.equal(inspectOwnership(f.pid).status,'absent');
+  } finally {
+    if(running && processAlive(running.child.pid))terminateProcessTreeSync(running.child);
+    if(supervisorPid && processAlive(supervisorPid))terminateProcessTreeSync(supervisorPid);
+    if(running)await running.completion;
+    rmSync(f.root,{recursive:true,force:true});
+  }
+});
+
+test('required sequential preparation and quarantine errors prevent dispatch or merge', () => {
+  for(const failure of ['preparation','quarantine']) {
+    const f=fixture();
+    try {
+      writeFileSync(join(f.root,'merge-tracker.mjs'),`import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(join(f.root,'merged'))},'unexpected');\n`);
+      if(failure==='preparation')writeFileSync(join(f.batch,'tmp'),'not a directory');
+      else {mkdirSync(join(f.batch,'logs'));writeFileSync(join(f.batch,'logs/quarantine'),'not a directory');}
+      const result=f.run(['--limit','2'],'wrong999');
+      assert.notEqual(result.status,0,result.stdout+result.stderr);
+      assert.equal(existsSync(join(f.root,'merged')),false);
+      const calls=existsSync(join(f.root,'calls'))?readFileSync(join(f.root,'calls'),'utf8').trim().split('\n').length:0;
+      assert.equal(calls,failure==='preparation'?0:1);
+    } finally {rmSync(f.root,{recursive:true,force:true});}
   }
 });
 
@@ -222,6 +267,9 @@ test('strict validator rejects wrong report target and unrelated posting URL; so
     tracker(posting(2)); assert.equal(validate({expectedUrl:local}).valid,false);
     const answersPath=join(f.root,'answers.json'); writeFileSync(answersPath,JSON.stringify({schema_version:1,user:'fixture',answers:[{url:posting(1),reason:'jd_unavailable',answer:'employer alternative',employer_url:posting(3)}]}));
     tracker(posting(3)); assert.equal(validate({answersPath,user:'fixture'}).valid,true);
+    const env={...process.env,CAREER_OPS_ROOT:f.root,CAREER_OPS_DATA_DIR:f.root}; delete env.CAREER_OPS_USER;
+    const cli=spawnSync(process.execPath,[join(ROOT,'batch/validate-worker-artifacts.mjs'),'--user','fixture','--report',reportPath,'--tracker',trackerPath,'--strict-workflow','--user-root',f.root,'--report-num','001','--expected-url',posting(1),'--answers-file',answersPath],{env,encoding:'utf8'});
+    assert.equal(cli.status,0,cli.stderr);
     tracker(posting(2)); assert.equal(validate({answersPath,user:'fixture'}).valid,false);
   } finally { rmSync(f.root,{recursive:true,force:true}); }
 });

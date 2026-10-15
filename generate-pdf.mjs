@@ -131,7 +131,7 @@ function applyThemeOverrides(html, theme) {
   const overrideStyle = `<style id="cv-theme-overrides">\n  :root {\n${declarations.join('\n')}\n  }\n</style>`;
   if (/<\/head>/i.test(html)) {
     return {
-      html: html.replace(/<\/head>/i, `${overrideStyle}\n</head>`),
+      html: html.replace(/<\/head>/i, () => `${overrideStyle}\n</head>`),
       applied,
       skipped,
     };

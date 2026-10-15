@@ -188,6 +188,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `batch/worker-process.mjs` | Native worker launch, ownership registration and process-tree cleanup |
+| `lib/windows-job-worker.ps1` | System-owned Windows Job Object launcher and descendant drain helper |
 | `resolve-codex-config.mjs` | Shared model/reasoning resolution for the selected user |
 | `schemas/*` | Strict JSON contracts for deterministic agent steps |
 | `dashboard/*` | Go TUI dashboard |

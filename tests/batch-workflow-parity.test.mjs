@@ -184,7 +184,7 @@ test('artifact gates enforce archive, format, Skip, primary PDF identity and emp
       assert.match(validate().errors.join(';'), /final JSON score/);
     }
     writeFileSync(finalPath, JSON.stringify(originalFinal));
-    for (const score of ['null', '.inf', '6', '-1']) {
+    for (const score of ['null', '.inf', '6', '-1', 'true', '[4]', '{value: 4}', '""']) {
       writeFileSync(reportPath, report('Apply').replace('score: 4.0', `score: ${score}`));
       assert.match(validate().errors.join(';'), /report score/);
     }
@@ -210,6 +210,26 @@ test('artifact gates enforce archive, format, Skip, primary PDF identity and emp
     writeFileSync(reportPath, report('Apply').replace(/## Job Description[\s\S]*?## Machine Summary/, '## Machine Summary'));
     assert.match(validate().errors.join(';'), /archive/);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('worker timeout is validated before state mutation and retains zero and decimal compatibility', () => {
+  const f=fixture();
+  try {
+    const state=join(f.batch,'batch-state.tsv');
+    const before='sentinel state\n'; writeFileSync(state,before);
+    for (const value of ['NaN','Infinity','-1','invalid','']) {
+      const result=f.run(['--worker-timeout',value]);
+      assert.notEqual(result.status,0,result.stdout+result.stderr);
+      assert.equal(readFileSync(state,'utf8'),before);
+      assert.equal(existsSync(`${f.calls}.worker`),false);
+      assert.equal(existsSync(join(f.batch,'batch-runner.pid.owner.lock')),false);
+    }
+    for(const value of ['0','0.25']) {
+      const result=f.run(['--dry-run','--worker-timeout',value]);
+      assert.equal(result.status,0,result.stdout+result.stderr);
+      assert.equal(readFileSync(state,'utf8'),before);
+    }
+  } finally {rmSync(f.root,{recursive:true,force:true});}
 });
 
 test('explicit JD text replaces a missing local capture and remains absent from echoed manual answers', () => {

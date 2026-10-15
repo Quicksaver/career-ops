@@ -14,6 +14,18 @@ import (
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
 
+func TestViewerPostingURLPrecedesCompanyFallback(t *testing.T) {
+	lines := []string{"**URL:** https://employer.example/jobs/123"}
+	app := model.CareerApplication{JobURL: "https://employer.example", JobURLFallback: true}
+	if got := resolveJobURL(app, lines); got != "https://employer.example/jobs/123" {
+		t.Fatalf("resolveJobURL fallback = %q", got)
+	}
+	app.JobURLFallback = false
+	if got := resolveJobURL(app, lines); got != app.JobURL {
+		t.Fatalf("explicit tracker URL lost precedence: %q", got)
+	}
+}
+
 func TestViewerCurrentStatusPairsLeadsWithRowStatus(t *testing.T) {
 	m := ViewerModel{app: model.CareerApplication{Status: "Interview"}}
 

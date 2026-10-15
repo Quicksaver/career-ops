@@ -138,8 +138,6 @@ const PORTALEMPREGO_MAX_PAGES = 5;
 const DICE_MAX_PAGES = 5;
 const REMOTEINEUROPE_DETAIL_CONCURRENCY = 5;
 const REMOTEINEUROPE_MAX_PAGES = 5;
-const NODESK_MAX_PAGES = 5;
-const NODESK_DETAIL_CONCURRENCY = 5;
 const ENGLISHJOBS_MAX_PAGES = 5;
 const JOBSINENGLISH_MAX_PAGES = 5;
 const JOBSCH_MAX_PAGES = 5;
@@ -148,24 +146,13 @@ const DEVJOBSDE_MAX_PAGES = 5;
 const RUSTJOBS_MAX_PAGES = 20;
 const DEVJOBSDE_NAVIGATION_TIMEOUT_MS = 45_000;
 const RUSTJOBS_NAVIGATION_TIMEOUT_MS = 45_000;
-const NODESK_ALGOLIA_APP_ID = '0586L1SOK8';
-const NODESK_ALGOLIA_API_KEY = '8dacb58c6f375cba28e19ecf1f03e9e1';
-const NODESK_ALGOLIA_JOB_INDEX = 'jobPosts';
 const DEVITJOBS_FAMILY_DEFAULT_BASE_URL = 'https://swissdevjobs.ch';
 const DEVJOBSDE_BROWSER_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const DEVITJOBS_FAMILY_API_RE = /^https?:\/\/(?:www\.)?(?:swissdevjobs\.ch|germantechjobs\.de|devitjobs\.uk|devitjobs\.nl)\/api\//;
-const GREENHOUSE_API_RE = /^https:\/\/(?:boards-api|boards|job-boards(?:\.eu)?)\.greenhouse\.io\//;
 
 const DEVJOBSDE_WORKING_MODELS = new Set(['Full Remote', 'Hybrid', 'Onsite']);
 const DEVJOBSDE_EMPLOYMENT_TYPES = new Set(['Full Time', 'Part Time', 'Part Time/Full Time', 'Freelance', 'Internship', 'Apprenticeship']);
 const DEVJOBSDE_EXPERIENCE_LEVELS = new Set(['Junior', 'Senior', 'Lead']);
-
-const LANDINGJOBS_REMOTE_POLICY_ALIASES = {
-  fullremote: ['fullremote', 'remote'],
-  globalremote: ['globalremote', 'remoteacrossborders'],
-  partialremote: ['partialremote', 'hybrid'],
-  onsite: ['onsite', 'onsitejob'],
-};
 
 function normalizeWhitespace(value) {
   return value.replace(/\s+/g, ' ').trim();
@@ -300,58 +287,6 @@ function getEuRemoteJobsConfig(company) {
   return {
     feedUrl: feedUrl.toString(),
     maxPages: Math.max(1, Number(company.api_max_pages) || EUREMOTEJOBS_MAX_PAGES),
-  };
-}
-
-function formatWorkingNomadsSlugToken(value) {
-  const token = String(value || '').trim();
-  if (!token) return '';
-
-  if (['apac', 'emea', 'uk', 'usa', 'eu'].includes(token)) {
-    return token.toUpperCase();
-  }
-
-  return token.charAt(0).toUpperCase() + token.slice(1);
-}
-
-function inferWorkingNomadsLocationFilters(company) {
-  const explicitFilters = toFilterArray(company.api_params?.location);
-  if (explicitFilters.length > 0) return explicitFilters;
-
-  try {
-    const pathname = new URL(company.careers_url || '').pathname;
-    const slug = pathname.match(/^\/remote-([a-z-]+)-jobs\/?$/)?.[1];
-    if (!slug) return [];
-
-    return [slug.split('-').map(formatWorkingNomadsSlugToken).join(' ')];
-  } catch {
-    return [];
-  }
-}
-
-function getWorkingNomadsConfig(company) {
-  const baseUrl = company.api || 'https://www.workingnomads.com/api/exposed_jobs/';
-  let apiUrl;
-
-  try {
-    apiUrl = new URL(baseUrl).toString();
-  } catch {
-    return null;
-  }
-
-  const publishedWithinDays = Number(company.api_params?.published_within_days);
-
-  return {
-    apiUrl,
-    filters: {
-      q: toFilterArray(company.api_params?.q),
-      category: toFilterArray(company.api_params?.category),
-      location: inferWorkingNomadsLocationFilters(company),
-      tags: toFilterArray(company.api_params?.tags),
-      publishedWithinDays: Number.isFinite(publishedWithinDays) && publishedWithinDays > 0
-        ? publishedWithinDays
-        : null,
-    },
   };
 }
 
@@ -519,29 +454,6 @@ function getRemoteInEuropeConfig(company) {
   return {
     listUrls: urls.map(url => url.toString()),
     maxPages: Math.max(1, Number(company.api_max_pages) || REMOTEINEUROPE_MAX_PAGES),
-  };
-}
-
-function normalizeNodeskFilterPath(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^https?:\/\/nodesk\.co\//, '')
-    .replace(/^\/+|\/+$/g, '');
-}
-
-function getNodeskConfig(company) {
-  const filters = toFilterArray(company.api_params?.search_filter || company.api_params?.search_filters)
-    .map(normalizeNodeskFilterPath)
-    .filter(Boolean);
-
-  const query = toFilterArray(company.api_params?.q || company.api_params?.query);
-  const hitsPerPage = Math.max(1, Math.min(Number(company.api_page_size) || 90, 1000));
-
-  return {
-    filters: filters.length > 0 ? filters : ['remote-jobs'],
-    query: query.length > 0 ? query : [''],
-    maxPages: Math.max(1, Number(company.api_max_pages) || NODESK_MAX_PAGES),
-    hitsPerPage,
   };
 }
 
@@ -879,38 +791,6 @@ function getMakeItInGermanyConfig(company) {
   };
 }
 
-function getLandingJobsConfig(company) {
-  const baseUrl = company.api || 'https://landing.jobs/feed';
-  let feedUrl;
-
-  try {
-    feedUrl = new URL(baseUrl).toString();
-  } catch {
-    return null;
-  }
-
-  const publishedWithinDays = Number(company.api_params?.published_within_days);
-  const updatedWithinDays = Number(company.api_params?.updated_within_days);
-
-  return {
-    feedUrl,
-    filters: {
-      q: toFilterArray(company.api_params?.q),
-      category: toFilterArray(company.api_params?.category),
-      remotePolicy: toFilterArray(company.api_params?.remote_policy),
-      country: toFilterArray(company.api_params?.country),
-      city: toFilterArray(company.api_params?.city),
-      jobType: toFilterArray(company.api_params?.job_type),
-      publishedWithinDays: Number.isFinite(publishedWithinDays) && publishedWithinDays > 0
-        ? publishedWithinDays
-        : null,
-      updatedWithinDays: Number.isFinite(updatedWithinDays) && updatedWithinDays > 0
-        ? updatedWithinDays
-        : null,
-    },
-  };
-}
-
 function buildPortalEmpregoListUrl(origin, searchTerm, itemsPerPage) {
   const safeItemsPerPage = Math.max(1, Number(itemsPerPage) || 20);
   const slug = slugifyPortalEmpregoTerm(searchTerm);
@@ -964,38 +844,7 @@ function buildPcsxDetailUrl(company, positionId, queriedLocation) {
 
 // ── API detection ───────────────────────────────────────────────────
 
-const ALLOWED_GREENHOUSE_HOSTS = new Set([
-  'boards-api.greenhouse.io',
-  'boards.greenhouse.io',
-  'job-boards.greenhouse.io',
-  'job-boards.eu.greenhouse.io',
-]);
-
-function assertGreenhouseUrl(url) {
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error(`greenhouse: invalid URL: ${url}`);
-  }
-
-  if (parsed.protocol !== 'https:') {
-    throw new Error(`greenhouse: URL must use HTTPS: ${url}`);
-  }
-
-  if (!ALLOWED_GREENHOUSE_HOSTS.has(parsed.hostname)) {
-    throw new Error(`greenhouse: untrusted hostname "${parsed.hostname}"`);
-  }
-
-  return url;
-}
-
 function detectApi(company) {
-  if (company.api_provider === 'landingjobs' || /https?:\/\/(?:www\.)?landing\.jobs\/(?:feed(?:\.atom)?|jobs)(?:[/?#]|$)/.test(company.api || company.careers_url || '')) {
-    const landingjobs = getLandingJobsConfig(company);
-    return landingjobs ? { type: 'landingjobs', url: landingjobs.feedUrl, landingjobs } : null;
-  }
-
   if (company.api_provider === 'pcsx' || (company.api && company.api.includes('/api/pcsx/search'))) {
     const pcsx = getPcsxConfig(company);
     return pcsx ? { type: 'pcsx', url: pcsx.searchUrl, pcsx } : null;
@@ -1009,11 +858,6 @@ function detectApi(company) {
   if (company.api_provider === 'euremotejobs' || /https?:\/\/(?:www\.)?euremotejobs\.com\/(?:job-listings\/feed\/?|job-category\/[^/?#]+\/feed\/?)(?:[?#].*)?$/.test(company.api || company.careers_url || '')) {
     const euremotejobs = getEuRemoteJobsConfig(company);
     return euremotejobs ? { type: 'euremotejobs', url: euremotejobs.feedUrl, euremotejobs } : null;
-  }
-
-  if (company.api_provider === 'workingnomads' || /https?:\/\/(?:www\.)?workingnomads\.com\/(?:api\/exposed_jobs\/?|remote-[^/?#]+-jobs(?:[/?#]|$)|jobs(?:[/?#]|$))/.test(company.api || company.careers_url || '')) {
-    const workingnomads = getWorkingNomadsConfig(company);
-    return workingnomads ? { type: 'workingnomads', url: workingnomads.apiUrl, workingnomads } : null;
   }
 
   if (
@@ -1083,79 +927,10 @@ function detectApi(company) {
     return rustjobs ? { type: 'rustjobs', url: rustjobs.listUrls[0], rustjobs } : null;
   }
 
-  if (company.api_provider === 'nodesk' || /https?:\/\/(?:www\.)?nodesk\.co\/remote-jobs(?:\/|$)/.test(company.api || company.careers_url || '')) {
-    const nodesk = getNodeskConfig(company);
-    return { type: 'nodesk', url: company.api || company.careers_url || 'https://nodesk.co/remote-jobs/', nodesk };
-  }
-
-  // Greenhouse: explicit api field
-  if (company.api && company.api.includes('greenhouse')) {
-    return { type: 'greenhouse', url: assertGreenhouseUrl(company.api) };
-  }
-
-  const url = company.careers_url || '';
-
-  // Ashby
-  const ashbyMatch = url.match(/jobs\.ashbyhq\.com\/([^/?#]+)/);
-  if (ashbyMatch) {
-    return {
-      type: 'ashby',
-      url: `https://api.ashbyhq.com/posting-api/job-board/${ashbyMatch[1]}?includeCompensation=true`,
-    };
-  }
-
-  // Lever
-  const leverMatch = url.match(/jobs\.lever\.co\/([^/?#]+)/);
-  if (leverMatch) {
-    return {
-      type: 'lever',
-      url: `https://api.lever.co/v0/postings/${leverMatch[1]}`,
-    };
-  }
-
-  // Greenhouse EU boards
-  const ghEuMatch = url.match(/job-boards(?:\.eu)?\.greenhouse\.io\/([^/?#]+)/);
-  if (ghEuMatch && !company.api) {
-    return {
-      type: 'greenhouse',
-      url: assertGreenhouseUrl(`https://boards-api.greenhouse.io/v1/boards/${ghEuMatch[1]}/jobs`),
-    };
-  }
-
   return null;
 }
 
 // ── API parsers ─────────────────────────────────────────────────────
-
-function parseGreenhouse(json, company) {
-  const jobs = json.jobs || [];
-  return jobs.map(j => ({
-    title: j.title || '',
-    url: j.absolute_url || '',
-    company: company.name,
-    location: j.location?.name || '',
-  }));
-}
-
-function parseAshby(json, company) {
-  const jobs = json.jobs || [];
-  return jobs.map(j => ({
-    title: j.title || '',
-    url: j.jobUrl || '',
-    company: company.name,
-    location: j.location || '',
-  }));
-}
-
-function parseLever(json, company) {
-  if (!Array.isArray(json)) return [];
-  return json.map(j => ({
-    title: j.text || '',
-    url: j.hostedUrl || '',
-    company: company.name,
-    location: j.categories?.location || '',
-  }));
-}
 
 function parsePcsxPosition(position, company) {
   const origin = company._api?.pcsx?.origin || getUrlOrigin(company.careers_url) || getUrlOrigin(company.api) || 'https://apply.careers.microsoft.com';
@@ -1198,11 +973,6 @@ function stripCdata(value) {
 function extractXmlTag(block, tagName) {
   const match = block.match(new RegExp(`<${tagName}(?:\s[^>]*)?>([\\s\\S]*?)<\/${tagName}>`));
   return match ? stripCdata(match[1]) : '';
-}
-
-function extractLandingJobsAuthor(block) {
-  const authorBlock = extractXmlTag(block, 'author');
-  return authorBlock ? cleanHtmlText(extractXmlTag(authorBlock, 'name')) : '';
 }
 
 function cleanFeedText(value) {
@@ -1325,16 +1095,6 @@ async function fetchEuRemoteJobsJobDetails(job) {
   };
 }
 
-function normalizeLandingJobsRemotePolicy(value) {
-  const key = normalizeSearchKey(value);
-
-  for (const [canonical, aliases] of Object.entries(LANDINGJOBS_REMOTE_POLICY_ALIASES)) {
-    if (aliases.includes(key)) return canonical;
-  }
-
-  return key;
-}
-
 function matchesLandingJobsFilter(requestedValues, candidate) {
   if (!requestedValues || requestedValues.length === 0) return true;
   const candidateKey = normalizeSearchKey(candidate);
@@ -1346,29 +1106,6 @@ function matchesLandingJobsFilter(requestedValues, candidate) {
   });
 }
 
-function matchesLandingJobsRemotePolicy(requestedValues, policy) {
-  if (!requestedValues || requestedValues.length === 0) return true;
-  const candidate = normalizeLandingJobsRemotePolicy(policy);
-  if (!candidate) return false;
-
-  return requestedValues.some(value => normalizeLandingJobsRemotePolicy(value) === candidate);
-}
-
-function matchesLandingJobsQuery(queries, job) {
-  if (!queries || queries.length === 0) return true;
-
-  const haystack = normalizeSearchText([
-    job.title,
-    job.company,
-    job.category,
-    job.location,
-    job.remotePolicy,
-    job.jobDescription,
-  ].filter(Boolean).join(' '));
-
-  return queries.some(query => haystack.includes(normalizeSearchText(query)));
-}
-
 function isWithinDays(value, maxAgeDays) {
   if (!maxAgeDays) return true;
   const date = parseLandingJobsDate(value);
@@ -1376,43 +1113,6 @@ function isWithinDays(value, maxAgeDays) {
 
   const diffMs = Date.now() - date.getTime();
   return diffMs <= maxAgeDays * 24 * 60 * 60 * 1000;
-}
-
-function parseLandingJobsFeed(xml) {
-  const jobs = [];
-
-  for (const match of xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/g)) {
-    const entry = match[1];
-    const url = cleanFeedText(extractXmlTag(entry, 'id')) || cleanFeedText(extractXmlTag(entry, 'link'));
-    const title = cleanFeedText(extractXmlTag(entry, 'title'));
-    const company = extractLandingJobsAuthor(entry);
-
-    if (!url || !title || !company) continue;
-
-    const city = cleanFeedText(extractXmlTag(entry, 'lj:city'));
-    const country = cleanFeedText(extractXmlTag(entry, 'lj:country'));
-    const remotePolicy = cleanFeedText(extractXmlTag(entry, 'lj:remote_policy'));
-    const location = [city, country, remotePolicy].filter(Boolean).join(' | ');
-
-    jobs.push({
-      title,
-      url,
-      company,
-      location,
-      city,
-      country,
-      category: cleanFeedText(extractXmlTag(entry, 'lj:category')),
-      jobType: cleanFeedText(extractXmlTag(entry, 'lj:job_type')),
-      salary: cleanFeedText(extractXmlTag(entry, 'lj:salary')),
-      remotePolicy,
-      publishedAt: cleanFeedText(extractXmlTag(entry, 'published')),
-      updatedAt: cleanFeedText(extractXmlTag(entry, 'updated')),
-      expiresAt: cleanFeedText(extractXmlTag(entry, 'lj:expires_at')),
-      jobDescription: cleanFeedText(extractXmlTag(entry, 'content')),
-    });
-  }
-
-  return jobs;
 }
 
 function formatDevITJobsFamilyNumber(value, separator = ',') {
@@ -1554,78 +1254,6 @@ function filterDevITJobsFamilyJobs(jobs, filters) {
     && matchesLandingJobsFilter(filters?.companySize, job.companySize)
     && matchesDevITJobsFamilyTechnologies(filters?.technologies, job)
     && isWithinDays(job.publishedAt, filters?.publishedWithinDays)
-  ));
-}
-
-function parseWorkingNomadsJobs(json) {
-  if (!Array.isArray(json)) return [];
-
-  return json
-    .map(job => {
-      const title = normalizeWhitespace(String(job.title || ''));
-      const url = String(job.url || '').trim();
-      const company = normalizeWhitespace(String(job.company_name || ''));
-
-      if (!title || !url || !company) {
-        return null;
-      }
-
-      return {
-        title,
-        url,
-        company,
-        location: normalizeWhitespace(String(job.location || '')),
-        category: normalizeWhitespace(String(job.category_name || '')),
-        publishedAt: String(job.pub_date || ''),
-        tags: splitCommaSeparatedValues(job.tags),
-        jobDescription: cleanHtmlText(String(job.description || '')),
-      };
-    })
-    .filter(Boolean);
-}
-
-function matchesWorkingNomadsQuery(queries, job) {
-  if (!queries || queries.length === 0) return true;
-
-  const haystack = normalizeSearchText([
-    job.title,
-    job.company,
-    job.location,
-    job.category,
-    job.tags.join(' '),
-    job.jobDescription,
-  ].filter(Boolean).join(' '));
-
-  return queries.some(query => haystack.includes(normalizeSearchText(query)));
-}
-
-function matchesWorkingNomadsTagFilter(requestedValues, tags) {
-  if (!requestedValues || requestedValues.length === 0) return true;
-  if (!Array.isArray(tags) || tags.length === 0) return false;
-
-  return requestedValues.some(value => tags.some(tag => matchesLandingJobsFilter([value], tag)));
-}
-
-function filterWorkingNomadsJobs(jobs, filters) {
-  return jobs.filter(job => (
-    matchesWorkingNomadsQuery(filters?.q, job)
-    && matchesLandingJobsFilter(filters?.category, job.category)
-    && matchesLandingJobsFilter(filters?.location, job.location)
-    && matchesWorkingNomadsTagFilter(filters?.tags, job.tags)
-    && isWithinDays(job.publishedAt, filters?.publishedWithinDays)
-  ));
-}
-
-function filterLandingJobsJobs(jobs, filters) {
-  return jobs.filter(job => (
-    matchesLandingJobsQuery(filters?.q, job)
-    && matchesLandingJobsFilter(filters?.category, job.category)
-    && matchesLandingJobsRemotePolicy(filters?.remotePolicy, job.remotePolicy)
-    && matchesLandingJobsFilter(filters?.country, job.country)
-    && matchesLandingJobsFilter(filters?.city, job.city)
-    && matchesLandingJobsFilter(filters?.jobType, job.jobType)
-    && isWithinDays(job.publishedAt, filters?.publishedWithinDays)
-    && isWithinDays(job.updatedAt, filters?.updatedWithinDays)
   ));
 }
 
@@ -2533,101 +2161,6 @@ function parseRemoteInEuropeDetailPage(html, fallbackJob) {
   };
 }
 
-function formatNodeskLocation(job) {
-  const values = Array.isArray(job.applicantLocations)
-    ? job.applicantLocations.map(location => normalizeWhitespace(String(location?.name || ''))).filter(Boolean)
-    : [];
-  return [...new Set(values)].join(' | ');
-}
-
-function formatNodeskEmploymentTypes(job) {
-  const values = Array.isArray(job.employmentTypes)
-    ? job.employmentTypes.map(type => normalizeWhitespace(String(type?.name || ''))).filter(Boolean)
-    : [];
-  return [...new Set(values)].join(' | ');
-}
-
-function formatNodeskKeywords(job) {
-  return Array.isArray(job.keywords)
-    ? [...new Set(job.keywords.map(keyword => normalizeWhitespace(String(keyword?.name || ''))).filter(Boolean))]
-    : [];
-}
-
-function parseNodeskJob(job, seenUrls) {
-  const path = normalizeWhitespace(String(job.permalink || ''));
-  const title = normalizeWhitespace(String(job.title || ''));
-  const company = normalizeWhitespace(String(job.company?.name || ''));
-
-  if (!path || !title || !company) {
-    return null;
-  }
-
-  const sourceUrl = new URL(path, 'https://nodesk.co').toString();
-  if (seenUrls.has(sourceUrl)) {
-    return null;
-  }
-  seenUrls.add(sourceUrl);
-
-  const salary = normalizeWhitespace(String(job.baseSalary || ''));
-  const employmentType = formatNodeskEmploymentTypes(job);
-  const keywords = formatNodeskKeywords(job);
-
-  return {
-    title,
-    url: sourceUrl,
-    sourceUrl,
-    company,
-    location: formatNodeskLocation(job),
-    salary,
-    employmentType,
-    role: normalizeWhitespace(String(job.role?.name || '')),
-    keywords,
-    postedDate: String(job.datePublished || ''),
-    publishedAt: String(job.datePublished || ''),
-    relativeDate: normalizeWhitespace(String(job.date || '')),
-  };
-}
-
-function extractNodeskJobPostingSchema(html) {
-  const match = html.match(/<script type=application\/ld\+json>([\s\S]*?)<\/script>/i);
-  if (!match) return null;
-
-  try {
-    return JSON.parse(decodeHtmlEntities(match[1]));
-  } catch {
-    return null;
-  }
-}
-
-function parseNodeskDetailPage(html, fallbackJob) {
-  const schema = extractNodeskJobPostingSchema(html) || {};
-  const title = cleanHtmlText(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || schema.title || fallbackJob.title || '');
-  const company = cleanHtmlText(html.match(/<h2[^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i)?.[1] || schema.hiringOrganization?.name || fallbackJob.company || '');
-  const applyUrl = decodeHtmlEntities(
-    html.match(/<a[^>]+href="([^"]+)"[^>]*>Apply (?:Now|for this job)<\/a>/i)?.[1]
-    || ''
-  );
-  const salary = cleanHtmlText(html.match(/tracked-wide">([\s\S]*?)<\/p>/i)?.[1] || fallbackJob.salary || '');
-  const description = cleanHtmlText(
-    html.match(/<section[^>]*class="fr [^"]*">[\s\S]*?<div class=grey-800>([\s\S]*?)<\/div>/i)?.[1]
-    || schema.description
-    || ''
-  );
-
-  return {
-    ...fallbackJob,
-    title: title || fallbackJob.title,
-    url: applyUrl || fallbackJob.url,
-    sourceUrl: fallbackJob.sourceUrl || fallbackJob.url,
-    company: company || fallbackJob.company,
-    salary: salary || fallbackJob.salary || '',
-    publishedAt: parseRemoteInEuropeDate(schema.datePosted) || fallbackJob.publishedAt || '',
-    validThrough: parseRemoteInEuropeDate(schema.validThrough) || '',
-    jobDescription: description,
-  };
-}
-
-const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pcsx: parsePcsx };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
 
@@ -2647,10 +2180,6 @@ function buildFetchJsonHeaders(url) {
 }
 
 async function fetchJson(url) {
-  if (GREENHOUSE_API_RE.test(url)) {
-    assertGreenhouseUrl(url);
-  }
-
   assertRequestUrl(url);
   return fetchJsonWithRetry(currentContext(), url, { headers: buildFetchJsonHeaders(url), redirect: 'error' });
 }
@@ -2678,13 +2207,6 @@ async function fetchText(url) {
       headers['accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
       headers['accept-language'] = 'en-US,en;q=0.9';
       headers['referer'] = 'https://www.make-it-in-germany.com/en/working-in-germany/job-listings';
-    }
-
-    if (/https?:\/\/(?:www\.)?nodesk\.co\//.test(url)) {
-      headers['user-agent'] = 'Mozilla/5.0';
-      headers['accept-language'] = 'en-US,en;q=0.9';
-      headers['referer'] = 'https://nodesk.co/remote-jobs/';
-      headers['origin'] = 'https://nodesk.co';
     }
 
     if (/https?:\/\/(?:www\.)?jobsinenglish\.dk\//.test(url)) {
@@ -2724,12 +2246,6 @@ async function fetchPcsxJobs(url, company) {
   }
 
   return jobs;
-}
-
-async function fetchLandingJobsJobs(url, company) {
-  const xml = await fetchText(url);
-  const jobs = parseLandingJobsFeed(xml);
-  return filterLandingJobsJobs(jobs, company._api?.landingjobs?.filters);
 }
 
 async function fetchEuRemoteJobsJobs(url, company) {
@@ -2772,12 +2288,6 @@ async function fetchEuRemoteJobsJobs(url, company) {
   return parallelFetch(tasks, detailConcurrency);
 }
 
-async function fetchWorkingNomadsJobs(url, company) {
-  const json = await fetchJson(url);
-  const jobs = parseWorkingNomadsJobs(json);
-  return filterWorkingNomadsJobs(jobs, company._api?.workingnomads?.filters);
-}
-
 async function fetchDevITJobsFamilyJobs(url, company) {
   const json = await fetchJson(url);
   const jobs = parseDevITJobsFamilyJobs(json, company);
@@ -2793,9 +2303,13 @@ async function fetchPcsxPositionDetails(company, job) {
 
   if (!position) return job;
 
+  const detail = parsePcsxPosition(position, company);
+  if (!detail) return job;
   return {
     ...job,
-    ...parsePcsxPosition(position, company),
+    ...detail,
+    description: detail.jobDescription || job.description || job.jobDescription,
+    postedAt: toEpochMs(detail.postedTs) ?? job.postedAt,
   };
 }
 
@@ -3209,94 +2723,8 @@ async function fetchRustJobsJobs(url, company) {
   return jobs;
 }
 
-async function fetchNodeskIndexPage({ filter, page, hitsPerPage, query, referer }) {
-  return fetchJsonWithRetry(currentContext(), `https://${NODESK_ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/${NODESK_ALGOLIA_JOB_INDEX}/query`, {
-    method: 'POST', redirect: 'error',
-    headers: { 'content-type': 'application/json', 'x-algolia-application-id': NODESK_ALGOLIA_APP_ID,
-      'x-algolia-api-key': NODESK_ALGOLIA_API_KEY, origin: 'https://nodesk.co', referer },
-    body: JSON.stringify({ query, hitsPerPage, page, filters: `searchFilter:${filter}` }),
-  });
-}
-
-async function fetchNodeskJobDetails(job) {
-  const html = await fetchText(job.sourceUrl || job.url);
-  return parseNodeskDetailPage(html, job);
-}
-
-async function enrichNodeskJobs(company, jobs, seenUrls) {
-  const limit = detailLimit(company, jobs.length);
-  if (jobs.length === 0) {
-    return jobs;
-  }
-
-  const detailConcurrency = Math.max(1, Math.min(NODESK_DETAIL_CONCURRENCY, jobs.length));
-  const tasks = jobs.map((job, index) => async () => {
-    if (index >= limit) return job;
-    try {
-      return await fetchNodeskJobDetails(job);
-    } catch {
-      return job;
-    }
-  });
-
-  const enriched = await parallelFetch(tasks, detailConcurrency);
-  const deduped = [];
-
-  for (const job of enriched) {
-    const finalUrl = job.url || job.sourceUrl;
-    const sourceUrl = job.sourceUrl || job.url;
-
-    if (!finalUrl || !sourceUrl) continue;
-    if (finalUrl !== sourceUrl && seenUrls.has(finalUrl)) continue;
-
-    seenUrls.add(finalUrl);
-    seenUrls.add(sourceUrl);
-    deduped.push(job);
-  }
-
-  return deduped;
-}
-
-async function fetchNodeskJobs(_url, company) {
-  const seenUrls = new Set();
-  const jobs = [];
-  const filters = company._api?.nodesk?.filters || ['remote-jobs'];
-  const maxPages = pageLimit(company._api?.nodesk?.maxPages || NODESK_MAX_PAGES);
-  const hitsPerPage = company._api?.nodesk?.hitsPerPage || 90;
-  const queries = company._api?.nodesk?.query || [''];
-
-  for (const filter of filters) {
-    const referer = `https://nodesk.co/${filter.replace(/^\/+/, '')}/`;
-
-    for (const query of queries) {
-      const firstPage = await fetchNodeskIndexPage({ filter, page: 0, hitsPerPage, query, referer });
-      const pageCount = Number(firstPage.nbPages || 1);
-      const boundedPages = Math.min(maxPages, pageCount);
-
-      for (const hit of firstPage.hits || []) {
-        const parsed = parseNodeskJob(hit, seenUrls);
-        if (parsed) jobs.push(parsed);
-      }
-
-      for (let pageNumber = 1; pageNumber < boundedPages; pageNumber++) {
-        const pageData = await fetchNodeskIndexPage({ filter, page: pageNumber, hitsPerPage, query, referer });
-        for (const hit of pageData.hits || []) {
-          const parsed = parseNodeskJob(hit, seenUrls);
-          if (parsed) jobs.push(parsed);
-        }
-      }
-    }
-  }
-
-  return enrichNodeskJobs(company, jobs, seenUrls);
-}
-
 async function fetchJobs(company) {
   const { type, url } = company._api;
-
-  if (type === 'landingjobs') {
-    return fetchLandingJobsJobs(url, company);
-  }
 
   if (type === 'pcsx') {
     return fetchPcsxJobs(url, company);
@@ -3308,10 +2736,6 @@ async function fetchJobs(company) {
 
   if (type === 'euremotejobs') {
     return fetchEuRemoteJobsJobs(url, company);
-  }
-
-  if (type === 'workingnomads') {
-    return fetchWorkingNomadsJobs(url, company);
   }
 
   if (type === 'devitjobs') {
@@ -3358,12 +2782,7 @@ async function fetchJobs(company) {
     return fetchRustJobsJobs(url, company);
   }
 
-  if (type === 'nodesk') {
-    return fetchNodeskJobs(url, company);
-  }
-
-  const json = await fetchJson(url);
-  return PARSERS[type](json, company);
+  throw new Error(`Unsupported custom provider: ${type}`);
 }
 
 const PROVIDER_TYPE_ALIASES = {

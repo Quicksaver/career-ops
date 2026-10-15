@@ -425,3 +425,10 @@ test('retrying a previously failed job counts its new failed attempt in the summ
   assert.equal(result.batch_counts.failed, 1);
   assert.ok(f.dispatched().length > 0);
 });
+
+test('a late stdout burst cannot evict stderr diagnostics from a failed phase', async t => {
+  const f=fixture(t,{diagnosticBurst:true});
+  const {result}=await f.run();
+  assert.notEqual(result.status,'completed');
+  assert.match(JSON.stringify(result),/offline provider diagnostic retained/);
+});

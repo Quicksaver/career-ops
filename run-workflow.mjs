@@ -348,9 +348,9 @@ async function runCommand(name, command, args, options = {}) {
   const logPath = join(runDir, `${String(phases.length + 1).padStart(2, '0')}-${name}.log`);
   mkdirSync(runDir, { recursive: true });
   const stdoutOutput = [];
-  const errorOutput = [];
+  const stderrOutput = [];
   let stdoutBytes = 0;
-  let errorBytes = 0;
+  let stderrBytes = 0;
   function capture(chunks, chunk, bytes, limit) {
     chunks.push(chunk);
     bytes += chunk.length;
@@ -387,12 +387,11 @@ async function runCommand(name, command, args, options = {}) {
     stream.write(chunk);
     progress?.stdout.write(chunk);
     stdoutBytes = capture(stdoutOutput, chunk, stdoutBytes, maxStdout);
-    errorBytes = capture(errorOutput, chunk, errorBytes, 24000);
   });
   child.stderr.on('data', (chunk) => {
     stream.write(chunk);
     progress?.stderr.write(chunk);
-    errorBytes = capture(errorOutput, chunk, errorBytes, 24000);
+    stderrBytes = capture(stderrOutput, chunk, stderrBytes, 24000);
   });
   if (options.stdin) child.stdin.end(options.stdin);
   else child.stdin.end();
@@ -423,9 +422,10 @@ async function runCommand(name, command, args, options = {}) {
   };
   phases.push(phase);
   log(`${name} ${phase.status}`);
-  const tail = commandTail([Buffer.concat(errorOutput).toString('utf8')]);
+  const stderrTail = Buffer.concat(stderrOutput).toString('utf8');
+  const tail = commandTail([Buffer.concat(stdoutOutput).toString('utf8'), stderrTail]);
   if (phase.status === 'failed') {
-    const detail = result.error?.message || tail.trim().slice(-1000) || `exit ${result.code ?? result.signal}`;
+    const detail = result.error?.message || (stderrTail.trim() || tail.trim()).slice(-1000) || `exit ${result.code ?? result.signal}`;
     throw Object.assign(new Error(`${name} failed: ${detail}`), {
       phase: name, result, logPath, output: Buffer.concat(stdoutOutput).toString('utf8'), tail,
     });

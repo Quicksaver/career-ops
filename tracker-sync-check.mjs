@@ -97,7 +97,9 @@ function configureRuntimeContext() {
   args = userContext.args;
   summaryMode = args.includes('--summary');
   DEFAULT_APPS_FILE = resolveTrackerPath(userContext.userRoot);
-  DEFAULT_INTERVIEWS_FILE = userPath(userContext, 'data/active-interviews.md');
+  DEFAULT_INTERVIEWS_FILE = existsSync(userPath(userContext, 'data/active-interviews.md'))
+    ? userPath(userContext, 'data/active-interviews.md')
+    : userPath(userContext, 'active-interviews.md');
   appsFileIdx = args.indexOf('--apps-file');
   APPS_FILE = appsFileIdx !== -1 && args[appsFileIdx + 1] !== undefined
     ? args[appsFileIdx + 1]

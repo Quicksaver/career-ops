@@ -253,6 +253,7 @@ const repoSources = () =>
 const EXEMPT = new Map([
   ['tests/fixtures/run-queue-offline.mjs', 'dispatches fictional copied CLI stubs by their invoked filename; it does not test whether a module is main'],
   ['tests/runner-command.test.mjs', 'uses a spawned process entry path to recursively launch the same disposable process-tree fixture'],
+  ['tests/batch-recovery-ownership.test.mjs', 'the injected startup barrier identifies the disposable worker supervisor before module initialization, not whether the preload is main'],
   // The helper is the one place allowed to read the entry path.
   ['lib/is-main-module.mjs', 'is the comparison'],
   ['lib/user-context.mjs', 'reads the invoked script name for a user-selection error message, not a main guard'],
