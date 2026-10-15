@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import { join } from 'node:path';
 import { fixture } from './fixtures/run-workflow.mjs';
 import { spawnSync } from 'node:child_process';
+import { stripVTControlCharacters } from 'node:util';
 
 const A = 'https://jobs.example.org/alpha', B = 'https://jobs.example.org/beta', C = 'https://jobs.example.org/charlie';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -13,6 +14,25 @@ async function until(predicate, message) {
   assert.fail(message);
 }
 const actions = f => existsSync(join(f.user, 'data/manual-actions.json')) ? JSON.parse(f.read('data/manual-actions.json')).actions : [];
+
+test('terminal colours cover phases, forwarded child diagnostics and the final summary without colouring logs', async t => {
+  const f = fixture(t, { rows: [A], progressDiagnostics: true, waitFor: [A] });
+  const run = f.startInteractive(['--skip-scan'], { color: true });
+  await until(() => run.output().includes('fixture progress warning'), 'child diagnostic never reached the terminal');
+  const logsRoot = join(f.user, 'data/workflow-runs');
+  const runDir = join(logsRoot, readdirSync(logsRoot).sort().at(-1));
+  const logPath = join(runDir, readdirSync(runDir).find(name => /^\d+-batch-1\.log$/.test(name)));
+  await until(() => readFileSync(logPath, 'utf8').includes('fixture progress warning'), 'child diagnostic was not saved');
+  const log = readFileSync(logPath, 'utf8');
+  assert.doesNotMatch(log, /\x1b\[[\d;]*m/, 'presentation colours never enter diagnostic logs');
+  writeFileSync(join(f.user, 'release-live-workers'), 'release');
+  const result = await run.completion;
+  assert.equal(result.code, 0, stripVTControlCharacters(result.output).slice(-5000));
+  assert.match(result.output, /\x1b\[36mdoctor started\x1b\[0m/);
+  assert.match(result.output, /\x1b\[32mdoctor completed\x1b\[0m/);
+  assert.match(result.output, /\x1b\[33mWARN: fixture progress warning\x1b\[0m/);
+  assert.match(result.output, /\x1b\[32msummary: completed\x1b\[0m/);
+});
 
 test('an interactive run without manual actions keeps only rolling output', async t => {
   const f = fixture(t, { rows: [A], waitFor: [A] });

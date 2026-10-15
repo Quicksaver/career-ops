@@ -63,10 +63,14 @@ export function fixture(t, { rows = [A], ...config } = {}) {
     try { result = JSON.parse(stdout.trim()); } catch { assert.fail(`invalid stdout: ${stdout}\n${stderr}`); }
     return { code, result, stderr };
   };
-  const startInteractive = (args = ['--skip-scan']) => {
+  const startInteractive = (args = ['--skip-scan'], { color = false } = {}) => {
     const preload = join(root, 'fixture-tty.mjs');
     writeFileSync(preload, `for(const stream of [process.stdin,process.stdout]) Object.defineProperty(stream,'isTTY',{value:true}); process.stdin.setRawMode=raw=>{process.stdin.isRaw=raw;}; Object.defineProperty(process.stdout,'columns',{value:120});Object.defineProperty(process.stdout,'rows',{value:30});`);
-    const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(root, 'run-workflow.mjs'), '--user', 'fictional', '--interactive', ...args], { cwd: root, env, windowsHide: true });
+    const ttyEnv = { ...env };
+    delete ttyEnv.FORCE_COLOR;
+    if (color) { delete ttyEnv.NO_COLOR; ttyEnv.TERM = 'xterm-256color'; }
+    else ttyEnv.NO_COLOR = '1';
+    const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(root, 'run-workflow.mjs'), '--user', 'fictional', '--interactive', ...args], { cwd: root, env: ttyEnv, windowsHide: true });
     let output = ''; child.stdout.on('data', data => output += data); child.stderr.on('data', data => output += data);
     const timer = setTimeout(() => terminateProcessTreeSync(child), 30000);
     const completion = new Promise((done, reject) => { child.once('error', reject); child.once('close', code => {

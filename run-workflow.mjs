@@ -40,6 +40,7 @@ import { RunTerminal } from './lib/run-terminal.mjs';
 import { RunInteractive } from './lib/run-interactive.mjs';
 import { synchronizeBatch } from './lib/run-batch-sync.mjs';
 import { answerFingerprint } from './lib/run-live-inputs.mjs';
+import { cleanRunText, createRunOutput } from './lib/run-output.mjs';
 
 const HELP = `career-ops deterministic workflow runner
 
@@ -130,6 +131,8 @@ const maxQueuePasses = Number(optionValue('--max-queue-passes', '3'));
 const resumeVerify = optionValue('--resume-verify');
 const quiet = rawArgs.includes('--quiet');
 const jsonOutput = rawArgs.includes('--json');
+const humanStream = jsonOutput ? process.stderr : process.stdout;
+const humanOutput = createRunOutput({ stream: humanStream, color: jsonOutput ? false : undefined });
 const valueOptions = new Set([
   '--parallel', '--agent-cli', '--batch-cli', '--codex-model', '--codex-reasoning-effort',
   '--answers-file', '--limit', '--max-queue-passes', '--resume-verify',
@@ -194,9 +197,8 @@ let stoppingChildren = null;
 
 function log(message) {
   if (quiet) return;
-  const stream = jsonOutput ? process.stderr : process.stdout;
   if (terminal) terminal.log(`[run] ${message}`);
-  else stream.write(`[run] ${message}\n`);
+  else humanStream.write(`${humanOutput.format(`[run] ${message}`)}\n`);
 }
 
 function readPendingCount() {
@@ -312,12 +314,11 @@ function createProgressForwarder(name, predicate) {
   let buffered = '';
 
   function emit(line) {
-    const normalized = line.endsWith('\r') ? line.slice(0, -1) : line;
+    const normalized = cleanRunText(line.endsWith('\r') ? line.slice(0, -1) : line);
     if (!normalized.trim()) return;
     if (predicate !== true && !predicate(normalized)) return;
-    const stream = jsonOutput ? process.stderr : process.stdout;
     if (terminal) terminal.log(`[run:${name}] ${normalized}`);
-    else stream.write(`[run:${name}] ${normalized}\n`);
+    else humanStream.write(`${humanOutput.format(`[run:${name}] ${normalized}`)}\n`);
   }
 
   return {
@@ -1102,19 +1103,20 @@ function repairedCount(review) {
 }
 
 function printHumanSummary(summary) {
-  console.log(`[run] summary: ${summary.status}`);
-  console.log(`[run] queue ${summary.baseline_pending ?? 0} → ${summary.final_pending ?? 'unknown'} runnable/pending, ${summary.final_blocked} blocked; processed ${summary.pipeline?.processed || 0}`);
-  console.log(`[run] discovered: scan ${summary.scan?.added_pending || 0}, handoff ${summary.handoff?.observed_added_pending || 0}, LinkedIn ${summary.linkedin?.added_pending || 0}`);
+  const print = message => process.stdout.write(`${humanOutput.format(message)}\n`);
+  print(`[run] summary: ${summary.status}`);
+  print(`[run] queue ${summary.baseline_pending ?? 0} → ${summary.final_pending ?? 'unknown'} runnable/pending, ${summary.final_blocked} blocked; processed ${summary.pipeline?.processed || 0}`);
+  print(`[run] discovered: scan ${summary.scan?.added_pending || 0}, handoff ${summary.handoff?.observed_added_pending || 0}, LinkedIn ${summary.linkedin?.added_pending || 0}`);
   if (summary.verification_review) {
     const unresolvedFindings = summary.verification_review.unresolved_findings || [];
-    console.log(`[run] verification: reviewed ${reviewedCount(summary.verification_review)}, repaired ${repairedCount(summary.verification_review)}, unresolved ${unresolvedFindings.length}`);
-    for (const line of runUnresolvedFindingLines(unresolvedFindings)) console.log(line);
+    print(`[run] verification: reviewed ${reviewedCount(summary.verification_review)}, repaired ${repairedCount(summary.verification_review)}, unresolved ${unresolvedFindings.length}`);
+    for (const line of runUnresolvedFindingLines(unresolvedFindings)) print(line);
   }
-  console.log(`[run] logs: ${summary.logs}`);
-  for (const issue of summary.issues) console.log(`[run] incomplete ${issue.phase}: ${compactProgressValue(issue.message, 1000)}`);
-  for (const action of summary.manual_actions) console.log(`[run] manual ${action.reason}${action.url ? `, ${compactProgressValue(action.url)}` : ''}: ${compactProgressValue(action.question, 1000)}`);
-  if (summary.user_action) console.log(`[run] action required: ${summary.user_action}`);
-  if (summary.error) console.log(`[run] error: ${summary.error}`);
+  print(`[run] logs: ${summary.logs}`);
+  for (const issue of summary.issues) print(`[run] incomplete ${issue.phase}: ${compactProgressValue(issue.message, 1000)}`);
+  for (const action of summary.manual_actions) print(`[run] manual ${action.reason}${action.url ? `, ${compactProgressValue(action.url)}` : ''}: ${compactProgressValue(action.question, 1000)}`);
+  if (summary.user_action) print(`[run] action required: ${summary.user_action}`);
+  if (summary.error) print(`[run] error: ${summary.error}`);
 }
 
 if (jsonOutput) console.log(JSON.stringify(result));

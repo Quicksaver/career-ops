@@ -9,12 +9,12 @@ import { RunTerminal } from '../lib/run-terminal.mjs';
 import { RunInteractive } from '../lib/run-interactive.mjs';
 import { DEFAULT_MAX_RETRIES, nextLiveInput } from '../lib/run-live-inputs.mjs';
 
-function terminal(t) {
+function terminal(t, { color = false } = {}) {
   const input = new PassThrough(), output = new PassThrough();
   input.isTTY = output.isTTY = true; output.columns = 100; output.rows = 25;
   input.setRawMode = raw => { input.isRaw = raw; };
   let text = ''; output.on('data', data => text += data);
-  const ui = new RunTerminal({ input, output });
+  const ui = new RunTerminal({ input, output, color });
   t.after(() => ui.close());
   return { ui, input, output, text: () => text };
 }
@@ -30,6 +30,24 @@ const header = 'id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretri
 function hold(path, id, url, reason = 'agency_confirmation') {
   writeFileSync(join(path, `batch/logs/${id}.hold.json`), JSON.stringify({ schema_version: 1, user: 'fictional', id, url, status: 'needs_confirmation', reason, question: 'Please provide the employer.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));
 }
+
+test('colours preserve clipped Unicode text, cursor placement and terminal sanitisation', t => {
+  const plain = terminal(t), colored = terminal(t, { color: true });
+  for (const f of [plain, colored]) {
+    f.output.columns = 40;
+    f.ui.log('[run] scan started');
+    f.ui.setQuestion({ key: 'colour', title: 'Agency', question: 'Who is hiring?', position: 1, total: 1, url: A });
+    f.ui.draft = [...'Olá 👩‍💻']; f.ui.cursor = f.ui.draft.length;
+    f.ui.render();
+    f.ui.log('[run:batch-1] ERROR: failed job with a long description\x1b[2J');
+  }
+  assert.equal(stripVTControlCharacters(colored.text()), stripVTControlCharacters(plain.text()));
+  assert.match(colored.text(), /\x1b\[36mscan started\x1b\[0m/);
+  assert.match(colored.text(), /\x1b\[1;33mQuestion 1\/1: Agency/);
+  assert.match(colored.text(), /\x1b\[1;31mERROR:/);
+  assert.ok(!colored.text().includes('\x1b[2J'));
+  assert.equal(colored.text().match(/\x1b\[\d+;\d+H\x1b\[\?25h$/)?.[0], plain.text().match(/\x1b\[\d+;\d+H\x1b\[\?25h$/)?.[0]);
+});
 
 test('without a question the terminal emits only rolling logs and reserves no footer', t => {
   const f = terminal(t);

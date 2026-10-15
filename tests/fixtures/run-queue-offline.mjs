@@ -56,6 +56,7 @@ else if (phase === 'codex-mock') {
   emit({ offline: true });
   writeFileSync(value('--output-last-message'), JSON.stringify({ status: config.handoffPartial ? 'partial' : 'completed', processed_items: 1, added: config.malformedHandoff ? 1 : 0, duplicates: config.handoffPartial ? 0 : 1, expired: 0, errors: config.handoffPartial ? [{ item: 'Fictional', message: 'offline source unavailable', recoverable: true }] : [], requires_user_action: false, user_action: null }));
 } else if (phase === 'batch-mock' && args.includes('--live-inputs')) {
+  if (config.progressDiagnostics) console.log('WARN: fixture progress warning');
   const controlPath = value('--live-inputs'), active = new Map();
   const pausePath = join(root, 'batch/batch-runner.paused'); rmSync(pausePath, { force: true });
   const statePath = join(root, 'batch/batch-state.tsv');
