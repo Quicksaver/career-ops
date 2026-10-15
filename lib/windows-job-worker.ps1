@@ -1,5 +1,12 @@
-param([Parameter(Mandatory=$true)][string]$Payload, [Parameter(Mandatory=$true)][string]$ResultFile)
+param([Parameter(Mandatory=$true)][string]$PayloadFile, [Parameter(Mandatory=$true)][string]$ResultFile)
 $ErrorActionPreference = 'Stop'
+
+# Keep launch JSON outside argv without consuming the worker's inherited stdin.
+try {
+  $launch = [IO.File]::ReadAllText($PayloadFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+} finally {
+  if ([IO.File]::Exists($PayloadFile)) { [IO.File]::Delete($PayloadFile) }
+}
 
 # Assign the job at process creation, before any worker code can run. Closing
 # this helper's last handle also stops descendants if the supervisor is killed.
@@ -109,7 +116,6 @@ public static class CareerOpsOwnedJob {
 '@
 
 try {
-  $launch = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payload)) | ConvertFrom-Json
   $workerExit = [CareerOpsOwnedJob]::Run([string]$launch.command, [string[]]$launch.args, [bool]$launch.verbatim, [int]$launch.ownerPid)
   [IO.File]::WriteAllText($ResultFile, ('{"drained":true,"exit_code":' + $workerExit + '}'))
   exit $workerExit

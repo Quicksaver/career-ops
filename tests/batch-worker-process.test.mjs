@@ -96,15 +96,19 @@ if(depth==='0') {
   } finally { for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid); rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test('cleanup failure retains ownership and blocks recovery until the tree is proven dead', async () => {
+test('cleanup failure returns before a surviving child closes and blocks recovery', async () => {
   const f = fixture();
-  writeFileSync(f.script, "setTimeout(()=>{process.exitCode=0},2000);\n");
+  writeFileSync(f.script, "setInterval(()=>{},1000);\n");
+  let workerPid;
   try {
-    await assert.rejects(runWorker(process.execPath, f.args, {
-      timeoutSeconds: 1.5, registrationPath: f.registration,
+    const failure = runWorker(process.execPath, f.args, {
+      timeoutSeconds: 0.3, registrationPath: f.registration,
       terminateTree() { throw new Error('fixture cleanup denied'); },
-    }), /fixture cleanup denied/);
+    });
+    await assert.rejects(Promise.race([failure, delay(5000).then(() => { throw new Error('cleanup hung awaiting close'); })]), /fixture cleanup denied/);
     const owner = JSON.parse(readFileSync(f.registration, 'utf8'));
+    workerPid = owner.pid;
+    assert.ok(processAlive(workerPid), 'failure must propagate while child remains alive');
     assert.equal(owner.state, 'cleanup_failed');
     assert.equal(owner.owner_pid, process.pid);
     const workers = join(f.dir, '.workers-fixture');
@@ -113,12 +117,53 @@ test('cleanup failure retains ownership and blocks recovery until the tree is pr
     const blocked = spawnSync(process.execPath, [helper, 'guard', f.dir], { encoding: 'utf8' });
     assert.equal(blocked.status, 125); assert.match(blocked.stderr, /Prior worker still owns processing/);
     writeFileSync(join(workers, 'worker.json'), JSON.stringify({owner_pid:2147483000,pid:null,state:'cleanup_failed'}));
+    writeFileSync(join(workers, 'worker.json.job-launch.json'), '{"command":"fictional stale launch"}');
     const recovered = spawnSync(process.execPath, [helper, 'guard', f.dir], { encoding: 'utf8' });
     assert.equal(recovered.status, 0, recovered.stderr);
     assert.equal(existsSync(join(workers, 'worker.json')), false);
+    assert.equal(existsSync(join(workers, 'worker.json.job-launch.json')), false);
   } finally {
+    if (processAlive(workerPid)) terminateProcessTreeSync(workerPid);
     if (existsSync(f.registration)) { const owner=JSON.parse(readFileSync(f.registration,'utf8')); if(processAlive(owner.pid)) terminateProcessTreeSync(owner.pid); }
     for (const pid of f.readPids()) if (processAlive(pid)) terminateProcessTreeSync(pid);
     rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('Windows payload file preserves long argv, inherited stdin and owned cleanup', { skip: process.platform !== 'win32' }, () => {
+  const f = fixture();
+  const output = join(f.dir, 'received.json');
+  const longArgument = "boundary ' & $ ; " + 'x'.repeat(25000);
+  writeFileSync(f.script, `import {readFileSync,writeFileSync} from 'node:fs';writeFileSync(process.argv[2],JSON.stringify({arg:process.argv[3],stdin:readFileSync(0,'utf8')}));`);
+  try {
+    const result = spawnSync(process.execPath, [helper, 'run', '15', f.registration, process.execPath, f.script, output, longArgument], {
+      input: 'Codex stdin must reach the worker intact\n', encoding: 'utf8', timeout: 20000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')), {arg:longArgument,stdin:'Codex stdin must reach the worker intact\n'});
+    assert.equal(existsSync(f.registration), false);
+    assert.equal(existsSync(`${f.registration}.job-launch.json`), false);
+  } finally { rmSync(f.dir, {recursive:true,force:true}); }
+});
+
+test('failed-stop supervisor exits fatally without waiting for its persistent child', async () => {
+  const f=fixture();
+  const probe=join(f.dir,'supervisor.mjs');
+  const {pathToFileURL}=await import('node:url');
+  writeFileSync(f.script,'setInterval(()=>{},1000);\n');
+  writeFileSync(probe,`import {runWorker} from ${JSON.stringify(pathToFileURL(helper).href)};\ntry {await runWorker(process.execPath,${JSON.stringify([f.script])},{timeoutSeconds:0.2,registrationPath:${JSON.stringify(f.registration)},terminateTree(){throw new Error('fixture denied')}})}catch {process.exitCode=125;}\n`);
+  const supervisor=spawn(process.execPath,[probe],{stdio:'ignore'});
+  const closed=new Promise(resolve=>supervisor.once('close',code=>resolve(code)));
+  try {
+    assert.equal(await Promise.race([closed,delay(5000).then(()=>null)]),125,'unref must allow the fatal helper outcome');
+    assert.equal(JSON.parse(readFileSync(f.registration,'utf8')).state,'cleanup_failed');
+  } finally {
+    if(processAlive(supervisor.pid))terminateProcessTreeSync(supervisor);
+    await closed;
+    if(existsSync(f.registration)) {
+      const owner=JSON.parse(readFileSync(f.registration,'utf8'));
+      if(processAlive(owner.pid))terminateProcessTreeSync(owner.pid);
+    }
+    rmSync(f.dir,{recursive:true,force:true});
   }
 });

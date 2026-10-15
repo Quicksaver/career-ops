@@ -61,6 +61,31 @@ test('a broad mixed-posting exception permits a proven exact subgroup while a ma
   }
 });
 
+test('complete cross-type report mappings permit exact A/A subgroups of mixed A/A/B exceptions', () => {
+  const tracker = (id, nums, exact = false) => ({id,code:'possible_duplicate_tracker',details:{tracker_nums:nums,entries:nums.map(n=>({tracker_num:n,report:`[${n}](../reports/00${n}.md)`})),...(exact?{match_basis:'canonical_url',canonical_url:'https://example.org/jobs/a'}:{})}});
+  const report = (id, nums, exact = false) => ({id,code:'duplicate_reports_same_role',details:{files:nums.map(n=>`reports/00${n}.md`),...(exact?{match_basis:'canonical_url',canonical_url:'https://example.org/jobs/a'}:{})}});
+  const broadTracker=tracker('broad-tracker',[1,2,3]), broadReport=report('broad-report',[1,2,3]);
+  const exactTracker=tracker('exact-tracker',[1,2],true), exactReport=report('exact-report',[1,2],true);
+  function reconcile(findings, broadDisposition='mark_seen') {
+    return reconcileDuplicateConsistency({warnings:findings,errors:[]},{findings:findings.map(f=>{
+      const broad=f.id.startsWith('broad');
+      const d=decision(f,broad?broadDisposition:'resolve_duplicate',broad?(broadDisposition==='manual_review'?'needs_human_review':'legitimate_exception'):'confirmed_duplicate');
+      if(!broad)d.duplicate_resolution=f.code==='possible_duplicate_tracker'?{keeper_tracker_num:1,duplicate_tracker_nums:[2],keeper_report_file:null,duplicate_report_files:[]}:{keeper_tracker_num:null,duplicate_tracker_nums:[],keeper_report_file:'reports/001.md',duplicate_report_files:['reports/002.md']};
+      return d;
+    })}).review.findings;
+  }
+  const all=[broadTracker,broadReport,exactTracker,exactReport];
+  const resolved=reconcile(all);
+  for(const id of ['exact-tracker','exact-report']) assert.equal(resolved.find(f=>f.finding_id===id).disposition,'resolve_duplicate');
+  for(const d of reconcile(all,'manual_review').filter(f=>f.finding_id.startsWith('exact'))) assert.equal(d.disposition,'manual_review');
+  // One missing or multiply mapped candidate cannot prove cross-type membership.
+  for(const entries of [exactTracker.details.entries.slice(0,1),[exactTracker.details.entries[0],exactTracker.details.entries[0]]]) {
+    const incomplete={...exactTracker,details:{...exactTracker.details,entries}};
+    assert.equal(reconcile([broadReport,incomplete]).find(f=>f.finding_id==='exact-tracker').disposition,'manual_review');
+  }
+  assert.equal(reconcile([report('broad-report',[1,2]),exactTracker]).find(f=>f.finding_id==='exact-tracker').disposition,'manual_review','equal sets remain vetoed');
+});
+
 test('name-scoped portal finding IDs survive peer removal and YAML detail order', t => {
   const f=fixture(t);
   const path=join(f.root,'portals.yml');

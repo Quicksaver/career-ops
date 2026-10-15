@@ -21,6 +21,11 @@ function workerTreeAlive(pid) {
   return alive(pid) || (process.platform !== 'win32' && pid && alive(-pid));
 }
 
+function removeLaunchPayload(registrationPath) {
+  const path = `${registrationPath}.job-launch.json`;
+  if (existsSync(path)) unlinkSync(path);
+}
+
 export function stopRegisteredWorker(path) {
   if (!existsSync(path)) return;
   const owner = registration(path);
@@ -28,6 +33,7 @@ export function stopRegisteredWorker(path) {
   if (alive(owner.owner_pid)) terminateProcessTreeSync(owner.owner_pid);
   if (owner.pid && owner.pid !== owner.owner_pid && workerTreeAlive(owner.pid)) terminateProcessTreeSync(owner.pid);
   if (alive(owner.owner_pid) || workerTreeAlive(owner.pid)) throw new Error('Worker cleanup did not drain');
+  removeLaunchPayload(path);
   unlinkSync(path);
 }
 
@@ -35,11 +41,12 @@ function guardStaleWorkers(batchDir) {
   if (!existsSync(batchDir)) return;
   for (const dir of readdirSync(batchDir, { withFileTypes: true })) {
     if (!dir.isDirectory() || !dir.name.startsWith('.workers-')) continue;
-    for (const name of readdirSync(join(batchDir, dir.name)).filter(name => name.endsWith('.json') && !name.endsWith('.job-result.json'))) {
+    for (const name of readdirSync(join(batchDir, dir.name)).filter(name => name.endsWith('.json') && !/\.job-(?:result|launch)\.json$/.test(name))) {
       const path = join(batchDir, dir.name, name);
       const owner = registration(path);
       if (alive(owner.owner_pid) || workerTreeAlive(owner.pid)) throw new Error(`Prior worker still owns processing: ${path}`);
       // Only proven dead registrations can be recovered by a new batch owner.
+      removeLaunchPayload(path);
       unlinkSync(path);
     }
   }
@@ -51,20 +58,32 @@ export async function runWorker(command, args, { timeoutSeconds, registrationPat
   let child, timeout;
   let timedOut = false, interrupted = false, drained = false, stopped = false, stoppingError;
   const record = { owner_pid: process.pid, pid: null, state: 'starting' };
+  let rejectCleanup;
+  const cleanupFailure = new Promise((resolve, reject) => { rejectCleanup = reject; });
+  // A stop can fail during the registration write, before the close race exists.
+  cleanupFailure.catch(() => {});
   const save = () => {
     const pending = `${registrationPath}.pending`;
     writeFileSync(pending, JSON.stringify(record));
     renameSync(pending, registrationPath);
   };
   save();
+  const failCleanup = error => {
+    stoppingError ||= error;
+    record.state = 'cleanup_failed'; record.error = stoppingError.message;
+    try { save(); } catch { /* The original cleanup failure remains fatal. */ }
+    child?.unref();
+    rejectCleanup(stoppingError);
+  };
   const stop = () => {
     try { if (child) terminateTree(child); stopped = true; }
-    catch (error) { stoppingError = error; }
+    catch (error) { failCleanup(error); }
   };
   const interrupt = () => { interrupted = true; stop(); };
   process.on('SIGINT', interrupt);
   process.on('SIGTERM', interrupt);
   const resultPath = `${registrationPath}.job-result.json`;
+  const payloadPath = `${registrationPath}.job-launch.json`;
   try {
     let launch = resolveRunnerCommand(command, args);
     // Disposable Git Bash fixtures use extensionless Bash executables.
@@ -75,11 +94,11 @@ export async function runWorker(command, args, { timeoutSeconds, registrationPat
     if (interrupted) { drained = true; return 130; }
     if (process.platform === 'win32') {
       if (existsSync(resultPath)) unlinkSync(resultPath);
-      const payload = Buffer.from(JSON.stringify({ command: launch.command, args: launch.args,
-        verbatim: !!launch.options.windowsVerbatimArguments, ownerPid: process.pid })).toString('base64');
+      writeFileSync(payloadPath, JSON.stringify({ command: launch.command, args: launch.args,
+        verbatim: !!launch.options.windowsVerbatimArguments, ownerPid: process.pid }), { mode: 0o600 });
       launch = { command: join(process.env.SystemRoot || 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
         args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-          join(import.meta.dirname, '../lib/windows-job-worker.ps1'), '-Payload', payload, '-ResultFile', resultPath],
+          join(import.meta.dirname, '../lib/windows-job-worker.ps1'), '-PayloadFile', payloadPath, '-ResultFile', resultPath],
         options: { shell: false, windowsHide: true } };
     }
     child = spawn(launch.command, launch.args, { ...launch.options, stdio: 'inherit' });
@@ -88,18 +107,27 @@ export async function runWorker(command, args, { timeoutSeconds, registrationPat
       child.once('close', (code, signal) => resolve({ code, signal }));
     });
     record.pid = child.pid || null; record.state = 'running';
-    try { save(); } catch (error) { stop(); await closed; throw error; }
+    try { save(); } catch (error) {
+      stop();
+      let cleanupDeadline;
+      try {
+        await Promise.race([closed, cleanupFailure, new Promise((resolve, reject) => {
+          cleanupDeadline = setTimeout(() => reject(new Error('Worker close unconfirmed after registration failure')), 5000);
+        })]);
+      } finally { clearTimeout(cleanupDeadline); }
+      throw error;
+    }
     if (seconds > 0) {
       const deadline = Date.now() + seconds * 1000;
       timeout = setInterval(() => {
         if (Date.now() < deadline || timedOut) return;
         timedOut = true;
         try { writeFileSync(`${registrationPath}.timeout`, 'worker timeout\n'); }
-        catch (error) { stoppingError = error; }
+        catch (error) { failCleanup(error); }
         finally { stop(); }
       }, 100);
     }
-    const result = await closed;
+    const result = await Promise.race([closed, cleanupFailure]);
     if (stoppingError) throw stoppingError;
     if (!drained) {
       if (process.platform === 'win32' && !stopped) {
@@ -123,9 +151,11 @@ export async function runWorker(command, args, { timeoutSeconds, registrationPat
     clearInterval(timeout);
     process.removeListener('SIGINT', interrupt);
     process.removeListener('SIGTERM', interrupt);
+    removeLaunchPayload(registrationPath);
     if (drained) {
       if (existsSync(registrationPath)) unlinkSync(registrationPath);
     } else {
+      child?.unref();
       record.state = 'cleanup_failed'; record.error = stoppingError?.message || 'Worker tree cleanup unconfirmed';
       save();
     }

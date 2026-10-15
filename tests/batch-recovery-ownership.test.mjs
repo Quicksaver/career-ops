@@ -133,6 +133,38 @@ if(process.argv[1]?.endsWith('worker-process.mjs')&&process.argv[2]==='run') {wr
   }
 });
 
+test('failed offer stop skips waiting, attempts other registrations and retains ownership', async () => {
+  const root=mkdtempSync(join(tmpdir(),'batch-stop-failure-'));
+  const source=readFileSync(join(ROOT,'batch/batch-runner.sh'),'utf8');
+  const stop=source.slice(source.indexOf('stop_owned_workers() {'),source.indexOf('\ninterrupt_batch() {'));
+  const release=source.slice(source.indexOf('release_lock() {'),source.indexOf('\nstop_owned_workers() {'));
+  mkdirSync(join(root,'workers')); writeFileSync(join(root,'workers/worker.json'),'{}');
+  writeFileSync(join(root,'workers/worker.json.job-launch.json'),'{}');
+  writeFileSync(join(root,'ownership'),'owned');
+  writeFileSync(join(root,'run.sh'),`#!/usr/bin/env bash\nset -u\ncd "$(dirname "$0")"\nMAIN_PID=$BASHPID\nWORKER_DIR="$PWD/workers"\nSCRIPT_DIR="$PWD"\nLOCK_FILE="$PWD/ownership"\nOWNER_TOKEN=fixture\nnode() { case "$2" in stop-pid) return 1;; stop) printf '%s\\n' "$3" >> stopped; return 0;; release) rm "$LOCK_FILE";; esac; }\n${release}\n${stop}\nsleep 30 &\nprintf '%s' "$!" > offer\nrelease_lock || exit 125\n`);
+  const child=spawn(getBash(),[join(root,'run.sh')],{stdio:'ignore'});
+  const completed=new Promise(resolve=>child.once('close',code=>resolve(code)));
+  let offer;
+  try {
+    const result=await Promise.race([completed,delay(5000).then(()=>null)]);
+    assert.equal(result,125,'failed termination must reach fatal ownership-preserving return');
+    assert.ok(existsSync(join(root,'ownership')));
+    const calls=readFileSync(join(root,'stopped'),'utf8').trim().split('\n');
+    assert.equal(calls.length,1,'remaining worker attempted, payload metadata excluded');
+    assert.match(calls[0],/worker\.json$/);
+  } finally {
+    if(existsSync(join(root,'offer'))) {
+      const bashPid=readFileSync(join(root,'offer'),'utf8');
+      const mapped=spawnSync(getBash(),['-c',process.platform==='win32'?'cat "/proc/$1/winpid"':'printf "%s" "$1"','fixture',bashPid],{encoding:'utf8'});
+      offer=Number(mapped.stdout);
+      if(offer&&processAlive(offer))terminateProcessTreeSync(offer);
+    }
+    if(processAlive(child.pid))terminateProcessTreeSync(child);
+    await completed;
+    rmSync(root,{recursive:true,force:true});
+  }
+});
+
 test('required sequential preparation and quarantine errors prevent dispatch or merge', () => {
   for(const failure of ['preparation','quarantine']) {
     const f=fixture();

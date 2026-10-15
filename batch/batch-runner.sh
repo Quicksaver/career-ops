@@ -346,12 +346,15 @@ stop_owned_workers() {
           continue
         fi ;;
     esac
-    node "$SCRIPT_DIR/worker-process.mjs" stop-pid "$native_offer_pid" || rc=1
-    wait "$offer_pid" 2>/dev/null || true
+    if node "$SCRIPT_DIR/worker-process.mjs" stop-pid "$native_offer_pid"; then
+      wait "$offer_pid" 2>/dev/null || true
+    else
+      rc=1
+    fi
   done
   for registration in "$WORKER_DIR/"*.json; do
     [[ -f "$registration" ]] || continue
-    [[ "$registration" != *.job-result.json ]] || continue
+    [[ "$registration" != *.job-result.json && "$registration" != *.job-launch.json ]] || continue
     node "$SCRIPT_DIR/worker-process.mjs" stop "$registration" || rc=1
   done
   return "$rc"
