@@ -191,13 +191,23 @@ function sectionBodies(md) {
 /**
  * Per-section state of a user's _profile.md against the shipped template:
  * "filled" (differs from the template), "template" (still the shipped text),
- * or "missing" (heading not present). Drives the onboarding panel and the
- * assistant's SETUP STATE, so the model asks only about what is still generic.
+ * or "missing" (heading not present). Structured compensation and working
+ * arrangements in profile.yml also satisfy their respective sections, without
+ * copying those settings into Markdown. A home address alone is not a policy.
+ * Drives both the onboarding panel and the assistant's SETUP STATE.
  */
-export function sectionState(userMd, templateMd) {
+export function sectionState(userMd, templateMd, profile = {}) {
   const user = new Map(sectionBodies(userMd));
   const tpl = new Map(sectionBodies(templateMd));
+  const hasText = (value) => typeof value === "string" && value.trim().length > 0;
+  const hasAmount = (value) => hasText(value) || (typeof value === "number" && Number.isFinite(value) && value > 0);
+  const structured = {
+    compTargets: hasAmount(profile?.compensation?.target_range) || hasAmount(profile?.compensation?.minimum),
+    locationPolicy: hasText(profile?.compensation?.location_flexibility)
+      || hasText(profile?.location?.remote_policy) || hasText(profile?.location?.onsite_availability),
+  };
   return SECTIONS.map((s) => {
+    if (structured[s.id]) return { id: s.id, heading: s.heading, state: "filled" };
     if (!user.has(s.heading)) return { id: s.id, heading: s.heading, state: "missing" };
     const same = user.get(s.heading) === (tpl.get(s.heading) ?? "");
     return { id: s.id, heading: s.heading, state: same ? "template" : "filled" };

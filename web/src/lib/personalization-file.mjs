@@ -5,6 +5,7 @@
 // can run this against a temp directory under bare `node --test`.
 import fs from "node:fs";
 import path from "node:path";
+import * as yaml from "js-yaml";
 import { NOTES_START, NOTES_END, profilePath } from "./profile-memory.mjs";
 import { renderSection, scanHeadings, sectionState, SECTIONS } from "./personalization.mjs";
 
@@ -135,7 +136,14 @@ function readTemplate(codeRoot) {
  */
 export function readPersonalizationState(dataRoot, codeRoot) {
   const user = readExact(profilePath(dataRoot));
-  return { exists: user !== null, sections: sectionState(user ?? "", readTemplate(codeRoot)) };
+  const template = readTemplate(codeRoot);
+  const configFile = path.join(dataRoot, "config", "profile.yml");
+  const source = readExact(configFile);
+  const profile = source === null ? {} : yaml.load(source, { filename: configFile }) ?? {};
+  if (typeof profile !== "object" || Array.isArray(profile)) {
+    throw new Error("config/profile.yml must contain a YAML mapping");
+  }
+  return { exists: user !== null, sections: sectionState(user ?? "", template, profile) };
 }
 
 /**

@@ -36,6 +36,35 @@ test("an empty/missing file reports every section as 'missing'", () => {
   for (const s of sectionState("", TEMPLATE)) assert.equal(s.state, "missing");
 });
 
+test("saved compensation and working arrangements satisfy missing or template sections", () => {
+  const profile = { compensation: { target_range: "EUR 50K-65K", minimum: "EUR 45K" },
+    location: { remote_policy: "Remote from the Netherlands" } };
+  for (const md of ["", TEMPLATE]) {
+    const states = sectionState(md, TEMPLATE, profile);
+    for (const id of ["compTargets", "locationPolicy"]) assert.equal(states.find(s => s.id === id).state, "filled");
+    assert.equal(states.find(s => s.id === "negotiationScripts").state, md ? "template" : "missing");
+  }
+});
+
+test("an address, timezone, currency or empty settings do not imply preferences", () => {
+  for (const profile of [null, {}, { compensation: { currency: "EUR", target_range: " ", minimum: 0 },
+    location: { country: "Netherlands", city: "Utrecht", timezone: "Europe/Amsterdam", remote_policy: " " } }]) {
+    const states = sectionState("", TEMPLATE, profile);
+    assert.equal(states.find(s => s.id === "compTargets").state, "missing");
+    assert.equal(states.find(s => s.id === "locationPolicy").state, "missing");
+  }
+});
+
+test("a saved floor or hybrid arrangement is recognised without a target range or remote policy", () => {
+  for (const profile of [
+    { compensation: { minimum: 45000, location_flexibility: "Hybrid in Utrecht only" } },
+    { compensation: { minimum: "EUR 45K" }, location: { onsite_availability: "Hybrid in Utrecht only" } },
+  ]) {
+    const states = sectionState(TEMPLATE, TEMPLATE, profile);
+    for (const id of ["compTargets", "locationPolicy"]) assert.equal(states.find(s => s.id === id).state, "filled");
+  }
+});
+
 test("merge replaces ONLY the given section bodies and keeps every other byte", () => {
   const rendered = { exitNarrative: "I am moving from consulting to product because I want to own outcomes." };
   const merged = mergeSections(TEMPLATE, rendered);
@@ -217,6 +246,37 @@ function splitInstall(t, { template = TEMPLATE, profile } = {}) {
   if (profile !== undefined) writeFileSync(join(dataRoot, "modes", "_profile.md"), profile);
   return { codeRoot, dataRoot, file: join(dataRoot, "modes", "_profile.md") };
 }
+
+test("completeness reads only the selected data root's profile and never rewrites preferences", (t) => {
+  const { codeRoot, dataRoot, file } = splitInstall(t);
+  mkdirSync(join(dataRoot, "config"));
+  const configFile = join(dataRoot, "config", "profile.yml");
+  const config = "compensation:\n  target_range: EUR 50K-65K\n  location_flexibility: Remote from the Netherlands\n";
+  writeFileSync(configFile, config);
+  const state = readPersonalizationState(dataRoot, codeRoot);
+  assert.equal(state.exists, false, "structured settings must not pretend the Markdown file exists");
+  for (const id of ["compTargets", "locationPolicy"]) assert.equal(state.sections.find(s => s.id === id).state, "filled");
+  assert.equal(readFileSync(configFile, "utf8"), config);
+  assert.throws(() => readFileSync(file), { code: "ENOENT" });
+  assert.deepEqual(readdirSync(join(dataRoot, "config")), ["profile.yml"]);
+  const otherRoot = join(dataRoot, "other-user");
+  mkdirSync(otherRoot);
+  for (const s of readPersonalizationState(otherRoot, codeRoot).sections) assert.equal(s.state, "missing");
+});
+
+test("a broken structured profile surfaces an error instead of reporting preferences missing", (t) => {
+  const { codeRoot, dataRoot } = splitInstall(t, { profile: TEMPLATE });
+  mkdirSync(join(dataRoot, "config"));
+  const file = join(dataRoot, "config", "profile.yml");
+  for (const source of ["compensation: [", "- unexpected-list", "unexpected-scalar"]) {
+    writeFileSync(file, source);
+    assert.throws(() => readPersonalizationState(dataRoot, codeRoot), /profile\.yml/);
+    assert.equal(readFileSync(file, "utf8"), source);
+  }
+  rmSync(file);
+  mkdirSync(file);
+  assert.throws(() => readPersonalizationState(dataRoot, codeRoot));
+});
 
 test("the template is read from the checkout, not from the data root", (t) => {
   const { codeRoot, dataRoot } = splitInstall(t, { profile: TEMPLATE });

@@ -578,6 +578,7 @@ What this customizes:
 - Loads shared scripts, tracker aliases, canonical states, tracker-lock code, and matching helpers from the system checkout. The selected user's tracker determines the lock key; shared code must not be loaded from that user's data folder.
 - Keeps report Blocks A and B expanded, the displayed Job ID tied to the tracker row, and the Machine Summary decision-signals table visible alongside the upstream verdict callout.
 - Keeps production builds and unit tests independent of user selection. Server startup validates the configured user after Next loads environment files, while runtime data helpers enforce the same requirement on every access.
+- The shared dashboard/onboarding-assistant completeness check recognises compensation targets or a pay floor and explicit remote/hybrid availability already saved in the selected user's `config/profile.yml`, even when the corresponding `_profile.md` sections are missing or still template text. A home city, timezone or currency alone is insufficient. This read-only fallback leaves both files untouched, still reports a missing personalization file independently, and surfaces malformed or unreadable YAML instead of treating it as missing preferences.
 
 Future merge notes:
 
