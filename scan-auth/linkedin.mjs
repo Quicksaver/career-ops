@@ -71,6 +71,7 @@ const NOISE_LABELS = new Set([
   'retry premium',
 ]);
 const CARD_CLICK_DELAY_MS = 1000;
+const JD_LOAD_TIMEOUT_MS = 5000;
 const SESSION_CHECK_DELAY_MS = 3000;
 const NAV_TIMEOUT_MS = 30000;
 const DEFAULT_DELAY_PAGES_MS = [3000, 8000];
@@ -533,10 +534,12 @@ export default class LinkedInScanner {
    * Returns { clicked, jobId, listingUrl }.
    */
   async #clickAndExtractJobId(page, card) {
-    const clicked = await page.evaluate((c) => {
-      if (c) { c.click(); return true; }
-      return false;
-    }, card);
+    const { clicked, previousJobId, previousJdText } = await page.evaluate(({ card, selector }) => {
+      const previousJobId = new URL(location.href).searchParams.get('currentJobId') || '';
+      const previousJdText = document.querySelector(selector)?.innerText?.trim() || '';
+      if (card) card.click();
+      return { clicked: !!card, previousJobId, previousJdText };
+    }, { card, selector: SELECTORS.jdContent });
     if (!clicked) return { clicked: false, jobId: '', listingUrl: '' };
 
     await sleep(CARD_CLICK_DELAY_MS);
@@ -544,7 +547,7 @@ export default class LinkedInScanner {
     try {
       const jobId = new URL(url).searchParams.get('currentJobId') || '';
       const listingUrl = jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : '';
-      return { clicked: true, jobId, listingUrl };
+      return { clicked: true, jobId, listingUrl, previousJobId, previousJdText };
     } catch {
       return { clicked: true, jobId: '', listingUrl: '' };
     }
@@ -630,13 +633,14 @@ export default class LinkedInScanner {
    * Returns the preview data augmented with jobId, listingUrl, applicationUrl, jdText.
    */
   async extractJob(page, card, preview) {
-    const { clicked, jobId, listingUrl } = await this.#clickAndExtractJobId(page, card);
+    const { clicked, jobId, listingUrl, previousJobId, previousJdText } = await this.#clickAndExtractJobId(page, card);
     preview.jobId = jobId;
     preview.listingUrl = listingUrl;
     preview.clicked = clicked;
 
-    if (clicked) {
-      const detail = await this.#extractDetailFromPanel(page, jobId);
+    if (clicked && jobId) {
+      const detail = await this.#extractDetailFromPanel(page, jobId,
+        previousJobId !== jobId ? previousJdText : '');
       preview.applicationUrl = this.#unwrapRedirect(detail.applicationUrl);
       preview.jdText = detail.jdText;
     }
@@ -675,7 +679,22 @@ export default class LinkedInScanner {
    * and full JD text. Falls back to the listing URL if no external apply
    * link is found (Easy Apply jobs).
    */
-  async #extractDetailFromPanel(page, jobId) {
+  async #extractDetailFromPanel(page, jobId, previousJdText) {
+    // URL selection can finish before the asynchronously rendered JD. Spend the
+    // single allowed loading wait on this page, never on another navigation.
+    // While switching cards, the preceding posting's text must not satisfy it.
+    try {
+      const ready = await page.waitForFunction(({ selector, jobId, previousJdText }) => {
+        if (new URL(location.href).searchParams.get('currentJobId') !== jobId) return false;
+        const text = document.querySelector(selector)?.innerText?.trim() || '';
+        return !!text && text !== previousJdText;
+      }, { selector: SELECTORS.jdContent, jobId, previousJdText }, { timeout: JD_LOAD_TIMEOUT_MS });
+      await ready.dispose();
+    } catch (error) {
+      if (error.name !== 'TimeoutError') throw error;
+      return { applicationUrl: `https://www.linkedin.com/jobs/view/${jobId}/`, jdText: '' };
+    }
+
     // Try to expand the description
     await page.evaluate(({ xpath }) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
@@ -684,7 +703,10 @@ export default class LinkedInScanner {
     }, { xpath: SELECTORS.xpathMoreButton });
     await sleep(250);
 
-    const detail = await page.evaluate(({ sel, jobId }) => {
+    const detail = await page.evaluate(({ sel, jobId, previousJdText }) => {
+      if (new URL(location.href).searchParams.get('currentJobId') !== jobId) {
+        return { applicationUrl: '', jdText: '' };
+      }
       function xpathFirst(expression) {
         const result = document.evaluate(
           expression, document, null,
@@ -702,8 +724,10 @@ export default class LinkedInScanner {
       const jdEl = document.querySelector(sel.jdContent);
       const jdText = jdEl?.innerText?.trim() ?? '';
 
+      if (jdText === previousJdText) return { applicationUrl: '', jdText: '' };
+
       return { applicationUrl, jdText };
-    }, { sel: SELECTORS, jobId });
+    }, { sel: SELECTORS, jobId, previousJdText });
 
     return detail;
   }

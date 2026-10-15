@@ -1123,6 +1123,7 @@ What this customizes:
 - Refuses to silently reuse the older shared profile path `~/.scan-auth/{PORTAL}/profile/`; if that legacy profile exists, the scanner warns and asks for a per-user login.
 - Treats browser profiles as credential material and keeps `.scan-auth/` ignored if someone overrides the auth directory into the checkout.
 - Exports LinkedIn `randomDelay()` for test coverage and accepts both fixed numeric delays and `[min, max]` ranges, falling back to default page delays for malformed config.
+- Waits once, up to five seconds on the selected LinkedIn page, for the JD to populate before creating a missing-JD hold. Switching cards rejects unchanged text from the previous posting; loading never triggers another navigation or fetch.
 - Extends `test-all.mjs` authenticated-scan coverage to verify fixed numeric delays and ranged delays, so future upstream merges do not regress LinkedIn delay config compatibility.
 
 Future merge notes:
