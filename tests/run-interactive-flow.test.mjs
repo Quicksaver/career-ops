@@ -83,6 +83,7 @@ test('interactive run accepts sequential questions and resumes a job while anoth
   await until(() => f.records('completed.jsonl').some(item => item.url === A), 'answered job did not resume in the current pool');
   assert.ok(!f.records('completed.jsonl').some(item => item.url === C), 'answer must be consumed before the slow independent worker finishes');
   assert.ok(actions(f).some(item => item.url === B), 'the second question remains pending');
+  await until(() => run.output().includes('Paste JD + Ctrl+D'), 'the JD question must be presented before pasting its answer');
   run.send('\x1b[200~Engineer role\r\nBuild and maintain reliable systems for customers throughout Europe.\x1b[201~');
   await delay(50);
   assert.equal(JSON.parse(f.read('data/manual-answers.json')).answers.length, 1, 'paste must wait for explicit submission');
@@ -114,7 +115,7 @@ test('idle run waits for input, defers cleanly, and asks again after restart', a
   assert.equal(resumed.result.remaining, 0);
 });
 
-test('empty Ctrl+D presents the next missing-JD question and /finish keeps both holds across restart', async t => {
+test('empty Ctrl+D resolves a missing-JD job as skipped and only the deferred sibling returns after restart', async t => {
   const f = fixture(t, { rows: [`- [!] ${A} | JD unavailable for alpha`, `- [!] ${B} | JD unavailable for beta`] });
   const run = f.startInteractive();
   await until(() => run.output().includes('Question: JD unavailable for alpha'), 'first question never appeared');
@@ -122,16 +123,20 @@ test('empty Ctrl+D presents the next missing-JD question and /finish keeps both 
   await until(() => run.output().includes('Question: JD unavailable for beta'), 'empty Ctrl+D did not present the next question');
   assert.ok(!run.output().includes('finishing without input'));
   assert.equal(run.child.exitCode, null);
-  assert.equal(JSON.parse(f.read('data/manual-answers.json')).answers.length, 0);
+  const answer = JSON.parse(f.read('data/manual-answers.json')).answers[0];
+  assert.deepEqual(answer, { url: A, reason: 'jd_unavailable', answer: '', resolution: 'skip' });
+  await until(() => f.records('skipped.jsonl').some(item => item.url === A), 'explicit no-JD decision did not become skipped');
   run.send('/finish\r');
   const result = await run.completion;
   assert.equal(result.code, 2, result.output.slice(-5000));
-  assert.equal(result.result.final_blocked, 2);
+  assert.equal(result.result.final_blocked, 1);
+  assert.equal(result.result.batch_counts.skipped, 1);
   assert.match(result.output, /finishing without input/);
   const restarted = f.startInteractive();
-  await until(() => restarted.output().includes('Question: JD unavailable for alpha'), 'deferred hold was lost on restart');
+  await until(() => restarted.output().includes('Question: JD unavailable for beta'), 'unresolved sibling was lost on restart');
+  assert.ok(!restarted.output().includes('Question: JD unavailable for alpha'), 'resolved skip must not return as a question');
   restarted.send('/finish\r');
-  assert.equal((await restarted.completion).result.final_blocked, 2);
+  assert.equal((await restarted.completion).result.final_blocked, 1);
 });
 
 test('/finish leaves idle input with holds intact and terminal cleanup emitted', async t => {

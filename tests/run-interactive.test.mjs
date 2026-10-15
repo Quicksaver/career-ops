@@ -118,9 +118,9 @@ test('leaving input is acknowledged once in rolling output without opening a foo
   assert.equal(f.ui.footerRows, 0);
 });
 
-test('empty or whitespace Ctrl+D defers the active question without leaving input or saving an answer', async t => {
+test('empty or whitespace Ctrl+D defers other questions without leaving input or saving an answer', async t => {
   const userRoot = root(t), f = terminal(t);
-  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [!] ${A} | JD unavailable\n- [!] ${B} | JD unavailable\n\n## Processed\n`);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [!] ${A} | confirm agency\n- [!] ${B} | confirm agency\n\n## Processed\n`);
   const broker = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'fixture', manual_actions: [] } });
   t.after(() => broker.close());
   assert.equal(f.ui.question.url, A);

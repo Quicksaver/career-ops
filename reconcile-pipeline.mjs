@@ -29,7 +29,8 @@ import { getCareerOpsRoot } from './path-resolver.mjs';
 import { flagValue, validateFlags } from './lib/cli-flags.mjs';
 import { withPipelineLock, LockTimeoutError } from './pipeline-lock.mjs';
 import { writeFileAtomic } from './tracker-utils.mjs';
-import { parsePendingRows, pendingCount } from './lib/pipeline-queue.mjs';
+import { parsePendingRows, parseBlockedRows, pendingCount } from './lib/pipeline-queue.mjs';
+import { JD_SKIP_REASON } from './batch/manual-inputs.mjs';
 
 const CAREER_OPS = getCareerOpsRoot();
 
@@ -103,11 +104,12 @@ for (const line of readFileSync(STATE_FILE, 'utf-8').split(/\r?\n/)) {
   if (!line.trim() || line.startsWith('id\t')) continue;
   const c = line.split('\t');
   if (c.length < 7) continue;
-  const [, url, status, , , reportNum, score] = c;
-  // "completed" and "skipped" (below --min-score) both produced a report.
+  const [, url, status, , , reportNum, score, reason] = c;
+  // Evaluated jobs need reports; an explicit missing-JD dismissal has none.
   if (status !== 'completed' && status !== 'skipped') continue;
   if (!url || !url.trim()) continue;
-  DONE.set(url.trim(), { reportNum: (reportNum || '').trim(), score: (score || '').trim() });
+  DONE.set(url.trim(), { reportNum: (reportNum || '').trim(), score: (score || '').trim(),
+    jdSkipped: status === 'skipped' && reason === JD_SKIP_REASON && reportNum === '-' && score === '-' });
 }
 
 if (DONE.size === 0) {
@@ -183,7 +185,9 @@ const SECTION_RE = /^##\s+/;
 // appended in between — and the .pre-reconcile.bak, copied before they
 // landed, did not have them either.
 function reconcile() {
-  const parsed = parsePendingRows(readFileSync(PIPELINE_FILE, 'utf-8'));
+  const text = readFileSync(PIPELINE_FILE, 'utf-8');
+  const parsed = parsePendingRows(text);
+  const resolvedRows = [...parsed.rows, ...parseBlockedRows(text).rows.filter(row => DONE.get(row.url)?.jdSkipped)];
   const lines = parsed.lines;
 
   let pendStart = -1, procStart = -1;
@@ -223,7 +227,7 @@ function reconcile() {
   const moved = [];
   const skippedNoReport = [];
 
-  for (const row of parsed.rows) {
+  for (const row of resolvedRows) {
     const i = row.lineIndex;
     const { body, url } = row;
     const done = DONE.get(url);
@@ -233,6 +237,14 @@ function reconcile() {
       // Already recorded in Procesadas — just drop the stale Pendientes copy.
       removeIdx.add(i);
       moved.push({ url, role: '(already in Procesadas)', dup: true });
+      continue;
+    }
+
+    if (done.jdSkipped) {
+      movedProcLines.push(`- [x] — | ${url} | Skipped: user cannot supply the missing JD`);
+      removeIdx.add(i);
+      moved.push({ url, jdSkipped: true });
+      procUrls.add(url);
       continue;
     }
 
@@ -297,7 +309,7 @@ function reconcile() {
 
   const realMoves = moved.filter(m => !m.dup);
   console.log(`🔄 ${realMoves.length} processed entr${realMoves.length === 1 ? 'y' : 'ies'} moved Pendientes → Procesadas:`);
-  for (const m of realMoves) console.log(`   + #${m.num} ${m.company} — ${m.role} (${m.score})`);
+  for (const m of realMoves) console.log(m.jdSkipped ? `   + Skipped ${m.url}: user cannot supply the missing JD` : `   + #${m.num} ${m.company} — ${m.role} (${m.score})`);
   const dups = moved.filter(m => m.dup);
   if (dups.length) console.log(`🧹 ${dups.length} stale Pendientes entr${dups.length === 1 ? 'y' : 'ies'} dropped (already in Procesadas).`);
   console.log(`📋 Pendientes now: ${newCount} entr${newCount === 1 ? 'y' : 'ies'}`);

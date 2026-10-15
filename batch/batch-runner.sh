@@ -1409,6 +1409,18 @@ process_offer() {
   started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local retries
   retries=$(get_retries "$id")
+  # A deliberate empty JD answer closes the posting without an evaluation,
+  # network call, report reservation or paid worker. The batch owner alone
+  # writes terminal state, including when the answer arrived through live input.
+  if [[ -n "$ANSWERS_FILE" && -f "$SCRIPT_DIR/manual-inputs.mjs" ]]; then
+    local skip_reason
+    skip_reason=$(node "$SCRIPT_DIR/manual-inputs.mjs" skip "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$url") || return 2
+    if [[ -n "$skip_reason" ]]; then
+      update_state_retrying "$id" "$url" skipped "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "-" "-" "$skip_reason" "$retries" || return 2
+      echo "    Skipped: $url — user cannot supply the missing JD."
+      return 0
+    fi
+  fi
   local explicit_failed_retry=false
   if [[ "$RETRY_FAILED" == "true" && "$(get_status "$id")" == "failed" ]]; then explicit_failed_retry=true; fi
   local report_num
@@ -2414,7 +2426,7 @@ main() {
     if [[ "$status" == "needs_confirmation" && -n "$ANSWERS_FILE" ]] &&
         node "$SCRIPT_DIR/manual-inputs.mjs" resume "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$url" "$id" "$LOGS_DIR/$id.hold.json"; then
       if [[ "$DRY_RUN" == "false" ]]; then
-        update_state_retrying "$id" "$url" pending "" "" "-" "-" "" 0 || exit 1
+        update_state_retrying "$id" "$url" pending "" "" "-" "-" "" "$(get_retries "$id")" || exit 1
       fi
       status=pending
       resumed_hold=true

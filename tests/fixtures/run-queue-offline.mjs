@@ -81,8 +81,15 @@ else if (phase === 'codex-mock') {
           await new Promise(resolve => setTimeout(resolve, config.delays?.[row.url] || 30));
           const reason = config.holds?.[row.url];
           const answers = loadAnswers(value('--answers-file'), 'fictional', root);
+          const skipped = answers.some(answer => answer.url === row.url && answer.reason === 'jd_unavailable' && answer.resolution === 'skip');
           const held = reason && (config.stickyHolds || !answers.some(answer => answer.url === row.url && answer.reason === reason));
-          if (config.quota && !existsSync(join(root, 'quota-resolved'))) {
+          if (skipped) {
+            setState(row, 'skipped');
+            const parsed = parsePendingRows(read(pipeline));
+            const index = parsed.rows.find(item => item.url === row.url)?.lineIndex;
+            if (index !== undefined) { parsed.lines.splice(index, 1); writeFileSync(pipeline, parsed.lines.join('\n')); }
+            appendFileSync(join(root, 'skipped.jsonl'), JSON.stringify({ url: row.url }) + '\n');
+          } else if (config.quota && !existsSync(join(root, 'quota-resolved'))) {
             writeFileSync(pausePath, 'fixture quota'); setState(row, 'paused_rate_limit');
           } else if (held) {
             writeFileSync(join(root, `batch/logs/${row.id}.hold.json`), JSON.stringify({ schema_version: 1, user: 'fictional', id: row.id, url: row.url, status: 'needs_confirmation', reason, question: 'Please provide the exact posting answer.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));

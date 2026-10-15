@@ -7,6 +7,7 @@
 // error before reaching it) so this suite can never write to this repo's own
 // data/pipeline.md, regardless of what batch/batch-state.tsv happens to
 // contain on the machine running it.
+import './user-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

@@ -6,7 +6,7 @@ import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { ROOT, getBash, toBashPath, rmSync } from './helpers.mjs';
-import { loadAnswers, loadQueue, validLocal, validateHold, canResume, writeHold } from '../batch/manual-inputs.mjs';
+import { loadAnswers, loadQueue, validLocal, validateHold, canResume, writeHold, JD_SKIP_REASON } from '../batch/manual-inputs.mjs';
 import { validateWorkerArtifacts, parseTrackerAddition } from '../batch/validate-worker-artifacts.mjs';
 
 const url = 'https://www.linkedin.com/jobs/view/123';
@@ -90,6 +90,66 @@ test('manual answers validate user, exact URL/reason and contained local referen
       writeFileSync(join(outside, 'job.md'), 'outside');
       assert.equal(validLocal('local:jds/escape/job.md', f.root), false);
     } finally { rmSync(join(f.root, 'jds', 'escape'), { force: true, recursive: true }); rmSync(outside, { recursive: true, force: true }); }
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('explicit empty JD resolution skips the real batch without fetching, reserving or invoking a worker and reconciles without artifacts', () => {
+  const f = fixture();
+  try {
+    const queue = join(f.root, 'queue.txt'), answers = join(f.root, 'answers.json');
+    writeFileSync(queue, `${url}\n`);
+    let result = f.run(['--queue-file', queue]);
+    assert.equal(result.status, 0, result.stderr);
+    const statePath = join(f.batch, 'batch-state.tsv');
+    writeFileSync(statePath, readFileSync(statePath, 'utf8').replace(/\t0\r?\n$/, '\t2\n'));
+    writeFileSync(join(f.root, 'reserve-report-num.mjs'), 'throw new Error("No report reservation is allowed for an explicit no-JD resolution");\n');
+    const resolution = { url, reason: 'jd_unavailable', answer: '', resolution: 'skip' };
+    const save = answer => writeFileSync(answers, JSON.stringify({ schema_version: 1, user: 'fixture', answers: [answer] }));
+    for (const bad of [
+      { ...resolution, resolution: 'unknown' }, { ...resolution, resolution: undefined },
+      { ...resolution, reason: 'agency_confirmation' }, { ...resolution, answer: 'yes' },
+      { ...resolution, jd_text: 'invented' }, { ...resolution, employer_url: 'https://employer.example/job' },
+    ]) { save(bad); assert.throws(() => loadAnswers(answers, 'fixture', f.root)); }
+    save(resolution);
+    assert.deepEqual(loadAnswers(answers, 'fixture', f.root), [resolution]);
+    assert.throws(() => loadAnswers(answers, 'someone-else', f.root), /matching user/);
+    result = f.run(['--queue-file', queue, '--answers-file', answers]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Skipped:.*user cannot supply/);
+    const fields = readFileSync(statePath, 'utf8').trim().split('\n')[1].split('\t');
+    assert.equal(fields[2], 'skipped');
+    assert.deepEqual(fields.slice(5), ['-', '-', JD_SKIP_REASON, '2']);
+    assert.equal(existsSync(f.calls), false);
+    assert.equal(existsSync(`${f.calls}.worker`), false);
+    assert.equal(existsSync(`${f.calls}.jd`), false);
+    mkdirSync(join(f.root, 'data'));
+    const pipeline = join(f.root, 'data/pipeline.md');
+    writeFileSync(pipeline, `## Pending\n- [!] ${url} | JD unavailable\n- [ ] https://example.com/independent\n\n## Processed\n`);
+    const reconcile = () => spawnSync(process.execPath, [join(ROOT, 'reconcile-pipeline.mjs'), '--user', 'fixture', '--pipeline', pipeline, '--state', statePath], {
+      encoding: 'utf8', timeout: 15000,
+      env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_ROOT: f.root, CAREER_OPS_DATA_DIR: f.root, CAREER_OPS_PIPELINE: pipeline },
+    });
+    const terminalState = readFileSync(statePath, 'utf8'), unresolved = readFileSync(pipeline, 'utf8');
+    for (const change of [{ 2: 'completed' }, { 5: '001' }]) {
+      const invalid = [...fields];
+      for (const [column, value] of Object.entries(change)) invalid[Number(column)] = value;
+      writeFileSync(statePath, terminalState.split('\n')[0] + '\n' + invalid.join('\t') + '\n');
+      result = reconcile(); assert.equal(result.status, 0, result.stderr);
+      assert.equal(readFileSync(pipeline, 'utf8'), unresolved, 'only an explicit artifact-free skip bypasses report checks');
+    }
+    writeFileSync(statePath, terminalState);
+    result = reconcile();
+    assert.equal(result.status, 0, result.stderr);
+    const processed = readFileSync(pipeline, 'utf8');
+    assert.ok(processed.includes(`## Processed\n\n- [x] — | ${url} | Skipped: user cannot supply`));
+    assert.match(processed, /- \[ \] https:\/\/example.com\/independent/);
+    assert.doesNotMatch(processed, /- \[!\]/);
+    assert.doesNotMatch(processed, /reports\//);
+    result = reconcile(); assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(pipeline, 'utf8'), processed);
+    result = f.run(['--queue-file', queue, '--answers-file', answers, '--retry-failed', '--resume-paused']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(`${f.calls}.worker`), false, 'terminal skip survives every retry flag');
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
