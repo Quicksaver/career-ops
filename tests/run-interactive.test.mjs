@@ -73,6 +73,22 @@ test('broker persists exact answers and defers one question without losing the n
   assert.deepEqual(next.questions.map(item => item.url), [B], 'deferred input is asked again after restart');
 });
 
+test('pasted JD tabs survive terminal submission and persistence with sanitized display', async t => {
+  const userRoot = root(t), f = terminal(t);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [!] ${A} | JD unavailable\n\n## Processed\n`);
+  const broker = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'fixture', manual_actions: [] }, onAnswer() {}, onRetry() {} });
+  t.after(() => broker.close());
+  const jd = 'Role:\tEngineer\nSkills:\tPython\tSQL\nBuild and maintain reliable applications for customers throughout Europe.';
+  f.input.write(`\x1b[200~${jd}\x1b[201~`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.ui.draft.join(''), jd);
+  assert.ok(!f.text().includes('\t'), 'the terminal displays sanitized whitespace');
+  f.input.write('\x04');
+  await new Promise(resolve => setImmediate(resolve));
+  const saved = JSON.parse(readFileSync(join(userRoot, 'data/manual-answers.json')));
+  assert.equal(saved.answers[0].jd_text, jd, 'the stored evaluation input retains original tabs and word boundaries');
+});
+
 test('live scheduling uses exact queue/answer identity, bounded retries, terminal states and owner liveness', t => {
   const userRoot = root(t);
   const controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');
