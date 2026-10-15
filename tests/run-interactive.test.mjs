@@ -39,9 +39,15 @@ test('terminal keeps an editable Unicode draft across progress, resize and brack
   assert.equal(submitted.length, 0, 'pasted newlines must not submit early');
   const draft = f.ui.draft.join('');
   assert.match(draft, /Role: Engenheiro\nBuild/);
+  assert.ok(f.text().includes('\x1b[25;1H\x1b[2KEnter: answer | Ctrl+D: submit JD; empty: finish after work | /later: defer | Ctrl+C: stop safely'));
   f.ui.log('worker progress\x1b[2J\rhostile title');
   f.output.columns = 35; f.output.rows = 10; f.output.emit('resize');
   assert.equal(f.ui.draft.join(''), draft);
+  for (const rows of [10, 8, 6]) {
+    f.output.columns = 80; f.output.rows = rows; f.output.emit('resize');
+    assert.ok(f.text().includes(`\x1b[${rows};1H\x1b[2KEnter answer | Ctrl+D JD/empty finish | /later defer | Ctrl+C stop`), 'shortcuts stay at the bottom after resizing');
+    assert.match(f.text(), new RegExp(`\\x1b\\[${rows - 1};\\d+H\\x1b\\[\\?25h$`), 'the cursor stays in the input row above the shortcuts');
+  }
   f.input.write('\x04');
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(submitted, [draft]);
