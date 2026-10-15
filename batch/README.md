@@ -85,6 +85,8 @@ Reviewed verification holds this same ownership mutex. Worker launches use the s
 
 ## Artifact identity
 
+Strict artifact checks preserve recognized `#/job/{id}` and `#/jobs/{id}` identities, so different SPA postings cannot authorize each other's outputs. Other URL components retain the strict dispatched-URL comparison. A report-backed agency can repair an empty Via cell or append the optional Via column to a valid headed TSV; existing column order and values remain intact, and conflicting agency values fail validation.
+
 Reports use the runner-reserved number. The primary PDF and HTML stay at `output/{REPORT_NUM}-{company-slug}-{DATE}.{pdf|html}` and are indexed against that number. Text/LaTeX formats never claim a PDF. Skip, hard stops and the PDF score threshold block rendering. Template/pack resolution, standing page format, title/structure/fact checks, keyword diagnostics and opt-in ATS output follow `modes/pdf.md`. Secondary ATS PDFs omit `--report` and cannot replace the primary PDF index entry.
 
 Node.js and the selected CLI must be installed. PDF rendering additionally needs the browser dependencies reported by `npm run doctor`.

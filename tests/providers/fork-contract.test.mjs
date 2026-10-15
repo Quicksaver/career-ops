@@ -132,6 +132,27 @@ test('PCSX pagination uses raw row offsets and honors probe page limits', async 
   assert.deepEqual(starts,[0]);
 });
 
+test('PCSX stops repeated pages, deduplicates before enrichment, and retains raw offsets through invalid pages', async () => {
+  let requests=0,details=0;
+  const jobs=await fetchCustomProvider('pcsx',{...entry,fetchDetails:true},ctx(async url=>{
+    if(url.includes('position_details')) {details++;return {data:position('same',{jobDescription:'Detailed posting'})};}
+    requests++;return payload([position('same'),position('same')],1000000);
+  }));
+  assert.equal(requests,2);assert.equal(jobs.length,1);assert.equal(details,1);
+  const starts=[];
+  const afterInvalid=await fetchCustomProvider('pcsx',entry,ctx(async url=>{
+    const start=Number(new URL(url).searchParams.get('start'));starts.push(start);
+    return start===0?payload([null,{}],5):start===2?payload([position('valid-later',{name:''})],5):start===3?payload([position('valid-later')],5):payload([],5);
+  }));
+  assert.deepEqual(starts,[0,2,3,4]);assert.equal(afterInvalid.length,1);
+  const overlapStarts=[];
+  const overlap=await fetchCustomProvider('pcsx',entry,ctx(async url=>{
+    const start=Number(new URL(url).searchParams.get('start'));overlapStarts.push(start);
+    return payload((start===0?['a','b']:start===2?['b','c']:['c']).map(id=>position(id)),100);
+  }));
+  assert.deepEqual(overlap.map(job=>job.externalId),['a','b','c']);assert.deepEqual(overlapStarts,[0,2,4]);
+});
+
 test('PCSX details are opt-in, bounded, disabled in probes, and tolerate detail failures', async () => {
   for (const [options, extraCtx, expected] of [
     [{}, {}, 0], [{fetchDetails:false,fetch_details:true},{},0],

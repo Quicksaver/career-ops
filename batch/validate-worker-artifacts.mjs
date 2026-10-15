@@ -7,6 +7,7 @@ import * as yaml from 'js-yaml';
 import { normalizeVia, looksLikeTsvHeaderRow, resolveTsvColumns } from '../tracker-parse.mjs';
 import { hasEmbeddedJdArchive } from '../check-jd-archive.mjs';
 import { loadAnswers, validLocal, validUrl } from './manual-inputs.mjs';
+import { promoteKnownFragmentIdentity } from '../url-key.mjs';
 
 function clean(value) {
   const text = value == null ? '' : String(value).trim();
@@ -79,6 +80,7 @@ export function postingIdentity(value) {
   if (validLocal(value)) return value;
   if (!validUrl(value)) return null;
   const url = new URL(value);
+  promoteKnownFragmentIdentity(url);
   url.hash = '';
   url.searchParams.sort();
   return url.href;
@@ -168,11 +170,14 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
 
   if (reportVia && !tracker.via && repair && errors.length === 0) {
     if (tracker.headered) {
-      const headerLine = trackerContent.split(/\r?\n/).find(line => line.trim());
-      const { map } = resolveTsvColumns(headerLine.split('\t'));
+      const header = trackerContent.split(/\r?\n/).find(line => line.trim()).split('\t');
+      const { map } = resolveTsvColumns(header);
       const parts = [...tracker.parts];
-      parts[map.via] = reportVia;
-      trackerContent = `${headerLine}\n${parts.join('\t')}\n`;
+      if (map.via === undefined) {
+        header.push('via');
+        parts.push(reportVia);
+      } else parts[map.via] = reportVia;
+      trackerContent = `${header.join('\t')}\n${parts.join('\t')}\n`;
     } else {
       trackerContent = `${tracker.line}\tvia=${reportVia}\n`;
     }

@@ -2224,6 +2224,7 @@ async function fetchText(url) {
 async function fetchPcsxJobs(url, company) {
   const pageUrl = new URL(url);
   const jobs = [];
+  const seenIdentities = new Set();
   let start = Number(pageUrl.searchParams.get('start') || '0');
   let total = Infinity;
   let requests = 0;
@@ -2240,7 +2241,20 @@ async function fetchPcsxJobs(url, company) {
 
     if (json.data.positions.length === 0) break;
 
-    jobs.push(...pageJobs);
+    let validOnPage = 0;
+    let addedOnPage = 0;
+    for (const job of pageJobs) {
+      const normalized = normalizeCustomJob(job);
+      if (!normalized) continue;
+      validOnPage += 1;
+      const identity = job.externalId || normalized.url;
+      if (seenIdentities.has(identity)) continue;
+      seenIdentities.add(identity);
+      jobs.push(job);
+      addedOnPage += 1;
+    }
+    // Invalid rows do not prove that a server ignored the requested offset.
+    if (validOnPage > 0 && addedOnPage === 0) break;
     start += json.data.positions.length;
     if (start < total && requests < pageLimit(500)) await sleep(100, currentContext());
   }

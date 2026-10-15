@@ -59,8 +59,17 @@ try {
 
   const broadFinding = () => {
     const result = spawnSync(NODE, ['verify-pipeline.mjs', '--json'], { env: vpEnv, encoding: 'utf8' });
-    const findings = JSON.parse(result.stdout).warnings;
-    return findings.find(f => f.code === 'duplicate_reports_same_role' && f.details.files.length === 2);
+    const context = `verify-pipeline duplicate-report fixture ${vpTmp}; status=${result.status}; stderr=${result.stderr || '(empty)'}`;
+    if (result.error || ![0, 1].includes(result.status)) {
+      throw new Error(`${context}; launch failed: ${result.error?.message || result.signal || 'unexpected exit status'}`);
+    }
+    let findings;
+    try { findings = JSON.parse(result.stdout).warnings; }
+    catch (error) { throw new Error(`${context}; invalid JSON: ${error.message}; stdout=${result.stdout}`); }
+    const finding = Array.isArray(findings) && findings.find(f =>
+      f.code === 'duplicate_reports_same_role' && Array.isArray(f.details?.files) && f.details.files.length === 2);
+    if (!finding || typeof finding.id !== 'string') throw new Error(`${context}; expected two-file duplicate-report finding is absent; stdout=${result.stdout}`);
+    return finding;
   };
   setPair(ownLine('https://jobs.example.com/acme/111'), report('Acme', 'Staff AI Engineer'));
   const unknown = broadFinding();
