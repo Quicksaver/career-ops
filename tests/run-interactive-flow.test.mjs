@@ -14,6 +14,35 @@ async function until(predicate, message) {
 }
 const actions = f => existsSync(join(f.user, 'data/manual-actions.json')) ? JSON.parse(f.read('data/manual-actions.json')).actions : [];
 
+test('an interactive run without manual actions keeps only rolling output', async t => {
+  const f = fixture(t, { rows: [A], waitFor: [A] });
+  const run = f.startInteractive();
+  await until(() => f.dispatched().includes(A), 'independent work never started');
+  assert.doesNotMatch(run.output(), /Question \d+\/|Enter: answer|Ctrl\+D JD|Processing; questions|\x1b\[\d+;\d+r/);
+  writeFileSync(join(f.user, 'release-live-workers'), 'release');
+  const result = await run.completion;
+  assert.equal(result.code, 0, result.output.slice(-5000));
+  assert.equal(result.result.status, 'completed');
+  assert.doesNotMatch(result.output, /Question \d+\/|Enter: answer|Ctrl\+D JD|Processing; questions|\x1b\[\d+;\d+r/);
+});
+
+test('answering the last question restores rolling output while another worker continues', async t => {
+  const f = fixture(t, { rows: [A, B], holds: { [A]: 'agency_confirmation' }, waitFor: [B] });
+  const run = f.startInteractive(['--skip-scan', '--parallel', '2']);
+  await until(() => run.output().includes('Agency name + Enter'), 'question never appeared');
+  run.send('/direct\r');
+  await until(() => f.records('completed.jsonl').some(item => item.url === A), 'answered job did not resume');
+  await until(() => run.output().includes('\x1b[?2004l'), 'input footer was not removed');
+  assert.ok(!f.records('completed.jsonl').some(item => item.url === B), 'other work should still be active');
+  const cleared = run.output().lastIndexOf('\x1b[?2004l');
+  await delay(300);
+  assert.doesNotMatch(run.output().slice(cleared), /Question \d+\/|Enter: answer|\x1b\[\d+;\d+r/);
+  writeFileSync(join(f.user, 'release-live-workers'), 'release');
+  const result = await run.completion;
+  assert.equal(result.code, 0, result.output.slice(-5000));
+  assert.equal(result.result.status, 'completed');
+});
+
 test('interactive run accepts sequential questions and resumes a job while another worker is busy', async t => {
   const f = fixture(t, { rows: [A, B, C], holds: { [A]: 'agency_confirmation', [B]: 'jd_unavailable' }, waitFor: [C] });
   const run = f.startInteractive(['--skip-scan', '--parallel', '3']);
@@ -128,7 +157,7 @@ test('saved terminal answers are reused on restart without reopening the prompt'
   assert.ok(!result.output.includes('Agency name + Enter'), 'already-supplied exact answer should dispatch without a second question');
 });
 
-test('Ctrl+C stops active work, restores the terminal and releases coordinator ownership', async t => {
+test('Ctrl+C stops active work and releases ownership without opening an unnecessary input footer', async t => {
   const f = fixture(t, { waitFor: [A] });
   const run = f.startInteractive();
   await until(() => f.dispatched().includes(A), 'worker never started');
@@ -136,7 +165,7 @@ test('Ctrl+C stops active work, restores the terminal and releases coordinator o
   const result = await run.completion;
   assert.equal(result.code, 130, result.output.slice(-5000));
   assert.equal(result.result.status, 'interrupted');
-  assert.match(result.output, /\x1b\[\?2004l/);
+  assert.doesNotMatch(result.output, /\x1b\[\?2004h/, 'plain logging never enables bracketed input');
   assert.equal(existsSync(join(f.user, 'data/run-workflow.pid')), false);
   assert.ok(result.result.remaining > 0, 'unfinished job remains durable');
 });

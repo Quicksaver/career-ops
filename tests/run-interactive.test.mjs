@@ -31,6 +31,75 @@ function hold(path, id, url, reason = 'agency_confirmation') {
   writeFileSync(join(path, `batch/logs/${id}.hold.json`), JSON.stringify({ schema_version: 1, user: 'fictional', id, url, status: 'needs_confirmation', reason, question: 'Please provide the employer.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));
 }
 
+test('without a question the terminal emits only rolling logs and reserves no footer', t => {
+  const f = terminal(t);
+  assert.equal(f.text(), '');
+  assert.equal(f.ui.footerRows, 0);
+  assert.equal(f.ui.logBottom, f.output.rows);
+  f.ui.setStatus('3 pending | 2 working | 0 questions');
+  f.output.emit('resize');
+  assert.equal(f.text(), '', 'status updates and resizing must not paint an idle input area');
+  f.ui.log('worker started\nworker progress\x1b[2J');
+  assert.equal(f.text(), 'worker started\r\nworker progress\r\n');
+  f.ui.error('worker failed');
+  assert.ok(f.text().endsWith('Error: worker failed\r\n'), 'errors must remain visible without a question');
+  const before = f.text();
+  f.ui.close();
+  assert.equal(f.text(), before, 'closing a plain log view must not erase its last lines');
+  assert.equal(f.input.isRaw, false);
+});
+
+test('the last resolved question releases the footer and later questions can reopen it', t => {
+  const f = terminal(t);
+  const question = { key: 'first', title: 'Agency', question: 'Who is hiring?', position: 1, total: 1, hint: 'Agency + Enter' };
+  f.ui.log('ordinary output');
+  f.ui.setQuestion(question);
+  assert.equal(f.ui.footerRows, 7);
+  assert.ok(f.text().includes('Question 1/1: Agency'));
+  assert.ok(f.text().includes('Enter: answer'));
+  const before = f.text().length;
+  f.ui.setQuestion(null);
+  assert.equal(f.ui.footerRows, 0);
+  const cleanup = f.text().slice(before);
+  assert.match(cleanup, /\x1b\[r\x1b\[19;1H\x1b\[J/);
+  assert.ok(cleanup.includes('\x1b[?2004l'));
+  const cleared = f.text().length;
+  f.ui.setStatus('1 pending | 1 working | 0 questions');
+  f.ui.setQuestion(null);
+  f.output.emit('resize');
+  f.ui.log('remaining worker continues');
+  assert.equal(f.text().slice(cleared), 'remaining worker continues\r\n');
+  f.ui.setQuestion({ ...question, key: 'second', title: 'JD' });
+  assert.equal(f.ui.footerRows, 7);
+  assert.ok(f.text().slice(cleared).includes('Question 1/1: JD'));
+});
+
+test('answer completion does not redraw an input area after its question is removed', async t => {
+  const f = terminal(t);
+  f.ui.setQuestion({ key: 'a', title: 'Agency', question: 'Who?', position: 1, total: 1,
+    submit: async () => { f.ui.setQuestion(null); f.ui.log('answer accepted; worker resumed'); } });
+  f.ui.draft = ['A']; f.ui.cursor = 1;
+  await f.ui.submit();
+  const before = f.text().length;
+  await new Promise(resolve => setImmediate(resolve));
+  f.ui.setStatus('worker running');
+  assert.equal(f.ui.footerRows, 0);
+  assert.equal(f.text().slice(before), '');
+  assert.ok(f.text().endsWith('answer accepted; worker resumed\r\n'));
+});
+
+test('leaving input is acknowledged once in rolling output without opening a footer', t => {
+  const userRoot = root(t), f = terminal(t);
+  const broker = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'fixture', manual_actions: [] } });
+  t.after(() => broker.close());
+  f.ui.key('', { ctrl: true, name: 'd' });
+  assert.equal(f.text(), 'run | finishing without input; active work will drain.\r\n');
+  const before = f.text();
+  f.ui.key('', { ctrl: true, name: 'd' });
+  assert.equal(f.text(), before);
+  assert.equal(f.ui.footerRows, 0);
+});
+
 test('terminal keeps an editable Unicode draft across progress, resize and bracketed multiline paste', async t => {
   const f = terminal(t); const submitted = [];
   f.ui.setQuestion({ key: 'a', title: 'JD', question: 'Paste text', position: 1, total: 2, multiline: true, submit: text => submitted.push(text) });
