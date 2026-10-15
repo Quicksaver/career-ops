@@ -10,6 +10,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pass, fail, run, NODE, rmSync } from './helpers.mjs';
+import { spawnSync } from 'node:child_process';
+import { findingFingerprint } from '../lib/verification-review.mjs';
 
 console.log('\nverify-pipeline: Check 9 does not flag same company+role reports with distinct posting URLs (#4588)');
 
@@ -54,6 +56,22 @@ try {
     writeFileSync(join(vpReports, '001-acme-2026-01-04.md'), a);
     writeFileSync(join(vpReports, '003-acme-2026-01-05.md'), b);
   };
+
+  const broadFinding = () => {
+    const result = spawnSync(NODE, ['verify-pipeline.mjs', '--json'], { env: vpEnv, encoding: 'utf8' });
+    const findings = JSON.parse(result.stdout).warnings;
+    return findings.find(f => f.code === 'duplicate_reports_same_role' && f.details.files.length === 2);
+  };
+  setPair(ownLine('https://jobs.example.com/acme/111'), report('Acme', 'Staff AI Engineer'));
+  const unknown = broadFinding();
+  setPair(ownLine('https://jobs.example.com/acme/111'), ownLine('https://jobs.example.com/acme/111'));
+  const proven = broadFinding();
+  if (unknown.id === proven.id && findingFingerprint('warning', unknown) !== findingFingerprint('warning', proven)) {
+    pass('two-report broad finding resurfaces when new URL evidence proves the full group duplicates');
+  } else fail('new decisive full-group URL evidence did not invalidate the seen fingerprint');
+  setPair(ownLine('https://jobs.example.com/acme/111?utm_source=fixture'), ownLine('https://jobs.example.com/acme/111'));
+  if (findingFingerprint('warning', broadFinding()) === findingFingerprint('warning', proven)) pass('nonidentity tracking changes preserve duplicate evidence fingerprint');
+  else fail('tracking-only URL changes invalidated an unchanged duplicate finding');
 
   setPair(ownLine('https://jobs.example.com/acme/111'), ownLine('https://jobs.example.com/acme/222'));
   if (vpDupFlagged() === false) pass('same company+role with distinct posting URLs is not flagged as duplicate reports (#4588)');

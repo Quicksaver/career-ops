@@ -1313,6 +1313,7 @@ function parseEuRemoteJobsFeed(xml) {
 }
 
 async function fetchEuRemoteJobsJobDetails(job) {
+  assertSourceUrl('euremotejobs', job.url);
   const html = await fetchText(job.url);
   const detail = parseEuRemoteJobsDetailPage(html, job.title);
 

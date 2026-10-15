@@ -203,6 +203,26 @@ function entries(pipelinePath) {
   }
 }
 
+{
+  const { dir, portals } = makeLane();
+  try {
+    const handoff = join(dir, 'new-handoff-parent', 'nested', 'handoff.json');
+    runScan(dir, { CAREER_OPS_PORTALS: portals, CAREER_OPS_SCAN_HANDOFF: handoff });
+    const first = JSON.parse(readFileSync(handoff, 'utf8'));
+    if (first.schema === 'career-ops.scan-handoff.v1' && first.count === first.items.length) pass('scan handoff creates a fresh override parent and publishes complete JSON');
+    else fail('scan handoff did not publish the expected fixture payload');
+    writeFileSync(handoff, JSON.stringify({ ...first, count: 1, items: [{ name: 'Historical fixture', url: 'https://example.com/old' }] }));
+    runScan(dir, { CAREER_OPS_PORTALS: portals, CAREER_OPS_SCAN_HANDOFF: handoff });
+    const second = JSON.parse(readFileSync(handoff, 'utf8'));
+    if (second.count === 0 && second.items.length === 0) pass('atomic handoff replacement retains latest-scan semantics');
+    else fail('handoff replacement retained entries from an older scan');
+  } catch (error) {
+    fail(`fresh handoff publication failed: ${error.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // 5. The suite's own isolation, asserted rather than assumed. Check 1 claims to
 //    exercise DEFAULT paths, but it can only do that if nothing ambient reaches
 //    the child - and the user most likely to run this suite with these variables

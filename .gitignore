@@ -50,6 +50,8 @@ batch/*
 !batch/aggregate-tokens.mjs
 !batch/batch-prompt.md
 !batch/batch-runner.sh
+!batch/batch-output-schema.json
+!batch/validate-worker-artifacts.mjs
 !batch/manual-inputs.mjs
 !batch/runner-ownership.mjs
 !batch/worker-process.mjs

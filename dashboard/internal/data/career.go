@@ -725,6 +725,7 @@ func NormalizeStatus(raw string) string {
 
 // ReportDetails contains lazily loaded metadata from a report file.
 type ReportDetails struct {
+	ReadError   error
 	Archetype   string
 	TlDr        string
 	Remote      string
@@ -740,7 +741,7 @@ func LoadReportDetails(careerOpsPath, reportPath string, includeURL bool) Report
 	fullPath := filepath.Join(careerOpsPath, reportPath)
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		return ReportDetails{}
+		return ReportDetails{ReadError: err}
 	}
 	text := string(content)
 

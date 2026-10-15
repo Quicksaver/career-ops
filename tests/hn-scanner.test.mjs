@@ -366,7 +366,7 @@ test('canonical handoff defaults and absolute/relative overrides keep user selec
   }
 });
 
-// Intercept the actual child handoff write, when the old snapshot/restore
+// Intercept the actual child handoff publication, when the old snapshot/restore
 // implementation had already clobbered the shared file. Run a main scan at
 // that exact point or kill the child, without allowing any real HTTP requests.
 for (const stop of ['concurrent', 'child', 'wrapper']) {
@@ -390,8 +390,9 @@ for (const stop of ['concurrent', 'child', 'wrapper']) {
         require(${JSON.stringify(preload)});
         const fs = require('node:fs');
         const originalWrite = fs.writeFileSync;
-        fs.writeFileSync = function(file, ...args) {
-          const result = originalWrite.call(this, file, ...args);
+        const originalRename = fs.renameSync;
+        fs.renameSync = function(source, file, ...args) {
+          const result = originalRename.call(this, source, file, ...args);
           if (!process.env.MAIN_SCAN_FIXTURE && String(file).endsWith('scan-handoff.json')) {
             originalWrite(${JSON.stringify(observed)}, JSON.stringify({
               path: String(file), shared: fs.readFileSync(${JSON.stringify(shared)}, 'utf8'),

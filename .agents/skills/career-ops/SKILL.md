@@ -298,12 +298,6 @@ in `users/{ACTIVE_USER}/config/profile.yml`, then the system default `1`.
 verification runner. Verification uses that value only for dependency-safe
 read-only review lanes; deterministic repairs and ledger writes stay serialized.
 
-Review calls contain at most five findings. Invalid responses report every
-semantic error and retry only that chunk (default two retries, configurable with
-`--review-retries`). Orphan archive paths are derived from raw verifier evidence,
-not trusted from reviewer output. Only fully validated chunks receive atomic
-checkpoints and no action is applied until the full pass validates. A normal run
-starts fresh; `--resume-run RUN_ID` explicitly reuses only matching validated
-checkpoints from an interrupted run.
+Verification review calls through `verify-runner.mjs` contain at most five findings. Invalid responses report every semantic error and retry only that chunk (default two retries, configurable with `verify-runner.mjs --review-retries`). Orphan archive paths are derived from raw verifier evidence, not trusted from reviewer output. Only fully validated chunks receive atomic checkpoints and no action is applied until the full pass validates. A normal run starts fresh; `verify-runner.mjs --resume-run RUN_ID` explicitly reuses only matching validated checkpoints from an interrupted run. The workflow runner exposes `--resume-verify RUN_ID` and forwards it to the verifier as `--resume-run`; `--review-retries` belongs to the verifier.
 
 Execute the instructions from the loaded mode file.

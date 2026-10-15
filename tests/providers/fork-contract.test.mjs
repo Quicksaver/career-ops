@@ -77,6 +77,20 @@ test('EU Remote Jobs details are bounded opt-in enrichment and probes retain the
   }
 });
 
+test('EU Remote Jobs refuses off-board details before transport and accepts www source URLs', async () => {
+  for (const host of ['unrelated.example', 'euremotejobs.com.unrelated.example', 'www.euremotejobs.com']) {
+    const calls = [];
+    const jobs = await fetchCustomProvider('euremotejobs', {name:'Fixture',api:boards.euremotejobs,fetchDetails:true,detailLimit:1,api_max_pages:1}, {fetchText:async url=>{
+      calls.push(url);
+      if (url === boards.euremotejobs) return `<rss><channel><item><title>Engineer</title><link>https://${host}/job/1/</link><description>Build systems</description></item></channel></rss>`;
+      return '<meta name="description" content="Engineer at Fixture">';
+    }});
+    assert.equal(jobs.length, 1);
+    assert.equal(calls.length, host === 'www.euremotejobs.com' ? 2 : 1);
+    assert.equal(jobs[0].description, 'Build systems');
+  }
+});
+
 test('Remote in Europe bounds details and falls back from unusable employer alternatives',async()=>{
   const listing=[1,2].map(id=>`<a href="/job/${id}" class="card job w-inline-block"><div fs-cmsfilter-field="company" class="card-link homepage">Fixture</div><h3 fs-cmsfilter-field="job-title">Engineer ${id}</h3><div class="short-location">Europe</div></a>`).join('');
   for(const [options,extraCtx,expected,alternative] of [[{},{},0,''],[{fetchDetails:true,detailLimit:1},{},1,'https://employer.example/job'],[{fetchDetails:true,detailLimit:1},{},1,'javascript:alert(1)'],[{fetchDetails:true},{maxPages:1},0,'']]) {

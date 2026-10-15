@@ -51,6 +51,47 @@ func TestHydrationPreservesPostingIdentityAndDateSortOnReload(t *testing.T) {
 	}
 }
 
+func TestFailedReportReadIsRetriedAndRefreshInvalidatesMetadata(t *testing.T) {
+	root := t.TempDir()
+	reportPath := "reports/001.md"
+	apps := []model.CareerApplication{{Number: 1, Company: "Fixture", Status: "Evaluated", ReportPath: reportPath}}
+	pm := NewPipelineModel(theme.NewTheme("auto"), apps, model.PipelineMetrics{}, root, 120, 40)
+	load := pm.LoadVisibleReports()
+	if load == nil {
+		t.Fatal("missing initial report load")
+	}
+	failed := load().(PipelineReportLoadedMsg)
+	if failed.Details.ReadError == nil {
+		t.Fatal("missing file did not retain its read error")
+	}
+	pm.EnrichReportDetails(reportPath, failed.Details)
+	if _, cached := pm.reportCache[reportPath]; cached || pm.reportLoading[reportPath] {
+		t.Fatal("failed report read remained cached or loading")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "reports"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fullPath := filepath.Join(root, reportPath)
+	if err := os.WriteFile(fullPath, []byte("**TL;DR:** First summary\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded := pm.LoadVisibleReports()().(PipelineReportLoadedMsg)
+	pm.EnrichReportDetails(reportPath, loaded.Details)
+	if pm.reportCache[reportPath].tldr != "First summary" {
+		t.Fatalf("successful retry not cached: %+v", pm.reportCache)
+	}
+	if err := os.WriteFile(fullPath, []byte("**TL;DR:** Updated summary\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pm.InvalidateReportCache()
+	pm = pm.WithReloadedData(apps, model.PipelineMetrics{})
+	refreshed := pm.LoadVisibleReports()().(PipelineReportLoadedMsg)
+	pm.EnrichReportDetails(reportPath, refreshed.Details)
+	if pm.reportCache[reportPath].tldr != "Updated summary" {
+		t.Fatalf("explicit refresh reused stale metadata: %+v", pm.reportCache)
+	}
+}
+
 func TestNarrowTabsShowActiveFilter(t *testing.T) {
 	pm := NewPipelineModel(theme.NewTheme("auto"), nil, model.PipelineMetrics{}, "", 120, 40)
 	pm.activeTab = len(getPipelineTabs()) - 1

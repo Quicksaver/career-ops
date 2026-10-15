@@ -106,3 +106,15 @@ test('global command help succeeds without selecting a user', t => {
     const result = f.cli(name, ['--help']); assert.equal(result.status, 0, `${name}: ${result.stderr}`); assert.match(result.stdout, /Usage/);
   }
 });
+
+test('OpenRouter help bypasses user-bound imports and candidate context', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.root, 'data', 'model-blacklist.json'), '["candidate-private-marker"]');
+  writeFileSync(join(f.root, 'cv.md'), 'candidate-private-marker');
+  for (const spelling of ['help', '--help', '-h']) {
+    const result = f.cli('openrouter-runner.mjs', [spelling]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /COMMANDS:/);
+    assert.doesNotMatch(result.stdout, /candidate-private-marker|\[blacklist\]/);
+  }
+});

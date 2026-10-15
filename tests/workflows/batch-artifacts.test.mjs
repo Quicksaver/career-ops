@@ -92,6 +92,21 @@ try {
     fail(`artifact validator accepted an untraceable confidential employer: ${JSON.stringify(untraceable.errors)}`);
   }
 
+  writeFileSync(reportPath, report('Hays'));
+  const header = ['role', 'company', 'num', 'date', 'status', 'score', 'pdf', 'report', 'notes', 'via', 'url', 'fixture-extra'];
+  const headedRow = ['Backend Engineer', '?', '001', '2026-01-01', 'Evaluated', '4.1/5', '❌', '[001](reports/001-confidential-2026-01-01.md)', 'keep this note', '', 'https://example.com/job/1', 'keep extra'];
+  writeFileSync(trackerPath, `${header.join('\t')}\n${headedRow.join('\t')}\n`);
+  const headedRepair = validateWorkerArtifacts({ reportPath, trackerPath, repair: true });
+  const expectedRow = [...headedRow]; expectedRow[9] = 'Hays';
+  if (headedRepair.valid && headedRepair.repaired && readFileSync(trackerPath, 'utf8') === `${header.join('\t')}\n${expectedRow.join('\t')}\n`) {
+    pass('headed Via repair preserves reordered fields, width, notes, URL and unknown columns');
+  } else {
+    fail(`headed Via repair failed or changed unrelated fields: ${JSON.stringify(headedRepair)}`);
+  }
+  const headedAgain = validateWorkerArtifacts({ reportPath, trackerPath, repair: true });
+  if (headedAgain.valid && !headedAgain.repaired) pass('headed Via repair is idempotent');
+  else fail('headed Via repair is not idempotent');
+
   const mergeRoot = join(tmp, 'merge');
   const additions = join(mergeRoot, 'additions');
   const reports = join(mergeRoot, 'reports');

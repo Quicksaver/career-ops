@@ -173,6 +173,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case screens.PipelineRefreshMsg:
+		m.pipeline.InvalidateReportCache()
 		m.reloadPipelineData()
 		return m, m.pipeline.LoadVisibleReports()
 

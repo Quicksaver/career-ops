@@ -406,7 +406,18 @@ func (m *PipelineModel) CopyReportCache(other *PipelineModel) {
 
 // EnrichReportDetails caches lazily loaded report data for preview and row metadata.
 func (m *PipelineModel) EnrichReportDetails(reportPath string, details data.ReportDetails) {
+	if details.ReadError != nil {
+		delete(m.reportLoading, reportPath)
+		return
+	}
 	m.EnrichReport(reportPath, details.Archetype, details.TlDr, details.Remote, details.Comp, details.JobURL, details.ListingDate)
+}
+
+// InvalidateReportCache makes an explicit refresh retry reads, including reports
+// that changed since their metadata was loaded. Ordinary tracker reloads keep it.
+func (m *PipelineModel) InvalidateReportCache() {
+	m.reportCache = make(map[string]reportSummary)
+	m.reportLoading = make(map[string]bool)
 }
 
 // EnrichReport caches report summary data for preview.

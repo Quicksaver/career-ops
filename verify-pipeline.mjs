@@ -535,7 +535,10 @@ for (const group of reportsByRole.values()) {
   // a key and no two share one.
   const keys = group.map(r => r.urlKey);
   if (keys.every(Boolean) && new Set(keys).size === keys.length) continue;
-  warn(`Duplicate reports for same company+role: ${group.map(r => r.name).join(', ')}`, 'duplicate_reports_same_role', `duplicate-reports:${group.map(r => r.name).sort().join(':')}`, { files: group.map(r => `reports/${r.name}`) });
+  warn(`Duplicate reports for same company+role: ${group.map(r => r.name).join(', ')}`, 'duplicate_reports_same_role', `duplicate-reports:${group.map(r => r.name).sort().join(':')}`, {
+    files: group.map(r => `reports/${r.name}`),
+    posting_identities: [...group].sort((a, b) => a.name.localeCompare(b.name)).map(r => ({ file: `reports/${r.name}`, canonical_url: r.urlKey })),
+  });
   dupReports++;
   const byUrl = new Map();
   for (const report of group) {

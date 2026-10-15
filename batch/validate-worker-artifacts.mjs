@@ -166,8 +166,16 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
     errors.push('Machine Summary via contains a tab or newline');
   }
 
-  if (reportVia && !tracker.via && !tracker.headered && repair && errors.length === 0) {
-    trackerContent = `${tracker.line}\tvia=${reportVia}\n`;
+  if (reportVia && !tracker.via && repair && errors.length === 0) {
+    if (tracker.headered) {
+      const headerLine = trackerContent.split(/\r?\n/).find(line => line.trim());
+      const { map } = resolveTsvColumns(headerLine.split('\t'));
+      const parts = [...tracker.parts];
+      parts[map.via] = reportVia;
+      trackerContent = `${headerLine}\n${parts.join('\t')}\n`;
+    } else {
+      trackerContent = `${tracker.line}\tvia=${reportVia}\n`;
+    }
     writeFileSync(trackerPath, trackerContent, 'utf8');
     tracker = parseTrackerAddition(trackerContent);
     repaired = true;

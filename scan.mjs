@@ -117,7 +117,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
-import { rebuildRow, openTrackerTransaction, loadCanonicalStates, resolveCanonicalStateId } from './tracker-utils.mjs';
+import { rebuildRow, openTrackerTransaction, loadCanonicalStates, resolveCanonicalStateId, writeFileAtomic } from './tracker-utils.mjs';
 import { buildTrustValidator } from './providers/_trust-validator.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
 import { mergeProviderPlugins } from './plugins/_engine.mjs';
@@ -3576,7 +3576,8 @@ export function buildScanHandoffPayload(items, { date, generatedAt = new Date().
 function writeScanHandoff(items, { date, dryRun = false } = {}) {
   if (dryRun) return;
   const payload = buildScanHandoffPayload(items, { date });
-  writeFileSync(SCAN_HANDOFF_PATH, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
+  mkdirSync(path.dirname(SCAN_HANDOFF_PATH), { recursive: true });
+  writeFileAtomic(SCAN_HANDOFF_PATH, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
 // ── Company blacklist (#1742) ───────────────────────────────────────
