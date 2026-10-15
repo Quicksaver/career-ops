@@ -118,6 +118,26 @@ test('leaving input is acknowledged once in rolling output without opening a foo
   assert.equal(f.ui.footerRows, 0);
 });
 
+test('empty or whitespace Ctrl+D defers the active question without leaving input or saving an answer', async t => {
+  const userRoot = root(t), f = terminal(t);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [!] ${A} | JD unavailable\n- [!] ${B} | JD unavailable\n\n## Processed\n`);
+  const broker = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'fixture', manual_actions: [] } });
+  t.after(() => broker.close());
+  assert.equal(f.ui.question.url, A);
+  f.input.write('\x04');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.ui.question.url, B);
+  assert.equal(broker.active, true);
+  assert.equal(broker.questions.length, 1);
+  f.input.write('   \x04');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.ui.question, null);
+  assert.equal(broker.active, true);
+  assert.equal(broker.questions.length, 0);
+  assert.equal(JSON.parse(readFileSync(join(userRoot, 'data/manual-answers.json'))).answers.length, 0);
+  assert.doesNotMatch(f.text(), /finishing without input/);
+});
+
 test('terminal keeps an editable Unicode draft across progress, resize and bracketed multiline paste', async t => {
   const f = terminal(t); const submitted = [];
   f.ui.setQuestion({ key: 'a', title: 'JD', question: 'Paste text', position: 1, total: 2, multiline: true, submit: text => submitted.push(text) });
@@ -126,13 +146,13 @@ test('terminal keeps an editable Unicode draft across progress, resize and brack
   assert.equal(submitted.length, 0, 'pasted newlines must not submit early');
   const draft = f.ui.draft.join('');
   assert.match(draft, /Role: Engenheiro\nBuild/);
-  assert.ok(f.text().includes('\x1b[25;1H\x1b[2KEnter: answer | Ctrl+D: submit JD; empty: finish after work | /later: defer | Ctrl+C: stop safely'));
+  assert.ok(f.text().includes('\x1b[25;1H\x1b[2KEnter: answer | Ctrl+D: JD/empty defer | /later: defer | /finish: drain & exit | Ctrl+C: stop'));
   f.ui.log('worker progress\x1b[2J\rhostile title');
   f.output.columns = 35; f.output.rows = 10; f.output.emit('resize');
   assert.equal(f.ui.draft.join(''), draft);
   for (const rows of [10, 8, 6]) {
     f.output.columns = 80; f.output.rows = rows; f.output.emit('resize');
-    assert.ok(f.text().includes(`\x1b[${rows};1H\x1b[2KEnter answer | Ctrl+D JD/empty finish | /later defer | Ctrl+C stop`), 'shortcuts stay at the bottom after resizing');
+    assert.ok(f.text().includes(`\x1b[${rows};1H\x1b[2KEnter answer | Ctrl+D JD/empty defer | /finish exit | Ctrl+C stop`), 'shortcuts stay at the bottom after resizing');
     assert.match(f.text(), new RegExp(`\\x1b\\[${rows - 1};\\d+H\\x1b\\[\\?25h$`), 'the cursor stays in the input row above the shortcuts');
   }
   f.input.write('\x04');

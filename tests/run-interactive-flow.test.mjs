@@ -114,11 +114,31 @@ test('idle run waits for input, defers cleanly, and asks again after restart', a
   assert.equal(resumed.result.remaining, 0);
 });
 
-test('Ctrl+D leaves idle input with holds intact and terminal cleanup emitted', async t => {
+test('empty Ctrl+D presents the next missing-JD question and /finish keeps both holds across restart', async t => {
+  const f = fixture(t, { rows: [`- [!] ${A} | JD unavailable for alpha`, `- [!] ${B} | JD unavailable for beta`] });
+  const run = f.startInteractive();
+  await until(() => run.output().includes('Question: JD unavailable for alpha'), 'first question never appeared');
+  run.send('\x04');
+  await until(() => run.output().includes('Question: JD unavailable for beta'), 'empty Ctrl+D did not present the next question');
+  assert.ok(!run.output().includes('finishing without input'));
+  assert.equal(run.child.exitCode, null);
+  assert.equal(JSON.parse(f.read('data/manual-answers.json')).answers.length, 0);
+  run.send('/finish\r');
+  const result = await run.completion;
+  assert.equal(result.code, 2, result.output.slice(-5000));
+  assert.equal(result.result.final_blocked, 2);
+  assert.match(result.output, /finishing without input/);
+  const restarted = f.startInteractive();
+  await until(() => restarted.output().includes('Question: JD unavailable for alpha'), 'deferred hold was lost on restart');
+  restarted.send('/finish\r');
+  assert.equal((await restarted.completion).result.final_blocked, 2);
+});
+
+test('/finish leaves idle input with holds intact and terminal cleanup emitted', async t => {
   const f = fixture(t, { rows: [`- [!] ${A} | confirm agency`] });
   const run = f.startInteractive();
   await until(() => run.output().includes('Agency name + Enter'), 'question never appeared');
-  run.send('\x04');
+  run.send('/finish\r');
   const result = await run.completion;
   assert.equal(result.code, 2, result.output.slice(-4000));
   assert.equal(result.result.manual_actions[0].url, A);
@@ -280,7 +300,8 @@ test('leaving input during a later liveness pass retains the invocation job limi
   // sibling. The live ledger must still own both eligibility and the limit.
   writeFileSync(join(f.user, 'data/pipeline.md'), `## Pending\n- [ ] ${A}\n- [ ] ${B}\n\n## Processed\n`);
   writeFileSync(join(f.user, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n1\t${A}\tfailed\t\t\t\t\t\t2\n`);
-  run.send('\x04');
+  await until(() => run.output().includes('Job #1 failed'), 'late failure question never appeared');
+  run.send('/finish\r');
   await until(() => run.output().includes('finishing without input'), 'leave input was not acknowledged');
   writeFileSync(join(f.user, 'release-liveness'), 'release');
   const result = await run.completion;
