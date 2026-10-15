@@ -127,7 +127,7 @@ passes its resolved parallel value to both stages.
 
 `--skip-scan` processes only the existing inbox. `--answers-file` resumes exact posting/reason holds; `--limit`, `--retry-failed`, `--resume-paused`, and `--max-queue-passes` bound dispatch/recovery. The run coordinator supports Codex and explicit Claude only. See `modes/run.md` and `node run-workflow.mjs --help` for the current contract.
 
-Manual choices are printed in the summary and persisted under the selected user as `data/manual-actions.json`; batch holds remain in `batch/logs/{id}.hold.json` and `batch-state.tsv`. Pending and blocked `[!]` rows are both remaining work. A clean verification does not make an incomplete source pass or held job completed.
+In a writable terminal, live logs scroll above a fixed question/input area. Answer one question at a time while other work continues; answered jobs resume in the next free slot. Paste JD text and submit with Ctrl+D, use Enter for single-line answers, `/later` to defer, and Ctrl+D on an empty draft to finish without further input. Answers save automatically in `data/manual-answers.json`. `--no-interactive`, redirected streams, `--quiet` and `--json` finish with pending actions instead of waiting. Manual choices are printed in the summary and persisted under the selected user as `data/manual-actions.json`; batch holds remain in `batch/logs/{id}.hold.json` and `batch-state.tsv`. Pending and blocked `[!]` rows are both remaining work. A clean verification does not make an incomplete source pass or held job completed.
 
 The final phase invokes `verify-runner.mjs`, the same reviewed lifecycle exposed
 by `npm run verify`. Its schema-constrained Codex reviewer reads every new error

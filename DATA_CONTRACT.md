@@ -39,6 +39,7 @@ These files contain your personal data, customizations, and work product. Update
 | `users/{USER}/data/pipeline.md` | Your URL inbox |
 | `users/{USER}/data/workflow-runs/`, `users/{USER}/data/verify-runs/`, legacy `users/{USER}/data/go-runs/` | Workflow diagnostics and resumable checkpoints; completed runs are compacted, timestamped runs expire after 10 days |
 | `users/{USER}/data/manual-actions.json` | Persisted exact-posting questions and user actions collected by the workflow coordinator |
+| `users/{USER}/data/manual-answers.json` | User answers saved by the interactive workflow, scoped to the exact posting URL and hold reason; includes pasted JD text when supplied |
 | `users/{USER}/data/scan-handoff.json` | Latest unsupported-source handoff for the selected user's scanner |
 | `users/{USER}/data/verification-reviews.jsonl` | Exact finding fingerprints, review decisions and accepted exceptions |
 | `users/{USER}/data/verification-actions.jsonl` | Verification repair records and artifact provenance |

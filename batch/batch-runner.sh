@@ -63,6 +63,7 @@ VERIFICATION_FAILED=false
 RECOVER_ARTIFACT_FAILURES=false
 ANSWERS_FILE=""
 QUEUE_FILE=""
+LIVE_INPUTS=""
 
 # Return success for non-negative integer or decimal strings.
 is_decimal_number() {
@@ -80,6 +81,7 @@ Usage: batch-runner.sh [OPTIONS]
 Options:
   --answers-file PATH Explicit user-owned exact-URL manual answers (JSON)
   --queue-file PATH   Read-only plain URL list constraining this run
+  --live-inputs PATH  Internal run coordinator control file for live answers
   --user ID           Required. User folder under users/ID
   --parallel N         Worker-count override (profile batch.parallel, then 1)
   --dry-run            Show what would be processed, don't execute
@@ -149,9 +151,10 @@ while [[ $# -gt 0 ]]; do
       PARALLEL_EXPLICIT=true
       shift 2
       ;;
-    --answers-file|--queue-file)
+    --answers-file|--queue-file|--live-inputs)
       [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: $1 requires a path"; exit 1; }
-      if [[ "$1" == "--answers-file" ]]; then ANSWERS_FILE="$2"; else QUEUE_FILE="$2"; fi
+      if [[ "$1" == "--answers-file" ]]; then ANSWERS_FILE="$2";
+      elif [[ "$1" == "--queue-file" ]]; then QUEUE_FILE="$2"; else LIVE_INPUTS="$2"; fi
       shift 2
       ;;
     --dry-run) DRY_RUN=true; shift ;;
@@ -2239,10 +2242,57 @@ watch_status() {
   fi
 }
 
+# The coordinator can publish new answers while this one owner keeps its pool.
+# Preparation still runs outside conditional lists, preserving errexit.
+process_live_offers() {
+  local -a pids=()
+  local rc=0 worker_rc=0 running=0 selection mode id url source notes reset_hold explicit_retry
+  while true; do
+    for j in "${!pids[@]}"; do
+      if ! kill -0 "${pids[$j]}" 2>/dev/null; then
+        worker_rc=0
+        wait "${pids[$j]}" 2>/dev/null || worker_rc=$?
+        if (( worker_rc != 0 )); then rc=$worker_rc; fi
+        unset 'pids[j]'
+      fi
+    done
+    pids=(${pids[@]+"${pids[@]}"})
+    running=${#pids[@]}
+    if (( rc != 0 )) || [[ -f "$PAUSE_FILE" ]]; then break; fi
+    # Also check coordinator ownership while every slot is occupied.
+    selection=$(node "$PROJECT_DIR/lib/run-live-inputs.mjs" "$LIVE_INPUTS" "$USER_ROOT" "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$running" "$MAX_RETRIES" "$LIMIT" "$RETRY_FAILED" "$RESUME_PAUSED" "$PARALLEL") || { rc=125; break; }
+    IFS=$'\x1f' read -r mode id url source notes reset_hold explicit_retry <<< "$selection"
+    if [[ "$mode" == "job" ]]; then
+      if [[ "$reset_hold" == "true" ]]; then
+        update_state_retrying "$id" "$url" pending "" "" "-" "-" "" 0 || { rc=125; break; }
+      fi
+      RETRY_FAILED="$explicit_retry" process_offer "$id" "$url" "$source" "$notes" 0 &
+      pids+=("$!")
+      continue
+    fi
+    if [[ "$mode" == "done" ]]; then break; fi
+    sleep 0.25
+  done
+  # On fatal failure the EXIT trap drains owned workers. Do not wait forever
+  # for a worker after coordinator loss or a failed preparation step.
+  if (( rc != 0 )); then echo "ERROR: live batch stopped; tracker merge skipped." >&2; return "$rc"; fi
+  for pid in ${pids[@]+"${pids[@]}"}; do
+    worker_rc=0
+    wait "$pid" 2>/dev/null || worker_rc=$?
+    if (( worker_rc != 0 )); then rc=$worker_rc; fi
+  done
+  if (( rc != 0 )); then echo "ERROR: live worker failed; tracker merge skipped." >&2; fi
+  return "$rc"
+}
+
 # Main
 main() {
   validate_user
   configure_user_paths
+  if [[ -n "$LIVE_INPUTS" ]] && { [[ -z "$ANSWERS_FILE" || -z "$QUEUE_FILE" ]] || [[ "$DRY_RUN" == "true" ]]; }; then
+    echo "ERROR: --live-inputs requires --answers-file, --queue-file and a real run" >&2
+    exit 1
+  fi
   if [[ -n "$ANSWERS_FILE" || -n "$QUEUE_FILE" ]]; then
     node "$SCRIPT_DIR/manual-inputs.mjs" validate "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" || exit 1
   fi
@@ -2326,6 +2376,7 @@ main() {
   local -a pending_sources=()
   local -a pending_notes=()
 
+  if [[ -z "$LIVE_INPUTS" ]]; then
   while IFS=$'\t' read -r id url source notes; do
     [[ "$id" == "id" ]] && continue  # skip header
     [[ -z "$id" || -z "$url" ]] && continue
@@ -2398,10 +2449,11 @@ main() {
       break
     fi
   done < "$INPUT_FILE"
+  fi
 
   local pending_count=${#pending_ids[@]}
 
-  if (( pending_count == 0 )); then
+  if (( pending_count == 0 )) && [[ -z "$LIVE_INPUTS" ]]; then
     echo "No offers to process."
     if [[ "$DRY_RUN" == "false" ]]; then merge_tracker; fi
     print_summary
@@ -2426,7 +2478,9 @@ main() {
   fi
 
   # Process offers
-  if (( PARALLEL <= 1 )); then
+  if [[ -n "$LIVE_INPUTS" ]]; then
+    process_live_offers
+  elif (( PARALLEL <= 1 )); then
     # Sequential processing
     local -a pids=()
     for i in "${!pending_ids[@]}"; do

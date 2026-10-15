@@ -1,8 +1,9 @@
 // Offline subprocess fixture. Never import this from production code.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parseBatchInput, parseBatchState, parsePendingRows } from './lib/pipeline-queue.mjs';
 import { loadAnswers, loadQueue } from './batch/manual-inputs.mjs';
+import { nextLiveInput } from './lib/run-live-inputs.mjs';
 
 const args = process.argv.slice(2);
 const value = name => args[args.indexOf(name) + 1];
@@ -50,6 +51,52 @@ else if (phase === 'codex-mock') {
   await new Promise(resolve => { process.stdin.resume(); process.stdin.on('end', resolve); });
   emit({ offline: true });
   writeFileSync(value('--output-last-message'), JSON.stringify({ status: config.handoffPartial ? 'partial' : 'completed', processed_items: 1, added: config.malformedHandoff ? 1 : 0, duplicates: config.handoffPartial ? 0 : 1, expired: 0, errors: config.handoffPartial ? [{ item: 'Fictional', message: 'offline source unavailable', recoverable: true }] : [], requires_user_action: false, user_action: null }));
+} else if (phase === 'batch-mock' && args.includes('--live-inputs')) {
+  const controlPath = value('--live-inputs'), active = new Set();
+  const pausePath = join(root, 'batch/batch-runner.paused'); rmSync(pausePath, { force: true });
+  const statePath = join(root, 'batch/batch-state.tsv');
+  const setState = (row, status) => {
+    const states = parseBatchState(read(statePath)).filter(item => item.id !== row.id);
+    states.push({ ...row, status });
+    writeFileSync(statePath, 'id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n' + states.map(item => [item.id, item.url, item.status, '', '', '', '', '', 0].join('\t')).join('\n') + '\n');
+  };
+  while (true) {
+    if (existsSync(pausePath)) break;
+    if (active.size < Number(value('--parallel'))) {
+      const next = nextLiveInput({ controlPath, userRoot: root, user: 'fictional', answersPath: value('--answers-file'), queuePath: value('--queue-file'), running: active.size, resumePaused: args.includes('--resume-paused'), limit: args.includes('--limit') ? Number(value('--limit')) : 0 });
+      if (next.selected) {
+        const row = next.selected; setState(row, 'processing');
+        const task = (async () => {
+          appendFileSync(join(root, 'dispatched.jsonl'), JSON.stringify({ ...row, at: Date.now() }) + '\n');
+          if (config.waitFor?.includes(row.url)) {
+            const deadline = Date.now() + 15000;
+            while (!existsSync(join(root, 'release-live-workers')) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+          }
+          await new Promise(resolve => setTimeout(resolve, config.delays?.[row.url] || 30));
+          const reason = config.holds?.[row.url];
+          const answers = loadAnswers(value('--answers-file'), 'fictional', root);
+          const held = reason && (config.stickyHolds || !answers.some(answer => answer.url === row.url && answer.reason === reason));
+          if (config.quota && !existsSync(join(root, 'quota-resolved'))) {
+            writeFileSync(pausePath, 'fixture quota'); setState(row, 'paused_rate_limit');
+          } else if (held) {
+            writeFileSync(join(root, `batch/logs/${row.id}.hold.json`), JSON.stringify({ schema_version: 1, user: 'fictional', id: row.id, url: row.url, status: 'needs_confirmation', reason, question: 'Please provide the exact posting answer.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));
+            setState(row, 'needs_confirmation');
+          } else {
+            setState(row, 'completed');
+            const parsed = parsePendingRows(read(pipeline));
+            const index = parsed.rows.find(item => item.url === row.url)?.lineIndex;
+            if (index !== undefined) { parsed.lines.splice(index, 1); writeFileSync(pipeline, parsed.lines.join('\n')); }
+            appendFileSync(join(root, 'completed.jsonl'), JSON.stringify({ url: row.url, at: Date.now() }) + '\n');
+          }
+        })();
+        active.add(task); task.finally(() => active.delete(task));
+        continue;
+      }
+      if (next.status === 'done') break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
+  await Promise.all(active);
 } else if (phase === 'batch-mock') {
   if (!args.includes('--queue-file')) throw new Error('run must provide a queue-file');
   const queue = loadQueue(value('--queue-file'), root);

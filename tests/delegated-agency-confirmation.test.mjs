@@ -326,7 +326,7 @@ process_offer() {
 merge_tracker() { echo MERGED; }
 print_summary() { echo SUMMARY; }
 run() {
-  local VERIFICATION_FAILED=false pending_count=3 PARALLEL=2 BATCH_PAUSED=false PAUSE_FILE="$PWD/no-pause"
+  local VERIFICATION_FAILED=false pending_count=3 PARALLEL=2 BATCH_PAUSED=false LIVE_INPUTS="" PAUSE_FILE="$PWD/no-pause"
   local pending_ids=(1 2${count === 3 ? ' 3' : ''})
   local pending_urls=(one two three) pending_sources=(test test test) pending_notes=(note note note)
 ${runner.slice(start, end)}

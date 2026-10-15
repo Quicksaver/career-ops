@@ -36,6 +36,10 @@ import {
 } from './lib/run-artifacts.mjs';
 import { runUnresolvedFindingLines } from './lib/run-summary.mjs';
 import { inspectOwnership } from './batch/runner-ownership.mjs';
+import { RunTerminal } from './lib/run-terminal.mjs';
+import { RunInteractive } from './lib/run-interactive.mjs';
+import { synchronizeBatch } from './lib/run-batch-sync.mjs';
+import { answerFingerprint } from './lib/run-live-inputs.mjs';
 
 const HELP = `career-ops deterministic workflow runner
 
@@ -56,7 +60,9 @@ Options:
   --scan-hn             Include the deterministic Hacker News scanner
   --scan-dayforce       Include configured Dayforce boards
   --scan-interamt       Include configured Interamt searches
-  --answers-file PATH   Explicit per-posting answers for held jobs
+  --interactive         Require a terminal and answer questions during processing
+  --no-interactive      Finish with pending actions instead of waiting for input
+  --answers-file PATH   Optional automation input for per-posting answers
   --limit N            Process at most N jobs; omit to drain the inbox
   --retry-failed        Retry jobs at their previous retry ceiling once
   --resume-paused       Explicitly resume rate/session-paused jobs
@@ -129,7 +135,7 @@ const valueOptions = new Set([
   '--answers-file', '--limit', '--max-queue-passes', '--resume-verify',
 ]);
 const flagOptions = new Set(['--json', '--no-fallback', '--skip-linkedin', '--skip-scan', '--quiet', '--throttle',
-  '--scan-full', '--scan-hn', '--scan-dayforce', '--scan-interamt', '--retry-failed', '--resume-paused']);
+  '--scan-full', '--scan-hn', '--scan-dayforce', '--scan-interamt', '--retry-failed', '--resume-paused', '--interactive', '--no-interactive']);
 const unknown = [];
 for (let i = 0; i < rawArgs.length; i++) {
   const arg = rawArgs[i];
@@ -161,6 +167,16 @@ if (resumeVerify && !/^[A-Za-z0-9._-]+$/.test(resumeVerify)) {
 if (throttle?.includes('=') && !/^--throttle=\d+$/.test(throttle)) {
   console.error('--throttle must be a non-negative integer in milliseconds'); process.exit(1);
 }
+const interactiveRequested = rawArgs.includes('--interactive');
+if (interactiveRequested && (rawArgs.includes('--no-interactive') || jsonOutput || quiet || !process.stdin.isTTY || !process.stdout.isTTY)) {
+  console.error('--interactive requires an input/output terminal and cannot be combined with --no-interactive, --json or --quiet');
+  process.exit(1);
+}
+const interactiveEnabled = !rawArgs.includes('--no-interactive') && !jsonOutput && !quiet && Boolean(process.stdin.isTTY && process.stdout.isTTY);
+let terminal = null;
+let interactive = null;
+let commandSequence = 0;
+const activeChildren = new Set();
 let codexSettings = null;
 let parallelSettings = null;
 
@@ -170,8 +186,6 @@ const runDir = userPath(context, `data/workflow-runs/${runId}`);
 const pipelinePath = runPipelinePath(context.userRoot);
 const lockPath = userPath(context, 'data/run-workflow.pid');
 const phases = [];
-let activeChild = null;
-let activeProcessGroup = null;
 let lockOwned = false;
 const runnerLocks = [];
 let terminating = false;
@@ -181,7 +195,8 @@ let stoppingChildren = null;
 function log(message) {
   if (quiet) return;
   const stream = jsonOutput ? process.stderr : process.stdout;
-  stream.write(`[run] ${message}\n`);
+  if (terminal) terminal.log(`[run] ${message}`);
+  else stream.write(`[run] ${message}\n`);
 }
 
 function readPendingCount() {
@@ -219,7 +234,7 @@ function releaseLock() {
 }
 
 function addAction(summary, action) {
-  const item = { status: 'pending', ...action };
+  const item = { status: 'pending', ...action, ...(interactive ? { attempt: interactive.revision } : {}) };
   const key = `${item.phase}:${item.reason}:${item.url || item.id || ''}`;
   if (!summary.manual_actions.some(existing => `${existing.phase}:${existing.reason}:${existing.url || existing.id || ''}` === key)) {
     summary.manual_actions.push(item);
@@ -273,7 +288,7 @@ function checkBatchOwner() {
 
 function terminateActiveChild(signal = 'SIGTERM') {
   try {
-    if (activeChild || activeProcessGroup) terminateProcessTreeSync(activeChild || activeProcessGroup, { signal });
+    for (const child of activeChildren) terminateProcessTreeSync(child, { signal });
   } catch {}
 }
 
@@ -282,10 +297,11 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     if (terminating) return;
     terminating = true;
     interruptedSignal = signal;
-    if (activeChild) stoppingChildren = terminateProcessTree(activeChild).catch(error => log(`child cleanup failed: ${error.message}`));
+    if (interactive) { interactive.active = false; interactive.emit('change'); }
+    stoppingChildren = Promise.all([...activeChildren].map(child => terminateProcessTree(child).catch(error => log(`child cleanup failed: ${error.message}`))));
   });
 }
-process.on('exit', releaseLock);
+process.on('exit', () => { terminateActiveChild(); terminal?.close(); releaseLock(); });
 
 function commandTail(chunks, limit = 12000) {
   const joined = chunks.join('');
@@ -300,7 +316,8 @@ function createProgressForwarder(name, predicate) {
     if (!normalized.trim()) return;
     if (predicate !== true && !predicate(normalized)) return;
     const stream = jsonOutput ? process.stderr : process.stdout;
-    stream.write(`[run:${name}] ${normalized}\n`);
+    if (terminal) terminal.log(`[run:${name}] ${normalized}`);
+    else stream.write(`[run:${name}] ${normalized}\n`);
   }
 
   return {
@@ -345,7 +362,7 @@ function compactProgressValue(value, maxLength = 180) {
 
 async function runCommand(name, command, args, options = {}) {
   if (interruptedSignal) throw new Error(`interrupted by ${interruptedSignal}`);
-  const logPath = join(runDir, `${String(phases.length + 1).padStart(2, '0')}-${name}.log`);
+  const logPath = join(runDir, `${String(++commandSequence).padStart(2, '0')}-${name}.log`);
   mkdirSync(runDir, { recursive: true });
   const stdoutOutput = [];
   const stderrOutput = [];
@@ -381,8 +398,7 @@ async function runCommand(name, command, args, options = {}) {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  activeChild = child;
-  activeProcessGroup = child.pid;
+  activeChildren.add(child);
   child.stdout.on('data', (chunk) => {
     stream.write(chunk);
     progress?.stdout.write(chunk);
@@ -402,8 +418,7 @@ async function runCommand(name, command, args, options = {}) {
     // could return while the final JSON was still being drained.
     child.once('close', (code, signal) => resolve({ code, signal, error: spawnError }));
   });
-  activeChild = null;
-  activeProcessGroup = null;
+  activeChildren.delete(child);
   progress?.stdout.flush();
   progress?.stderr.flush();
   await new Promise((resolve, reject) => {
@@ -495,6 +510,10 @@ async function main() {
   try {
     await acquireLock();
     checkBatchOwner();
+    if (interactiveEnabled) {
+      terminal = new RunTerminal();
+      terminal.on('interrupt', () => process.emit('SIGINT'));
+    }
     summary.cleanup = cleanupExpiredRuns({
       userRoot: context.userRoot,
       ignoreActivePids: [process.pid],
@@ -535,8 +554,56 @@ async function main() {
     });
     summary.parallel = parallelSettings.parallel;
     summary.parallel_source = parallelSettings.source;
-    const answerPath = answersFile ? resolve(context.projectRoot, answersFile) : null;
-    const answers = readRunAnswers(answerPath, context.userId, context.userRoot);
+    let answerPath = answersFile ? resolve(context.projectRoot, answersFile) : null;
+    let answers = readRunAnswers(answerPath, context.userId, context.userRoot);
+    const retries = new Map();
+    const pendingAnswers = new Map();
+    const admittedUrls = new Set();
+    let resumePaused = rawArgs.includes('--resume-paused');
+    let requested = false;
+    const sourceRetries = new Map();
+    if (terminal) {
+      interactive = new RunInteractive({ terminal, userRoot: context.userRoot, user: context.userId, summary, answersFile: answerPath,
+        canAsk: action => action.kind !== 'job' || !batchLimit || admittedUrls.size < Number(batchLimit) || admittedUrls.has(action.url),
+        onAnswer: async answer => {
+          await restoreAnsweredRows(interactive.answers);
+          pendingAnswers.set(answer.url, `answer:${answerFingerprint(interactive.answers.filter(item => item.url === answer.url))}`);
+          requested = true;
+        },
+        onRetry: async action => {
+          if (interruptedSignal) throw new Error('Workflow interrupted');
+          if (action.kind === 'source') {
+            const retry = sourceRetries.get(action.phase);
+            if (!retry) throw new Error('This source must be corrected externally; defer it after making the change.');
+            summary.manual_actions = summary.manual_actions.filter(item => !(item.kind === action.kind && item.phase === action.phase));
+            summary.issues = summary.issues.filter(item => item.phase !== action.phase);
+            summary.sources = summary.sources?.filter(item => item.name !== action.phase) || [];
+            await retry();
+          } else if (action.url) {
+            await withPipelineLock(pipelinePath, () => {
+              const queue = readRunQueue(context.userRoot);
+              const row = queue.blocked.find(row => row.url === action.url);
+              if (row) {
+                const lines = queue.text.replace(/\r\n/g, '\n').split('\n');
+                lines[row.lineIndex] = `- [ ] ${row.url}`;
+                writeFileAtomic(pipelinePath, lines.join('\n'));
+              }
+            });
+            retries.set(action.url, String(Date.now()));
+          } else if (action.reason === 'rate_limit') {
+            resumePaused = true;
+            summary.manual_actions = summary.manual_actions.filter(item => item.reason !== 'rate_limit');
+          } else {
+            summary.manual_actions = summary.manual_actions.filter(item => !(item.kind === action.kind && item.phase === action.phase));
+            summary.issues = summary.issues.filter(item => item.phase !== (action.kind === 'tracker' ? 'tracker-merge' : action.phase));
+          }
+          if (action.reason === 'rate_limit' && action.url) resumePaused = true;
+          requested = true;
+        },
+      });
+      answerPath = interactive.path;
+      answers = interactive.answers;
+    }
     await restoreAnsweredRows(answers);
 
     summary.baseline_pending = readPendingCount();
@@ -566,54 +633,59 @@ async function main() {
       log(`scan added ${summary.scan.added_pending} pending job(s); queue now ${readPendingCount()}`);
     }
 
-    const handoff = loadHandoff();
-    if (!skipScan && summary.scan?.status !== 'failed' && handoff.valid && handoff.items.length) {
-      log(`scan-handoff queued ${handoff.items.length} task(s)`);
-      handoff.items.forEach((item, index) => {
-        const detail = item.query || item.careers_url || item.url || '';
-        const suffix = detail ? ` — ${compactProgressValue(detail)}` : '';
-        log(`scan-handoff task ${index + 1}/${handoff.items.length}: ${compactProgressValue(item.company)} (${compactProgressValue(item.method)})${suffix}`);
-      });
-      const finalPath = join(runDir, 'handoff.final.json');
-      const args = [
-        'exec', '--dangerously-bypass-approvals-and-sandbox', '--ephemeral',
-        '-C', context.projectRoot,
-        '--output-schema', systemPath('schemas/run-handoff-output.schema.json'),
-        '--output-last-message', finalPath,
-      ];
-      if (codexSettings.model) args.push('--model', codexSettings.model);
-      if (codexSettings.reasoningEffort) {
-        args.push('-c', codexReasoningConfigArg(codexSettings.reasoningEffort));
-      }
-      args.push('-');
-      const beforeHandoff = readPendingCount();
-      try {
-        assertOpenAIStructuredOutputSchema(JSON.parse(readFileSync(systemPath('schemas/run-handoff-output.schema.json'), 'utf8')));
-        await runCommand('scan-handoff-agent', agentCli, args, {
-          stdin: handoffPrompt(handoff.path), progress: handoffProgressLine,
+    async function runHandoff() {
+      const handoff = loadHandoff();
+      if (!skipScan && summary.scan?.status !== 'failed' && handoff.valid && handoff.items.length) {
+        log(`scan-handoff queued ${handoff.items.length} task(s)`);
+        handoff.items.forEach((item, index) => {
+          const detail = item.query || item.careers_url || item.url || '';
+          const suffix = detail ? ` — ${compactProgressValue(detail)}` : '';
+          log(`scan-handoff task ${index + 1}/${handoff.items.length}: ${compactProgressValue(item.company)} (${compactProgressValue(item.method)})${suffix}`);
         });
-        if (!existsSync(finalPath)) throw new Error('scan-handoff agent did not write its final JSON contract');
-        const observed = Math.max(0, readPendingCount() - beforeHandoff);
-        const handoffResult = validateHandoff(JSON.parse(readFileSync(finalPath, 'utf8')), handoff.items.length, observed);
-        summary.handoff = { ...handoffResult, observed_added_pending: observed };
-        log(`scan-handoff processed ${handoffResult.processed_items}/${handoff.items.length} task(s), added ${observed} pending job(s)`);
-        for (const item of handoffResult.errors) addPhaseIssue(summary, 'handoff', `${item.item}: ${item.message}`);
-        if (handoffResult.status !== 'completed' && !handoffResult.errors.length) {
-          addPhaseIssue(summary, 'handoff', `handoff is ${handoffResult.status}`);
+        const finalPath = join(runDir, 'handoff.final.json');
+        const args = [
+          'exec', '--dangerously-bypass-approvals-and-sandbox', '--ephemeral',
+          '-C', context.projectRoot,
+          '--output-schema', systemPath('schemas/run-handoff-output.schema.json'),
+          '--output-last-message', finalPath,
+        ];
+        if (codexSettings.model) args.push('--model', codexSettings.model);
+        if (codexSettings.reasoningEffort) {
+          args.push('-c', codexReasoningConfigArg(codexSettings.reasoningEffort));
         }
-        if (handoffResult.requires_user_action || handoffResult.status === 'blocked') {
-          addAction(summary, { kind: 'source', phase: 'handoff', reason: 'source_input',
-            question: handoffResult.user_action || 'Review the scan-handoff log and resolve its blocked sources.' });
+        args.push('-');
+        const beforeHandoff = readPendingCount();
+        try {
+          assertOpenAIStructuredOutputSchema(JSON.parse(readFileSync(systemPath('schemas/run-handoff-output.schema.json'), 'utf8')));
+          await runCommand('scan-handoff-agent', agentCli, args, {
+            stdin: handoffPrompt(handoff.path), progress: handoffProgressLine,
+          });
+          if (!existsSync(finalPath)) throw new Error('scan-handoff agent did not write its final JSON contract');
+          const observed = Math.max(0, readPendingCount() - beforeHandoff);
+          const handoffResult = validateHandoff(JSON.parse(readFileSync(finalPath, 'utf8')), handoff.items.length, observed);
+          summary.handoff = { ...handoffResult, observed_added_pending: observed };
+          log(`scan-handoff processed ${handoffResult.processed_items}/${handoff.items.length} task(s), added ${observed} pending job(s)`);
+          for (const item of handoffResult.errors) addPhaseIssue(summary, 'handoff', `${item.item}: ${item.message}`);
+          if (handoffResult.status !== 'completed' && !handoffResult.errors.length) {
+            addPhaseIssue(summary, 'handoff', `handoff is ${handoffResult.status}`);
+          }
+          if (handoffResult.requires_user_action || handoffResult.status === 'blocked') {
+            addAction(summary, { kind: 'source', phase: 'handoff', reason: 'source_input',
+              question: handoffResult.user_action || 'Review the scan-handoff log and resolve its blocked sources.' });
+          }
+        } catch (error) {
+          if (interruptedSignal) throw error;
+          summary.handoff = { status: 'partial', error: error.message,
+            observed_added_pending: Math.max(0, readPendingCount() - beforeHandoff) };
+          addPhaseIssue(summary, 'handoff', error);
         }
-      } catch (error) {
-        if (interruptedSignal) throw error;
-        summary.handoff = { status: 'partial', error: error.message,
-          observed_added_pending: Math.max(0, readPendingCount() - beforeHandoff) };
-        addPhaseIssue(summary, 'handoff', error);
+      } else {
+        summary.handoff = { status: 'skipped', reason: handoff.valid ? 'empty' : 'missing-or-invalid' };
       }
-    } else {
-      summary.handoff = { status: 'skipped', reason: handoff.valid ? 'empty' : 'missing-or-invalid' };
+
     }
+    sourceRetries.set('handoff', runHandoff);
+    await runHandoff();
 
     const portalsPath = process.env.CAREER_OPS_PORTALS || userPath(context, 'portals.yml');
     let portals = {};
@@ -626,8 +698,7 @@ async function main() {
       ['scan-interamt', rawArgs.includes('--scan-interamt') || portals.interamt_searches?.length > 0, 'scan-interamt.mjs'],
     ];
     summary.sources = [];
-    if (!skipScan) for (const [name, enabled, script] of extraSources) {
-      if (!enabled) continue;
+    async function runExtra(name, script) {
       const before = readPendingCount();
       try {
         const result = await runCommand(name, process.execPath, [systemPath(script), '--user', context.userId], {
@@ -647,178 +718,267 @@ async function main() {
       }
     }
 
-    if (skipLinkedIn || skipScan) {
-      summary.linkedin = { status: 'skipped', reason: skipScan ? 'explicit --skip-scan' : 'explicit --skip-linkedin' };
-    } else {
-      const beforeLinkedIn = readPendingCount();
-      try {
-        const linkedinResult = await runCommand('scan-auth-linkedin', process.execPath, [
-          systemPath('scan-auth.mjs'), '--user', context.userId, 'linkedin',
-        ], { progress: scanAuthProgressLine });
-        const errorCount = Number(/Errors:\s*(\d+)/i.exec(linkedinResult.output)?.[1] || 0);
-        summary.linkedin = {
-          status: errorCount ? 'partial' : 'completed', errors: errorCount,
-          added_pending: Math.max(0, readPendingCount() - beforeLinkedIn),
-        };
-        if (errorCount) addPhaseIssue(summary, 'linkedin', `${errorCount} listing/search errors; see phase log`);
-        log(`LinkedIn added ${summary.linkedin.added_pending} pending job(s); queue now ${readPendingCount()}`);
-      } catch (error) {
-        const logText = `${error.output || ''}\n${error.tail || ''}\n${error.message}`;
-        if (/not logged in|captcha|account verification|login required/i.test(logText)) {
-          summary.linkedin = { status: 'needs-login', added_pending: 0 };
-          addAction(summary, { kind: 'source', phase: 'linkedin', reason: 'source_login',
-            question: `Run node scan-auth.mjs --user ${context.userId} --login linkedin in a separate terminal, then rerun the workflow.` });
-        } else {
-          if (interruptedSignal) throw error;
-          summary.linkedin = { status: 'failed', added_pending: Math.max(0, readPendingCount() - beforeLinkedIn), error: error.message };
-          addPhaseIssue(summary, 'linkedin', error);
+    if (!skipScan) for (const [name, enabled, script] of extraSources) {
+      if (!enabled) continue;
+      sourceRetries.set(name, () => runExtra(name, script));
+      await runExtra(name, script);
+    }
+
+    async function runLinkedIn() {
+      if (skipLinkedIn || skipScan) {
+        summary.linkedin = { status: 'skipped', reason: skipScan ? 'explicit --skip-scan' : 'explicit --skip-linkedin' };
+      } else {
+        const beforeLinkedIn = readPendingCount();
+        try {
+          const linkedinResult = await runCommand('scan-auth-linkedin', process.execPath, [
+            systemPath('scan-auth.mjs'), '--user', context.userId, 'linkedin',
+          ], { progress: scanAuthProgressLine });
+          const errorCount = Number(/Errors:\s*(\d+)/i.exec(linkedinResult.output)?.[1] || 0);
+          summary.linkedin = {
+            status: errorCount ? 'partial' : 'completed', errors: errorCount,
+            added_pending: Math.max(0, readPendingCount() - beforeLinkedIn),
+          };
+          if (errorCount) addPhaseIssue(summary, 'linkedin', `${errorCount} listing/search errors; see phase log`);
+          log(`LinkedIn added ${summary.linkedin.added_pending} pending job(s); queue now ${readPendingCount()}`);
+        } catch (error) {
+          const logText = `${error.output || ''}\n${error.tail || ''}\n${error.message}`;
+          if (/not logged in|captcha|account verification|login required/i.test(logText)) {
+            summary.linkedin = { status: 'needs-login', added_pending: 0 };
+            addAction(summary, { kind: 'source', phase: 'linkedin', reason: 'source_login',
+              question: `Run node scan-auth.mjs --user ${context.userId} --login linkedin in a separate terminal, then rerun the workflow.` });
+          } else {
+            if (interruptedSignal) throw error;
+            summary.linkedin = { status: 'failed', added_pending: Math.max(0, readPendingCount() - beforeLinkedIn), error: error.message };
+            addPhaseIssue(summary, 'linkedin', error);
+          }
         }
       }
+
     }
+    sourceRetries.set('linkedin', runLinkedIn);
+    await runLinkedIn();
 
     const discoveredPending = readPendingCount();
     const initialBatchState = readRunBatchState(context.userRoot);
-    // Finish durable output from interrupted runs before dispatching anything.
-    await mergeTracker(summary, 'merge-tracker-initial');
-    await runCommand('reconcile-pipeline-initial', process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
-    if (readPendingCount() > 0) {
-      await runCommand('cv-sync-check', process.execPath, [systemPath('cv-sync-check.mjs'), '--user', context.userId]);
+    let cycle = 0;
+    do {
+      requested = false;
+      cycle++;
+      // Finish durable output from interrupted runs before dispatching anything.
+      await mergeTracker(summary, 'merge-tracker-initial');
+      await runCommand('reconcile-pipeline-initial', process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
+      if (readPendingCount() > 0 || interactive?.active && readRunQueue(context.userRoot).blocked.length > 0) {
+        await runCommand('cv-sync-check', process.execPath, [systemPath('cv-sync-check.mjs'), '--user', context.userId]);
 
-      const livenessArgs = [systemPath('pipeline-liveness.mjs'), '--user', context.userId, '--json'];
-      if (throttle) livenessArgs.push(throttle);
-      if (noFallback) livenessArgs.push('--no-fallback');
-      try {
-        summary.liveness = parseJsonOutput(await runCommand('pipeline-liveness', process.execPath, livenessArgs, {
-          accept: [0, 2], maxStdout: 32 * 1024 * 1024,
-        }), 'pipeline-liveness');
-        if (summary.liveness.status !== 'completed') throw new Error('bulk liveness did not complete');
-        for (const warning of summary.liveness.tracker_warnings || []) addPhaseIssue(summary, 'liveness', warning.message);
-      } catch (error) {
-        if (interruptedSignal) throw error;
-        summary.liveness = { status: 'partial', error: error.message };
-        addPhaseIssue(summary, 'liveness', error);
-        // No verdict is inferred from a failed sweep. Workers still execute
-        // their canonical per-posting liveness/JD gate, including local jobs.
-      }
-
-      const priorBatchPause = existsSync(userPath(context, 'batch/batch-runner.paused')) || readRunBatchState(context.userRoot).some(row => row.status === 'paused_rate_limit');
-      if (priorBatchPause && !rawArgs.includes('--resume-paused')) addAction(summary, {
-        kind: 'batch', phase: 'batch', reason: 'rate_limit',
-        question: 'The batch is paused for a quota/session limit. Resolve it, then rerun the workflow with --resume-paused.',
-      });
-      for (let pass = 1; pass <= maxQueuePasses && (!priorBatchPause || rawArgs.includes('--resume-paused')); pass++) {
-        const queue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused: rawArgs.includes('--resume-paused') });
-        if (queue.length === 0) break;
-        checkBatchOwner();
-        const before = queueFingerprint(queue, readRunBatchState(context.userRoot));
-        summary.batch_sync = parseJsonOutput(await runCommand(`sync-pipeline-batch-${pass}`, process.execPath, [
-          systemPath('sync-pipeline-batch.mjs'), '--user', context.userId, '--json',
-        ], { maxStdout: 32 * 1024 * 1024 }), 'sync-pipeline-batch');
-        const queueFile = join(runDir, `queue-${pass}.txt`);
-        writeFileAtomic(queueFile, `${queue.map(row => row.url).join('\n')}\n`);
-        const batchArgs = [
-          '--user', context.userId, '--cli', batchCli,
-          '--parallel', String(parallelSettings.parallel),
-          '--defer-verification', '--include-pending', '--queue-file', queueFile,
-        ];
-        if (answerPath) batchArgs.push('--answers-file', answerPath);
-        if (batchLimit) batchArgs.push('--limit', batchLimit);
-        if (pass === 1 && rawArgs.includes('--retry-failed')) batchArgs.push('--retry-failed');
-        if (rawArgs.includes('--resume-paused')) batchArgs.push('--resume-paused');
-        if (batchCli === 'codex' && codexSettings.model) {
-          batchArgs.push('--model', codexSettings.model);
-        }
-        if (batchCli === 'codex' && codexSettings.reasoningEffort) {
-          batchArgs.push('--reasoning-effort', codexSettings.reasoningEffort);
-        }
-        log(`batch queue pass ${pass}: ${queue.length} runnable job(s)`);
-        summary.queue_passes = pass;
+        const livenessArgs = [systemPath('pipeline-liveness.mjs'), '--user', context.userId, '--json'];
+        if (throttle) livenessArgs.push(throttle);
+        if (noFallback) livenessArgs.push('--no-fallback');
         try {
-          await runCommand(`batch-${pass}`, systemPath('batch/batch-runner.sh'), batchArgs, { progress: true });
+          summary.liveness = parseJsonOutput(await runCommand('pipeline-liveness', process.execPath, livenessArgs, {
+            accept: [0, 2], maxStdout: 32 * 1024 * 1024,
+          }), 'pipeline-liveness');
+          if (summary.liveness.status !== 'completed') throw new Error('bulk liveness did not complete');
+          for (const warning of summary.liveness.tracker_warnings || []) addPhaseIssue(summary, 'liveness', warning.message);
         } catch (error) {
           if (interruptedSignal) throw error;
-          addPhaseIssue(summary, 'batch', error);
+          summary.liveness = { status: 'partial', error: error.message };
+          addPhaseIssue(summary, 'liveness', error);
+          // No verdict is inferred from a failed sweep. Workers still execute
+          // their canonical per-posting liveness/JD gate, including local jobs.
         }
-        checkBatchOwner();
-        await mergeTracker(summary, `merge-tracker-${pass}`);
-        await runCommand(`reconcile-pipeline-${pass}`, process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
-        for (const action of queueActions(context.userRoot, context.userId)) addAction(summary, action);
-        // A quota pause applies to this CLI/session, including following jobs
-        // and an explicit resume that immediately encounters the limit again.
-        if (existsSync(userPath(context, 'batch/batch-runner.paused'))) break;
-        const afterQueue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused: rawArgs.includes('--resume-paused') });
-        if (batchLimit || queueFingerprint(afterQueue, readRunBatchState(context.userRoot)) === before) break;
+
+        const priorBatchPause = existsSync(userPath(context, 'batch/batch-runner.paused')) || readRunBatchState(context.userRoot).some(row => row.status === 'paused_rate_limit');
+        if (priorBatchPause && !resumePaused) addAction(summary, {
+          kind: 'batch', phase: 'batch', reason: 'rate_limit',
+          question: 'The batch is paused for a quota/session limit. Resolve it, then rerun the workflow with --resume-paused.',
+        });
+        for (let pass = 1; pass <= maxQueuePasses && (!priorBatchPause || resumePaused); pass++) {
+          const queue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused })
+            .filter(row => !interactive || !batchLimit || admittedUrls.size < Number(batchLimit) || admittedUrls.has(row.url));
+          if (queue.length === 0 && !(interactive?.active && readRunQueue(context.userRoot).pending.length && interactive.questions.some(action => action.kind === 'job'))) break;
+          checkBatchOwner();
+          const before = queueFingerprint(queue, readRunBatchState(context.userRoot));
+          summary.batch_sync = parseJsonOutput(await runCommand(`sync-pipeline-batch-${pass}`, process.execPath, [
+            systemPath('sync-pipeline-batch.mjs'), '--user', context.userId, '--json',
+          ], { maxStdout: 32 * 1024 * 1024 }), 'sync-pipeline-batch');
+          const queueFile = join(runDir, `queue-${cycle}-${pass}.txt`);
+          writeFileAtomic(queueFile, `${queue.map(row => row.url).join('\n')}\n`);
+          const batchArgs = [
+            '--user', context.userId, '--cli', batchCli,
+            '--parallel', String(parallelSettings.parallel),
+            '--defer-verification', '--include-pending', '--queue-file', queueFile,
+          ];
+          if (answerPath) batchArgs.push('--answers-file', answerPath);
+          if (batchLimit) batchArgs.push('--limit', batchLimit);
+          if (cycle === 1 && pass === 1 && rawArgs.includes('--retry-failed')) batchArgs.push('--retry-failed');
+          if (resumePaused) batchArgs.push('--resume-paused');
+          if (batchCli === 'codex' && codexSettings.model) {
+            batchArgs.push('--model', codexSettings.model);
+          }
+          if (batchCli === 'codex' && codexSettings.reasoningEffort) {
+            batchArgs.push('--reasoning-effort', codexSettings.reasoningEffort);
+          }
+          if (interactive) {
+            const all = readRunQueue(context.userRoot);
+            writeFileAtomic(queueFile, [...new Set(all.pending.map(row => row.url))].join('\n') + '\n');
+          }
+          log(`batch queue pass ${pass}: ${queue.length} runnable job(s)`);
+          summary.queue_passes++;
+          try {
+            let monitor = null;
+            let monitorError = null;
+            let liveControlPath = null;
+            let monitorTask = null;
+            if (interactive?.active) {
+              // Keep consumed answers/retry tokens across verification and
+              // source-retry cycles within this workflow invocation.
+              const controlPath = join(runDir, 'live-inputs.json');
+              liveControlPath = controlPath;
+              let monitoring = false;
+              const publish = async () => {
+                if (monitoring) return;
+                monitoring = true;
+                try {
+                  if (interactive.error) throw interactive.error;
+                  const synced = await synchronizeBatch({ userRoot: context.userRoot, user: context.userId, pipelinePath });
+                  if (synced.status !== 'completed') throw new Error(synced.error);
+                  const all = readRunQueue(context.userRoot);
+                  writeFileAtomic(queueFile, [...new Set(all.pending.map(row => row.url))].join('\n') + '\n');
+                  if (existsSync(`${controlPath}.dispatch.json`)) {
+                    for (const item of JSON.parse(readFileSync(`${controlPath}.dispatch.json`, 'utf8'))) admittedUrls.add(item.url);
+                  }
+                  interactive.refresh();
+                  const statusPath = `${controlPath}.status.json`;
+                  const feedback = existsSync(statusPath) ? JSON.parse(readFileSync(statusPath, 'utf8')) : null;
+                  const finish = !interactive.active || (feedback?.status === 'idle' && !interactive.questions.length && !interactive.tasks.size);
+                  writeFileAtomic(controlPath, JSON.stringify({ schema_version: 1, user: context.userId, owner_pid: process.pid,
+                    status: finish ? 'finish' : 'open', admitted_urls: [...admittedUrls], retries: [...retries].map(([url, token]) => ({ url, token })) }));
+                } catch (error) {
+                  monitorError = error;
+                  writeFileAtomic(controlPath, JSON.stringify({ schema_version: 1, user: context.userId, owner_pid: process.pid, status: 'finish', retries: [] }));
+                } finally { monitoring = false; }
+              };
+              await publish();
+              batchArgs.push('--live-inputs', controlPath);
+              monitor = setInterval(() => {
+                if (!monitorTask) monitorTask = publish().finally(() => { monitorTask = null; });
+              }, 250);
+            }
+            try { await runCommand(`batch-${pass}`, systemPath('batch/batch-runner.sh'), batchArgs, { progress: true }); }
+            finally {
+              clearInterval(monitor);
+              if (monitorTask) await monitorTask;
+              if (liveControlPath && existsSync(`${liveControlPath}.dispatch.json`)) {
+                const dispatched = JSON.parse(readFileSync(`${liveControlPath}.dispatch.json`, 'utf8'));
+                for (const item of dispatched) {
+                  admittedUrls.add(item.url);
+                  if (`retry:${retries.get(item.url)}` === item.token) retries.delete(item.url);
+                  if (pendingAnswers.get(item.url) === item.answer_token) pendingAnswers.delete(item.url);
+                }
+              }
+            }
+            if (monitorError) throw monitorError;
+          } catch (error) {
+            if (interruptedSignal) throw error;
+            addPhaseIssue(summary, 'batch', error);
+          }
+          if (interactive) requested = [...retries.keys(), ...pendingAnswers.keys()]
+            .some(url => !batchLimit || admittedUrls.size < Number(batchLimit) || admittedUrls.has(url));
+          checkBatchOwner();
+          await mergeTracker(summary, `merge-tracker-${pass}`);
+          await runCommand(`reconcile-pipeline-${pass}`, process.execPath, [systemPath('reconcile-pipeline.mjs'), '--user', context.userId]);
+          for (const action of queueActions(context.userRoot, context.userId)) addAction(summary, action);
+          // A quota pause applies to this CLI/session, including following jobs
+          // and an explicit resume that immediately encounters the limit again.
+          if (existsSync(userPath(context, 'batch/batch-runner.paused'))) break;
+          const afterQueue = actionableQueue(context.userRoot, context.userId, answers, { resumePaused });
+          if (interactive || batchLimit || queueFingerprint(afterQueue, readRunBatchState(context.userRoot)) === before) break;
+        }
       }
-    }
-    const finalQueue = readRunQueue(context.userRoot);
-    const currentJobs = queueActions(context.userRoot, context.userId);
-    summary.manual_actions = summary.manual_actions.filter(action => action.kind !== 'job');
-    for (const action of currentJobs) addAction(summary, action);
-    const finalStates = readRunBatchState(context.userRoot);
-    const pendingUrls = new Set(finalQueue.pending.map(row => row.url));
-    for (const state of finalStates) {
-      if (!pendingUrls.has(state.url)) continue;
-      if (state.status === 'paused_rate_limit') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
-        url: state.url, reason: 'rate_limit', question: `Wait for the CLI quota/session reset, then rerun the workflow with --resume-paused. ${state.error || ''}` });
-      if (state.status === 'failed') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
-        url: state.url, reason: 'job_failed', question: `Inspect batch job #${state.id} and retry after correcting its failure: ${state.error || 'see worker log'}` });
-    }
-    const changedStates = finalStates.filter(row => {
-      const before = initialBatchState.find(old => old.id === row.id && old.url === row.url);
-      return !before || row.status !== before.status || row.retries !== before.retries || row.startedAt !== before.startedAt;
-    });
-    summary.batch_counts = Object.fromEntries(['completed', 'skipped', 'failed', 'needs_confirmation', 'paused_rate_limit', 'processing']
-      .map(status => [status, changedStates.filter(row => row.status === status).length]));
-    summary.pipeline = { status: finalQueue.pending.length || finalQueue.blocked.length ? 'partial' : 'completed',
-      processed: Math.max(0, discoveredPending - finalQueue.pending.length), limit: batchLimit ? Number(batchLimit) : null };
+      if (interactive) {
+        await interactive.wait({ until: () => requested });
+        if (interruptedSignal) throw new Error(`interrupted by ${interruptedSignal}`);
+        if (requested && interactive.active) continue;
+      }
+      const finalQueue = readRunQueue(context.userRoot);
+      const currentJobs = queueActions(context.userRoot, context.userId);
+      summary.manual_actions = summary.manual_actions.filter(action => action.kind !== 'job');
+      for (const action of currentJobs) addAction(summary, action);
+      const finalStates = readRunBatchState(context.userRoot);
+      const pendingUrls = new Set(finalQueue.pending.map(row => row.url));
+      for (const state of finalStates) {
+        if (!pendingUrls.has(state.url)) continue;
+        if (state.status === 'paused_rate_limit') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
+          url: state.url, reason: 'rate_limit', question: `Wait for the CLI quota/session reset, then rerun the workflow with --resume-paused. ${state.error || ''}` });
+        if (state.status === 'failed') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
+          url: state.url, reason: 'job_failed', question: `Inspect batch job #${state.id} and retry after correcting its failure: ${state.error || 'see worker log'}` });
+      }
+      const changedStates = finalStates.filter(row => {
+        const before = initialBatchState.find(old => old.id === row.id && old.url === row.url);
+        return !before || row.status !== before.status || row.retries !== before.retries || row.startedAt !== before.startedAt;
+      });
+      summary.batch_counts = Object.fromEntries(['completed', 'skipped', 'failed', 'needs_confirmation', 'paused_rate_limit', 'processing']
+        .map(status => [status, changedStates.filter(row => row.status === status).length]));
+      summary.pipeline = { status: finalQueue.pending.length || finalQueue.blocked.length ? 'partial' : 'completed',
+        processed: Math.max(0, discoveredPending - finalQueue.pending.length), limit: batchLimit ? Number(batchLimit) : null };
 
-    const verifyArgs = [systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli, '--json'];
-    verifyArgs.push('--parallel', String(parallelSettings.parallel));
-    if (codexSettings.model) verifyArgs.push('--codex-model', codexSettings.model);
-    if (codexSettings.reasoningEffort) verifyArgs.push('--codex-reasoning-effort', codexSettings.reasoningEffort);
-    if (quiet) verifyArgs.push('--quiet');
-    if (resumeVerify) verifyArgs.push('--resume-run', resumeVerify);
-    const reviewedVerification = parseJsonOutput(
-      await runCommand('verify-reviewed', process.execPath, verifyArgs, { accept: [0, 1], maxStdout: 64 * 1024 * 1024 }),
-      'verify-reviewed',
-    );
-    if (!['completed', 'partial', 'failed'].includes(reviewedVerification.status) ||
-        typeof reviewedVerification.needs_human_review !== 'boolean' ||
-        !Array.isArray(reviewedVerification.unresolved_findings)) {
-      throw new Error('verify-reviewed returned an invalid completion contract');
-    }
-    if (reviewedVerification.status === 'failed') {
+      const verifyArgs = [systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli, '--json'];
+      verifyArgs.push('--parallel', String(parallelSettings.parallel));
+      if (codexSettings.model) verifyArgs.push('--codex-model', codexSettings.model);
+      if (codexSettings.reasoningEffort) verifyArgs.push('--codex-reasoning-effort', codexSettings.reasoningEffort);
+      if (quiet) verifyArgs.push('--quiet');
+      if (resumeVerify) verifyArgs.push('--resume-run', resumeVerify);
+      const reviewedVerification = parseJsonOutput(
+        await runCommand('verify-reviewed', process.execPath, verifyArgs, { accept: [0, 1], maxStdout: 64 * 1024 * 1024 }),
+        'verify-reviewed',
+      );
+      if (!['completed', 'partial', 'failed'].includes(reviewedVerification.status) ||
+          typeof reviewedVerification.needs_human_review !== 'boolean' ||
+          !Array.isArray(reviewedVerification.unresolved_findings)) {
+        throw new Error('verify-reviewed returned an invalid completion contract');
+      }
+      if (reviewedVerification.status === 'failed') {
+        summary.verification_review = reviewedVerification;
+        throw new Error(`verify-reviewed failed: ${reviewedVerification.error || 'unknown failure'}`);
+      }
+      if (reviewedVerification.status === 'partial' && !reviewedVerification.needs_human_review) {
+        addPhaseIssue(summary, 'verification', 'reviewed verification is partial');
+      }
       summary.verification_review = reviewedVerification;
-      throw new Error(`verify-reviewed failed: ${reviewedVerification.error || 'unknown failure'}`);
-    }
-    if (reviewedVerification.status === 'partial' && !reviewedVerification.needs_human_review) {
-      addPhaseIssue(summary, 'verification', 'reviewed verification is partial');
-    }
-    summary.verification_review = reviewedVerification;
-    summary.verification = reviewedVerification.final_verification;
-    if (reviewedVerification.needs_human_review) for (const finding of reviewedVerification.unresolved_findings) {
-      addAction(summary, { kind: 'verification', phase: 'verification',
-        id: finding.finding_id || finding.id || `finding-${summary.manual_actions.length}`,
-        reason: finding.finding_code || finding.code || 'integrity_review',
-        question: finding.message || 'Review the unresolved verifier finding in the run artifacts.' });
-    }
-    summary.needs_human_review = reviewedVerification.needs_human_review || summary.manual_actions.length > 0;
-    summary.warning_triage = {
-      status: reviewedVerification.passes > 0 ? 'completed' : 'skipped',
-      needs_human_review: reviewedVerification.needs_human_review,
-      warnings: reviewedVerification.unresolved_findings,
-      seen: reviewedVerification.seen_findings,
-    };
-    summary.duplicate_resolution = reviewedVerification.actions;
+      summary.verification = reviewedVerification.final_verification;
+      if (reviewedVerification.needs_human_review) for (const finding of reviewedVerification.unresolved_findings) {
+        addAction(summary, { kind: 'verification', phase: 'verification',
+          id: finding.finding_id || finding.id || `finding-${summary.manual_actions.length}`,
+          reason: finding.finding_code || finding.code || 'integrity_review',
+          question: finding.message || 'Review the unresolved verifier finding in the run artifacts.' });
+      }
+      if (interactive?.active) {
+        requested = false;
+        await interactive.wait();
+        if (interruptedSignal) throw new Error(`interrupted by ${interruptedSignal}`);
+        if (requested) {
+          summary.manual_actions = summary.manual_actions.filter(action => action.kind !== 'verification');
+          continue;
+        }
+      }
+      summary.needs_human_review = reviewedVerification.needs_human_review || summary.manual_actions.length > 0;
+      summary.warning_triage = {
+        status: reviewedVerification.passes > 0 ? 'completed' : 'skipped',
+        needs_human_review: reviewedVerification.needs_human_review,
+        warnings: reviewedVerification.unresolved_findings,
+        seen: reviewedVerification.seen_findings,
+      };
+      summary.duplicate_resolution = reviewedVerification.actions;
 
-    checkBatchOwner();
-    const remainingQueue = readRunQueue(context.userRoot);
-    summary.final_pending = remainingQueue.pending.length;
-    summary.final_blocked = remainingQueue.blocked.length;
-    summary.remaining = summary.final_pending + summary.final_blocked;
-    summary.user_action = summary.manual_actions.length ? 'Resolve the listed manual actions and rerun with exact per-posting answers where needed.' : null;
-    summary.status = summary.remaining === 0 && !summary.needs_human_review && summary.issues.length === 0 ? 'completed' : 'partial';
-    return summary;
+      checkBatchOwner();
+      const remainingQueue = readRunQueue(context.userRoot);
+      summary.final_pending = remainingQueue.pending.length;
+      summary.final_blocked = remainingQueue.blocked.length;
+      summary.remaining = summary.final_pending + summary.final_blocked;
+      summary.user_action = summary.manual_actions.length ? 'Resolve the listed manual actions and rerun with exact per-posting answers where needed.' : null;
+      summary.status = summary.remaining === 0 && !summary.needs_human_review && summary.issues.length === 0 ? 'completed' : 'partial';
+      return summary;
+    } while (true);
   } catch (error) {
     summary.status = interruptedSignal ? 'interrupted' : 'failed';
     summary.error = error.message;
@@ -826,6 +986,8 @@ async function main() {
     return summary;
   } finally {
     if (stoppingChildren) await stoppingChildren;
+    interactive?.close();
+    if (interactive?.tasks.size) await Promise.allSettled([...interactive.tasks]);
     summary.finished_at = new Date().toISOString();
     if (lockOwned) {
       try {
@@ -867,6 +1029,8 @@ async function main() {
         log(`completed-run compaction failed: ${error.message}`);
       }
     }
+    terminal?.close();
+    terminal = null;
     releaseLock();
   }
 }
