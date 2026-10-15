@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const BLACKLIST_DIR  = path.join(getCareerOpsRoot(), 'data');
 function readSystemFile(relPath) {
   try { return fs.readFileSync(path.join(CODE_ROOT, relPath), 'utf-8'); }
   catch { return null; }
@@ -8,9 +9,11 @@ import { outputLanguageInstruction, parseOutputLanguage } from './profile-langua
 import { TSV_ADDITION_HEADER } from './tracker-parse.mjs';
 import { normalizedTrackerScore } from './lib/tracker-addition.mjs';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { formatReportNumber, releaseReportNumbers, reserveReportNumbers } from './reserve-report-num.mjs';
 import { TokenAccumulator, formatBreakdown, normalizeOpenAIUsage } from './utils/token-tracker.mjs';
 import { DEFAULT_USER_AGENT } from './user-agent.mjs';
 import { buildTitleFilter } from './title-keywords.mjs';
+import { appendToPipeline, appendToScanHistory } from './scan.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
@@ -40,13 +43,10 @@ import * as yaml from 'js-yaml';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const invokedDirectly = isMainModule(import.meta.url);
-const helpRequested = invokedDirectly && process.argv.slice(2).some(arg => ['help', '--help', '-h'].includes(arg));
-const { formatReportNumber, releaseReportNumbers, reserveReportNumbers } = helpRequested ? {} : await import('./reserve-report-num.mjs');
-const { appendToPipeline, appendToScanHistory } = helpRequested ? {} : await import('./scan.mjs');
 let userContext = null;
 if (invokedDirectly) {
   try {
-    userContext = getUserContext(process.argv.slice(2), { requireUser: !helpRequested });
+    userContext = getUserContext(process.argv.slice(2));
   } catch (err) {
     printUserContextErrorAndExit(err);
   }
@@ -102,11 +102,10 @@ let freeModels = null;   // string[]
 let modelIndex = 0;      // current position in rotation
 
 // Persistent blacklist file — survives process restarts
-const BLACKLIST_FILE = helpRequested ? null : userContext
+const BLACKLIST_FILE = userContext
   ? userPath(userContext, 'data/model-blacklist.json')
   : path.join(getCareerOpsRoot(), 'data', 'model-blacklist.json');
 function loadPersistedBlacklist() {
-  if (!BLACKLIST_FILE) return [];
   try {
     const data = JSON.parse(fs.readFileSync(BLACKLIST_FILE, 'utf-8'));
     return Array.isArray(data) ? data : [];
@@ -114,7 +113,7 @@ function loadPersistedBlacklist() {
 }
 function saveBlacklist(set) {
   try {
-    fs.mkdirSync(path.dirname(BLACKLIST_FILE), { recursive: true });
+    fs.mkdirSync(BLACKLIST_DIR, { recursive: true });
     fs.writeFileSync(BLACKLIST_FILE, JSON.stringify([...set], null, 2), 'utf-8');
   } catch {}
 }
@@ -195,7 +194,7 @@ async function cmdModels() {
 // present, or skip one it had never seen. The default is unchanged: with no
 // env and no .career-ops-data marker, getCareerOpsRoot() returns the same
 // directory __dirname did.
-const DATA_ROOT = helpRequested ? null : getCareerOpsRoot();
+const DATA_ROOT = getCareerOpsRoot();
 // System-layer files ship with the code and never follow the data root: a data
 // root outside the checkout holds cv.md and modes/_profile.md, but no
 // modes/_shared.md or modes/oferta.md. Read through readFile() those came back
@@ -918,7 +917,7 @@ async function cmdApply(ref, ctx) {
 // Only run the CLI when invoked directly (`node openrouter-runner.mjs ...`), so the
 // module can be imported (e.g. by test-all.mjs) without executing a command.
 const [command, ...args] = invokedDirectly ? userContext.args : [];
-const ctx = invokedDirectly && !helpRequested ? loadContext() : null;
+const ctx = invokedDirectly ? loadContext() : null;
 
 // Load free models list before running any AI command (skip when a model is pinned)
 if (invokedDirectly && ['evaluate', 'eval', 'pipeline', 'apply', 'models'].includes(command) && !process.env.CAREER_OPS_MODEL) {

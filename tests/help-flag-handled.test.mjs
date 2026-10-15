@@ -177,7 +177,7 @@ test('-h is accepted wherever --help is, and suppresses the same work', () => {
 const KNOWN_WITHOUT_HELP = new Set([
   'batch-evaluate-gemini.mjs', 'cv-templates.mjs', 'fetch-jd.mjs', 'followup-seed.mjs',
   'generate-cover-letter.mjs', 'generate-pdf.mjs', 'intake.mjs',
-  'match-star.mjs', 'plugins.mjs',
+  'match-star.mjs', 'openrouter-runner.mjs', 'plugins.mjs',
   'seed-fixture.mjs',
   'validate-plugin-registry.mjs', 'validate-untrusted-content-coverage.mjs',
   // generate-latex.mjs and verify-portals.mjs were here and have since been
