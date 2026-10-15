@@ -89,6 +89,26 @@ test('pasted JD tabs survive terminal submission and persistence with sanitized 
   assert.equal(saved.answers[0].jd_text, jd, 'the stored evaluation input retains original tabs and word boundaries');
 });
 
+test('C1 paste controls cannot hide editable characters or displace the cursor', async t => {
+  const f = terminal(t);
+  f.ui.setQuestion({ key: 'c1', title: 'JD', question: 'Paste text', position: 1, total: 1, multiline: true, submit() {} });
+  const cursorColumn = () => Number([...f.text().matchAll(/\x1b\[\d+;(\d+)H\x1b\[\?25h/g)].at(-1)[1]);
+  f.input.write('\x1b[200~ab\u009b2Jcd\x1b[201~');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.ui.draft.join(''), 'ab2Jcd');
+  assert.match(stripVTControlCharacters(f.text()), /> ab2Jcd/);
+  assert.equal(cursorColumn(), 9, 'the cursor follows the six visible characters and prompt');
+  f.input.write('\x1b[D\x7f');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.ui.draft.join(''), 'ab2Jd');
+  assert.equal(f.ui.cursor, 4); assert.equal(cursorColumn(), 7);
+  f.input.write('\x15');
+  f.input.write(`\x1b[200~A${String.fromCodePoint(...Array.from({ length: 32 }, (_, i) => 0x80 + i))}\tB\r\nC\x1b[201~`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.ui.draft.join(''), 'A\tB\nC', 'all C1 controls are removed while tabs and normalized newlines survive');
+  assert.equal(cursorColumn(), 4);
+});
+
 test('live scheduling uses exact queue/answer identity, bounded retries, terminal states and owner liveness', t => {
   const userRoot = root(t);
   const controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');
