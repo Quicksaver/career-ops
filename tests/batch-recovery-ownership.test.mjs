@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { ROOT, getBash, rmSync, linkNodeModules } from './helpers.mjs';
 import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 import { inspectOwnership, ownershipPath, releaseOwnership } from '../batch/runner-ownership.mjs';
-import { validateWorkerArtifacts } from '../batch/validate-worker-artifacts.mjs';
+import { validateWorkerArtifacts, postingIdentity } from '../batch/validate-worker-artifacts.mjs';
 import { pathToFileURL } from 'node:url';
 import { processAlive } from '../lib/run-artifacts.mjs';
 import { terminateProcessTreeSync } from '../lib/runner-command.mjs';
@@ -393,6 +393,13 @@ test('strict validator rejects wrong report target and unrelated posting URL; so
     tracker(posting(1)); assert.equal(validate({expectedUrl:local}).valid,true);
     tracker(posting(3)); assert.equal(validate({expectedUrl:local}).valid,true);
     tracker(posting(2)); assert.equal(validate({expectedUrl:local}).valid,false);
+    const spaced='https://tracking.example/jobs/123?title=Tech Lead, Android Core Product - Bologna, Italy&source=linkedin';
+    writeFileSync(join(f.root,'jds/captured.md'),`---\nsource_url: ${posting(1)}\napplication_url: "${spaced}"\n---\nCaptured JD`);
+    for(const value of [spaced,spaced.replaceAll(' ','%20'),new URL(spaced).href]) {
+      tracker(value);assert.equal(validate({expectedUrl:local}).valid,true,value);
+    }
+    tracker(spaced.replace('/123?','/999?'));assert.equal(validate({expectedUrl:local}).valid,false);
+    tracker(spaced.replace('Tech Lead','Another role'));assert.equal(validate({expectedUrl:local}).valid,false);
     const answersPath=join(f.root,'answers.json'); writeFileSync(answersPath,JSON.stringify({schema_version:1,user:'fixture',answers:[{url:posting(1),reason:'jd_unavailable',answer:'employer alternative',employer_url:posting(3)}]}));
     tracker(posting(3)); assert.equal(validate({answersPath,user:'fixture'}).valid,true);
     const env={...process.env,CAREER_OPS_ROOT:f.root,CAREER_OPS_DATA_DIR:f.root}; delete env.CAREER_OPS_USER;
@@ -400,4 +407,13 @@ test('strict validator rejects wrong report target and unrelated posting URL; so
     assert.equal(cli.status,0,cli.stderr);
     tracker(posting(2)); assert.equal(validate({answersPath,user:'fixture'}).valid,false);
   } finally { rmSync(f.root,{recursive:true,force:true}); }
+});
+
+test('posting identity encodes literal spaces without loosening public URL or control-byte checks', () => {
+  const raw='https://jobs.example.com/Android Core?title=Tech Lead&source=linkedin';
+  assert.equal(postingIdentity(raw),postingIdentity(raw.replaceAll(' ','%20')));
+  assert.equal(postingIdentity(raw),postingIdentity('https://jobs.example.com/Android%20Core?source=linkedin&title=Tech+Lead'));
+  for(const value of ['https://localhost/job title','https://127.0.0.1/job title','https://10.0.0.1/job title',
+    'https://user:password@example.com/job title','https://exa mple.com/job','https://example.com/job\ttitle',
+    'https://example.com/job\ntitle','https://example.com/job\rtitle','file:///job title',null]) assert.equal(postingIdentity(value),null,String(value));
 });

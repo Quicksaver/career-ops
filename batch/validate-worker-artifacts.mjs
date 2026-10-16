@@ -78,8 +78,12 @@ function scoreNumber(score) {
 
 export function postingIdentity(value) {
   if (validLocal(value)) return value;
-  if (!validUrl(value)) return null;
-  const url = new URL(value);
+  // Browser-captured application links can contain literal spaces in a path or
+  // query value. Compare their encoded identity, while keeping control bytes,
+  // private hosts and credentials subject to the same public-URL validation.
+  const encoded = typeof value === 'string' ? value.replaceAll(' ', '%20') : value;
+  if (!validUrl(encoded)) return null;
+  const url = new URL(encoded);
   promoteKnownFragmentIdentity(url);
   url.hash = '';
   url.searchParams.sort();
