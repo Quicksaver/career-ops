@@ -30,7 +30,7 @@ import { flagValue, validateFlags } from './lib/cli-flags.mjs';
 import { withPipelineLock, LockTimeoutError } from './pipeline-lock.mjs';
 import { writeFileAtomic } from './tracker-utils.mjs';
 import { parsePendingRows, parseBlockedRows, pendingCount } from './lib/pipeline-queue.mjs';
-import { JD_SKIP_REASON } from './batch/manual-inputs.mjs';
+import { JD_SKIP_REASON, JOB_SKIP_REASON } from './batch/manual-inputs.mjs';
 
 const CAREER_OPS = getCareerOpsRoot();
 
@@ -109,7 +109,8 @@ for (const line of readFileSync(STATE_FILE, 'utf-8').split(/\r?\n/)) {
   if (status !== 'completed' && status !== 'skipped') continue;
   if (!url || !url.trim()) continue;
   DONE.set(url.trim(), { reportNum: (reportNum || '').trim(), score: (score || '').trim(),
-    jdSkipped: status === 'skipped' && reason === JD_SKIP_REASON && reportNum === '-' && score === '-' });
+    jdSkipped: status === 'skipped' && reason === JD_SKIP_REASON && reportNum === '-' && score === '-',
+    jobSkipped: status === 'skipped' && reason === JOB_SKIP_REASON && reportNum === '-' && score === '-' });
 }
 
 if (DONE.size === 0) {
@@ -187,7 +188,7 @@ const SECTION_RE = /^##\s+/;
 function reconcile() {
   const text = readFileSync(PIPELINE_FILE, 'utf-8');
   const parsed = parsePendingRows(text);
-  const resolvedRows = [...parsed.rows, ...parseBlockedRows(text).rows.filter(row => DONE.get(row.url)?.jdSkipped)];
+  const resolvedRows = [...parsed.rows, ...parseBlockedRows(text).rows.filter(row => DONE.get(row.url)?.jdSkipped || DONE.get(row.url)?.jobSkipped)];
   const lines = parsed.lines;
 
   let pendStart = -1, procStart = -1;
@@ -240,10 +241,10 @@ function reconcile() {
       continue;
     }
 
-    if (done.jdSkipped) {
-      movedProcLines.push(`- [x] — | ${url} | Skipped: user cannot supply the missing JD`);
+    if (done.jdSkipped || done.jobSkipped) {
+      movedProcLines.push(`- [x] — | ${url} | Skipped: ${done.jdSkipped ? 'user cannot supply the missing JD' : 'user discarded the failed job'}`);
       removeIdx.add(i);
-      moved.push({ url, jdSkipped: true });
+      moved.push({ url, jdSkipped: done.jdSkipped, jobSkipped: done.jobSkipped });
       procUrls.add(url);
       continue;
     }
@@ -309,7 +310,7 @@ function reconcile() {
 
   const realMoves = moved.filter(m => !m.dup);
   console.log(`🔄 ${realMoves.length} processed entr${realMoves.length === 1 ? 'y' : 'ies'} moved Pendientes → Procesadas:`);
-  for (const m of realMoves) console.log(m.jdSkipped ? `   + Skipped ${m.url}: user cannot supply the missing JD` : `   + #${m.num} ${m.company} — ${m.role} (${m.score})`);
+  for (const m of realMoves) console.log(m.jdSkipped || m.jobSkipped ? `   + Skipped ${m.url}: ${m.jdSkipped ? 'user cannot supply the missing JD' : 'user discarded the failed job'}` : `   + #${m.num} ${m.company} — ${m.role} (${m.score})`);
   const dups = moved.filter(m => m.dup);
   if (dups.length) console.log(`🧹 ${dups.length} stale Pendientes entr${dups.length === 1 ? 'y' : 'ies'} dropped (already in Procesadas).`);
   console.log(`📋 Pendientes now: ${newCount} entr${newCount === 1 ? 'y' : 'ies'}`);

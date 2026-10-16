@@ -139,6 +139,27 @@ test('empty Ctrl+D resolves a missing-JD job as skipped and only the deferred si
   assert.equal((await restarted.completion).result.final_blocked, 1);
 });
 
+test('an exhausted failed job can be skipped from the real interactive coordinator and stays terminal after restart', async t => {
+  const f = fixture(t, { rows: [A] });
+  writeFileSync(join(f.user, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\tfixture\t\n`);
+  writeFileSync(join(f.user, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n1\t${A}\tfailed\t\t\t042\t-\tstale posting\t9\n`);
+  const run = f.startInteractive(['--skip-scan']);
+  await until(() => run.output().includes('/skip: discard job'), 'failed-job skip help never appeared');
+  run.send('/skip\r');
+  const result = await run.completion;
+  assert.equal(result.code, 0, result.output.slice(-6000));
+  assert.equal(result.result.status, 'completed');
+  assert.equal(result.result.batch_counts.skipped, 1);
+  assert.deepEqual(JSON.parse(f.read('data/manual-answers.json')).answers, [{ url: A, reason: 'job_failed', answer: '', resolution: 'skip' }]);
+  assert.equal(f.records('skipped.jsonl').length, 1);
+  assert.equal(f.records('completed.jsonl').length, 0, 'discarding never claims an evaluation completed');
+  const restarted = f.startInteractive(['--skip-scan']);
+  const resumed = await restarted.completion;
+  assert.equal(resumed.code, 0, resumed.output.slice(-4000));
+  assert.equal(f.records('skipped.jsonl').length, 1);
+  assert.ok(!resumed.output.includes('job failed'));
+});
+
 test('/finish leaves idle input with holds intact and terminal cleanup emitted', async t => {
   const f = fixture(t, { rows: [`- [!] ${A} | confirm agency`] });
   const run = f.startInteractive();

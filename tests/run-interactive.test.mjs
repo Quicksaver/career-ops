@@ -247,6 +247,45 @@ test('live scheduling uses exact queue/answer identity, bounded retries, termina
   assert.throws(next, /coordinator exited/);
 });
 
+test('failed-job prompts accept a durable skip and show its command without retrying', async t => {
+  const f = terminal(t), userRoot = root(t);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [ ] ${A}\n- [ ] ${B}\n\n## Processed\n`);
+  writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tfailed\t\t\t001\t-\tstale listing\t9\n2\t${B}\tfailed\t\t\t002\t-\tinterrupted\t9\n`);
+  const accepted = [];
+  const interactive = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'fixture', manual_actions: [] },
+    onAnswer: async answer => accepted.push(answer), onRetry: () => assert.fail('skip must not request another evaluation') });
+  t.after(() => interactive.close());
+  assert.equal(f.ui.question.reason, 'job_failed');
+  assert.match(f.text(), /\/skip: discard job/);
+  f.input.write('/skip\r');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(accepted, [{ url: A, reason: 'job_failed', answer: '', resolution: 'skip' }]);
+  assert.deepEqual(JSON.parse(readFileSync(join(userRoot, 'data/manual-answers.json'))).answers, accepted);
+  assert.equal(f.ui.question.url, B);
+  interactive.close();
+  const restarted = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'next', manual_actions: [] },
+    onAnswer: () => {}, onRetry: () => assert.fail('no retry') });
+  t.after(() => restarted.close());
+  assert.equal(f.ui.question.url, B, 'persisted skip waits for the batch owner without asking again');
+});
+
+test('live owner admits a failed-job skip above its retry ceiling exactly once, but never an active or terminal job', t => {
+  const userRoot = root(t);
+  const controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');
+  writeFileSync(controlPath, JSON.stringify({ schema_version: 1, user: 'fictional', owner_pid: process.pid, status: 'open', retries: [] }));
+  writeFileSync(join(userRoot, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\t\t\n2\t${B}\t\t\n`);
+  writeFileSync(queuePath, A + '\n' + B + '\n');
+  const state = status => writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\t${status}\t\t\t001\t-\terror\t9\n2\t${B}\tfailed\t\t\t002\t-\terror\t9\n`);
+  writeFileSync(answersPath, JSON.stringify({ schema_version: 1, user: 'fictional', answers: [{ url: A, reason: 'job_failed', answer: '', resolution: 'skip' }] }));
+  const next = () => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath });
+  for (const status of ['processing', 'completed', 'skipped']) { state(status); assert.equal(next().status, 'idle'); }
+  state('failed');
+  const selected = next().selected;
+  assert.equal(selected.url, A); assert.equal(selected.explicitRetry, false);
+  assert.match(selected.token, /^answer:/);
+  assert.equal(next().status, 'idle', 'neither the same skip nor unrelated failed jobs dispatch again');
+});
+
 test('live retries stop at the ceiling, scope explicit requests, and count limits by unique posting', t => {
   const userRoot = root(t);
   const controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');

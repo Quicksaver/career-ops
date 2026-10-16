@@ -4,6 +4,7 @@ import { isMainModule } from '../lib/is-main-module.mjs';
 
 export const HOLD_REASONS = ['agency_confirmation', 'jd_unavailable'];
 export const JD_SKIP_REASON = 'user-skipped-jd-unavailable';
+export const JOB_SKIP_REASON = 'user-skipped-failed-job';
 export function validLocal(value, userRoot = null) {
   if (typeof value !== 'string' || !value.startsWith('local:jds/')) return false;
   const path = value.slice(6);
@@ -37,11 +38,12 @@ export function loadAnswers(path, user, userRoot = null) {
   if (data.schema_version !== 1 || data.user !== user || !Array.isArray(data.answers)) throw new Error('answers file must have schema_version 1, matching user, and answers array');
   const keys = new Set();
   for (const a of data.answers) {
-    if (!a || !validPosting(a.url, userRoot) || !HOLD_REASONS.includes(a.reason) || typeof a.answer !== 'string') throw new Error('invalid exact-URL manual answer');
+    if (!a || !validPosting(a.url, userRoot) || ![...HOLD_REASONS, 'job_failed'].includes(a.reason) || typeof a.answer !== 'string') throw new Error('invalid exact-URL manual answer');
     if (a.resolution !== undefined && a.resolution !== 'skip') throw new Error('invalid manual answer resolution');
     if (a.resolution === 'skip') {
-      if (a.reason !== 'jd_unavailable' || a.answer !== '' || a.jd_text !== undefined || a.employer_url !== undefined || a.direct_employer !== undefined) throw new Error('skip requires jd_unavailable, an empty answer and no JD/employer fields');
+      if (!['jd_unavailable', 'job_failed'].includes(a.reason) || a.answer !== '' || a.jd_text !== undefined || a.employer_url !== undefined || a.direct_employer !== undefined) throw new Error('skip requires jd_unavailable or job_failed, an empty answer and no JD/employer fields');
     } else if (!a.answer.trim()) throw new Error('invalid exact-URL manual answer');
+    if (a.reason === 'job_failed' && a.resolution !== 'skip') throw new Error('job_failed answers only support an explicit skip');
     const key = `${a.url}\n${a.reason}`;
     if (keys.has(key)) throw new Error('duplicate URL/reason answer');
     keys.add(key);
@@ -90,7 +92,10 @@ if (isMainModule(import.meta.url)) {
     else if (action === 'resume') process.exitCode = canResume(JSON.parse(readFileSync(holdPath, 'utf8')), answers, { id, url, user }) ? 0 : 1;
     else if (action === 'answers') process.stdout.write(JSON.stringify(answers.filter(a => a.url === url)));
     else if (action === 'skip') {
-      if ((!queue || queue.has(url)) && answers.some(a => a.url === url && a.reason === 'jd_unavailable' && a.resolution === 'skip')) process.stdout.write(JD_SKIP_REASON);
+      if (!queue || queue.has(url)) {
+        const skip = answers.find(a => a.url === url && a.resolution === 'skip');
+        if (skip) process.stdout.write(skip.reason === 'job_failed' ? JOB_SKIP_REASON : JD_SKIP_REASON);
+      }
     }
     else if (action === 'jd') {
       const answer = answers.find(a => a.url === url && a.reason === 'jd_unavailable');

@@ -1409,15 +1409,28 @@ process_offer() {
   started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local retries
   retries=$(get_retries "$id")
-  # A deliberate empty JD answer closes the posting without an evaluation,
+  # A deliberate skip closes the posting without an evaluation,
   # network call, report reservation or paid worker. The batch owner alone
   # writes terminal state, including when the answer arrived through live input.
   if [[ -n "$ANSWERS_FILE" && -f "$SCRIPT_DIR/manual-inputs.mjs" ]]; then
     local skip_reason
     skip_reason=$(node "$SCRIPT_DIR/manual-inputs.mjs" skip "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$url") || return 2
     if [[ -n "$skip_reason" ]]; then
+      # An interrupted/failed worker may have left an unmerged addition. Retain
+      # it as evidence, outside the merger's input, rather than letting a skip
+      # accidentally publish that worker's partial result.
+      if [[ -f "$TRACKER_DIR/$id.tsv" ]]; then
+        mkdir -p "$LOGS_DIR/quarantine" || return 2
+        local skip_quarantine
+        skip_quarantine=$(mktemp -d "$LOGS_DIR/quarantine/skipped-$id.XXXXXX") || return 2
+        mv "$TRACKER_DIR/$id.tsv" "$skip_quarantine/$id.tsv" || return 2
+      fi
       update_state_retrying "$id" "$url" skipped "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "-" "-" "$skip_reason" "$retries" || return 2
-      echo "    Skipped: $url — user cannot supply the missing JD."
+      if [[ "$skip_reason" == "user-skipped-jd-unavailable" ]]; then
+        echo "    Skipped: $url — user cannot supply the missing JD."
+      else
+        echo "    Skipped: $url — user discarded the failed job."
+      fi
       return 0
     fi
   fi
@@ -2488,7 +2501,13 @@ main() {
       continue
     fi
 
-    if [[ "$resumed_hold" == "true" ]]; then
+    local skipped_failure=false
+    if [[ "$status" == "failed" && -n "$ANSWERS_FILE" ]]; then
+      local failure_skip_reason
+      failure_skip_reason=$(node "$SCRIPT_DIR/manual-inputs.mjs" skip "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$url") || exit 1
+      [[ -z "$failure_skip_reason" ]] || skipped_failure=true
+    fi
+    if [[ "$resumed_hold" == "true" || "$skipped_failure" == "true" ]]; then
       : # Explicit answers resume this posting independently of retry selectors.
     elif [[ "$status" == "failed" && "$RETRY_FAILED" == "true" ]]; then
       : # One dispatch this invocation, even when the historical retry cap was reached.

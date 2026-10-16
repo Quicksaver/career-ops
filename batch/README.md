@@ -81,7 +81,9 @@ Supply a read-only answer file explicitly:
 }
 ```
 
-A JD answer that resumes evaluation requires nonempty `jd_text` or a public non-LinkedIn `employer_url`; an explicit `resolution: "skip"` instead closes the posting without evaluation. An agency answer identifies/confirms the intermediary in `answer`, or explicitly corrects it to direct with `direct_employer: true`. The runner resumes only a hold with the same user, exact URL, job ID and reason. A JD answer never confirms agency. User-contained `local:jds/...` identities are accepted; traversal and escaping symlinks are rejected.
+A JD answer that resumes evaluation requires nonempty `jd_text` or a public non-LinkedIn `employer_url`; an explicit `resolution: "skip"` instead closes the posting without evaluation. A failed job can be discarded with `{"url":"https://example.com/job","reason":"job_failed","answer":"","resolution":"skip"}`. This is a skip command only, not another hold reason or retry authorization. It applies even at the retry ceiling, preserves retry history, quarantines a partial unmerged addition, and moves the inbox row to Processed without evaluation artifacts. An agency answer identifies/confirms the intermediary in `answer`, or explicitly corrects it to direct with `direct_employer: true`. The runner resumes only a hold with the same user, exact URL, job ID and reason. A JD answer never confirms agency. User-contained `local:jds/...` identities are accepted; traversal and escaping symlinks are rejected.
+
+In the interactive runner, use `/skip` followed by Enter at a failed-job prompt to discard it permanently. The footer shows this command alongside retry/defer controls. Empty Ctrl+D still defers a failed-job question.
 
 ```bash
 ./batch/batch-runner.sh --user USER --queue-file current-inbox.txt --answers-file answers.json

@@ -81,7 +81,7 @@ else if (phase === 'codex-mock') {
           await new Promise(resolve => setTimeout(resolve, config.delays?.[row.url] || 30));
           const reason = config.holds?.[row.url];
           const answers = loadAnswers(value('--answers-file'), 'fictional', root);
-          const skipped = answers.some(answer => answer.url === row.url && answer.reason === 'jd_unavailable' && answer.resolution === 'skip');
+          const skipped = answers.some(answer => answer.url === row.url && ['jd_unavailable', 'job_failed'].includes(answer.reason) && answer.resolution === 'skip');
           const held = reason && (config.stickyHolds || !answers.some(answer => answer.url === row.url && answer.reason === reason));
           if (skipped) {
             setState(row, 'skipped');

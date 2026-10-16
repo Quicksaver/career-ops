@@ -1,12 +1,12 @@
 import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, copyFileSync, existsSync, symlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, copyFileSync, existsSync, symlinkSync, readdirSync } from 'node:fs';
 import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { ROOT, getBash, toBashPath, rmSync } from './helpers.mjs';
-import { loadAnswers, loadQueue, validLocal, validateHold, canResume, writeHold, JD_SKIP_REASON } from '../batch/manual-inputs.mjs';
+import { loadAnswers, loadQueue, validLocal, validateHold, canResume, writeHold, JD_SKIP_REASON, JOB_SKIP_REASON } from '../batch/manual-inputs.mjs';
 import { validateWorkerArtifacts, parseTrackerAddition } from '../batch/validate-worker-artifacts.mjs';
 import { savePostingContext } from '../lib/posting-context.mjs';
 
@@ -188,6 +188,49 @@ test('LinkedIn holds before fetch/worker; queues isolate dispatch and valid JD a
     assert.equal(readFileSync(`${f.calls}.jd`, 'utf8'), jd);
     assert.equal(JSON.parse(readFileSync(join(f.batch, 'logs/1.hold.json'), 'utf8')).reason, 'agency_confirmation');
     assert.equal(existsSync(join(f.batch, 'tracker-additions/1.tsv')), false);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('failed-job skip bypasses exhausted retries without fetching, reserving or evaluating, quarantines partial additions and reconciles durably', () => {
+  const f = fixture();
+  try {
+    const queue = join(f.root, 'queue.txt'), answers = join(f.root, 'answers.json');
+    writeFileSync(queue, url + '\n');
+    const resolution = { url, reason: 'job_failed', answer: '', resolution: 'skip' };
+    const save = value => writeFileSync(answers, JSON.stringify({ schema_version: 1, user: 'fixture', answers: [value] }));
+    for (const bad of [{ ...resolution, resolution: undefined, answer: 'retry' }, { ...resolution, answer: 'yes' }, { ...resolution, jd_text: 'made up' }]) {
+      save(bad); assert.throws(() => loadAnswers(answers, 'fixture', f.root));
+    }
+    save(resolution);
+    const statePath = join(f.batch, 'batch-state.tsv');
+    writeFileSync(statePath, `id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries\n1\t${url}\tfailed\t-\t-\t042\t-\tstale posting\t7\n2\thttps://example.com/other\tfailed\t-\t-\t043\t-\tother failure\t9\n`);
+    writeFileSync(join(f.root, 'reserve-report-num.mjs'), 'throw new Error("A skipped job cannot reserve a report");\n');
+    mkdirSync(join(f.batch, 'tracker-additions'));
+    writeFileSync(join(f.batch, 'tracker-additions/1.tsv'), 'partial failed worker output');
+    const result = f.run(['--queue-file', queue, '--answers-file', answers]);
+    assert.ifError(result.error); assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.match(result.stdout, /user discarded the failed job/);
+    const fields = readFileSync(statePath, 'utf8').split('\n')[1].split('\t');
+    assert.deepEqual(fields.slice(5), ['-', '-', JOB_SKIP_REASON, '7']);
+    assert.equal(fields[2], 'skipped');
+    assert.match(readFileSync(statePath, 'utf8'), /2\thttps:\/\/example.com\/other\tfailed/);
+    assert.equal(existsSync(f.calls), false); assert.equal(existsSync(`${f.calls}.worker`), false);
+    assert.equal(existsSync(join(f.batch, 'tracker-additions/1.tsv')), false);
+    const quarantined = readdirSync(join(f.batch, 'logs/quarantine')).find(name => name.startsWith('skipped-1.'));
+    assert.equal(readFileSync(join(f.batch, 'logs/quarantine', quarantined, '1.tsv'), 'utf8'), 'partial failed worker output');
+    mkdirSync(join(f.root, 'data'));
+    const pipeline = join(f.root, 'data/pipeline.md');
+    writeFileSync(pipeline, `## Pending\n- [ ] ${url}\n- [ ] https://example.com/other\n\n## Processed\n`);
+    const reconcile = () => spawnSync(process.execPath, [join(ROOT, 'reconcile-pipeline.mjs'), '--user', 'fixture', '--pipeline', pipeline, '--state', statePath], {
+      encoding: 'utf8', timeout: 15000, env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_ROOT: f.root, CAREER_OPS_DATA_DIR: f.root, CAREER_OPS_PIPELINE: pipeline },
+    });
+    let checked = reconcile(); assert.equal(checked.status, 0, checked.stderr);
+    const processed = readFileSync(pipeline, 'utf8');
+    assert.ok(processed.includes(`- [x] — | ${url} | Skipped: user discarded the failed job`));
+    assert.ok(!processed.includes(`[ ] ${url}`)); assert.match(processed, /\[ \] https:\/\/example.com\/other/);
+    checked = reconcile(); assert.equal(checked.status, 0, checked.stderr); assert.equal(readFileSync(pipeline, 'utf8'), processed);
+    const rerun = f.run(['--queue-file', queue, '--answers-file', answers, '--retry-failed', '--resume-paused']);
+    assert.equal(rerun.status, 0, rerun.stderr); assert.equal(existsSync(`${f.calls}.worker`), false);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
