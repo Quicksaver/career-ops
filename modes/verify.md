@@ -49,6 +49,8 @@ Before the first phase, the runner prints `run-id: <RUN_ID>` and its `logs:` dir
 
 ## Completion
 
+Historical `jd_archive_review_due` warnings are maintained automatically by the runner before agent review. It recovers exact-posting source material where available and records unrecoverable descriptions as known archive gaps with exact report/source evidence. These soft maintenance warnings do not require user answers or block completion. The raw checker still reports missing coverage; an acknowledged gap is not an archived JD. Changed evidence resurfaces, and `--retry-archive-gaps` retries live retrieval explicitly. New-job missing-JD gates and hard archive errors remain enforced.
+
 The runner loops through review, action, and raw re-verification for up to three passes by default. It returns:
 
 - `completed` when every raw finding is either resolved or matched by an unchanged seen record;

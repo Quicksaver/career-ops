@@ -1157,6 +1157,35 @@ try {
     fail(`pending apply resume repeated or applied stale work: ${JSON.stringify(pendingResume)}`);
   }
 
+  const archiveUser = 'archiveauto';
+  const archiveRoot = join(usersDir, archiveUser);
+  mkdirSync(join(archiveRoot, 'data'), { recursive: true });
+  mkdirSync(join(archiveRoot, 'reports'), { recursive: true });
+  const archiveReportName = '001-archive-fixture-2026-01-01.md';
+  const archiveReport = '# Evaluation: Archive Fixture — Engineer\n\n**URL:** https://www.linkedin.com/jobs/view/4470000001/\n\n## Machine Summary\n```yaml\ncompany: Archive Fixture\nrole: Engineer\nscore: 4.0\n```\n';
+  writeFileSync(join(archiveRoot, 'reports', archiveReportName), archiveReport);
+  writeFileSync(join(archiveRoot, 'data/applications.md'), [
+    '| # | Date | Company | Via | Role | Score | Status | PDF | Report | Notes |',
+    '|---|---|---|---|---|---|---|---|---|---|',
+    `| 1 | 2026-01-01 | Archive Fixture | — | Engineer | 4.0/5 | Applied | — | [1](../reports/${archiveReportName}) | fixture |`, '',
+  ].join('\n'));
+  const callsBeforeArchives = readFileSync(callCount, 'utf8');
+  const automaticArchives = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', archiveUser, '--quiet', '--json',
+  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf8' }));
+  const archiveRawAfter = spawnSync(process.execPath, [join(ROOT, 'verify-pipeline.mjs'), '--user', archiveUser, '--json'],
+    { cwd: ROOT, env: runnerEnv, encoding: 'utf8' });
+  const archiveWarning = JSON.parse(archiveRawAfter.stdout).warnings.find(item => item.code === 'jd_archive_review_due');
+  if (automaticArchives.status === 'completed' && automaticArchives.passes === 0 &&
+      automaticArchives.counts.unresolved_warnings === 0 && automaticArchives.archive_maintenance.known_gaps === 1 &&
+      readFileSync(callCount, 'utf8') === callsBeforeArchives && archiveWarning?.details.report_sha256 &&
+      readFileSync(join(archiveRoot, 'reports', archiveReportName), 'utf8') === archiveReport &&
+      JSON.parse(readFileSync(join(automaticArchives.logs, 'summary.json'), 'utf8')).archive_maintenance.known_gaps === 1) {
+    pass('historical JD archive gaps complete automatically with raw warnings preserved and zero reviewer launches');
+  } else {
+    fail(`automatic archive maintenance wrong: ${JSON.stringify(automaticArchives)}`);
+  }
+
   for (const num of [60, 61]) {
     const reportFile = `${String(num).padStart(3, '0')}-paired-duplicate-2026-01-06.md`;
     writeFileSync(join(reportsDir, reportFile), [

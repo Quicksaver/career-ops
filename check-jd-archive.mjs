@@ -77,6 +77,7 @@ import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFil
 import { join, dirname, basename } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
+import { createHash } from 'node:crypto';
 import { flagValue } from './lib/cli-flags.mjs';
 import { findCaptureForReport } from './jd-capture.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
@@ -138,6 +139,18 @@ export function parseReportFilename(filename) {
   const m = REPORT_FILENAME_RE.exec(filename);
   if (!m) return null;
   return { reportNum: parseInt(m[1], 10), companySlug: m[2], date: m[3] };
+}
+
+// Include source evidence in reviewed-warning fingerprints: a changed report
+// must not inherit an acknowledgement of a previous missing archive.
+export function archiveReportEvidence(content) {
+  const source = content.match(/\*\*URL:\*\*[ \t]*(\S+)/)?.[1]?.replace(/^<|>$/g, '') || '';
+  let sourceUrl = '';
+  try {
+    const url = new URL(source);
+    if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) sourceUrl = url.href;
+  } catch {}
+  return { report_sha256: createHash('sha256').update(content).digest('hex'), source_url: sourceUrl };
 }
 
 // --- Archive-section detection ---

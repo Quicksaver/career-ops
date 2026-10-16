@@ -49,7 +49,7 @@ import { checkTrackerSync } from './tracker-sync-check.mjs';
 import { normalizeStatus } from './followup-cadence.mjs';
 import { checkFollowupsSchema } from './stats.mjs';
 import { loadCanonicalStates } from './tracker-utils.mjs';
-import { checkJdArchive } from './check-jd-archive.mjs';
+import { archiveReportEvidence, checkJdArchive } from './check-jd-archive.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const CODE_ROOT = CAREER_OPS;
@@ -883,7 +883,9 @@ const jdArchiveResult = checkJdArchive(REPORTS_DIR, JDS_DIR, { trackerPath: APPS
 const jdArchiveMissing = jdArchiveResult.findings.filter(f => f.type === 'missing-jd-archive');
 const jdArchiveReviewDue = jdArchiveResult.findings.filter(f => f.type === 'jd-archive-review-due');
 for (const f of jdArchiveMissing) error(`${f.file}: ${f.detail}`, 'missing_jd_archive', `missing-jd:${f.file}`, { file: `reports/${f.file}` });
-for (const f of jdArchiveReviewDue) warn(`${f.file}: ${f.detail}`, 'jd_archive_review_due', `jd-review:${f.file}`, { file: `reports/${f.file}` });
+for (const f of jdArchiveReviewDue) warn(`${f.file}: ${f.detail}`, 'jd_archive_review_due', `jd-review:${f.file}`, {
+  file: `reports/${f.file}`, ...archiveReportEvidence(reportContent(f.file) || ''),
+});
 for (const w of jdArchiveResult.warnings) warn(`${w.file}: ${w.detail}`, 'jd_archive_inspection_warning', `jd-inspection:${w.file}`, w);
 if (jdArchiveMissing.length === 0 && jdArchiveReviewDue.length === 0 && jdArchiveResult.warnings.length === 0) {
   ok(jdArchiveResult.reportsScanned === 0

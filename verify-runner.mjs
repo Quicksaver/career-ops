@@ -26,6 +26,7 @@ import { inspectOwnership } from './batch/runner-ownership.mjs';
 import { resolveParallel } from './lib/parallel-config.mjs';
 import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.mjs';
 import { compactCompletedRun, compactPhaseRecords, processAlive } from './lib/run-artifacts.mjs';
+import { maintainJdArchives } from './lib/jd-archive-maintenance.mjs';
 import {
   assertVerificationContext,
   buildReviewLanes,
@@ -56,6 +57,7 @@ Options:
   --max-passes N        Maximum review/action/reverify passes (default: 3)
   --review-retries N    Semantic retries per five-finding chunk (default: 2)
   --resume-run RUN_ID   Reuse only validated checkpoints from an interrupted run
+  --retry-archive-gaps  Retry exact-posting retrieval for known archive gaps
   --quiet               Suppress live phase progress
   --json                Emit the complete machine-readable result on stdout
   -h, --help            Show this help
@@ -110,7 +112,7 @@ try {
     '--agent-cli', '--codex-model', '--codex-reasoning-effort', '--parallel',
     '--max-passes', '--review-retries', '--resume-run',
   ]);
-  const flagOptions = new Set(['--json', '--quiet']);
+  const flagOptions = new Set(['--json', '--quiet', '--retry-archive-gaps']);
   for (let index = 0; index < rawArgs.length; index++) {
     const arg = rawArgs[index];
     if (valueOptions.has(arg)) { index++; continue; }
@@ -572,10 +574,26 @@ function aggregateActions(target, result) {
   }
 }
 
+const archiveMaintenanceEntries = new Map();
+let archiveGapRetryUsed = false;
+
 async function rawVerification(name) {
-  return parseJson(await runCommand(name, process.execPath, [
+  let verification = parseJson(await runCommand(name, process.execPath, [
     systemPath('verify-pipeline.mjs'), '--user', context.userId, '--json',
   ], { accept: [0, 1] }), name);
+  if (verification.warnings?.some(item => item.code === 'jd_archive_review_due')) {
+    log('JD archive maintenance started');
+    const result = await maintainJdArchives(context, verification, {
+      runId, retryGaps: rawArgs.includes('--retry-archive-gaps') && !archiveGapRetryUsed,
+    });
+    archiveGapRetryUsed = true;
+    for (const entry of result.entries) archiveMaintenanceEntries.set(entry.file, entry);
+    log(`JD archive maintenance: ${result.recovered} recovered, ${result.known_gaps} known gap(s); no user answers required`);
+    if (result.recovered) verification = parseJson(await runCommand(`${name}-post-archive`, process.execPath, [
+      systemPath('verify-pipeline.mjs'), '--user', context.userId, '--json',
+    ], { accept: [0, 1] }), `${name}-post-archive`);
+  }
+  return verification;
 }
 
 function writeJsonAtomic(path, value) {
@@ -1001,6 +1019,12 @@ async function main() {
     summary.error = error.message;
     return summary;
   } finally {
+    const archiveEntries = [...archiveMaintenanceEntries.values()];
+    summary.archive_maintenance = {
+      recovered: archiveEntries.filter(item => item.status === 'recovered').length,
+      known_gaps: archiveEntries.filter(item => item.status === 'known_gap').length,
+      entries: archiveEntries,
+    };
     summary.finished_at = new Date().toISOString();
     if (summary.status === 'completed') {
       try {
@@ -1042,6 +1066,7 @@ function compactVerifySummary(result) {
     passes: result.passes,
     counts: result.counts,
     actions: result.actions,
+    archive_maintenance: result.archive_maintenance,
     needs_human_review: result.needs_human_review,
     review_resilience: result.review_resilience,
     codex: result.codex,

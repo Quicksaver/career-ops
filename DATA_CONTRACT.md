@@ -45,6 +45,7 @@ These files contain your personal data, customizations, and work product. Update
 | `users/{USER}/data/scan-handoff.json` | Latest unsupported-source handoff for the selected user's scanner |
 | `users/{USER}/data/posting-context/*.json` | URL-keyed snapshots of provider descriptions and source metadata, saved before publishing inbox rows. External posting evidence only; never candidate facts or user answers. Safe to delete, but original source context may then require recovery. |
 | `users/{USER}/data/verification-reviews.jsonl` | Exact finding fingerprints, review decisions and accepted exceptions |
+| `users/{USER}/data/jd-archive-maintenance.json` | Automatic archive recovery receipts and known historical gaps, bound to the exact report hash and original posting URL; records unavailable evidence without claiming a JD exists |
 | `users/{USER}/data/verification-actions.jsonl` | Verification repair records and artifact provenance |
 | `users/{USER}/data/duplicate-resolutions.jsonl` | Duplicate keeper decisions, lifecycle overrides and archive locations |
 | `users/{USER}/data/run-workflow.pid*`, legacy `users/{USER}/data/go-runner.pid*`, `users/{USER}/data/verify-runner.pid*` | Per-user coordinator ownership metadata and compatibility PID stamps |
