@@ -19,7 +19,7 @@
  *   7. Accepted listings and skipped entries are returned to the harness
  *
  * Apply URL resolution:
- *   - External apply link (via xpathApplyUrl) → unwrapped from LinkedIn's
+ *   - External apply link → unwrapped from LinkedIn's
  *     /safety/go redirect
  *   - Easy Apply / no external link → falls back to the listing URL
  *     (https://www.linkedin.com/jobs/view/{JOB_ID}/)
@@ -31,6 +31,7 @@
 
 
 import * as yaml from 'js-yaml';
+import { readLinkedInDetail } from './linkedin-detail.mjs';
 
 // ---------------------------------------------------------------------------
 // Selectors — grouped for easy maintenance when LinkedIn changes DOM
@@ -42,9 +43,6 @@ const SELECTORS = {
   cardDismissButtonCss: 'button[aria-label^="Dismiss"][aria-label*=" job"]',
   /** Company name often appears on this anchor when present. */
   cardCompanyLinkQuery: 'a[href*="/company/"]',
-  xpathApplyUrl: "//a[@aria-label='Apply on company website']",
-  xpathMoreButton: "//span[normalize-space(text())='more']",
-  jdContent: 'span[data-testid="expandable-text-box"]',
   /** Legacy EN UI signal. Kept as a fast path, but not sufficient for localized accounts. */
   loggedIn: 'a[aria-label*="My Network"]',
   /** Stable authenticated nav destinations; text/aria-labels are localized. */
@@ -534,12 +532,7 @@ export default class LinkedInScanner {
    * Returns { clicked, jobId, listingUrl }.
    */
   async #clickAndExtractJobId(page, card) {
-    const { clicked, previousJobId, previousJdText } = await page.evaluate(({ card, selector }) => {
-      const previousJobId = new URL(location.href).searchParams.get('currentJobId') || '';
-      const previousJdText = document.querySelector(selector)?.innerText?.trim() || '';
-      if (card) card.click();
-      return { clicked: !!card, previousJobId, previousJdText };
-    }, { card, selector: SELECTORS.jdContent });
+    const { clicked, previousJobId, previousJdText } = await page.evaluate(readLinkedInDetail, { card });
     if (!clicked) return { clicked: false, jobId: '', listingUrl: '' };
 
     await sleep(CARD_CLICK_DELAY_MS);
@@ -683,52 +676,15 @@ export default class LinkedInScanner {
     // URL selection can finish before the asynchronously rendered JD. Spend the
     // single allowed loading wait on this page, never on another navigation.
     // While switching cards, the preceding posting's text must not satisfy it.
+    const expansionState = await page.evaluateHandle(() => ({ clicked: false }));
     try {
-      const ready = await page.waitForFunction(({ selector, jobId, previousJdText }) => {
-        if (new URL(location.href).searchParams.get('currentJobId') !== jobId) return false;
-        const text = document.querySelector(selector)?.innerText?.trim() || '';
-        return !!text && text !== previousJdText;
-      }, { selector: SELECTORS.jdContent, jobId, previousJdText }, { timeout: JD_LOAD_TIMEOUT_MS });
-      await ready.dispose();
+      const ready = await page.waitForFunction(readLinkedInDetail,
+        { jobId, previousJdText, expansionState }, { timeout: JD_LOAD_TIMEOUT_MS });
+      try { return await ready.jsonValue(); }
+      finally { await ready.dispose(); }
     } catch (error) {
       if (error.name !== 'TimeoutError') throw error;
       return { applicationUrl: `https://www.linkedin.com/jobs/view/${jobId}/`, jdText: '' };
-    }
-
-    // Try to expand the description
-    await page.evaluate(({ xpath }) => {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      const moreSpan = result.singleNodeValue;
-      if (moreSpan) moreSpan.click();
-    }, { xpath: SELECTORS.xpathMoreButton });
-    await sleep(250);
-
-    const detail = await page.evaluate(({ sel, jobId, previousJdText }) => {
-      if (new URL(location.href).searchParams.get('currentJobId') !== jobId) {
-        return { applicationUrl: '', jdText: '' };
-      }
-      function xpathFirst(expression) {
-        const result = document.evaluate(
-          expression, document, null,
-          XPathResult.FIRST_ORDERED_NODE_TYPE, null
-        );
-        return result.singleNodeValue;
-      }
-
-      const applyEl = xpathFirst(sel.xpathApplyUrl);
-
-      // if no apply url or easy apply button is present, use the listing url
-      let applicationUrl = jobId ? applyEl?.href?.trim() || `https://www.linkedin.com/jobs/view/${jobId}/` : '';
-
-
-      const jdEl = document.querySelector(sel.jdContent);
-      const jdText = jdEl?.innerText?.trim() ?? '';
-
-      if (jdText === previousJdText) return { applicationUrl: '', jdText: '' };
-
-      return { applicationUrl, jdText };
-    }, { sel: SELECTORS, jobId, previousJdText });
-
-    return detail;
+    } finally { await expansionState.dispose(); }
   }
 }

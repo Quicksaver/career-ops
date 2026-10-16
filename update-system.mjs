@@ -337,6 +337,7 @@ const SYSTEM_PATHS = [
   'scan-ats-full.mjs',
   'scan-auth.mjs',
   'scan-auth/linkedin.mjs',
+  'scan-auth/linkedin-detail.mjs',
   'scan-interamt.mjs',
   'scan-dayforce.mjs',
   'company-funded.mjs',

@@ -2489,7 +2489,7 @@ const systemFiles = [
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
   'modes/scan-handoff.md', 'modes/scan-auth.md', 'modes/run.md', 'modes/verify.md',
-  'scan-auth.mjs', 'scan-auth/linkedin.mjs',
+  'scan-auth.mjs', 'scan-auth/linkedin.mjs', 'scan-auth/linkedin-detail.mjs',
   'modes/heuristics/recruiter-side.md',
   'templates/states.yml', 'templates/cv-template.html',
   'lib/user-context.mjs', 'openai-eval.mjs', 'jd-skill-gap.mjs', 'paste-reply.mjs',
