@@ -30,6 +30,9 @@ import { mostAdvancedDuplicateRow } from './lib/duplicate-lifecycle.mjs';
 import { assertVerificationContext } from './lib/verification-review.mjs';
 import { resolveTrackerPath } from './path-resolver.mjs';
 
+// Large trackers can take over a minute to scan before any repair is safe.
+const DUPLICATE_REVALIDATION_TIMEOUT_MS = 10 * 60 * 1000;
+
 const HELP = `Apply validated duplicate resolutions from reviewed verification.
 
 Usage: node resolve-verify-warnings.mjs --user <id> \\
@@ -198,9 +201,12 @@ async function main() {
   try {
     originalTracker = readFileSync(appsPath, 'utf-8');
     const checked = spawnSync(process.execPath, [systemPath('verify-pipeline.mjs'), '--user', context.userId, '--json'], {
-      cwd: context.projectRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60000,
+      cwd: context.projectRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: DUPLICATE_REVALIDATION_TIMEOUT_MS,
       env: { ...process.env, CAREER_OPS_USER: context.userId, CAREER_OPS_ROOT: context.userRoot, CAREER_OPS_TRACKER: appsPath },
     });
+    if (checked.error?.code === 'ETIMEDOUT') {
+      throw new Error(`Cannot revalidate duplicate candidates: verification exceeded ${DUPLICATE_REVALIDATION_TIMEOUT_MS / 1000} seconds; no duplicate repairs applied. Resume the saved verification run after resolving the slow scan.`);
+    }
     if (![0, 1].includes(checked.status)) throw new Error(`Cannot revalidate duplicate candidates: ${checked.stderr || checked.error?.message}`);
     const fresh = JSON.parse(checked.stdout);
     const freshWarnings = new Map((fresh.warnings || []).map(warning => [warning.id, warning]));
