@@ -505,15 +505,25 @@ function loadPendingApplyCheckpoint(currentVerification) {
     if (!existsSync(verificationPath) || !existsSync(reviewPath)) continue;
     try {
       const savedVerification = JSON.parse(readFileSync(verificationPath, 'utf-8'));
-      if (!sameVerificationFindings(savedVerification, currentVerification)) continue;
+      assertVerificationContext(savedVerification, context, currentVerification.tracker);
       const savedReview = JSON.parse(readFileSync(reviewPath, 'utf-8'));
+      const savedFindings = new Map(verificationFindings(savedVerification).map(item => [
+        `${item.level}:${item.id}`, item,
+      ]));
+      const savedExpected = savedReview.findings.map(decision =>
+        savedFindings.get(`${decision.finding_level}:${decision.finding_id}`));
+      if (savedExpected.some(item => !item)) continue;
+      const savedNormalized = normalizeReviewDecisions(savedExpected, savedReview);
+      validateReviewDecisions(savedExpected, savedNormalized.review);
+      validateDuplicateConsistency(savedVerification, savedNormalized.review);
+      const applicable = decisionsStillPresent(verificationFindings(savedVerification), savedNormalized.review, currentVerification);
       const currentMap = new Map(verificationFindings(currentVerification).map(item => [
         `${item.level}:${item.id}`, item,
       ]));
-      const expected = savedReview.findings.map(decision =>
+      const expected = applicable.findings.map(decision =>
         currentMap.get(`${decision.finding_level}:${decision.finding_id}`));
       if (expected.some(item => !item)) continue;
-      const normalized = normalizeReviewDecisions(expected, savedReview);
+      const normalized = normalizeReviewDecisions(expected, applicable);
       validateReviewDecisions(expected, normalized.review);
       validateDuplicateConsistency(currentVerification, normalized.review);
       return {
@@ -525,7 +535,8 @@ function loadPendingApplyCheckpoint(currentVerification) {
           join(runDir, `verification.pass-${String(pass).padStart(2, '0')}.json`),
           join(runDir, `duplicate-triage.pass-${String(pass).padStart(2, '0')}.json`),
         ]),
-        applyResult: priorActionResult('review', pass, [verificationPath, reviewPath]),
+        applyResult: sameVerificationFindings(savedVerification, currentVerification)
+          ? priorActionResult('review', pass, [verificationPath, reviewPath]) : null,
       };
     } catch (error) {
       log(`ignored invalid pending apply checkpoint for pass ${pass}: ${validationErrors(error).join('; ')}`);

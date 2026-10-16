@@ -1122,6 +1122,41 @@ try {
     fail(`completed review resume repeated work: ${JSON.stringify(completedResume)}`);
   }
 
+  const pendingResumeUser = 'pendingresume';
+  const pendingResumeRoot = join(usersDir, pendingResumeUser);
+  mkdirSync(join(pendingResumeRoot, 'data'), { recursive: true });
+  writeFileSync(join(pendingResumeRoot, 'data/applications.md'), readFileSync(join(completedResumeRoot, 'data/applications.md')));
+  const pendingRaw = spawnSync(process.execPath, [join(ROOT, 'verify-pipeline.mjs'), '--user', pendingResumeUser, '--json'],
+    { cwd: ROOT, env: runnerEnv, encoding: 'utf8' });
+  if (![0, 1].includes(pendingRaw.status)) throw new Error(pendingRaw.stderr);
+  const pendingVerification = JSON.parse(pendingRaw.stdout);
+  const disappearedOrphan = { id: 'orphan-report:002-history-2026-01-01.md', code: 'orphan_report',
+    message: 'Previously flagged historical report', details: { report_num: 2, file: 'reports/002-history-2026-01-01.md' } };
+  pendingVerification.warnings.push(disappearedOrphan);
+  const pendingResumeDir = join(pendingResumeRoot, 'data/verify-runs', completedResumeId);
+  mkdirSync(pendingResumeDir, { recursive: true });
+  writeFileSync(join(pendingResumeDir, 'verification.apply-01.json'), JSON.stringify(pendingVerification));
+  writeFileSync(join(pendingResumeDir, 'review.applicable-01.json'), JSON.stringify({
+    status: 'completed', needs_human_review: false,
+    findings: reviewLib.verificationFindings(pendingVerification).map(finding => decision(finding,
+      finding.id === disappearedOrphan.id ? {
+        classification: 'confirmed_orphan', disposition: 'archive_orphan',
+        orphan_resolution: { report_file: disappearedOrphan.details.file, tracker_tsv: null },
+      } : {})),
+  }));
+  const callsBeforePendingResume = readFileSync(callCount, 'utf8');
+  const pendingResume = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', pendingResumeUser, '--parallel', '10',
+    '--resume-run', completedResumeId, '--quiet', '--json',
+  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf8' }));
+  if (pendingResume.status === 'completed' && pendingResume.review_resilience.checkpoints_reused === 1 &&
+      pendingResume.actions.orphans_archived === 0 && readFileSync(callCount, 'utf8') === callsBeforePendingResume &&
+      !pendingResume.phases.some(phase => phase.name.startsWith('review-agent-'))) {
+    pass('pending apply drops disappeared orphan findings while reusing unchanged decisions without reviewers');
+  } else {
+    fail(`pending apply resume repeated or applied stale work: ${JSON.stringify(pendingResume)}`);
+  }
+
   for (const num of [60, 61]) {
     const reportFile = `${String(num).padStart(3, '0')}-paired-duplicate-2026-01-06.md`;
     writeFileSync(join(reportsDir, reportFile), [

@@ -40,7 +40,7 @@ import {
 } from './lib/user-context.mjs';
 import {
   looksLikeScoreCell, isSeparatorRow, isHeaderRow, resolveColumns,
-  normalizeTextKey, normalizeVia, extractCellUrl,
+  normalizeTextKey, normalizeVia, extractCellUrl, parseMarkdownLinks,
 } from './tracker-parse.mjs';
 import { CONTROL_CHARS, findDeadReportLink } from './tracker-utils.mjs';
 import { normalizeUrl } from './url-key.mjs';
@@ -575,15 +575,15 @@ if (dupReports === 0) ok('No duplicate reports for the same company+role');
 const referencedReportFiles = new Set();
 const fallbackReferencedNums = new Set();
 for (const e of entries) {
-  const linkTargets = [...e.report.matchAll(/\]\(([^)]+)\)/g)];
-  if (linkTargets.length === 0) {
+  const primaryLinks = parseMarkdownLinks(e.report);
+  const linkTargets = [...primaryLinks, ...parseMarkdownLinks(e.notes)];
+  if (primaryLinks.length === 0) {
     // Legacy non-link cells have no durable filename edge. Only there, use the
     // tracker number as a compatibility fallback.
     fallbackReferencedNums.add(e.num);
-    continue;
   }
   for (const lt of linkTargets) {
-    const name = lt[1].split(/[\\/]/).pop();
+    const name = lt.target.split(/[\\/]/).pop();
     if (REPORT_FILE_RE.test(name)) referencedReportFiles.add(name);
   }
 }
