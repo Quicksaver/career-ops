@@ -231,7 +231,7 @@ test('full runner resumes persisted retries and schedules paused rows only with 
         printf 'SLEEP:%s\n' "$1"
         cp batch/batch-state.tsv sleeping-state.tsv
       }
-      source batch/batch-runner.sh --cli claude --model fixture ${resume ? '--resume-paused' : ''}`);
+      source batch/batch-runner.sh --cli claude --model fixture --max-retries 2 ${resume ? '--resume-paused' : ''}`);
     const calls = readFileSync(join(dir, 'calls.log'), 'utf8').trim();
     if (!scheduled) {
       assert.equal(calls, '');

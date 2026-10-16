@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { basename, join } from 'node:path';
 import { parseBatchInput, parseBatchState, parsePendingRows } from './lib/pipeline-queue.mjs';
 import { loadAnswers, loadQueue } from './batch/manual-inputs.mjs';
-import { nextLiveInput } from './lib/run-live-inputs.mjs';
+import { DEFAULT_MAX_RETRIES, nextLiveInput } from './lib/run-live-inputs.mjs';
 
 const args = process.argv.slice(2);
 const value = name => args[args.indexOf(name) + 1];
@@ -62,14 +62,17 @@ else if (phase === 'codex-mock') {
   const pausePath = join(root, 'batch/batch-runner.paused'); rmSync(pausePath, { force: true });
   const statePath = join(root, 'batch/batch-state.tsv');
   const setState = (row, status) => {
-    const states = parseBatchState(read(statePath)).filter(item => item.id !== row.id);
-    states.push({ ...row, status });
-    writeFileSync(statePath, 'id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n' + states.map(item => [item.id, item.url, item.status, '', '', '', '', '', 0].join('\t')).join('\n') + '\n');
+    const states = parseBatchState(read(statePath));
+    const old = states.find(item => item.id === row.id);
+    const retries = Number(old?.retries || 0) + (status === 'failed' ? 1 : 0);
+    const updated = states.filter(item => item.id !== row.id).concat({ ...row, status, retries });
+    writeFileSync(statePath, 'id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n' + updated.map(item => [item.id, item.url, item.status, '', '', '', '', '', item.retries].join('\t')).join('\n') + '\n');
+    return retries;
   };
   while (true) {
     if (existsSync(pausePath)) break;
     if (active.size < Number(value('--parallel'))) {
-      const next = nextLiveInput({ controlPath, userRoot: root, user: 'fictional', answersPath: value('--answers-file'), queuePath: value('--queue-file'), running: active.size, activeUrls: [...active.values()], resumePaused: args.includes('--resume-paused'), limit: args.includes('--limit') ? Number(value('--limit')) : 0 });
+      const next = nextLiveInput({ controlPath, userRoot: root, user: 'fictional', answersPath: value('--answers-file'), queuePath: value('--queue-file'), running: active.size, activeUrls: [...active.values()], maxRetries: Number(value('--max-retries')) || DEFAULT_MAX_RETRIES, resumePaused: args.includes('--resume-paused'), limit: args.includes('--limit') ? Number(value('--limit')) : 0 });
       if (next.selected) {
         const row = next.selected; setState(row, 'processing');
         const task = (async () => {
@@ -94,6 +97,13 @@ else if (phase === 'codex-mock') {
           } else if (held) {
             writeFileSync(join(root, `batch/logs/${row.id}.hold.json`), JSON.stringify({ schema_version: 1, user: 'fictional', id: row.id, url: row.url, status: 'needs_confirmation', reason, question: 'Please provide the exact posting answer.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));
             setState(row, 'needs_confirmation');
+          } else if (Number(parseBatchState(read(statePath)).find(item => item.id === row.id)?.retries || 0) < (config.failuresBeforeSuccess?.[row.url] || 0)) {
+            const retries = setState(row, 'failed');
+            appendFileSync(join(root, 'failures.jsonl'), JSON.stringify({ url: row.url, retries }) + '\n');
+            if (config.gateFailures?.includes(row.url)) {
+              const deadline = Date.now() + 15000;
+              while (!existsSync(join(root, `release-failure-${row.id}-${retries}`)) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+            }
           } else {
             setState(row, 'completed');
             const parsed = parsePendingRows(read(pipeline));

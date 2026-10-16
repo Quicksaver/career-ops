@@ -39,7 +39,7 @@ import { inspectOwnership } from './batch/runner-ownership.mjs';
 import { RunTerminal } from './lib/run-terminal.mjs';
 import { RunInteractive } from './lib/run-interactive.mjs';
 import { synchronizeBatch } from './lib/run-batch-sync.mjs';
-import { answerFingerprint } from './lib/run-live-inputs.mjs';
+import { answerFingerprint, DEFAULT_MAX_RETRIES } from './lib/run-live-inputs.mjs';
 import { cleanRunText, createRunOutput } from './lib/run-output.mjs';
 import { prepareAgencyAnswers } from './lib/agency-policy.mjs';
 
@@ -808,6 +808,7 @@ async function main() {
           const batchArgs = [
             '--user', context.userId, '--cli', batchCli,
             '--parallel', String(parallelSettings.parallel),
+            '--max-retries', String(DEFAULT_MAX_RETRIES),
             '--defer-verification', '--include-pending', '--queue-file', queueFile,
           ];
           if (answerPath) batchArgs.push('--answers-file', answerPath);
@@ -911,8 +912,8 @@ async function main() {
         if (!pendingUrls.has(state.url)) continue;
         if (state.status === 'paused_rate_limit') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
           url: state.url, reason: 'rate_limit', question: `Wait for the CLI quota/session reset, then rerun the workflow with --resume-paused. ${state.error || ''}` });
-        if (state.status === 'failed') addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
-          url: state.url, reason: 'job_failed', question: `Inspect batch job #${state.id} and retry after correcting its failure: ${state.error || 'see worker log'}` });
+        if (state.status === 'failed' && Number(state.retries) >= DEFAULT_MAX_RETRIES) addAction(summary, { kind: 'job', phase: 'batch', id: state.id,
+          url: state.url, reason: 'job_failed', question: `Batch job #${state.id} failed after ${state.retries} attempts. Inspect its log and retry after correcting its failure: ${state.error || 'see worker log'}` });
       }
       const changedStates = finalStates.filter(row => {
         const before = initialBatchState.find(old => old.id === row.id && old.url === row.url);

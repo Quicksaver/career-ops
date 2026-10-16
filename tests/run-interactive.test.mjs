@@ -297,10 +297,11 @@ test('live retries stop at the ceiling, scope explicit requests, and count limit
   const state = (a, b) => writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tfailed\t\t\t\t\t\t${a}\n2\t${B}\tfailed\t\t\t\t\t\t${b}\n`);
   const next = options => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath, limit: 1, ...options });
   state(1, 9); assert.equal(next().selected.url, A);
-  state(2, 9); assert.equal(next().status, 'idle', 'automatic attempts stop at the retry ceiling');
+  state(2, 9); assert.equal(next().selected.url, A, 'the third attempt is still automatic');
+  state(3, 9); assert.equal(next().status, 'idle', 'automatic attempts stop at the retry ceiling');
   control.retries = [{ url: A, token: 'requested' }]; writeFileSync(controlPath, JSON.stringify(control));
   assert.equal(next().selected.url, A); assert.equal(next().status, 'idle', 'a retry token authorizes one attempt');
-  state(3, 1); assert.equal(next().status, 'idle', 'retrying A did not consume a new posting or admit B beyond the unique-job limit');
+  state(4, 1); assert.equal(next().status, 'idle', 'retrying A did not consume a new posting or admit B beyond the unique-job limit');
   control.status = 'finish'; writeFileSync(controlPath, JSON.stringify(control));
   assert.equal(next().status, 'done');
   assert.equal(next({ running: 1, capacity: 1 }).status, 'busy', 'finish drains running workers');

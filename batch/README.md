@@ -50,7 +50,7 @@ Parallelism resolves as `--parallel`, profile `batch.parallel`, then `1` for bot
 | `--retry-failed` | off | Select failed jobs, granting one additional dispatch even at the retry cap |
 | `--resume-paused` | off | Select jobs paused by Codex or Claude session/rate limits |
 | `--include-pending` | off | Internal coordinator flag that unions recovery selections with ordinary pending eligibility |
-| `--max-retries N` | `2` | Bound retry attempts |
+| `--max-retries N` | `3` | Failed-attempt ceiling, counting the initial attempt |
 | `--worker-timeout N` | `900` | Finite nonnegative seconds; zero disables the timeout and decimals are accepted |
 | `--rate-limit-sleep N` | `300` | Maximum adaptive Claude retry delay; zero pauses immediately |
 | `--skip-pdf` | off | Disable PDF rendering |
@@ -82,6 +82,8 @@ Supply a read-only answer file explicitly:
 ```
 
 A JD answer that resumes evaluation requires nonempty `jd_text` or a public non-LinkedIn `employer_url`; an explicit `resolution: "skip"` instead closes the posting without evaluation. A failed job can be discarded with `{"url":"https://example.com/job","reason":"job_failed","answer":"","resolution":"skip"}`. This is a skip command only, not another hold reason or retry authorization. It applies even at the retry ceiling, preserves retry history, quarantines a partial unmerged addition, and moves the inbox row to Processed without evaluation artifacts. An agency answer identifies/confirms the intermediary in `answer`, or explicitly corrects it to direct with `direct_employer: true`. The runner resumes only a hold with the same user, exact URL, job ID and reason. A JD answer never confirms agency. User-contained `local:jds/...` identities are accepted; traversal and escaping symlinks are rejected.
+
+The `run` coordinator automatically retries ordinary failures until three attempts have failed, then presents a failed-job question. Earlier failures remain normal status output. The persisted failure count survives restarts, so a restart uses only the remaining attempts. Standalone batch uses the same ceiling across invocations; `--max-retries` overrides it there. Confirmation holds and quota pauses keep their separate handling.
 
 In the interactive runner, use `/skip` followed by Enter at a failed-job prompt to discard it permanently. The footer shows this command alongside retry/defer controls. Empty Ctrl+D still defers a failed-job question.
 

@@ -145,8 +145,20 @@ for (const scenario of [{ stall: true }, { retry: true }, { limit: true }]) {
     assert.ok(result.remaining > 0);
     assert.ok(result.queue_passes <= 2);
     assert.equal(result.queue_passes, scenario.retry ? 2 : 1);
+    assert.ok(!result.manual_actions.some(action => action.reason === 'job_failed'), 'a recovery bound before three failures must not escalate the job');
   });
 }
+
+test('headless failure questions also wait for three failed attempts', async t => {
+  const f = fixture(t, { rows: [A], retry: true });
+  const { result } = await f.run(['--skip-scan']);
+  assert.equal(f.dispatched().length, 3);
+  assert.equal(result.manual_actions.filter(action => action.reason === 'job_failed').length, 1);
+  assert.match(result.manual_actions.find(action => action.reason === 'job_failed').question, /failed after 3 attempts/);
+  for (const call of f.calls().filter(call => call.phase === 'batch-mock')) {
+    assert.equal(call.args[call.args.indexOf('--max-retries') + 1], '3');
+  }
+});
 
 for (const verification of ['partial', 'failed']) {
   test(`empty queue cannot complete with ${verification} verification`, async t => {

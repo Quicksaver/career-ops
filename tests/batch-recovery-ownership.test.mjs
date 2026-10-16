@@ -194,6 +194,25 @@ test('recovery flags union pending, failed and paused while direct selectors ret
   } finally { rmSync(f.root,{recursive:true,force:true}); }
 });
 
+test('the real batch defaults to three failed attempts and retains the ceiling across invocations', () => {
+  const f = fixture();
+  try {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const result = f.run(['--limit', '1']);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /Max retries: 3/);
+      const state = readFileSync(f.state, 'utf8').trim().split('\n').find(line => line.startsWith('1\t')).split('\t');
+      assert.equal(state[2], 'failed');
+      assert.equal(Number(state[8]), attempt);
+      assert.equal(readFileSync(join(f.root, 'calls'), 'utf8').trim().split('\n').length, attempt);
+    }
+    const next = f.run(['--dry-run', '--limit', '1']);
+    assert.equal(next.status, 0, next.stdout + next.stderr);
+    assert.match(next.stdout, /SKIP #1: failed and max retries reached/);
+    assert.equal(readFileSync(join(f.root, 'calls'), 'utf8').trim().split('\n').length, 3);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
 test('explicit failed retry grants one dispatch beyond historical cap and ordinary pass cannot renew it', () => {
   const f = fixture();
   try {

@@ -46,7 +46,7 @@ RETRY_FAILED=false
 RESUME_PAUSED=false
 INCLUDE_PENDING=false
 START_FROM=0
-MAX_RETRIES=2
+MAX_RETRIES=3
 MIN_SCORE=0
 SKIP_PDF=false
 MODEL=""  # explicit override; otherwise Claude uses spend_tier and Codex uses profile settings or system defaults
@@ -93,7 +93,7 @@ Options:
   --include-pending    Internal coordinator flag: union recovery selections with normal pending eligibility
   --start-from N       Start from offer ID N (skip earlier IDs)
   --limit N            Max offers: positive integer; omit for no limit
-  --max-retries N      Max retry attempts per offer (default: 2)
+  --max-retries N      Failed-attempt ceiling per offer (default: 3)
   --min-score N        Mark completed evaluations below N skipped (default: 0 = off)
   --cli NAME           Headless CLI to use: claude, codex, opencode, gemini, qwen (default: codex,
                        or CAREER_OPS_BATCH_CLI)

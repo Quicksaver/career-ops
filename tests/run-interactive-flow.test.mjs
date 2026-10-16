@@ -139,6 +139,55 @@ test('empty Ctrl+D resolves a missing-JD job as skipped and only the deferred si
   assert.equal((await restarted.completion).result.final_blocked, 1);
 });
 
+test('failures retry automatically three times before a question, while independent jobs finish', async t => {
+  const f = fixture(t, { rows: [A, B], failuresBeforeSuccess: { [A]: 9 }, gateFailures: [A] });
+  const run = f.startInteractive(['--skip-scan', '--parallel', '2']);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await until(() => f.records('failures.jsonl').length === attempt, `automatic attempt ${attempt} did not fail`);
+    await delay(350); // Let the question broker observe the failed state before its process exits.
+    assert.equal(f.dispatched().filter(url => url === A).length, attempt);
+    if (attempt < 3) {
+      assert.ok(!actions(f).some(action => action.reason === 'job_failed'), 'retryable failures must not ask for input');
+      assert.ok(!run.output().includes('Job #1 failed'));
+    } else {
+      await until(() => run.output().includes('failed after 3 attempts'), 'exhausted failure never became a question');
+      assert.equal(actions(f).filter(action => action.reason === 'job_failed').length, 1);
+      assert.ok(f.records('completed.jsonl').some(row => row.url === B), 'independent work finishes without an answer');
+    }
+    writeFileSync(join(f.user, `release-failure-1-${attempt}`), 'release');
+  }
+  run.send('/skip\r');
+  const result = await run.completion;
+  assert.equal(result.code, 0, result.output.slice(-6000));
+  assert.equal(f.records('failures.jsonl').length, 3, 'exhausted work never automatically dispatches a fourth attempt');
+  assert.equal(f.records('skipped.jsonl').length, 1);
+});
+
+test('a third-attempt success finishes without a failure question', async t => {
+  const f = fixture(t, { rows: [A], failuresBeforeSuccess: { [A]: 2 } });
+  const run = f.startInteractive(['--skip-scan']);
+  const result = await run.completion;
+  assert.equal(result.code, 0, result.output.slice(-6000));
+  assert.equal(result.result.status, 'completed');
+  assert.equal(f.dispatched().length, 3);
+  assert.equal(f.records('failures.jsonl').length, 2);
+  assert.ok(!result.output.includes('job failed'));
+  assert.ok(!result.output.includes('Job #1 failed'));
+});
+
+test('restart retains two previous failures and asks only after the third attempt fails', async t => {
+  const f = fixture(t, { rows: [A], failuresBeforeSuccess: { [A]: 9 } });
+  writeFileSync(join(f.user, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\tfixture\t\n`);
+  writeFileSync(join(f.user, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n1\t${A}\tfailed\t\t\t042\t-\tinterrupted\t2\n`);
+  const run = f.startInteractive(['--skip-scan']);
+  await until(() => run.output().includes('failed after 3 attempts'), 'remaining automatic attempt never ran');
+  assert.equal(f.dispatched().length, 1);
+  assert.equal(f.records('failures.jsonl')[0].retries, 3);
+  run.send('/finish\r');
+  const result = await run.completion;
+  assert.equal(result.result.remaining, 1);
+});
+
 test('an exhausted failed job can be skipped from the real interactive coordinator and stays terminal after restart', async t => {
   const f = fixture(t, { rows: [A] });
   writeFileSync(join(f.user, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\tfixture\t\n`);
@@ -325,7 +374,7 @@ test('leaving input during a later liveness pass retains the invocation job limi
   // A correction exposes a failed admitted job again alongside an unadmitted
   // sibling. The live ledger must still own both eligibility and the limit.
   writeFileSync(join(f.user, 'data/pipeline.md'), `## Pending\n- [ ] ${A}\n- [ ] ${B}\n\n## Processed\n`);
-  writeFileSync(join(f.user, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n1\t${A}\tfailed\t\t\t\t\t\t2\n`);
+  writeFileSync(join(f.user, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n1\t${A}\tfailed\t\t\t\t\t\t3\n`);
   await until(() => run.output().includes('Job #1 failed'), 'late failure question never appeared');
   run.send('/finish\r');
   await until(() => run.output().includes('finishing without input'), 'leave input was not acknowledged');
