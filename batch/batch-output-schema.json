@@ -25,6 +25,7 @@
       "enum": [
         "completed",
         "failed",
+        "closed",
         "needs_confirmation"
       ]
     },
@@ -102,6 +103,7 @@
       "enum": [
         "agency_confirmation",
         "jd_unavailable",
+        "posting_closed",
         null
       ]
     },

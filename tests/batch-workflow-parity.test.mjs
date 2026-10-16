@@ -27,7 +27,7 @@ function fixture({ handoffUrl = '', workerResult = {} } = {}) {
   // Any network/paid agent call becomes observable without contacting anything.
   writeFileSync(join(bin, 'curl'), '#!/usr/bin/env bash\necho curl >> "$FIXTURE_CALLS"\nexit 1\n', { mode: 0o755 });
   writeFileSync(join(root, 'fixture-worker.mjs'), `import {readFileSync,writeFileSync} from 'node:fs';
-const args=process.argv.slice(2), prompt=args.at(-1);
+const args=process.argv.slice(2), prompt=args.at(-1)==='-'?readFileSync(0,'utf8'):args.at(-1);
 writeFileSync(process.env.FIXTURE_CALLS+'.worker',args.join('\\n'));
 const jdPath=prompt.match(/^JD file: (.+)$/m)?.[1];
 if(jdPath) writeFileSync(process.env.FIXTURE_CALLS+'.jd',readFileSync(jdPath));
@@ -52,6 +52,22 @@ else process.exitCode=1;
   });
   return { root, batch, calls, run };
 }
+
+for (const cli of ['claude', 'codex']) test(`${cli} closes a local capture using exact internal identity without producing a hold`, () => {
+  const f=fixture({workerResult:{status:'closed',reason:'posting_closed',question:null}});
+  try {
+    const local='local:jds/closed.md';
+    writeFileSync(join(f.root,'jds/closed.md'),'---\nsource_url: https://www.linkedin.com/jobs/view/123\n---\nArchived posting text.');
+    writeFileSync(join(f.batch,'batch-input.tsv'),`id\turl\tsource\tnotes\n1\t${local}\tfixture\t\n`);
+    if(cli==='codex') writeFileSync(join(f.root,'bin/codex'),'#!/usr/bin/env bash\nnode "$FIXTURE_WORKER" "$@"\n',{mode:0o755});
+    const result=f.run([],cli);
+    assert.equal(result.status,0,result.stdout+result.stderr);
+    const cells=readFileSync(join(f.batch,'batch-state.tsv'),'utf8').trim().split('\n')[1].split('\t');
+    assert.equal(cells[1],local);assert.equal(cells[2],'closed');assert.equal(cells[8],'0');
+    assert.equal(existsSync(join(f.batch,'logs/1.hold.json')),false);
+    assert.match(result.stdout,/Closed: local:jds\/closed.md/);
+  } finally {rmSync(f.root,{recursive:true,force:true});}
+});
 
 test('standalone defaults to Codex with system model/reasoning; env and explicit Claude overrides win', () => {
   const f = fixture();

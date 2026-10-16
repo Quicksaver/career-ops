@@ -85,6 +85,8 @@ A JD answer that resumes evaluation requires nonempty `jd_text` or a public non-
 
 The `run` coordinator automatically retries ordinary failures until three attempts have failed, then presents a failed-job question. Earlier failures remain normal status output. The persisted failure count survives restarts, so a restart uses only the remaining attempts. Standalone batch uses the same ceiling across invocations; `--max-retries` overrides it there. Confirmation holds and quota pauses keep their separate handling.
 
+Confirmed closed postings finish immediately as `closed` with reason `posting-closed` in `batch-state.tsv`, without consuming a failed attempt, generating evaluation artifacts or asking a question. They move from Pending or blocked rows to Processed as Closed and remain terminal across restarts and retry flags. A uniquely matched existing Evaluated tracker row becomes Closed through the canonical status writer; other application statuses are preserved. Missing JD, login/loading/errors and absent search results do not establish closure.
+
 Confirmation payloads must identify the exact internal queue locator. For a local capture this is `local:jds/...`, even when its frontmatter names a public posting URL. Invalid identities, reasons or hold fields count as worker failures under the normal retry budget; the runner never accepts a different posting identity or creates a generic question from a malformed payload.
 
 In the interactive runner, use `/skip` followed by Enter at a failed-job prompt to discard it permanently. The footer shows this command alongside retry/defer controls. Empty Ctrl+D still defers a failed-job question.

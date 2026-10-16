@@ -4,13 +4,16 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'node:fs';
 import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ROOT, getBash, rmSync } from './helpers.mjs';
+import { ROOT, getBash, rmSync, linkNodeModules } from './helpers.mjs';
 import { copyBatchOwnership } from './copy-batch-ownership.mjs';
 import { inspectOwnership, ownershipPath, releaseOwnership } from '../batch/runner-ownership.mjs';
 import { validateWorkerArtifacts } from '../batch/validate-worker-artifacts.mjs';
 import { pathToFileURL } from 'node:url';
 import { processAlive } from '../lib/run-artifacts.mjs';
 import { terminateProcessTreeSync } from '../lib/runner-command.mjs';
+import { copyGraph } from './fixtures/run-workflow.mjs';
+import { queueActions, actionableQueue } from '../lib/run-queue.mjs';
+import { nextLiveInput } from '../lib/run-live-inputs.mjs';
 
 const stateHeader = 'id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries\n';
 const posting = id => `https://example.com/jobs/${id}`;
@@ -32,11 +35,25 @@ function fixture() {
   writeFileSync(join(root, 'worker.mjs'), `import {appendFileSync,existsSync,writeFileSync} from 'node:fs';
 const args=process.argv.slice(2), root=process.env.CAREER_OPS_ROOT;
 appendFileSync(root+'/calls','called\\n');
+if(process.env.FIXTURE_MODE.startsWith('closed')) {
+  const final=args[args.indexOf('--output-last-message')+1];
+  const result={status:'closed',id:'1',report_num:'001',url:'https://example.com/jobs/1',reason:'posting_closed',company:'',role:'',score:null,legitimacy:null,via:null,company_confidential:null,pdf:null,report:null,tracker:null,error:null,question:null};
+  if(process.env.FIXTURE_MODE==='closed-wrong-url') result.url='https://example.com/jobs/another';
+  if(process.env.FIXTURE_MODE==='closed-failed-exit') process.exitCode=1;
+  if(process.env.FIXTURE_MODE==='closed-artifacts') {
+    writeFileSync(root+'/reports/001-partial.md','unaccepted partial report');
+    writeFileSync(root+'/batch/tracker-additions/1.tsv','unaccepted partial tracker');
+  }
+  console.log('Current employer application form explicitly states the position is filled.');
+  writeFileSync(final,JSON.stringify(result)); console.log(JSON.stringify(result));
+  process.exit(process.exitCode||0);
+}
 if(process.env.FIXTURE_MODE==='wait') {
   writeFileSync(root+'/ready','ready');
   const deadline=Date.now()+15000;
   while(!existsSync(root+'/release') && Date.now()<deadline) await new Promise(r=>setTimeout(r,20));
 }
+
 if(['success429','failed429','wrong999','success001'].includes(process.env.FIXTURE_MODE)) {
   const final=args[args.indexOf('--output-last-message')+1];
   const num=['success429','failed429'].includes(process.env.FIXTURE_MODE)?'429':'001';
@@ -73,6 +90,66 @@ if(['success429','failed429','wrong999','success001'].includes(process.env.FIXTU
   };
   return { root, batch, run, start, state: join(batch, 'batch-state.tsv'), pid: join(batch, 'batch-runner.pid') };
 }
+
+test('confirmed closure is terminal on first attempt, quarantines partial artifacts and reconciles as Closed', () => {
+  const f = fixture();
+  try {
+    for (const file of ['reconcile-pipeline.mjs', 'set-status.mjs']) copyGraph(f.root, file);
+    copyFileSync(join(ROOT, 'tracker-aliases.json'), join(f.root, 'tracker-aliases.json'));
+    mkdirSync(join(f.root, 'templates'));
+    copyFileSync(join(ROOT, 'templates/states.yml'), join(f.root, 'templates/states.yml'));
+    assert.equal(linkNodeModules(f.root), null);
+    mkdirSync(join(f.root, 'data'));
+    writeFileSync(join(f.root, 'data/pipeline.md'), `## Pending\n- [ ] ${posting(1)}\n\n## Processed\n`);
+    const result = f.run(['--limit', '1'], 'closed-artifacts');
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const cells = readFileSync(f.state, 'utf8').trim().split('\n')[1].split('\t');
+    assert.equal(cells[2], 'closed'); assert.equal(cells[5], '-'); assert.equal(cells[6], '-');
+    assert.equal(cells[7], 'posting-closed'); assert.equal(cells[8], '0');
+    assert.match(result.stdout, /Closed: https:\/\/example.com\/jobs\/1/);
+    assert.match(result.stdout, /Closed: 1/);
+    assert.match(readFileSync(join(f.root, 'data/pipeline.md'), 'utf8'), /\[x\].*Closed: posting confirmed closed/);
+    assert.equal(existsSync(join(f.root, 'reports/001-partial.md')), false);
+    assert.equal(existsSync(join(f.root, 'batch/tracker-additions/1.tsv')), false);
+    assert.ok(readdirSync(join(f.root, 'batch/logs/quarantine')).some(name => name.startsWith('closed-001-1.')));
+    assert.deepEqual(queueActions(f.root, 'fixture'), []);
+    assert.deepEqual(actionableQueue(f.root, 'fixture', [], {resumePaused:true,retryUrls:[posting(1)]}), []);
+    // Even a stale blocked queue row cannot re-create a question or live dispatch.
+    writeFileSync(join(f.root, 'data/pipeline.md'), `## Pending\n- [!] ${posting(1)} | jd_unavailable | stale question\n\n## Processed\n`);
+    assert.deepEqual(queueActions(f.root, 'fixture'), []);
+    const controlPath=join(f.root,'control.json'), queuePath=join(f.root,'queue.txt');
+    writeFileSync(controlPath,JSON.stringify({schema_version:1,user:'fixture',status:'open',owner_pid:process.pid,retries:[{url:posting(1),token:'retry'}]}));
+    writeFileSync(queuePath,posting(1)+'\n');
+    assert.equal(nextLiveInput({controlPath,userRoot:f.root,user:'fixture',queuePath,retryFailed:true,resumePaused:true}).selected,null);
+    const rerun=f.run(['--limit','1','--queue-file',queuePath,'--retry-failed','--resume-paused','--include-pending']);
+    assert.equal(rerun.status,0,rerun.stdout+rerun.stderr);
+    assert.equal(readFileSync(join(f.root,'calls'),'utf8').trim().split('\n').length,1);
+  } finally { rmSync(f.root,{recursive:true,force:true}); }
+});
+
+test('closure after earlier failed attempts preserves retry history and stops further dispatch', () => {
+  const f=fixture();
+  try {
+    writeFileSync(join(f.batch,'batch-input.tsv'),`id\turl\tsource\tnotes\n1\t${posting(1)}\tfixture\t\n`);
+    writeFileSync(f.state,stateHeader+stateRow(1,'failed',2));
+    const closed=f.run([],'closed');assert.equal(closed.status,0,closed.stdout+closed.stderr);
+    const cells=readFileSync(f.state,'utf8').trim().split('\n')[1].split('\t');
+    assert.equal(cells[2],'closed');assert.equal(cells[8],'2');
+    const retry=f.run(['--retry-failed']);assert.equal(retry.status,0,retry.stdout+retry.stderr);
+    assert.equal(readFileSync(join(f.root,'calls'),'utf8').trim().split('\n').length,1);
+  } finally {rmSync(f.root,{recursive:true,force:true});}
+});
+
+for (const mode of ['closed-wrong-url','closed-failed-exit']) test(`invalid closure stays retryable (${mode})`, () => {
+  const f=fixture();
+  try {
+    const result=f.run(['--limit','1'],mode);
+    assert.equal(result.status,0,result.stdout+result.stderr);
+    const cells=readFileSync(f.state,'utf8').trim().split('\n')[1].split('\t');
+    assert.equal(cells[2],'failed'); assert.equal(cells[8],'1');
+    assert.equal(existsSync(join(f.batch,'logs/1.hold.json')),false);
+  } finally {rmSync(f.root,{recursive:true,force:true});}
+});
 
 test('native Git Bash ownership survives rejected concurrent runner and token mismatch; dead owner recovers', async () => {
   const f = fixture(); let running;
@@ -279,7 +356,7 @@ test('production batch quarantines reserved 001 / claimed 999 failure; productio
     const addition=join(f.batch,'tracker-additions/1.tsv');
     const merge=()=>spawnSync(process.execPath,[join(ROOT,'merge-tracker.mjs'),'--user','fixture'],{encoding:'utf8',timeout:30000,env:{...process.env,CAREER_OPS_ROOT:f.root,CAREER_OPS_DATA_DIR:f.root,CAREER_OPS_USER:'fixture',CAREER_OPS_TRACKER:tracker,CAREER_OPS_ADDITIONS:join(f.batch,'tracker-additions'),CAREER_OPS_BATCH_STATE:f.state}});
     // Existing rejected additions must also be safe during Go's initial merge.
-    for(const status of ['failed','needs_confirmation','paused_rate_limit','rate_limited','processing','pending']) {
+    for(const status of ['failed','needs_confirmation','paused_rate_limit','rate_limited','processing','pending','closed']) {
       writeFileSync(f.state,stateHeader+stateRow(1,status)); writeFileSync(addition,rejectedAddition);
       const result=merge(); assert.equal(result.status,0,result.stdout+result.stderr);
       assert.doesNotMatch(readFileSync(tracker,'utf8'),/\|\s*999\s*\|/);

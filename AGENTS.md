@@ -505,6 +505,8 @@ When checking the browser fallback manually:
 2. `browser_snapshot` to read content
 3. Explicit expired/closed evidence or 404/410 = closed. An unreadable JD, loading placeholder, or login/error page is **unconfirmed**, not closed. Check embedded iframes before judging a footer/navbar-only page. Title + description + Apply = active; an Apply button alone is not a JD.
 
+**Confirmed closure:** stop evaluation immediately when current posting or application-form evidence confirms closure. Resolve the queue entry as Closed without retrying or asking the user. Preserve any existing application lifecycle status; only a uniquely matched Evaluated tracker row becomes Closed. Batch workers return the artifact-free `closed` result defined in `batch/batch-prompt.md`. Missing JD/access evidence remains unconfirmed and follows its own recovery path.
+
 **Exception for batch workers (headless mode):** use public API verification where available. If the API cannot confirm the posting and browser verification is unavailable, WebFetch may supply JD text, but mark the report header `**Verification:** unconfirmed (batch mode)`; the user can verify manually later.
 
 ### LinkedIn JD loading guard (#4121)

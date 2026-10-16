@@ -5,6 +5,7 @@ import { isMainModule } from '../lib/is-main-module.mjs';
 export const HOLD_REASONS = ['agency_confirmation', 'jd_unavailable'];
 export const JD_SKIP_REASON = 'user-skipped-jd-unavailable';
 export const JOB_SKIP_REASON = 'user-skipped-failed-job';
+export const POSTING_CLOSED_REASON = 'posting-closed';
 export function validLocal(value, userRoot = null) {
   if (typeof value !== 'string' || !value.startsWith('local:jds/')) return false;
   const path = value.slice(6);
@@ -77,10 +78,20 @@ export function writeHold(path, result, user) {
   writeFileSync(tmp, JSON.stringify({ ...result, schema_version: 1, user }, null, 2) + '\n');
   renameSync(tmp, path);
 }
+export function validateClosedResult(result, { id, url, reportNum } = {}) {
+  const errors = [];
+  if (result?.status !== 'closed' || result.reason !== 'posting_closed') errors.push('invalid closed-posting status/reason');
+  if (result?.id !== String(id) || result?.url !== url || result?.report_num !== String(reportNum)) errors.push('closed-posting identity mismatch');
+  for (const field of ['score', 'legitimacy', 'via', 'company_confidential', 'pdf', 'report', 'tracker', 'error', 'question']) {
+    if (result?.[field] !== null) errors.push(`closed-posting ${field} must be null`);
+  }
+  if (result?.company !== '' || result?.role !== '') errors.push('closed-posting result cannot assert company/role');
+  return errors;
+}
 
 if (isMainModule(import.meta.url)) {
   if (process.argv.includes('--help')) {
-    console.log('Usage: node batch/manual-inputs.mjs <validate|contains|resume|answers|skip|jd|check-hold|hold|linkedin|local> USER ANSWERS_FILE QUEUE_FILE URL ID HOLD_FILE REPORT_NUM VALUE');
+    console.log('Usage: node batch/manual-inputs.mjs <validate|contains|resume|answers|skip|jd|check-closed|check-hold|hold|linkedin|local> USER ANSWERS_FILE QUEUE_FILE URL ID HOLD_FILE REPORT_NUM VALUE');
     process.exit(0);
   }
   try {
@@ -101,6 +112,9 @@ if (isMainModule(import.meta.url)) {
       const answer = answers.find(a => a.url === url && a.reason === 'jd_unavailable');
       if (answer?.jd_text) writeFileSync(holdPath, answer.jd_text);
       process.stdout.write(answer?.employer_url || url);
+    } else if (action === 'check-closed') {
+      const errors = validateClosedResult(JSON.parse(value), { id, url, reportNum });
+      if (errors.length) throw new Error(errors.join('; '));
     } else if (action === 'hold' || action === 'check-hold') {
       const result = JSON.parse(value);
       const errors = validateHold(result, { id, url, reportNum });

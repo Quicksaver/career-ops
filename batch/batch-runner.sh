@@ -929,7 +929,7 @@ append_recovery_record() {
 # Keep these protected states in sync with the pending-selection guard.
 recovery_record_is_superseded() {
   local current="$1"
-  [[ "$current" == "completed" || "$current" == "skipped" || "$current" == "needs_confirmation" ]]
+  [[ "$current" == "completed" || "$current" == "skipped" || "$current" == "closed" || "$current" == "needs_confirmation" ]]
 }
 
 # Merge one recovery record, but only into a row that has not already reached
@@ -1262,7 +1262,7 @@ try {
 }
 const ok =
   payload &&
-  ["completed", "failed", "needs_confirmation"].includes(payload.status) &&
+  ["completed", "failed", "closed", "needs_confirmation"].includes(payload.status) &&
   typeof payload.id === "string" &&
   typeof payload.report_num === "string" &&
   typeof payload.company === "string" &&
@@ -1995,6 +1995,40 @@ process_offer() {
     fi
   fi
 
+  # Confirmed closure is a terminal, unscored outcome, not a failed attempt.
+  if [[ "$parsed_status" == "closed" ]]; then
+    local closed_validation_error=""
+    if [[ "$exit_code" -eq 0 && "$timed_out" == "false" ]] && closed_validation_error=$(node "$SCRIPT_DIR/manual-inputs.mjs" check-closed "$USER_ID" "" "" "$original_url" "$id" "" "$report_num" "$worker_result_json" 2>&1); then
+      # Never publish partial artifacts from an unevaluated, closed posting.
+      local -a closed_artifacts=()
+      local closed_artifact
+      [[ ! -f "$TRACKER_DIR/$id.tsv" ]] || closed_artifacts+=("$TRACKER_DIR/$id.tsv")
+      shopt -s nullglob
+      for closed_artifact in "$REPORTS_DIR/$report_num-"*.md "$USER_ROOT/output/$report_num-"* "$USER_ROOT/jds/$report_num-"*; do
+        [[ "$closed_artifact" == *-RESERVED.md || ! -f "$closed_artifact" ]] || closed_artifacts+=("$closed_artifact")
+      done
+      shopt -u nullglob
+      if (( ${#closed_artifacts[@]} )); then
+        mkdir -p "$LOGS_DIR/quarantine" || return 125
+        local closed_quarantine closed_index=0
+        closed_quarantine=$(mktemp -d "$LOGS_DIR/quarantine/closed-$report_num-$id.XXXXXX") || return 125
+        for closed_artifact in "${closed_artifacts[@]}"; do
+          closed_index=$((closed_index + 1))
+          mv "$closed_artifact" "$closed_quarantine/$closed_index-${closed_artifact##*/}" || return 125
+        done
+        echo "WARN: Quarantined partial artifacts for closed posting #$id." >> "$log_file"
+      fi
+      update_state_retrying "$id" "$original_url" closed "$started_at" "$completed_at" "-" "-" "posting-closed" "$retries" || return 2
+      release_report_num "$report_num" || return 2
+      echo "    Closed: $original_url — posting confirmed closed."
+      return 0
+    fi
+    final_json_status="failed"
+    parsed_status="failed"
+    final_json_error="invalid closed-posting result: ${closed_validation_error:-worker did not exit successfully}"
+    echo "WARN: Worker #$id $final_json_error" >> "$log_file"
+  fi
+
     # A malformed worker response is a failed attempt, not a question the user
     # can answer. Validate without writing a hold or accepting another URL.
     if [[ "$parsed_status" == "needs_confirmation" ]]; then
@@ -2177,7 +2211,7 @@ print_summary() {
     return
   fi
 
-  local total=0 completed=0 skipped=0 failed=0 pending=0 needs_confirmation=0
+  local total=0 completed=0 skipped=0 closed=0 failed=0 pending=0 needs_confirmation=0
   local score_sum=0 score_count=0
 
   while IFS=$'\x1f' read -r sid _ sstatus _ _ _ sscore _ _; do
@@ -2191,13 +2225,14 @@ print_summary() {
         fi
         ;;
       skipped) skipped=$((skipped + 1)) ;;
+      closed) closed=$((closed + 1)) ;;
       failed) failed=$((failed + 1)) ;;
       needs_confirmation) needs_confirmation=$((needs_confirmation + 1)) ;;
       *) pending=$((pending + 1)) ;;
     esac
   done < <(tr '\t' '\037' < "$STATE_FILE")
 
-  echo "Total: $total | Completed: $completed | Skipped: $skipped | Failed: $failed | Pending: $pending | Needs confirmation: $needs_confirmation"
+  echo "Total: $total | Completed: $completed | Skipped: $skipped | Closed: $closed | Failed: $failed | Pending: $pending | Needs confirmation: $needs_confirmation"
 
   if (( score_count > 0 )); then
     local avg
@@ -2220,7 +2255,7 @@ print_status_table() {
     return
   fi
 
-  local total=0 completed=0 processing=0 failed=0 pending=0 skipped=0 rate_limited=0 paused_rate_limit=0 needs_confirmation=0
+  local total=0 completed=0 processing=0 failed=0 pending=0 skipped=0 closed=0 rate_limited=0 paused_rate_limit=0 needs_confirmation=0
   local score_sum=0 score_count=0
 
   # Read first line to skip header
@@ -2248,6 +2283,7 @@ print_status_table() {
       needs_confirmation) needs_confirmation=$((needs_confirmation + 1)) ;;
       failed) failed=$((failed + 1)) ;;
       skipped) skipped=$((skipped + 1)) ;;
+      closed) closed=$((closed + 1)) ;;
       rate_limited) rate_limited=$((rate_limited + 1)) ;;
       paused_rate_limit) paused_rate_limit=$((paused_rate_limit + 1)) ;;
       *) pending=$((pending + 1)) ;;
@@ -2255,7 +2291,7 @@ print_status_table() {
   done < <(tr '\t' '\037' < "$STATE_FILE")
 
   echo "=== Batch Progress ==="
-  echo "Total: $total | Completed: $completed | Processing: $processing | Failed: $failed | Pending: $pending | Skipped: $skipped | Rate Limited: $rate_limited | Paused: $paused_rate_limit | Needs confirmation: $needs_confirmation"
+  echo "Total: $total | Completed: $completed | Processing: $processing | Failed: $failed | Pending: $pending | Skipped: $skipped | Closed: $closed | Rate Limited: $rate_limited | Paused: $paused_rate_limit | Needs confirmation: $needs_confirmation"
   if (( score_count > 0 )); then
     local avg
     # LC_ALL=C: under e.g. a German locale awk formats "%.1f" as "4,5"
@@ -2520,7 +2556,7 @@ main() {
       continue
     else
       # Skip terminal offers
-      if [[ "$status" == "completed" || "$status" == "skipped" ]]; then
+      if [[ "$status" == "completed" || "$status" == "skipped" || "$status" == "closed" ]]; then
         continue
       fi
       # Paused rate-limit offers resume explicitly with --resume-paused.

@@ -919,7 +919,7 @@ async function main() {
         const before = initialBatchState.find(old => old.id === row.id && old.url === row.url);
         return !before || row.status !== before.status || row.retries !== before.retries || row.startedAt !== before.startedAt;
       });
-      summary.batch_counts = Object.fromEntries(['completed', 'skipped', 'failed', 'needs_confirmation', 'paused_rate_limit', 'processing']
+      summary.batch_counts = Object.fromEntries(['completed', 'skipped', 'closed', 'failed', 'needs_confirmation', 'paused_rate_limit', 'processing']
         .map(status => [status, changedStates.filter(row => row.status === status).length]));
       summary.pipeline = { status: finalQueue.pending.length || finalQueue.blocked.length ? 'partial' : 'completed',
         processed: Math.max(0, discoveredPending - finalQueue.pending.length), limit: batchLimit ? Number(batchLimit) : null };

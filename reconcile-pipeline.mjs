@@ -10,7 +10,7 @@
  * again (duplicate reports, duplicate tracker rows).
  *
  * WHAT THIS DOES
- * For each `completed` / `skipped` entry in batch-state.tsv whose URL is still
+ * For each `completed` / `skipped` / `closed` entry in batch-state.tsv whose URL is still
  * sitting in pipeline.md "Pendientes", move that line to "Procesadas" with its
  * report link, score and PDF flag.
  *
@@ -24,13 +24,18 @@
 import { readFileSync, existsSync, readdirSync, copyFileSync, realpathSync, statSync } from 'fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import * as yaml from 'js-yaml';
 import { normalizeReportLink } from './tracker-links.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import { flagValue, validateFlags } from './lib/cli-flags.mjs';
 import { withPipelineLock, LockTimeoutError } from './pipeline-lock.mjs';
-import { writeFileAtomic } from './tracker-utils.mjs';
+import { writeFileAtomic, loadCanonicalStates, resolveCanonicalStateId } from './tracker-utils.mjs';
+import { parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
+import { normalizeUrl } from './url-key.mjs';
 import { parsePendingRows, parseBlockedRows, pendingCount } from './lib/pipeline-queue.mjs';
-import { JD_SKIP_REASON, JOB_SKIP_REASON } from './batch/manual-inputs.mjs';
+import { JD_SKIP_REASON, JOB_SKIP_REASON, POSTING_CLOSED_REASON, validLocal, validUrl } from './batch/manual-inputs.mjs';
 
 const CAREER_OPS = getCareerOpsRoot();
 
@@ -92,10 +97,6 @@ if (!existsSync(STATE_FILE)) {
   console.log('No batch-state.tsv found — nothing to reconcile.');
   process.exit(0);
 }
-if (!existsSync(PIPELINE_FILE)) {
-  console.log('No pipeline.md found — nothing to reconcile.');
-  process.exit(0);
-}
 
 // ---- parse batch-state.tsv ----
 // columns: id  url  status  started_at  completed_at  report_num  score  error  retries
@@ -106,16 +107,72 @@ for (const line of readFileSync(STATE_FILE, 'utf-8').split(/\r?\n/)) {
   if (c.length < 7) continue;
   const [, url, status, , , reportNum, score, reason] = c;
   // Evaluated jobs need reports; an explicit missing-JD dismissal has none.
-  if (status !== 'completed' && status !== 'skipped') continue;
+  if (status !== 'completed' && status !== 'skipped' && status !== 'closed') continue;
   if (!url || !url.trim()) continue;
   DONE.set(url.trim(), { reportNum: (reportNum || '').trim(), score: (score || '').trim(),
     jdSkipped: status === 'skipped' && reason === JD_SKIP_REASON && reportNum === '-' && score === '-',
-    jobSkipped: status === 'skipped' && reason === JOB_SKIP_REASON && reportNum === '-' && score === '-' });
+    jobSkipped: status === 'skipped' && reason === JOB_SKIP_REASON && reportNum === '-' && score === '-',
+    closed: status === 'closed' && reason === POSTING_CLOSED_REASON && reportNum === '-' && score === '-' });
 }
 
 if (DONE.size === 0) {
   console.log('No completed batch entries in batch-state.tsv — nothing to reconcile.');
   process.exit(0);
+}
+
+// Match posting identity, never company/title. As in pipeline-liveness, only an
+// unsubmitted Evaluated row can close automatically. set-status owns locking,
+// the transition ledger and a snapshot guard against concurrent status edits.
+function closeTrackedPosting(url) {
+  const tracker = resolveTrackerPath(CAREER_OPS);
+  if (!existsSync(tracker)) return;
+  const identities = new Set([normalizeUrl(url)]);
+  if (validLocal(url, CAREER_OPS)) {
+    const capture = join(CAREER_OPS, url.slice(6));
+    if (existsSync(capture)) {
+      const frontmatter = readFileSync(capture, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+      const metadata = frontmatter ? yaml.load(frontmatter[1]) : null;
+      for (const field of ['source_url', 'application_url']) {
+        if (validUrl(metadata?.[field])) identities.add(normalizeUrl(metadata[field]));
+      }
+    }
+  }
+  const snapshot = readFileSync(tracker, 'utf8');
+  const lines = snapshot.split(/\r?\n/);
+  const options = { allowTabs: true, allowIndentation: true };
+  const columns = resolveColumns(lines, options);
+  const matches = lines.map(line => parseTrackerRow(line, columns, options))
+    .filter(row => row?.url && identities.has(normalizeUrl(row.url)));
+  if (!matches.length) return;
+  if (matches.length !== 1) {
+    console.warn(`⚠️  Closed posting matches multiple tracker rows; preserved all statuses: ${url}`);
+    return;
+  }
+  const systemRoot = dirname(fileURLToPath(import.meta.url));
+  const states = loadCanonicalStates(join(systemRoot, 'templates/states.yml'));
+  const row = matches[0];
+  if (resolveCanonicalStateId(row.status, states) !== 'evaluated') return;
+  const result = spawnSync(process.execPath, [join(systemRoot, 'set-status.mjs'),
+    '--user', process.env.CAREER_OPS_USER, 'Closed', '--row', String(row.num),
+    '--expect-tracker', createHash('sha256').update(snapshot, 'utf8').digest('hex'),
+    '--note', 'Posting confirmed closed by batch worker', '--json', ...(DRY_RUN ? ['--dry-run'] : [])],
+  { cwd: systemRoot, encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024,
+    env: { ...process.env, CAREER_OPS_ROOT: CAREER_OPS } });
+  if (result.status !== 0) throw new Error(`Cannot close tracker row #${row.num}: ${(result.error?.message || result.stderr || result.stdout).trim()}`);
+  console.log(`${DRY_RUN ? 'Would close' : 'Closed'} tracker row #${row.num}: ${url}`);
+}
+
+// Retry tracker synchronization even when a prior pass already moved the queue
+// row. A busy tracker must not lose the durable closure or block other jobs.
+for (const [url, done] of DONE) if (done.closed) {
+  try { closeTrackedPosting(url); } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}
+if (!existsSync(PIPELINE_FILE)) {
+  console.log('No pipeline.md found — no queue rows to reconcile.');
+  process.exit(process.exitCode || 0);
 }
 
 // ---- report lookup ----
@@ -188,7 +245,7 @@ const SECTION_RE = /^##\s+/;
 function reconcile() {
   const text = readFileSync(PIPELINE_FILE, 'utf-8');
   const parsed = parsePendingRows(text);
-  const resolvedRows = [...parsed.rows, ...parseBlockedRows(text).rows.filter(row => DONE.get(row.url)?.jdSkipped || DONE.get(row.url)?.jobSkipped)];
+  const resolvedRows = [...parsed.rows, ...parseBlockedRows(text).rows.filter(row => DONE.get(row.url)?.jdSkipped || DONE.get(row.url)?.jobSkipped || DONE.get(row.url)?.closed)];
   const lines = parsed.lines;
 
   let pendStart = -1, procStart = -1;
@@ -241,10 +298,11 @@ function reconcile() {
       continue;
     }
 
-    if (done.jdSkipped || done.jobSkipped) {
-      movedProcLines.push(`- [x] — | ${url} | Skipped: ${done.jdSkipped ? 'user cannot supply the missing JD' : 'user discarded the failed job'}`);
+    if (done.jdSkipped || done.jobSkipped || done.closed) {
+      const reason = done.closed ? 'posting confirmed closed' : done.jdSkipped ? 'user cannot supply the missing JD' : 'user discarded the failed job';
+      movedProcLines.push(`- [x] — | ${url} | ${done.closed ? 'Closed' : 'Skipped'}: ${reason}`);
       removeIdx.add(i);
-      moved.push({ url, jdSkipped: done.jdSkipped, jobSkipped: done.jobSkipped });
+      moved.push({ url, jdSkipped: done.jdSkipped, jobSkipped: done.jobSkipped, closed: done.closed });
       procUrls.add(url);
       continue;
     }
@@ -310,7 +368,7 @@ function reconcile() {
 
   const realMoves = moved.filter(m => !m.dup);
   console.log(`🔄 ${realMoves.length} processed entr${realMoves.length === 1 ? 'y' : 'ies'} moved Pendientes → Procesadas:`);
-  for (const m of realMoves) console.log(m.jdSkipped || m.jobSkipped ? `   + Skipped ${m.url}: ${m.jdSkipped ? 'user cannot supply the missing JD' : 'user discarded the failed job'}` : `   + #${m.num} ${m.company} — ${m.role} (${m.score})`);
+  for (const m of realMoves) console.log(m.jdSkipped || m.jobSkipped || m.closed ? `   + ${m.closed ? 'Closed' : 'Skipped'} ${m.url}: ${m.closed ? 'posting confirmed closed' : m.jdSkipped ? 'user cannot supply the missing JD' : 'user discarded the failed job'}` : `   + #${m.num} ${m.company} — ${m.role} (${m.score})`);
   const dups = moved.filter(m => m.dup);
   if (dups.length) console.log(`🧹 ${dups.length} stale Pendientes entr${dups.length === 1 ? 'y' : 'ies'} dropped (already in Procesadas).`);
   console.log(`📋 Pendientes now: ${newCount} entr${newCount === 1 ? 'y' : 'ies'}`);
