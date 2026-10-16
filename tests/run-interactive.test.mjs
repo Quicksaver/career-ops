@@ -269,6 +269,38 @@ test('failed-job prompts accept a durable skip and show its command without retr
   assert.equal(f.ui.question.url, B, 'persisted skip waits for the batch owner without asking again');
 });
 
+test('Ctrl+D ends paste mode so Enter can skip the next failed-job question', async t => {
+  const f = terminal(t), userRoot = root(t);
+  writeFileSync(join(userRoot, 'data/pipeline.md'), `## Pending\n- [ ] ${A}\n- [ ] ${B}\n\n## Processed\n`);
+  writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tneeds_confirmation\t\t\t\t\t\t0\n2\t${B}\tfailed\t\t\t002\t-\tclosed listing\t9\n`);
+  hold(userRoot, '1', A, 'jd_unavailable');
+  const accepted = [];
+  const interactive = new RunInteractive({ terminal: f.ui, userRoot, user: 'fictional', summary: { run_id: 'fixture', manual_actions: [] },
+    onAnswer: async answer => accepted.push(answer), onRetry: () => assert.fail('skip must not request another evaluation') });
+  t.after(() => interactive.close());
+  // Ctrl+D explicitly submits even if a terminal omitted its paste-end marker.
+  f.input.write('\x1b[200~Build and operate reliable production services for this fictional employer.\x04');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.ui.question.url, B);
+  f.input.write('/skip\r');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(accepted.length, 2, 'Enter must submit the skip instead of inserting an invisible newline');
+  assert.deepEqual(accepted[1], { url: B, reason: 'job_failed', answer: '', resolution: 'skip' });
+  assert.equal(f.ui.question, null);
+  assert.equal(f.ui.pasting, false);
+});
+
+test('pasting a skip command still waits for an explicit submission', async t => {
+  const f = terminal(t), submitted = [];
+  f.ui.setQuestion({ key: 'failed', reason: 'job_failed', multiline: false, submit: text => submitted.push(text) });
+  f.input.write('\x1b[200~/skip\r\x1b[201~');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(submitted, [], 'a newline inside pasted text is not a submission');
+  f.input.write('\r');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(submitted[0].trim(), '/skip');
+});
+
 test('live owner admits a failed-job skip above its retry ceiling exactly once, but never an active or terminal job', t => {
   const userRoot = root(t);
   const controlPath = join(userRoot, 'control.json'), answersPath = join(userRoot, 'answers.json'), queuePath = join(userRoot, 'queue.txt');

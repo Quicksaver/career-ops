@@ -188,6 +188,26 @@ test('restart retains two previous failures and asks only after the third attemp
   assert.equal(result.result.remaining, 1);
 });
 
+test('a JD submitted without a paste-end marker does not trap the next failed-job skip', async t => {
+  const f = fixture(t, { rows: [`- [!] ${A} | JD unavailable`, B], holds: { [A]: 'jd_unavailable' } });
+  writeFileSync(join(f.user, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\tfixture\t\n2\t${B}\tfixture\t\n`);
+  writeFileSync(join(f.user, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n2\t${B}\tfailed\t\t\t042\t-\tclosed posting\t9\n`);
+  const run = f.startInteractive(['--skip-scan']);
+  await until(() => run.output().includes('Paste JD + Ctrl+D'), 'JD question never appeared');
+  run.send('\x1b[200~Build and operate reliable production services for this fictional employer.\x04');
+  await until(() => run.output().includes('/skip: discard job'), 'next failed-job question never appeared');
+  run.send('/skip\r');
+  await until(() => JSON.parse(f.read('data/manual-answers.json')).answers.some(answer => answer.url === B), 'Enter did not persist the failed-job skip');
+  const result = await run.completion;
+  assert.equal(result.code, 0, result.output.slice(-6000));
+  assert.equal(result.result.status, 'completed');
+  assert.deepEqual(f.records('skipped.jsonl').map(row => row.url), [B]);
+  assert.deepEqual(f.records('completed.jsonl').map(row => row.url), [A]);
+  const restarted = await f.startInteractive(['--skip-scan']).completion;
+  assert.equal(restarted.result.status, 'completed');
+  assert.ok(!restarted.output.includes('job failed'));
+});
+
 test('an exhausted failed job can be skipped from the real interactive coordinator and stays terminal after restart', async t => {
   const f = fixture(t, { rows: [A] });
   writeFileSync(join(f.user, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\tfixture\t\n`);
