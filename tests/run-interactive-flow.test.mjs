@@ -20,10 +20,10 @@ test('real handoff dispatch colours queue counts, task details and numbered agen
   const run = f.startInteractive(['--skip-linkedin'], { color: true });
   const result = await run.completion;
   assert.equal(result.code, 0, stripVTControlCharacters(result.output).slice(-5000));
-  assert.match(result.output, /\x1b\[36mscan-handoff queued 1 task\(s\)\x1b\[0m/);
-  assert.match(result.output, /\x1b\[36mscan-handoff task 1\/1: Fictional/);
-  assert.match(result.output, /\x1b\[36m\[handoff-progress\] 1\/1: Fictional/);
-  assert.match(result.output, /\x1b\[32mscan-handoff processed 1\/1/);
+  assert.match(result.output, /\x1b\[1mscan-handoff\x1b\[0m \x1b\[36mqueued\x1b\[0m \x1b\[1;36m1\x1b\[0m task\(s\)/);
+  assert.match(result.output, /task \x1b\[1;36m1\/1\x1b\[0m: \x1b\[1mFictional/);
+  assert.match(result.output, /\x1b\[36mhandoff-progress\x1b\[0m/);
+  assert.match(result.output, /processed \x1b\[32m1\/1\x1b\[0m/);
 });
 
 test('terminal colours cover phases, forwarded child diagnostics and the final summary without colouring logs', async t => {
@@ -39,10 +39,10 @@ test('terminal colours cover phases, forwarded child diagnostics and the final s
   writeFileSync(join(f.user, 'release-live-workers'), 'release');
   const result = await run.completion;
   assert.equal(result.code, 0, stripVTControlCharacters(result.output).slice(-5000));
-  assert.match(result.output, /\x1b\[36mdoctor started\x1b\[0m/);
-  assert.match(result.output, /\x1b\[32mdoctor completed\x1b\[0m/);
-  assert.match(result.output, /\x1b\[33mWARN: fixture progress warning\x1b\[0m/);
-  assert.match(result.output, /\x1b\[32msummary: completed\x1b\[0m/);
+  assert.match(result.output, /\x1b\[1mdoctor\x1b\[0m \x1b\[36mstarted\x1b\[0m/);
+  assert.match(result.output, /\x1b\[1mdoctor\x1b\[0m \x1b\[32mcompleted\x1b\[0m/);
+  assert.match(result.output, /\x1b\[33mWARN\x1b\[0m: fixture progress warning/);
+  assert.match(result.output, /summary: \x1b\[32mcompleted\x1b\[0m/);
 });
 
 test('an interactive run without manual actions keeps only rolling output', async t => {

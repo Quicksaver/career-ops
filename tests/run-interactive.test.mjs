@@ -42,9 +42,9 @@ test('colours preserve clipped Unicode text, cursor placement and terminal sanit
     f.ui.log('[run:batch-1] ERROR: failed job with a long description\x1b[2J');
   }
   assert.equal(stripVTControlCharacters(colored.text()), stripVTControlCharacters(plain.text()));
-  assert.match(colored.text(), /\x1b\[36mscan started\x1b\[0m/);
-  assert.match(colored.text(), /\x1b\[1;33mQuestion 1\/1: Agency/);
-  assert.match(colored.text(), /\x1b\[1;31mERROR:/);
+  assert.match(colored.text(), /\x1b\[1mscan\x1b\[0m \x1b\[36mstarted\x1b\[0m/);
+  assert.match(colored.text(), /\x1b\[1;36m1\/1\x1b\[0m: \x1b\[1;33mAgency/);
+  assert.match(colored.text(), /\x1b\[1;31mERROR\x1b\[0m:/);
   assert.ok(!colored.text().includes('\x1b[2J'));
   assert.equal(colored.text().match(/\x1b\[\d+;\d+H\x1b\[\?25h$/)?.[0], plain.text().match(/\x1b\[\d+;\d+H\x1b\[\?25h$/)?.[0]);
 });

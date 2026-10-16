@@ -47,7 +47,7 @@ test('handoff queue, numbered tasks, agent progress and completion all receive c
     '[run:scan-handoff-agent] Agent output: [handoff-progress] 1/12: Fictional',
   ]) {
     assert.equal(runLineTone(line), 'progress', line);
-    assert.match(output.format(line), /\x1b\[36m/);
+    assert.match(output.format(line), /\x1b\[(?:1;)?36m/);
     assert.equal(stripVTControlCharacters(output.format(line)), line);
   }
   const done = '[run] scan-handoff processed 12/12 task(s), added 3 pending job(s)';
@@ -79,9 +79,59 @@ test('formatting adds only trusted SGR without changing visible text or source i
   const output = createRunOutput({ stream: { isTTY: true }, env: {} });
   const line = '[run:batch-1] ERROR: worker failed';
   const colored = output.format(line);
-  assert.match(colored, /^\x1b\[2m\[run:batch-1\]\x1b\[0m \x1b\[1;31mERROR:/);
+  assert.ok(colored.includes('\x1b[36mbatch-1\x1b[0m'));
+  assert.ok(colored.includes('\x1b[1;31mERROR\x1b[0m: worker failed'));
   assert.equal(stripVTControlCharacters(colored), line);
   const injected = '\x1b[2J\x1b]52;c;Y2xpcGJvYXJk\x07[run] scan completed\x1b[31m';
   assert.equal(cleanRunText(injected), '[run] scan completed');
   assert.equal(output.format(injected), output.format('[run] scan completed'));
+});
+
+test('mixed counters keep independent meanings, with zero errors muted and explanations neutral', () => {
+  const output = createRunOutput({ color: true });
+  const line = '[run:batch-1] Total: 12 | Completed: 8 | Failed: 0 | Pending: 2 | Needs confirmation: 2';
+  const colored = output.format(line);
+  for (const fragment of ['\x1b[1;36m12\x1b[0m', '\x1b[32m8\x1b[0m',
+    '\x1b[2m0\x1b[0m', '\x1b[1;36m2\x1b[0m', '\x1b[33m2\x1b[0m']) assert.ok(colored.includes(fragment), fragment);
+  assert.ok(!colored.includes('\x1b[1;31m'), 'zero failed jobs must not be painted as an error');
+  assert.equal(stripVTControlCharacters(colored), line);
+  assert.ok(output.format('[run] discovered: scan 0').endsWith('scan \x1b[2m0\x1b[0m'));
+  const failure = output.format('[run:batch] Job #14001 failed after 3 attempts: missing-report,missing-tracker');
+  assert.ok(failure.includes('\x1b[1;35m#14001\x1b[0m'));
+  assert.ok(failure.includes('\x1b[1;31mfailed\x1b[0m after '));
+  assert.ok(failure.includes('\x1b[1;31mmissing-report\x1b[0m'));
+});
+
+test('handoff subjects, metadata, links, paths and durations are distinct fields', () => {
+  const output = createRunOutput({ color: true });
+  const handoff = output.format('[handoff-progress] 1/12: SoSafe (websearch) — checking employer in 4.2s');
+  assert.ok(handoff.includes('\x1b[1;36m1/12\x1b[0m: \x1b[1mSoSafe\x1b[0m (websearch)'));
+  assert.ok(handoff.includes('\x1b[2m4.2s\x1b[0m'));
+  const metadata = output.format('Company: SoSafe | Role: Product Engineer | Model: gpt-6.1-sol');
+  for (const value of ['SoSafe', 'Product Engineer', 'gpt-6.1-sol']) assert.ok(metadata.includes(`\x1b[1m${value}\x1b[0m`));
+  const url = 'https://example.org/jobs/failed-role-429';
+  assert.equal(output.format(url), `\x1b[4;36m${url}\x1b[0m`);
+  const path = 'C:/Career Ops/batch/failed-429.log';
+  assert.ok(output.format(`[run] logs: ${path}`).endsWith(`\x1b[2m${path}\x1b[0m`));
+  assert.equal(output.format('reports/11854-sosafe-2026-10-16.md'), '\x1b[2mreports/11854-sosafe-2026-10-16.md\x1b[0m');
+  assert.ok(output.format('Total: 1,940').includes('\x1b[1;36m1,940\x1b[0m'));
+  const error = output.format('[run] ERROR: the server returned no response');
+  assert.ok(error.endsWith('\x1b[1;31mERROR\x1b[0m: the server returned no response'));
+});
+
+test('styling never inserts controls inside emoji or combining-character graphemes', () => {
+  const output = createRunOutput({ color: true });
+  const line = '[run:scan] 1️⃣ task: Cafe\u0301 👩‍💻 | 2 pending';
+  const colored = output.format(line);
+  for (const grapheme of ['1️⃣', 'e\u0301', '👩‍💻']) assert.ok(colored.includes(grapheme));
+  assert.equal(stripVTControlCharacters(colored), line);
+});
+
+test('footer highlights shortcuts and counters while leaving pasted input unstyled', () => {
+  const output = createRunOutput({ color: true });
+  const shortcuts = 'Enter: answer | Ctrl+D: JD | /skip: discard | /later: defer';
+  const colored = output.format(shortcuts, 'muted', { kind: 'shortcuts' });
+  for (const key of ['Enter', 'Ctrl+D', '/skip', '/later']) assert.ok(colored.includes(`\x1b[1;36m${key}\x1b[0m`));
+  assert.equal(stripVTControlCharacters(colored), shortcuts);
+  assert.equal(output.format('> ERROR: https://example.org/jobs/123', 'input', { kind: 'input' }), '\x1b[1;32m>\x1b[0m ERROR: https://example.org/jobs/123');
 });
