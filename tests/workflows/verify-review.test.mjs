@@ -1085,6 +1085,43 @@ try {
     fail(`review checkpoint resume wrong: failed=${JSON.stringify(failedCheckpointRun)} checkpoints=${JSON.stringify(checkpointFiles)} resumed=${JSON.stringify(resumedCheckpointRun)}`);
   }
 
+  const completedResumeUser = 'completedresume';
+  const completedResumeRoot = join(usersDir, completedResumeUser);
+  mkdirSync(join(completedResumeRoot, 'data'), { recursive: true });
+  writeFileSync(join(completedResumeRoot, 'data/applications.md'), [
+    '# Applications', '',
+    '| # | Date | Company | Via | Role | Score | Status | PDF | Report | Notes |',
+    '|---|---|---|---|---|---|---|---|---|---|',
+    '| 1 | 2026-01-01 | Resume Fixture | — | Engineer | **4.0/5** | Evaluated | — | — | fixture |', '',
+  ].join('\n'));
+  const resumeVerificationResult = spawnSync(process.execPath, [
+    join(ROOT, 'verify-pipeline.mjs'), '--user', completedResumeUser, '--json',
+  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf8' });
+  if (![0, 1].includes(resumeVerificationResult.status)) throw new Error(resumeVerificationResult.stderr);
+  const resumeVerification = JSON.parse(resumeVerificationResult.stdout);
+  resumeVerification.warnings.push({ id: 'stale-reservation-removed:2-RESERVED.md', code: 'stale_reservation_removed',
+    message: 'Removed stale reservation', details: { file: 'reports/2-RESERVED.md', resolved: true } });
+  const completedResumeId = 'completed-review-awaiting-repair';
+  const completedResumeDir = join(completedResumeRoot, 'data/verify-runs', completedResumeId);
+  mkdirSync(completedResumeDir, { recursive: true });
+  writeFileSync(join(completedResumeDir, 'verification.pass-01.json'), JSON.stringify(resumeVerification));
+  writeFileSync(join(completedResumeDir, 'review.pass-01.json'), JSON.stringify({
+    status: 'completed', needs_human_review: false,
+    findings: reviewLib.verificationFindings(resumeVerification).map(finding => decision(finding)),
+  }));
+  const callsBeforeCompletedResume = readFileSync(callCount, 'utf8');
+  const completedResume = JSON.parse(execFileSync(process.execPath, [
+    join(ROOT, 'verify-runner.mjs'), '--user', completedResumeUser, '--parallel', '10',
+    '--resume-run', completedResumeId, '--quiet', '--json',
+  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf8' }));
+  if (completedResume.status === 'completed' && completedResume.review_resilience.checkpoints_reused === 1 &&
+      completedResume.reviews.length > 0 && readFileSync(callCount, 'utf8') === callsBeforeCompletedResume &&
+      !completedResume.phases.some(phase => phase.name.startsWith('review-agent-'))) {
+    pass('completed review resumes without reviewer launches when resolved cleanup notices disappear');
+  } else {
+    fail(`completed review resume repeated work: ${JSON.stringify(completedResume)}`);
+  }
+
   for (const num of [60, 61]) {
     const reportFile = `${String(num).padStart(3, '0')}-paired-duplicate-2026-01-06.md`;
     writeFileSync(join(reportsDir, reportFile), [

@@ -27,6 +27,7 @@ import { resolveParallel } from './lib/parallel-config.mjs';
 import { assertOpenAIStructuredOutputSchema } from './lib/openai-output-schema.mjs';
 import { compactCompletedRun, compactPhaseRecords, processAlive } from './lib/run-artifacts.mjs';
 import {
+  assertVerificationContext,
   buildReviewLanes,
   expandActiveDuplicatePairs,
   findingJobIds,
@@ -35,6 +36,7 @@ import {
   readReviewLedger,
   reconcileDuplicateConsistency,
   reviewChunkSignature,
+  reuseCompletedReview,
   validateDuplicateConsistency,
   validateReviewDecisions,
   verificationFindings,
@@ -532,6 +534,23 @@ function loadPendingApplyCheckpoint(currentVerification) {
   return null;
 }
 
+function loadCompletedReviewCheckpoint(pass, verification, active) {
+  if (!resumeRun) return null;
+  const suffix = String(pass).padStart(2, '0');
+  const savedVerification = readJsonCheckpoint(join(runDir, `verification.pass-${suffix}.json`));
+  const savedReview = readJsonCheckpoint(join(runDir, `review.pass-${suffix}.json`));
+  if (!savedVerification || !savedReview) return null;
+  try {
+    assertVerificationContext(savedVerification, context, verification.tracker);
+    const reused = reuseCompletedReview(savedVerification, savedReview, verification, active);
+    if (reused) log(`review pass ${pass}: reused completed review for ${active.length} unchanged finding(s); no reviewer launches`);
+    return reused;
+  } catch (error) {
+    log(`ignored invalid completed review checkpoint for pass ${pass}: ${validationErrors(error).join('; ')}`);
+    return null;
+  }
+}
+
 function aggregateActions(target, result) {
   for (const key of [
     'duplicate_groups', 'tracker_rows_removed', 'reports_archived', 'artifacts_archived',
@@ -832,8 +851,13 @@ async function main() {
       }
       if (active.length === 0) break;
       summary.passes = pass;
-      const lanes = buildReviewLanes(active.filter(finding => !manualDecisions.has(finding.fingerprint)), parallelSettings.parallel);
-      log(`review pass ${pass}: ${active.length} active finding(s), ${lanes.length} dependency-safe lane(s), up to ${parallelSettings.parallel} concurrent reviewer(s)`);
+      const completedReview = loadCompletedReviewCheckpoint(pass, verification, active);
+      const lanes = completedReview ? [] : buildReviewLanes(active.filter(finding => !manualDecisions.has(finding.fingerprint)), parallelSettings.parallel);
+      if (completedReview) {
+        summary.review_resilience.checkpoints_reused++;
+        summary.review_resilience.mechanical_normalizations += completedReview.normalizations.length;
+      }
+      if (!completedReview) log(`review pass ${pass}: ${active.length} active finding(s), ${lanes.length} dependency-safe lane(s), up to ${parallelSettings.parallel} concurrent reviewer(s)`);
       const laneResults = await Promise.allSettled(lanes.map((lane, index) => reviewLane({
         lane,
         laneNumber: index + 1,
@@ -851,6 +875,9 @@ async function main() {
       const failedLane = laneResults.find(result => result.status === 'rejected');
       if (failedLane) throw failedLane.reason;
       const decisionsByKey = new Map();
+      for (const decision of completedReview?.review.findings || []) {
+        decisionsByKey.set(`${decision.finding_level}:${decision.finding_id}`, decision);
+      }
       for (const finding of active) {
         const held = manualDecisions.get(finding.fingerprint);
         if (held) decisionsByKey.set(`${finding.level}:${finding.id}`, held);
