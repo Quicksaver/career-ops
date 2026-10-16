@@ -85,7 +85,7 @@ ${resultCode}
 handle_result
 `);
   const handle = (payload, prefix = '', env = {}) => {
-    for (const name of ['state', 'recovery', 'released']) rmSync(join(work, name), { force: true });
+    for (const name of ['state', 'recovery', 'released', 'logs/1.hold.json']) rmSync(join(work, name), { force: true });
     payload = { reason: 'agency_confirmation', id: '1', url: 'https://jobs.example.test/1', report_num: '042', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null, ...payload };
     writeFileSync(join(work, 'worker.log'), `${prefix}\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\`\n`);
     const output = execFileSync(getBash(), [harness], { encoding: 'utf8', timeout: 30000, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -194,11 +194,12 @@ done
     assert.doesNotMatch(output, /OVERWRITTEN/);
     assert.equal((output.match(/Superseded:/g) || []).length, 5);
   });
-  check('missing handoff question fails closed and stays held without retry consumption', () => {
-    assert.throws(() => handle({ status: 'needs_confirmation' }), error => error.status === 2);
-    const fields = readFileSync(join(work, 'state'), 'utf8').trimEnd().split('\n');
-    assert.equal(fields[2], 'needs_confirmation');
-    assert.equal(fields[8], '0');
+  check('missing handoff question fails closed as a retryable worker failure', () => {
+    const { fields } = handle({ status: 'needs_confirmation' });
+    assert.equal(fields[2], 'failed');
+    assert.equal(fields[8], '1');
+    assert.match(fields[7], /manual hold requires a question/);
+    assert.equal(existsSync(join(work, 'logs/1.hold.json')), false);
     assert.equal(existsSync(join(work, 'released')), false);
   });
   check('only the final fenced payload controls the result', () => {
@@ -206,12 +207,12 @@ done
     assert.equal(fields[2], 'needs_confirmation');
   });
   for (const mismatch of [{ url: 'https://jobs.example.test/other' }, { id: '2' }, { reason: 'other' }, { score: 4.8 }]) {
-    check(`invalid handoff ${Object.keys(mismatch)[0]} stays held for inspection`, () => {
-      assert.throws(() => handle({ status: 'needs_confirmation', question: 'Wrong posting?', ...mismatch }), error => error.status === 2);
-      const fields = readFileSync(join(work, 'state'), 'utf8').trimEnd().split('\n');
-      assert.equal(fields[2], 'needs_confirmation');
+    check(`invalid handoff ${Object.keys(mismatch)[0]} counts as a failed attempt without accepting a hold`, () => {
+      const { fields } = handle({ status: 'needs_confirmation', question: 'Wrong posting?', ...mismatch });
+      assert.equal(fields[2], 'failed');
       assert.match(fields[7], /invalid manual handoff/);
-      assert.equal(fields[8], '0');
+      assert.equal(fields[8], '1');
+      assert.equal(existsSync(join(work, 'logs/1.hold.json')), false);
       assert.equal(existsSync(join(work, 'released')), false);
     });
   }

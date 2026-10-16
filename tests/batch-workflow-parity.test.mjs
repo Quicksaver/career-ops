@@ -13,7 +13,7 @@ import { savePostingContext } from '../lib/posting-context.mjs';
 const url = 'https://www.linkedin.com/jobs/view/123';
 const hold = { status: 'needs_confirmation', id: '1', url, report_num: '001', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null, question: 'Paste JD text or employer URL', reason: 'jd_unavailable' };
 
-function fixture() {
+function fixture({ handoffUrl = '', workerResult = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'batch-parity-'));
   const batch = join(root, 'batch');
   const bin = join(root, 'bin');
@@ -32,7 +32,8 @@ writeFileSync(process.env.FIXTURE_CALLS+'.worker',args.join('\\n'));
 const jdPath=prompt.match(/^JD file: (.+)$/m)?.[1];
 if(jdPath) writeFileSync(process.env.FIXTURE_CALLS+'.jd',readFileSync(jdPath));
 const result=JSON.parse(process.env.FIXTURE_RESULT);
-result.url=prompt.match(/^Internal batch locator: (.+)$/m)?.[1] || result.url;
+result.url=process.env.FIXTURE_HANDOFF_URL || prompt.match(/^Internal batch locator: (.+)$/m)?.[1] || result.url;
+if(args.includes('--output-last-message')) writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
 console.log('\u0060\u0060\u0060json\\n'+JSON.stringify(result)+'\\n\u0060\u0060\u0060');\n`);
   writeFileSync(join(bin, 'claude'), '#!/usr/bin/env bash\nnode "$FIXTURE_WORKER" "$@"\n', { mode: 0o755 });
   writeFileSync(join(bin, 'codex'), '#!/usr/bin/env bash\necho unexpected-codex-worker >&2\nexit 99\n', { mode: 0o755 });
@@ -47,7 +48,7 @@ else process.exitCode=1;
 `);
   const run = (args, cli = 'claude', envCli = '') => spawnSync(getBash(), ['-c', 'export PATH="$1:$PATH"\nshift\nexec bash "$@"', 'batch-fixture', toBashPath(bin), join(batch, 'batch-runner.sh'), '--user', 'fixture', ...(cli ? ['--cli', cli, '--model', 'fixture'] : []), '--defer-verification', ...args], {
     encoding: 'utf8', timeout: 30000,
-    env: { ...process.env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root, CAREER_OPS_USER: 'fixture', CAREER_OPS_BATCH_CLI: envCli, PATH: bin + delimiter + process.env.PATH, FIXTURE_CALLS: calls, FIXTURE_WORKER: join(root, 'fixture-worker.mjs'), FIXTURE_CURL_JS: join(root, 'curl-stub.mjs'), FIXTURE_RESULT: JSON.stringify({ ...hold, reason: 'agency_confirmation', question: 'Which agency?' }) },
+    env: { ...process.env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root, CAREER_OPS_USER: 'fixture', CAREER_OPS_BATCH_CLI: envCli, PATH: bin + delimiter + process.env.PATH, FIXTURE_CALLS: calls, FIXTURE_WORKER: join(root, 'fixture-worker.mjs'), FIXTURE_CURL_JS: join(root, 'curl-stub.mjs'), FIXTURE_HANDOFF_URL: handoffUrl, FIXTURE_RESULT: JSON.stringify({ ...hold, reason: 'agency_confirmation', question: 'Which agency?', ...workerResult }) },
   });
   return { root, batch, calls, run };
 }
@@ -338,6 +339,45 @@ test('an ATS API hit or a local JD bypasses browser fallback', async t => {
       assert.equal(existsSync(`${f.calls}.browser`), false);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
+});
+
+for (const cli of ['codex', 'claude']) test(`${cli} local/source confirmation mismatch spends three attempts instead of becoming an unanswerable hold`, () => {
+  const source = 'https://www.linkedin.com/jobs/view/123';
+  const f = fixture({ handoffUrl: source, workerResult: { reason: 'jd_unavailable', question: 'Paste the full description.' } });
+  try {
+    const posting = 'local:jds/partial.md';
+    writeFileSync(join(f.root, 'jds/partial.md'), `---\nsource_url: ${source}\napplication_url: ${source}\n---\nCompany introduction only. More...\n`);
+    writeFileSync(join(f.batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${posting}\tfixture\t\n`);
+    if (cli === 'codex') writeFileSync(join(f.root, 'bin/codex'), '#!/usr/bin/env bash\nnode "$FIXTURE_WORKER" "$@"\n', { mode: 0o755 });
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const result = f.run([], cli);
+      assert.ifError(result.error); assert.equal(result.status, 0, result.stdout + result.stderr);
+      const state = readFileSync(join(f.batch, 'batch-state.tsv'), 'utf8').trim().split('\n')[1].split('\t');
+      assert.equal(state[2], 'failed', result.stdout);
+      assert.equal(Number(state[8]), attempt);
+      assert.match(state[7], /invalid manual handoff: manual hold identity mismatch/);
+      assert.equal(existsSync(join(f.batch, 'logs/1.hold.json')), false, 'misattributed holds are never accepted or rewritten');
+      assert.equal(existsSync(join(f.batch, 'tracker-additions/1.tsv')), false);
+    }
+    const exhausted = f.run(['--dry-run'], cli);
+    assert.match(exhausted.stdout, /failed and max retries reached/);
+    assert.equal(existsSync(`${f.calls}.browser`), false);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('a valid local missing-JD hold retains the exact queue identity and spends no retries', () => {
+  const f = fixture({ workerResult: { reason: 'jd_unavailable', question: 'Paste the full description.' } });
+  try {
+    const posting = 'local:jds/partial.md';
+    writeFileSync(join(f.root, 'jds/partial.md'), 'Company introduction only. More...');
+    writeFileSync(join(f.batch, 'batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${posting}\tfixture\t\n`);
+    const result = f.run([]);
+    assert.ifError(result.error); assert.equal(result.status, 0, result.stdout + result.stderr);
+    const state = readFileSync(join(f.batch, 'batch-state.tsv'), 'utf8').trim().split('\n')[1].split('\t');
+    assert.equal(state[2], 'needs_confirmation'); assert.equal(state[8], '0');
+    const saved = JSON.parse(readFileSync(join(f.batch, 'logs/1.hold.json'), 'utf8'));
+    assert.equal(saved.url, posting); assert.equal(saved.reason, 'jd_unavailable');
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
 test('exact local agency answers resume only that held posting and survive empty state fields', () => {

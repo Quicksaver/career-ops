@@ -1995,19 +1995,22 @@ process_offer() {
     fi
   fi
 
-    # A human gate is not a failure or a successful evaluation (#4359).
+    # A malformed worker response is a failed attempt, not a question the user
+    # can answer. Validate without writing a hold or accepting another URL.
+    if [[ "$parsed_status" == "needs_confirmation" ]]; then
+      local hold_validation_error=""
+      if ! hold_validation_error=$(node "$SCRIPT_DIR/manual-inputs.mjs" check-hold "$USER_ID" "" "" "$url" "$id" "" "$report_num" "$worker_result_json" 2>&1); then
+        parsed_status="failed"
+        final_json_status="failed"
+        final_json_error="invalid manual handoff: $hold_validation_error"
+        echo "WARN: Worker #$id $final_json_error" >> "$log_file"
+      fi
+    fi
+
+    # A valid human gate is not a failure or a successful evaluation (#4359).
     # Keep it out of retries and release the unused report reservation.
     if [[ "$parsed_status" == "needs_confirmation" ]]; then
       local question="${parsed_error:-Which agency did this posting come through?}"
-      # A malformed/misattributed handoff stays held, never becomes retryable
-      # and never supplies an agency answer for a different posting.
-      if ! node -e '
-        const result = JSON.parse(process.argv[1]);
-        process.exit(["agency_confirmation", "jd_unavailable"].includes(result.reason) &&
-          result.url === process.argv[2] && String(result.id) === process.argv[3] ? 0 : 1);
-      ' "$worker_result_json" "$url" "$id"; then
-        question="Invalid confirmation handoff identity/reason; parent must inspect the job log and ask for this URL"
-      fi
       local tracker_artifact="$TRACKER_DIR/$id.tsv"
       local -a report_artifacts=()
       if [[ -n "$report_num" && "$report_num" != "-" ]]; then

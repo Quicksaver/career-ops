@@ -80,7 +80,7 @@ export function writeHold(path, result, user) {
 
 if (isMainModule(import.meta.url)) {
   if (process.argv.includes('--help')) {
-    console.log('Usage: node batch/manual-inputs.mjs <validate|contains|resume|answers|skip|jd|hold|linkedin|local> USER ANSWERS_FILE QUEUE_FILE URL ID HOLD_FILE REPORT_NUM VALUE');
+    console.log('Usage: node batch/manual-inputs.mjs <validate|contains|resume|answers|skip|jd|check-hold|hold|linkedin|local> USER ANSWERS_FILE QUEUE_FILE URL ID HOLD_FILE REPORT_NUM VALUE');
     process.exit(0);
   }
   try {
@@ -101,11 +101,11 @@ if (isMainModule(import.meta.url)) {
       const answer = answers.find(a => a.url === url && a.reason === 'jd_unavailable');
       if (answer?.jd_text) writeFileSync(holdPath, answer.jd_text);
       process.stdout.write(answer?.employer_url || url);
-    } else if (action === 'hold') {
+    } else if (action === 'hold' || action === 'check-hold') {
       const result = JSON.parse(value);
       const errors = validateHold(result, { id, url, reportNum });
       if (errors.length) throw new Error(errors.join('; '));
-      writeHold(holdPath, result, user);
+      if (action === 'hold') writeHold(holdPath, result, user);
     } else if (action === 'linkedin') process.exitCode = isLinkedIn(url) ? 0 : 1;
     else if (action === 'local') process.exitCode = validLocal(url, holdPath) ? 0 : 1;
     else if (action !== 'validate') throw new Error('unknown manual-input action');
