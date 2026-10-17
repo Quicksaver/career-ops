@@ -1700,7 +1700,7 @@ func (m PipelineModel) colVisible(id ColumnID) bool {
 }
 
 func (m PipelineModel) columnWidths() colWidths {
-	c := colWidths{num: 5, score: 5, company: 16, status: 16}
+	c := colWidths{num: 6, score: 5, company: 16, status: 16} // # plus a five-digit tracker ID
 	if m.colVisible(ColDate) {
 		c.date = 10
 	}

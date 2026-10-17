@@ -1,13 +1,31 @@
 package screens
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/santifer/career-ops/dashboard/internal/model"
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
+
+func TestFiveDigitTrackerIDsRemainVisible(t *testing.T) {
+	app := model.CareerApplication{Number: 11729, Company: "Example", Role: "Engineer", Status: "Evaluated"}
+	for _, selected := range []bool{false, true} {
+		for _, width := range []int{80, 120, 200} {
+			m := PipelineModel{width: width, theme: theme.NewTheme(""), visibleCols: map[ColumnID]bool{}}
+			line := ansi.Strip(m.renderAppLine(app, selected))
+			if !strings.Contains(line, "#11729") {
+				t.Fatalf("width %d, selected %v: five-digit ID was truncated: %q", width, selected, line)
+			}
+			if lipgloss.Width(line) != width || strings.Contains(line, "\n") {
+				t.Fatalf("width %d, selected %v: row no longer fits the terminal", width, selected)
+			}
+		}
+	}
+}
 
 // A rendered pipeline row must measure exactly the width it was given, in every
 // combination of optional columns.

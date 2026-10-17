@@ -977,6 +977,7 @@ What this customizes:
 - Renders the selected dashboard row as one continuous highlight by applying the selection background to every cell, separator, and trailing fill area instead of wrapping the already-styled row after composition.
 - Removes passive dashboard/viewer background fills from the dashboard title, status summary, help row, job viewer title/footer, fenced code blocks, and inline code so background highlighting is reserved for actual interactive selections.
 - Rewrites a report's displayed `**Batch ID:**` header to `**Job ID:**` with the selected tracker row's number in the dashboard viewer. The underlying report file retains its original batch provenance; the displayed ID is the canonical user-facing tracker identity.
+- Reserves six terminal cells for the dashboard's tracker ID column so `#11729` remains fully visible. The report viewer normalizes CRLF and legacy CR line endings before rendering, preventing carriage returns from overwriting terminal cells while preserving source files unchanged.
 - Preserves upstream derived fields, shared sort comparator, and new dashboard sort modes, but keeps the listing-date sort on the fork's `dashboardDate()` fallback so reports/scan-history listing dates win when available.
 - Adds a `#id` sort mode to the dashboard sort cycle; it orders tracker rows numerically by ID with the newest/highest IDs first.
 - Preserves upstream customizable columns / column picker behavior and cross-platform default-app open helpers while keeping user-root normalization for report/PDF targets.

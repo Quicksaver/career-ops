@@ -76,7 +76,11 @@ func NewViewerModelWithFileRoot(t theme.Theme, path, title, fileRoot string, wid
 	if err != nil {
 		content = []byte("Error reading file: " + err.Error())
 	}
-	renderContent := rewriteLocalPDFURLs(string(content), fileRoot)
+	// Carriage returns are cursor controls in a terminal, not visible text.
+	// Normalize file line endings before splitting or generating ANSI styles.
+	text := strings.ReplaceAll(string(content), "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	renderContent := rewriteLocalPDFURLs(text, fileRoot)
 	renderContent = rewriteBatchIDAsJobID(renderContent, app.Number)
 
 	var lines []string
