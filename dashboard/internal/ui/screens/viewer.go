@@ -87,6 +87,7 @@ func NewViewerModelWithFileRoot(t theme.Theme, path, title, fileRoot string, wid
 	if renderContent != "" {
 		lines = strings.Split(renderContent, "\n")
 	}
+	lines = machineSummaryLast(lines)
 
 	m := ViewerModel{
 		lines:           lines,
@@ -603,6 +604,46 @@ func rewriteBatchIDAsJobID(content string, appNumber int) string {
 		return content
 	}
 	return reBatchLine.ReplaceAllString(content, "${1}Job ID${2}"+strconv.Itoa(appNumber))
+}
+
+var reSectionFence = regexp.MustCompile("^(`{3,}|~{3,})(.*)$")
+
+// Reorder only the displayed section, including its nested headings and code.
+func machineSummaryLast(lines []string) []string {
+	start, end := -1, len(lines)
+	fence := ""
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		marker := reSectionFence.FindStringSubmatch(trimmed)
+		if fence != "" {
+			if marker != nil && marker[1][0] == fence[0] && len(marker[1]) >= len(fence) && strings.TrimSpace(marker[2]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if marker != nil {
+			fence = marker[1]
+			continue
+		}
+		if start < 0 {
+			if trimmed == "## Machine Summary" {
+				start = i
+			}
+		} else if strings.HasPrefix(trimmed, "# ") || strings.HasPrefix(trimmed, "## ") {
+			end = i
+			break
+		}
+	}
+	if start < 0 || end == len(lines) {
+		return lines
+	}
+	ordered := make([]string, 0, len(lines)+1)
+	ordered = append(ordered, lines[:start]...)
+	ordered = append(ordered, lines[end:]...)
+	if strings.TrimSpace(ordered[len(ordered)-1]) != "" {
+		ordered = append(ordered, "")
+	}
+	return append(ordered, lines[start:end]...)
 }
 
 func isHeadingLine(line string) bool {
