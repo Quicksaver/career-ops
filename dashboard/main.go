@@ -41,6 +41,7 @@ type appModel struct {
 	careerOpsPath   string
 	userID          string
 	remoteSSHHost   string
+	pdfLinker       func(string) string
 	theme           theme.Theme
 	progressMetrics model.ProgressMetrics
 	statsMetrics    model.StatsMetrics
@@ -184,7 +185,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.Path, msg.Title, m.careerOpsPath,
 			m.pipeline.Width(), m.pipeline.Height(),
 			msg.App, m.careerOpsPath,
-		).WithRemoteSSHHost(m.remoteSSHHost)
+		).WithRemoteSSHHost(m.remoteSSHHost).WithPDFLinker(m.pdfLinker)
 		m.state = viewReport
 		return m, nil
 
@@ -745,11 +746,23 @@ func main() {
 	pm := screens.NewPipelineModel(t, apps, metrics, careerOpsPath, 120, 40)
 
 	statsMetrics := data.ComputeStatsMetrics(apps)
+	sshHost, bindIP, dnsName := discoverViewerRemoteAddress()
+	var pdfLinker func(string) string
+	if bindIP != "" && sshHost != "" {
+		links, err := startPDFLinkServer(bindIP, dnsName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Remote PDF links unavailable: %v\n", err)
+		} else {
+			defer links.close()
+			pdfLinker = links.link
+		}
+	}
 	m := appModel{
 		pipeline:        pm,
 		careerOpsPath:   careerOpsPath,
 		userID:          resolvedUser,
-		remoteSSHHost:   discoverViewerSSHHost(),
+		remoteSSHHost:   sshHost,
+		pdfLinker:       pdfLinker,
 		theme:           t,
 		progressMetrics: progressMetrics,
 		statsMetrics:    statsMetrics,

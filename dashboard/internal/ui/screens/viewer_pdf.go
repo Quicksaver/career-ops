@@ -28,12 +28,20 @@ func (m ViewerModel) WithRemoteSSHHost(host string) ViewerModel {
 	return m
 }
 
+// WithPDFLinker maps a generated remote URI to a dashboard-owned browser URL.
+func (m ViewerModel) WithPDFLinker(linker func(string) string) ViewerModel {
+	m.pdfLinker = linker
+	m.rebuildRender()
+	return m
+}
+
 func remoteFileURL(path, host string) string {
 	forward := filepath.ToSlash(path)
 	if !strings.HasPrefix(forward, "/") {
 		forward = "/" + forward
 	}
-	return (&url.URL{Scheme: "vscode", Host: "vscode-remote", Path: "/ssh-remote+" + host + forward}).String()
+	// VS Code treats remote paths as folders unless a line suffix marks a file.
+	return (&url.URL{Scheme: "vscode", Host: "vscode-remote", Path: "/ssh-remote+" + host + forward + ":1"}).String()
 }
 
 func withinDirectory(root, path string) bool {
@@ -127,9 +135,16 @@ func (m ViewerModel) renderPDFHeader(width int) string {
 	if m.pdf.exists {
 		target := fileURLForPath(m.pdf.path)
 		if m.remoteSSHHost != "" {
-			target = remoteFileURL(m.pdf.path, m.remoteSSHHost)
+			target = ""
+			if m.pdfLinker != nil {
+				target = m.pdfLinker(remoteFileURL(m.pdf.path, m.remoteSSHHost))
+			}
 		}
-		label = hyperlink(target, label)
+		if target != "" {
+			label = hyperlink(target, label)
+		} else {
+			label += lipgloss.NewStyle().Foreground(m.theme.Subtext).Render(" (remote link unavailable)")
+		}
 	} else {
 		label += lipgloss.NewStyle().Foreground(m.theme.Subtext).Render(" (missing)")
 	}
