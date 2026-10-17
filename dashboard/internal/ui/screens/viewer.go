@@ -45,6 +45,8 @@ type ViewerModel struct {
 	careerOpsPath   string
 	coverLetterPath string
 	jobURL          string
+	pdf             viewerPDFLink
+	remoteSSHHost   string
 	statusPicker    bool
 	statusCursor    int
 	// flash is a one-shot notice rendered in place of the footer, cleared on
@@ -99,6 +101,7 @@ func NewViewerModelWithFileRoot(t theme.Theme, path, title, fileRoot string, wid
 		careerOpsPath:   careerOpsPath,
 		coverLetterPath: parseCoverLetterPath(lines, careerOpsPath),
 		jobURL:          resolveJobURL(app, lines),
+		pdf:             resolveViewerPDFLink(text, path, fileRoot),
 	}
 	m.rebuildRender()
 	return m
@@ -877,6 +880,9 @@ func (m ViewerModel) styleLine(line string) string {
 	w := m.width - 6
 	if w < 10 {
 		w = 10
+	}
+	if strings.HasPrefix(trimmed, "**PDF:**") && m.pdf.path != "" {
+		return m.renderPDFHeader(w)
 	}
 
 	if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {

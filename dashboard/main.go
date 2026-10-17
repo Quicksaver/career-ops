@@ -40,6 +40,7 @@ type appModel struct {
 	state           viewState
 	careerOpsPath   string
 	userID          string
+	remoteSSHHost   string
 	theme           theme.Theme
 	progressMetrics model.ProgressMetrics
 	statsMetrics    model.StatsMetrics
@@ -183,7 +184,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.Path, msg.Title, m.careerOpsPath,
 			m.pipeline.Width(), m.pipeline.Height(),
 			msg.App, m.careerOpsPath,
-		)
+		).WithRemoteSSHHost(m.remoteSSHHost)
 		m.state = viewReport
 		return m, nil
 
@@ -748,6 +749,7 @@ func main() {
 		pipeline:        pm,
 		careerOpsPath:   careerOpsPath,
 		userID:          resolvedUser,
+		remoteSSHHost:   discoverViewerSSHHost(),
 		theme:           t,
 		progressMetrics: progressMetrics,
 		statsMetrics:    statsMetrics,
