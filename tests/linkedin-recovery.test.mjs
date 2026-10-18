@@ -80,3 +80,28 @@ test('recovery never accepts a different posting identity or a login wall', asyn
   }
   assert.equal(linkedinPostingId(url+'?other=job'), null);
 });
+
+test('document replacement races reuse the same loading allowance without navigation retries', async () => {
+  for (const failAt of [1, 2]) {
+    const context = await browser.newContext();
+    try {
+      let requests = 0;
+      await context.route('**/*', route => {
+        requests++;
+        return route.fulfill({ contentType: 'text/html', body: `<title>Backend Engineer | Fictional | LinkedIn</title><main><section><h2>About the job</h2><span data-testid="expandable-text-box">${jd}</span></section></main>` });
+      });
+      const page = await context.newPage();
+      const evaluate = page.evaluate.bind(page);
+      let reads = 0;
+      page.evaluate = (...args) => {
+        if (++reads === failAt) throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation');
+        return evaluate(...args);
+      };
+      const result = await recoverPosting(page, url);
+      assert.equal(result.status, 'recovered');
+      assert.equal(result.jdText, jd);
+      assert.equal(requests, 1);
+      assert.ok(reads > failAt);
+    } finally { await context.close(); }
+  }
+});

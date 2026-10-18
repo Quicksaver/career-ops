@@ -10,7 +10,7 @@ import { isMainModule } from './lib/is-main-module.mjs';
 
 export async function main(argv = process.argv.slice(2)) {
   if (argv.includes('--help')) {
-    console.log('Usage: node recover-linkedin-holds.mjs --user <id> [--limit N] [--retry-unavailable]\nRecovers only saved LinkedIn missing-JD holds. Resumes its durable ledger; performs no search or evaluation.');
+    console.log('Usage: node recover-linkedin-holds.mjs --user <id> [--limit N] [--retry-errors | --retry-unavailable]\nRecovers only saved LinkedIn missing-JD holds. Resumes its durable ledger; performs no search or evaluation.');
     return;
   }
   const ctx = getUserContext(argv);
@@ -23,7 +23,8 @@ export async function main(argv = process.argv.slice(2)) {
     limit = Number(value); args.splice(limitIndex, 2);
   }
   const retry = args.includes('--retry-unavailable');
-  if (args.some(arg => arg !== '--retry-unavailable')) throw new Error(`Unknown option: ${args.find(arg => arg !== '--retry-unavailable')}`);
+  const retryErrors = args.includes('--retry-errors');
+  if (args.some(arg => !['--retry-unavailable', '--retry-errors'].includes(arg))) throw new Error(`Unknown option: ${args.find(arg => !['--retry-unavailable', '--retry-errors'].includes(arg))}`);
   const data = join(ctx.userRoot, 'data');
   mkdirSync(data, { recursive: true });
   const pipelinePath = process.env.CAREER_OPS_PIPELINE ? resolve(ctx.projectRoot, process.env.CAREER_OPS_PIPELINE) : join(data, 'pipeline.md');
@@ -41,7 +42,7 @@ export async function main(argv = process.argv.slice(2)) {
     const persist = () => {ledger.updated_at = new Date().toISOString(); writeFileAtomic(ledgerPath, JSON.stringify(ledger, null, 2) + '\n');};
     persist();
     const known = new Set(ledger.targets);
-    const todo = targets.filter(row => known.has(row.url) && (!ledger.results[row.url] || retry && ['unavailable', 'error', 'login_required'].includes(ledger.results[row.url].status)));
+    const todo = targets.filter(row => known.has(row.url) && (!ledger.results[row.url] || retry && ['unavailable', 'error', 'login_required'].includes(ledger.results[row.url].status) || retryErrors && ledger.results[row.url]?.status === 'error'));
     console.log(`[linkedin-recovery] ${todo.length} held postings to recover; ${ledger.targets.length} original targets; saved progress ${ledgerPath}`);
     const profile = join(process.env.CAREER_OPS_SCAN_AUTH_DIR ? resolve(ctx.projectRoot, process.env.CAREER_OPS_SCAN_AUTH_DIR) : join(process.env.USERPROFILE || process.env.HOME, '.scan-auth', 'users'), ctx.userId, 'linkedin/profile');
     if (!existsSync(profile)) throw new Error('No saved LinkedIn session; use scan-auth --login for this user');
