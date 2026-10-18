@@ -108,6 +108,22 @@ test('the job expansion waits for delayed full text and never saves the teaser',
   assert.equal(result.jdText, 'The selected posting job description.');
 });
 
+test('LinkedIn visually rendered aria-hidden expansion buttons remain clickable', async () => {
+  const html = companySection + jobSection.replace('id="jd-more"', 'id="jd-more" data-testid="expandable-text-button" aria-hidden="true"');
+  assert.equal((await extract({ html, expandDelay: 200 })).jdText, 'The selected posting job description.');
+});
+
+test('an aria-hidden job panel cannot use the expansion-button exception', async () => {
+  const html = companySection + jobSection.replace('<section>', '<section aria-hidden="true">')
+    .replace('id="jd-more"', 'id="jd-more" data-testid="expandable-text-button" aria-hidden="true"');
+  assert.equal((await extract({ html })).jdText, '');
+});
+
+test('an expanded button child span cannot request expansion again', async () => {
+  const html = companySection + jobSection.replace('id="jd-more" hidden', 'id="expanded" aria-expanded="true"');
+  assert.equal((await extract({ html })).jdText, 'The selected posting job description.');
+});
+
 test('an expansion which never finishes leaves the JD unavailable', async () => {
   const result = await extract({ expandDelay: 10000 });
   assert.equal(result.jdText, '');

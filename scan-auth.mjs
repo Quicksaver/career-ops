@@ -243,7 +243,7 @@ ${detail.jdText}
   return `jds/${filename}`;
 }
 
-function printSummary(scanner, userContext, results) {
+export function printSummary(scanner, userContext, results) {
   const s = results.stats;
   console.log(`\n${scanner.name} Scan Summary`);
   console.log('---------------------');
@@ -255,6 +255,8 @@ function printSummary(scanner, userContext, results) {
   console.log(`Already seen:     ${s.skipped_dedup}`);
   console.log(`Viewed skipped:   ${s.skipped_viewed ?? 0}`);
   console.log(`JDs saved:        ${s.saved}`);
+  console.log(`JDs unavailable:  ${s.jd_unavailable ?? 0}`);
+  console.log(`Blocked listings: ${s.blocked ?? 0}`);
   console.log(`Errors:           ${s.errors}`);
 
   if (results.listings.length > 0) {
@@ -263,6 +265,8 @@ function printSummary(scanner, userContext, results) {
       console.log(`  - ${l.title} - ${l.company}`);
     }
     console.log(`\nNext step: run /career-ops pipeline ${userContext.userId} to evaluate the saved listings.`);
+  } else if (s.blocked) {
+    console.log('\nNo readable JDs saved; blocked listings retained for recovery.');
   } else {
     console.log('\nNo new listings found this run.');
   }
@@ -347,8 +351,10 @@ export async function main(argv = process.argv.slice(2)) {
 
     const pipelineEntries = [];
     const historyEntries = [];
+    let savedJds = 0;
     for (const detail of scanResult.listings) {
       const jdFile = saveJd(detail, cli.portalId);
+      if (jdFile) savedJds++;
       const url = jdFile ? `local:${jdFile}` : detail.url;
       pipelineEntries.push({
         url,
@@ -385,8 +391,8 @@ export async function main(argv = process.argv.slice(2)) {
     log(`Added ${pipelineEntries.length} listings to ${PIPELINE_PATH}`);
     log(`Wrote ${historyCount} entries to ${SCAN_HISTORY_PATH} (${pipelineEntries.length} added, ${(scanResult.skipped || []).length} skipped)`);
     printSummary(scanner, userContext, {
-      listings: pipelineEntries,
-      stats: { ...scanResult.stats, saved: pipelineEntries.length },
+      listings: pipelineEntries.filter(entry => !entry.blocked),
+      stats: { ...scanResult.stats, saved: savedJds, blocked: (scanResult.holds || []).length },
       errors: scanResult.errors,
     });
   } finally {

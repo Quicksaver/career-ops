@@ -216,7 +216,7 @@ export default class LinkedInScanner {
     const errors = [];
     const stats = {
       searched: 0, found: 0, extracted: 0,
-      skipped_filter: 0, skipped_dedup: 0, skipped_viewed: 0, errors: 0,
+      skipped_filter: 0, skipped_dedup: 0, skipped_viewed: 0, jd_unavailable: 0, errors: 0,
     };
 
     // Circuit breaker: bail out after too many consecutive extraction failures
@@ -230,16 +230,15 @@ export default class LinkedInScanner {
       const searchPrompt = new URL(search.url).searchParams.get('keywords') || search.name;
       log(`\n── Search ${searchIndex + 1}/${toRun.length}: ${searchPrompt} ──`);
       stats.searched++;
-      consecutiveFailures = 0; // reset circuit breaker per search
 
       try {
         await page.goto(search.url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
         await sleep(randomDelay(delayPages));
 
-        let accepted = 0;
+        let admitted = 0;
         let hasNextPage = true;
 
-        while (hasNextPage && accepted < maxPerSearch) {
+        while (hasNextPage && admitted < maxPerSearch) {
           const currentPage = await this.#getCurrentPage(page);
           log(`Page ${currentPage || 1}`);
 
@@ -248,14 +247,13 @@ export default class LinkedInScanner {
           stats.found += cardCount;
 
           for (let i = 0; i < cardCount; i++) {
-            if (accepted >= maxPerSearch) {
+            if (admitted >= maxPerSearch) {
               log(`Reached max results (${maxPerSearch}) for this search`);
               break;
             }
 
             // Circuit breaker: stop if extraction is consistently failing
             if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-              warn(`${MAX_CONSECUTIVE_FAILURES} consecutive extraction failures — stopping this search (likely throttled or DOM changed)`);
               break;
             }
 
@@ -360,12 +358,15 @@ export default class LinkedInScanner {
 
             if (!data.jdText) {
               warn(`  ✗ No JD content: ${data.title}`);
+              stats.errors++;
+              stats.jd_unavailable++;
+              consecutiveFailures++;
+              admitted++;
               holds.push({ url: data.listingUrl, title: data.title, company: data.company,
                 status: 'needs_confirmation', reason: 'jd_unavailable',
                 question: 'JD unavailable. Paste the JD text or provide its direct employer URL to resume.' });
               scanHistory.add(data.jobId);
               if (companyTitleKey) scanHistory.add(companyTitleKey);
-              consecutiveFailures = 0;
               continue;
             }
 
@@ -379,7 +380,7 @@ export default class LinkedInScanner {
               jdText: data.jdText,
               url: data.listingUrl,
             });
-            accepted++;
+            admitted++;
             log(`  ✓ Accepted: ${data.title} at ${data.company}`);
             } finally {
               await card.dispose();
@@ -388,7 +389,7 @@ export default class LinkedInScanner {
 
           if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             hasNextPage = false;
-          } else if (accepted < maxPerSearch) {
+          } else if (admitted < maxPerSearch) {
             hasNextPage = await this.#goToNextPage(page);
             if (hasNextPage) {
               log(`Navigating to next page...`);
@@ -402,6 +403,14 @@ export default class LinkedInScanner {
         log(`Search "${search.name}" failed: ${e.message}`);
         errors.push({ search: search.name, error: e.message });
         stats.errors++;
+        consecutiveFailures++;
+      }
+
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        const message = `${MAX_CONSECUTIVE_FAILURES} consecutive extraction failures — stopping LinkedIn scan (loading, throttling or DOM change); other sources may continue`;
+        warn(message);
+        errors.push({ search: search.name, error: message });
+        break;
       }
 
       if (toRun.indexOf(search) < toRun.length - 1) {

@@ -350,7 +350,7 @@ function scanAuthProgressLine(line) {
   return /^\[scan-auth\] (Starting|Launching|Checking|Session active|Added|Wrote|WARN:|ERROR:)/.test(text) ||
     /^\[linkedin\] (── Search|Page |Found |Reached max|Navigating|Waiting|Search .* failed|⚠)/.test(text) ||
     /^── Search /.test(text) ||
-    /^(LinkedIn Scan Summary|Searches run:|Listings found:|Extracted:|Filtered out:|Already seen:|Viewed skipped:|JDs saved:|Errors:|No new listings found this run\.)/.test(text);
+    /^(LinkedIn Scan Summary|Searches run:|Listings found:|Extracted:|Filtered out:|Already seen:|Viewed skipped:|JDs saved:|JDs unavailable:|Blocked listings:|Errors:|No readable JDs saved;|No new listings found this run\.)/.test(text);
 }
 
 function handoffProgressLine(line) {

@@ -1,9 +1,10 @@
 /** Browser-side reader shared by the pre-click snapshot and bounded JD wait. */
 export function readLinkedInDetail({ card, jobId, previousJdText = '', expansionState } = {}) {
   const selectedId = new URL(location.href).searchParams.get('currentJobId') || '';
-  const visible = element => !!element && element.getClientRects().length > 0 &&
-    !element.closest('[hidden], [aria-hidden="true"], [inert]') &&
+  const rendered = element => !!element && element.getClientRects().length > 0 &&
+    !element.closest('[hidden], [inert]') &&
     getComputedStyle(element).visibility !== 'hidden';
+  const visible = element => rendered(element) && !element.closest('[aria-hidden="true"]');
   const belongsToSelection = element => {
     const owner = element.closest('[data-job-id]');
     return !owner || owner.getAttribute('data-job-id') === selectedId;
@@ -59,7 +60,14 @@ export function readLinkedInDetail({ card, jobId, previousJdText = '', expansion
   if (selectedId !== jobId || !text || text === previousJdText || /^(?:…|\.{3}|loading[.\s…]*)$/i.test(text)) return false;
 
   const more = [...description.scope.querySelectorAll('button, [role="button"], [aria-expanded], span')].find(control => {
-    if (!usable(control) || control.getAttribute('aria-expanded') === 'true') return false;
+    // LinkedIn renders this expansion button with aria-hidden="true". That does
+    // not make the button visually hidden. Restrict the exception to this button
+    // inside the selected JD, never to an aria-hidden ancestor or employer bio.
+    const expansionButton = control.closest('[data-testid="expandable-text-button"]');
+    const renderedExpansion = expansionButton && description.scope.contains(expansionButton) &&
+      rendered(control) && !expansionButton.parentElement?.closest('[aria-hidden="true"]') && belongsToSelection(control);
+    const button = control.closest('button, [role="button"], [aria-expanded]');
+    if ((!usable(control) && !renderedExpansion) || button?.getAttribute('aria-expanded') === 'true') return false;
     if (!description.element.contains(control)) {
       if (!follows(description.element, control)) return false;
       if ([...description.scope.querySelectorAll(headings)].some(heading => usable(heading) &&
