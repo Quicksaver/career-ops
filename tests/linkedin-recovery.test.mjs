@@ -105,3 +105,18 @@ test('document replacement races reuse the same loading allowance without naviga
     } finally { await context.close(); }
   }
 });
+
+test('tracking parameters and delayed selected IDs preserve exact posting identity', async () => {
+  const context = await browser.newContext();
+  try {
+    let requests = 0;
+    await context.route('**/*', route => {
+      requests++;
+      return route.fulfill({ contentType: 'text/html', body: `<title>Backend Engineer | Fictional | LinkedIn</title><script>history.replaceState(null, '', '/jobs/search/?currentJobId=999');setTimeout(() => history.replaceState(null, '', '/jobs/view/1234567890/?trackingId=fixture'), 150)</script><main><section><h2>About the job</h2><span data-testid="expandable-text-box">${jd}</span></section></main>` });
+    });
+    const result = await recoverPosting(await context.newPage(), url);
+    assert.equal(result.status, 'recovered');
+    assert.equal(result.jdText, jd);
+    assert.equal(requests, 1);
+  } finally { await context.close(); }
+});

@@ -48,15 +48,16 @@ export async function main(argv = process.argv.slice(2)) {
     if (!existsSync(profile)) throw new Error('No saved LinkedIn session; use scan-auth --login for this user');
     // Use the existing user session without anti-bot flags or browser changes.
     context = await chromium.launchPersistentContext(profile, { headless: false, viewport: { width: 1280, height: 900 } });
-    const page = await context.newPage();
     let attempted = 0, failures = 0;
     for (const target of todo) {
       if (stopping || limit && attempted >= limit) break;
       let result;
+      const page = await context.newPage();
       try {
         result = await recoverPosting(page, target.url);
         if (['recovered', 'closed'].includes(result.status)) result = await publishRecovery({ userRoot: ctx.userRoot, pipelinePath, target, result });
       } catch (error) {result = { status: 'error', error: error.message };}
+      finally { await page.close().catch(() => {}); }
       attempted++;
       ledger.results[target.url] = { ...result, attempted_at: new Date().toISOString() };
       persist();
