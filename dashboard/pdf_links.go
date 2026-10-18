@@ -3,28 +3,31 @@ package main
 import (
 	"crypto/rand"
 	"errors"
+	"mime"
 	"net"
 	"net/http"
 	"net/netip"
-	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
-// PDF links need a browser handoff: terminal clients may interpret vscode://
-// as a host path, and Microsoft's redirect adds query data to the PDF URI.
-// This listener binds only to this machine's Tailnet address. It serves no
-// files, directory listings, or caller-supplied redirect destinations.
+// Serve only registered PDFs from the active user's output directory, through
+// opaque links on this machine's Tailnet address. The open root prevents a
+// replaced file or symlink from escaping that directory after registration.
 type pdfLinkServer struct {
-	server  *http.Server
-	baseURL string
-	mu      sync.Mutex
-	targets map[string]string
-	links   map[string]string
+	server    *http.Server
+	baseURL   string
+	mu        sync.Mutex
+	targets   map[string]string
+	links     map[string]string
+	outputDir string
+	root      *os.Root
 }
 
-func startPDFLinkServer(bindIP, dnsName string) (*pdfLinkServer, error) {
+func startPDFLinkServer(bindIP, dnsName, outputDir string) (*pdfLinkServer, error) {
 	ip, err := netip.ParseAddr(bindIP)
 	if err != nil || !isTailnetAddress(ip) {
 		return nil, errors.New("PDF link listener requires a Tailnet IP")
@@ -33,52 +36,73 @@ func startPDFLinkServer(bindIP, dnsName string) (*pdfLinkServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return servePDFLinks(listener, dnsName), nil
+	return servePDFLinks(listener, dnsName, outputDir)
 }
 
-func servePDFLinks(listener net.Listener, dnsName string) *pdfLinkServer {
+func servePDFLinks(listener net.Listener, dnsName, outputDir string) (*pdfLinkServer, error) {
+	outputDir, err := filepath.Abs(outputDir)
+	if err != nil {
+		listener.Close()
+		return nil, err
+	}
+	root, err := os.OpenRoot(outputDir)
+	if err != nil {
+		listener.Close()
+		return nil, err
+	}
 	_, port, _ := net.SplitHostPort(listener.Addr().String())
 	s := &pdfLinkServer{
-		baseURL: "http://" + net.JoinHostPort(dnsName, port),
-		targets: make(map[string]string),
-		links:   make(map[string]string),
+		baseURL:   "http://" + net.JoinHostPort(dnsName, port),
+		targets:   make(map[string]string),
+		links:     make(map[string]string),
+		outputDir: outputDir,
+		root:      root,
 	}
 	s.server = &http.Server{
 		Handler:           http.HandlerFunc(s.serveHTTP),
 		ReadHeaderTimeout: 3 * time.Second,
-		WriteTimeout:      3 * time.Second,
+		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       10 * time.Second,
-		MaxHeaderBytes:    8192,
 	}
 	go func() { _ = s.server.Serve(listener) }()
-	return s
+	return s, nil
 }
 
-func (s *pdfLinkServer) close() { _ = s.server.Close() }
+func (s *pdfLinkServer) close() { _ = s.server.Close(); _ = s.root.Close() }
 
 func (s *pdfLinkServer) link(target string) string {
-	u, err := url.Parse(target)
-	if err != nil || u.Scheme != "vscode" || u.Host != "vscode-remote" ||
-		u.RawQuery != "" || u.Fragment != "" || !strings.HasPrefix(u.Path, "/ssh-remote+") ||
-		!strings.HasSuffix(strings.ToLower(u.Path), ".pdf:1") || strings.ContainsAny(target, "\r\n\x00") {
+	if !filepath.IsAbs(target) || !strings.EqualFold(filepath.Ext(target), ".pdf") {
+		return ""
+	}
+	rel, err := filepath.Rel(s.outputDir, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return ""
+	}
+	file, err := s.root.Open(rel)
+	if err != nil {
+		return ""
+	}
+	info, err := file.Stat()
+	file.Close()
+	if err != nil || !info.Mode().IsRegular() {
 		return ""
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if link := s.links[target]; link != "" {
+	if link := s.links[rel]; link != "" {
 		return link
 	}
 	token := rand.Text()
-	s.targets["/"+token] = target
+	s.targets["/"+token] = rel
 	link := s.baseURL + "/" + token
-	s.links[target] = link
+	s.links[rel] = link
 	return link
 }
 
 func (s *pdfLinkServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -91,8 +115,18 @@ func (s *pdfLinkServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Do not copy request parameters into the destination. VS Code preserves
-	// them on the remote resource, breaking PDF.js's authorized resource URL.
-	w.Header().Set("Location", target)
-	w.WriteHeader(http.StatusFound)
+	file, err := s.root.Open(target)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": info.Name()}))
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }

@@ -46,8 +46,8 @@ type ViewerModel struct {
 	coverLetterPath string
 	jobURL          string
 	pdf             viewerPDFLink
-	remoteSSHHost   string
 	pdfLinker       func(string) string
+	pdfConfigured   bool
 	statusPicker    bool
 	statusCursor    int
 	// flash is a one-shot notice rendered in place of the footer, cleared on

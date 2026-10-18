@@ -56,10 +56,10 @@ func TestPDFHeaderReplacesGenericLabelWithClickableFilename(t *testing.T) {
 	}
 }
 
-func TestPDFHeaderLinksToVSCodeThroughDashboardRedirect(t *testing.T) {
+func TestPDFHeaderRegistersActualFileForBrowserViewing(t *testing.T) {
 	m, pdf := pdfViewerFixture(t, "[Two-page A4 CV](../output/11729-example%20CV-%C3%A9.pdf)", true)
 	var remote string
-	m = m.WithRemoteSSHHost("operator@workstation.example.ts.net").WithPDFLinker(func(target string) string {
+	m = m.WithPDFLinker(func(target string) string {
 		remote = target
 		return "http://workstation.example.ts.net:12345/opaque-token"
 	})
@@ -69,18 +69,10 @@ func TestPDFHeaderLinksToVSCodeThroughDashboardRedirect(t *testing.T) {
 	}
 	redirect, err := url.Parse(links[0])
 	if err != nil || redirect.Scheme != "http" || redirect.Host != "workstation.example.ts.net:12345" || redirect.Path != "/opaque-token" || redirect.RawQuery != "" {
-		t.Fatalf("PDF link must use the dashboard's browser handoff, got %q", links[0])
+		t.Fatalf("PDF link must use the dashboard's browser PDF link, got %q", links[0])
 	}
-	uri, err := url.Parse(remote)
-	if err != nil || uri.Scheme != "vscode" || uri.Host != "vscode-remote" {
-		t.Fatalf("invalid VS Code URI: %q", links[0])
-	}
-	wantPath := "/ssh-remote+operator@workstation.example.ts.net/" + strings.TrimPrefix(filepath.ToSlash(pdf), "/") + ":1"
-	if uri.Path != wantPath || uri.RawQuery != "" || uri.Fragment != "" {
-		t.Fatalf("remote PDF target = %q, want %q", uri.Path, wantPath)
-	}
-	if !strings.Contains(remote, "%20") || !strings.Contains(remote, "%C3%A9") {
-		t.Fatalf("file path was not URI-encoded: %q", remote)
+	if remote != pdf {
+		t.Fatalf("PDF server received %q, want actual file %q", remote, pdf)
 	}
 	m.Resize(30, 20)
 	for i, line := range m.renderedLines {
@@ -88,11 +80,11 @@ func TestPDFHeaderLinksToVSCodeThroughDashboardRedirect(t *testing.T) {
 	}
 }
 
-func TestRemotePDFWithoutBrowserHandoffDoesNotEmitBrokenDeepLink(t *testing.T) {
+func TestRemotePDFWithoutServerShowsUnavailable(t *testing.T) {
 	m, _ := pdfViewerFixture(t, "[CV](../output/11729-example%20CV-%C3%A9.pdf)", true)
-	m = m.WithRemoteSSHHost("operator@workstation.example.ts.net")
+	m = m.WithPDFLinker(nil)
 	if len(linkTargets(m.View())) != 0 || !strings.Contains(ansi.Strip(m.View()), "remote link unavailable") {
-		t.Fatal("remote PDF needs a working browser handoff instead of a raw vscode URI")
+		t.Fatal("remote PDF needs a working PDF server")
 	}
 }
 
@@ -104,8 +96,9 @@ func TestPDFHeaderDoesNotTrustReportSuppliedSchemesOrPaths(t *testing.T) {
 		"[CV](../output/not-a-pdf.txt)",
 	} {
 		m, _ := pdfViewerFixture(t, value, true)
-		m = m.WithRemoteSSHHost("operator@workstation.example.ts.net")
-		if got := linkTargets(m.View()); len(got) != 0 {
+		called := false
+		m = m.WithPDFLinker(func(string) string { called = true; return "http://host.example.ts.net/pdf" })
+		if got := linkTargets(m.View()); len(got) != 0 || called {
 			t.Fatalf("unsafe report header produced links: %q", got)
 		}
 	}
@@ -115,15 +108,5 @@ func TestMissingPDFShowsPathWithoutPretendingItCanBeOpened(t *testing.T) {
 	m, _ := pdfViewerFixture(t, "[Two-page A4 CV](../output/11729-example%20CV-%C3%A9.pdf)", false)
 	if len(linkTargets(m.View())) != 0 || !strings.Contains(ansi.Strip(m.View()), "(missing)") {
 		t.Fatal("missing PDF should be named without a clickable target")
-	}
-}
-
-func TestInvalidSSHHostCannotInjectRemoteURI(t *testing.T) {
-	m, pdf := pdfViewerFixture(t, "[CV](../output/11729-example%20CV-%C3%A9.pdf)", true)
-	for _, host := range []string{"operator@host/path", "host?query", "host\x1b[2J", "https://host"} {
-		bad := m.WithRemoteSSHHost(host)
-		if got := linkTargets(bad.View()); len(got) != 1 || got[0] != fileURLForPath(pdf) {
-			t.Fatalf("invalid host %q changed link to %q", host, got)
-		}
 	}
 }

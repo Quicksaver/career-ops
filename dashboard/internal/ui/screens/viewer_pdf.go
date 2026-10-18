@@ -4,7 +4,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -16,32 +15,12 @@ type viewerPDFLink struct {
 	exists      bool
 }
 
-var reSSHAuthority = regexp.MustCompile(`^[A-Za-z0-9_.-]+(?:@[A-Za-z0-9_.-]+)?(?::[0-9]{1,5})?$`)
-
-// WithRemoteSSHHost sets trusted host configuration, never a report-supplied URI.
-func (m ViewerModel) WithRemoteSSHHost(host string) ViewerModel {
-	m.remoteSSHHost = ""
-	if reSSHAuthority.MatchString(host) {
-		m.remoteSSHHost = host
-	}
-	m.rebuildRender()
-	return m
-}
-
-// WithPDFLinker maps a generated remote URI to a dashboard-owned browser URL.
+// WithPDFLinker registers a validated PDF path with the dashboard's PDF server.
 func (m ViewerModel) WithPDFLinker(linker func(string) string) ViewerModel {
 	m.pdfLinker = linker
+	m.pdfConfigured = true
 	m.rebuildRender()
 	return m
-}
-
-func remoteFileURL(path, host string) string {
-	forward := filepath.ToSlash(path)
-	if !strings.HasPrefix(forward, "/") {
-		forward = "/" + forward
-	}
-	// VS Code treats remote paths as folders unless a line suffix marks a file.
-	return (&url.URL{Scheme: "vscode", Host: "vscode-remote", Path: "/ssh-remote+" + host + forward + ":1"}).String()
 }
 
 func withinDirectory(root, path string) bool {
@@ -134,10 +113,10 @@ func (m ViewerModel) renderPDFHeader(width int) string {
 	label := lipgloss.NewStyle().Foreground(m.theme.Blue).Underline(true).Render(m.pdf.label)
 	if m.pdf.exists {
 		target := fileURLForPath(m.pdf.path)
-		if m.remoteSSHHost != "" {
+		if m.pdfConfigured {
 			target = ""
 			if m.pdfLinker != nil {
-				target = m.pdfLinker(remoteFileURL(m.pdf.path, m.remoteSSHHost))
+				target = m.pdfLinker(m.pdf.path)
 			}
 		}
 		if target != "" {
