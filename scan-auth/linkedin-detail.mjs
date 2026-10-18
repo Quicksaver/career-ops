@@ -1,6 +1,7 @@
 /** Browser-side reader shared by the pre-click snapshot and bounded JD wait. */
 export function readLinkedInDetail({ card, jobId, previousJdText = '', expansionState } = {}) {
-  const selectedId = new URL(location.href).searchParams.get('currentJobId') || '';
+  const currentUrl = new URL(location.href);
+  const selectedId = currentUrl.searchParams.get('currentJobId') || /^\/jobs\/view\/(\d+)(?:\/|$)/.exec(currentUrl.pathname)?.[1] || '';
   const rendered = element => !!element && element.getClientRects().length > 0 &&
     !element.closest('[hidden], [inert]') &&
     getComputedStyle(element).visibility !== 'hidden';
