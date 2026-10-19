@@ -52,7 +52,7 @@ export function updateStateRow(path, fields) {
 export function recoverProcessing(path, now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')) {
   if (!existsSync(path)) return 0;
   let recovered = 0;
-  const lines = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').trimEnd().split('\n').map((line, index) => {
+  const lines = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').split('\n').filter(Boolean).map((line, index) => {
     const fields = line.split('\t');
     if (!index || fields[2] !== 'processing') return line;
     fields[2] = 'failed'; fields[4] = now; fields[7] = 'stale-processing-state';

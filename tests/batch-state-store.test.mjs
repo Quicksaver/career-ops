@@ -84,10 +84,10 @@ test('updates replace only the exact ID, collapse duplicate copies and sanitise 
 
 test('stale processing recovery preserves terminal rows and increments only interrupted retries', t => {
   const path = join(fixture(t), 'state.tsv');
-  const completed = '2\thttps://example.com/2\tcompleted\tstart\tend\t002\t4\t\t0';
+  const completed = '2\thttps://example.com/2\tcompleted\tstart\tend\t002\t4\t\t';
   writeFileSync(path, header + '1\thttps://example.com/1\tprocessing\tstart\t\t001\t\t\t1\n' + completed + '\n');
   assert.equal(recoverProcessing(path, 'now'), 1);
-  const lines = readFileSync(path, 'utf8').trimEnd().split('\n');
+  const lines = readFileSync(path, 'utf8').split('\n');
   assert.deepEqual(lines[1].split('\t'), ['1', 'https://example.com/1', 'failed', 'start', 'now', '001', '', 'stale-processing-state', '2']);
   assert.equal(lines[2], completed);
   assert.equal(recoverProcessing(path), 0);
