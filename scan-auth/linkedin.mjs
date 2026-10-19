@@ -83,6 +83,12 @@ export function randomDelay(range) {
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+export async function getSingleLinkedInPage(context) {
+  const [page, ...extraPages] = context.pages();
+  for (const extra of extraPages) await extra.close();
+  return page || context.newPage();
+}
+
 function log(msg) { console.log(`[linkedin] ${msg}`); }
 function warn(msg) { console.warn(`[linkedin] ⚠ ${msg}`); }
 
@@ -149,7 +155,7 @@ export default class LinkedInScanner {
 
   async isLoggedIn(page) {
     const url = page.url();
-    if (url.includes('/login') || url.includes('/uas/') || url.includes('/checkpoint/')) {
+    if (/\/(?:login|uas|checkpoint|authwall)(?:\/|\?|$)/.test(new URL(url).pathname)) {
       return false;
     }
     if (await page.$(SELECTORS.loginForm)) return false;
@@ -224,7 +230,7 @@ export default class LinkedInScanner {
     let consecutiveFailures = 0;
 
     // Single page for all searches — avoids Playwright stealing window focus
-    const page = await context.newPage();
+    const page = await getSingleLinkedInPage(context);
 
     for (const [searchIndex, search] of toRun.entries()) {
       const searchPrompt = new URL(search.url).searchParams.get('keywords') || search.name;
@@ -420,7 +426,6 @@ export default class LinkedInScanner {
       }
     }
 
-    await page.close();
     return { listings, holds, skipped, errors, stats };
   }
 

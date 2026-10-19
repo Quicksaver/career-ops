@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { linkedinPostingId, publishRecovery, recoverPosting, recoveryTargets } from '../lib/linkedin-recovery.mjs';
+import { getSingleLinkedInPage } from '../scan-auth/linkedin.mjs';
 
 const url = 'https://www.linkedin.com/jobs/view/1234567890/';
 const jd = 'We need a fictional backend engineer to design reliable services, build APIs, review code, write tests, and work with customers. Requirements include practical programming experience, communication skills, and experience with relational databases.';
@@ -70,12 +71,12 @@ test('canonical posting recovery uses one page navigation and expands only its J
 });
 
 test('recovery never accepts a different posting identity or a login wall', async () => {
-  for (const destination of ['/jobs/view/999/', '/login']) {
+  for (const destination of ['/jobs/view/999/', '/login', '/authwall', '/checkpoint/challenge']) {
     const context = await browser.newContext();
     try {
       await context.route('**/*', route => route.fulfill({contentType:'text/html',body:`<script>history.replaceState(null,'',${JSON.stringify(destination)})</script><main><h2>About the job</h2><span data-testid="expandable-text-box">${jd}</span></main>`}));
       const result = await recoverPosting(await context.newPage(), url);
-      assert.equal(result.status, destination === '/login' ? 'login_required' : 'unavailable');
+      assert.equal(result.status, destination === '/jobs/view/999/' ? 'unavailable' : 'login_required');
     } finally {await context.close();}
   }
   assert.equal(linkedinPostingId(url+'?other=job'), null);
@@ -128,8 +129,33 @@ test('HTTP closure evidence must retain the exact posting identity', async () =>
       try {
         await context.route('**/*', route => route.fulfill({ status, contentType: 'text/html', body: `<script>history.replaceState(null, '', ${JSON.stringify(destination)})</script><main>Unavailable</main>` }));
         const result = await recoverPosting(await context.newPage(), url);
-        assert.equal(result.status, destination === '/jobs/view/1234567890/' ? 'closed' : 'unavailable');
+        assert.equal(result.status, destination === '/jobs/view/1234567890/' ? 'closed' : destination === '/authwall' ? 'login_required' : 'unavailable');
       } finally { await context.close(); }
     }
   }
+});
+
+test('successive posting recovery reuses the startup tab with at most one request active', async () => {
+  const context = await browser.newContext();
+  try {
+    const startup = await context.newPage();
+    await context.newPage();
+    const page = await getSingleLinkedInPage(context);
+    assert.equal(page, startup);
+    assert.equal(context.pages().length, 1);
+    let active = 0, maximum = 0, navigations = 0;
+    await context.route('**/*', async route => {
+      active++; maximum = Math.max(maximum, active); navigations++;
+      await route.fulfill({ contentType: 'text/html', body: `<title>Engineer | Fictional | LinkedIn</title><main><section><h2>About the job</h2><span data-testid="expandable-text-box">${jd} Posting ${new URL(route.request().url()).pathname}.</span></section></main>` });
+      active--;
+    });
+    for (const id of ['1234567890', '9876543210']) {
+      const result = await recoverPosting(await getSingleLinkedInPage(context), `https://www.linkedin.com/jobs/view/${id}/`);
+      assert.equal(result.status, 'recovered');
+      assert.ok(result.jdText.includes(id));
+      assert.deepEqual(context.pages(), [startup]);
+    }
+    assert.equal(navigations, 2);
+    assert.equal(maximum, 1);
+  } finally { await context.close(); }
 });

@@ -26,7 +26,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
-import LinkedInScanner from './scan-auth/linkedin.mjs';
+import LinkedInScanner, { getSingleLinkedInPage } from './scan-auth/linkedin.mjs';
 import { collectSeenUrls, shouldDedupScanHistoryRow, configureScanUserPaths,
   appendToPipeline as appendCanonicalPipeline, appendToScanHistory as appendCanonicalHistory } from './scan.mjs';
 import { parseScanHistoryLine } from './lib/scan-history-columns.mjs';
@@ -316,7 +316,7 @@ export async function main(argv = process.argv.slice(2)) {
   const context = await launchBrowser(profileDir);
 
   try {
-    const page = await context.newPage();
+    const page = await getSingleLinkedInPage(context);
 
     log('Checking session...');
     const loggedIn = await scanner.checkSession(page);
@@ -336,8 +336,6 @@ export async function main(argv = process.argv.slice(2)) {
       await page.goto(scanner.loginUrl, { waitUntil: 'domcontentloaded' });
       await waitForLogin(page, scanner);
     }
-
-    await page.close();
 
     if (cli.login) {
       log(`Login successful - ${scanner.name} session saved for user "${userContext.userId}". Run again without --login to scan.`);

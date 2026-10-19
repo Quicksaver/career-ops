@@ -7,6 +7,7 @@ import { acquirePipelineLock } from './pipeline-lock.mjs';
 import { writeFileAtomic } from './tracker-utils.mjs';
 import { linkedinPostingId, publishRecovery, recoverPosting, recoveryTargets } from './lib/linkedin-recovery.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
+import LinkedInScanner, { getSingleLinkedInPage } from './scan-auth/linkedin.mjs';
 
 export async function main(argv = process.argv.slice(2)) {
   if (argv.includes('--help')) {
@@ -48,16 +49,18 @@ export async function main(argv = process.argv.slice(2)) {
     if (!existsSync(profile)) throw new Error('No saved LinkedIn session; use scan-auth --login for this user');
     // Use the existing user session without anti-bot flags or browser changes.
     context = await chromium.launchPersistentContext(profile, { headless: false, viewport: { width: 1280, height: 900 } });
+    const page = await getSingleLinkedInPage(context);
+    if (!await new LinkedInScanner().checkSession(page)) {
+      throw new Error(`LinkedIn login required for ${ctx.userId}; sign in to the saved profile before recovery`);
+    }
     let attempted = 0, failures = 0;
     for (const target of todo) {
       if (stopping || limit && attempted >= limit) break;
       let result;
-      const page = await context.newPage();
       try {
         result = await recoverPosting(page, target.url);
         if (['recovered', 'closed'].includes(result.status)) result = await publishRecovery({ userRoot: ctx.userRoot, pipelinePath, target, result });
       } catch (error) {result = { status: 'error', error: error.message };}
-      finally { await page.close().catch(() => {}); }
       attempted++;
       ledger.results[target.url] = { ...result, attempted_at: new Date().toISOString() };
       persist();
