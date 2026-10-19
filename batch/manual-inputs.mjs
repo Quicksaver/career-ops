@@ -91,7 +91,7 @@ export function validateClosedResult(result, { id, url, reportNum } = {}) {
 
 if (isMainModule(import.meta.url)) {
   if (process.argv.includes('--help')) {
-    console.log('Usage: node batch/manual-inputs.mjs <validate|contains|resume|answers|skip|jd|check-closed|check-hold|hold|linkedin|local> USER ANSWERS_FILE QUEUE_FILE URL ID HOLD_FILE REPORT_NUM VALUE');
+    console.log('Usage: node batch/manual-inputs.mjs <validate|select|contains|resume|answers|skip|jd|check-closed|check-hold|hold|linkedin|local> USER ANSWERS_FILE QUEUE_FILE URL_OR_INPUT ID HOLD_FILE REPORT_NUM VALUE');
     process.exit(0);
   }
   try {
@@ -99,7 +99,12 @@ if (isMainModule(import.meta.url)) {
     const userRoot = process.env.CAREER_OPS_ROOT || process.env.CAREER_OPS_DATA_DIR || null;
     const answers = loadAnswers(answersPath, user, userRoot);
     const queue = loadQueue(queuePath, userRoot);
-    if (action === 'contains') process.exitCode = !queue || queue.has(url) ? 0 : 1;
+    if (action === 'select') {
+      if (!queue) throw new Error('input selection requires an exact URL queue');
+      const lines = readFileSync(url, 'utf8').split(/\r?\n/);
+      process.stdout.write(lines.filter((line, index) => index === 0 || queue.has(line.split('\t')[1])).join('\n') + '\n');
+    }
+    else if (action === 'contains') process.exitCode = !queue || queue.has(url) ? 0 : 1;
     else if (action === 'resume') process.exitCode = canResume(JSON.parse(readFileSync(holdPath, 'utf8')), answers, { id, url, user }) ? 0 : 1;
     else if (action === 'answers') process.stdout.write(JSON.stringify(answers.filter(a => a.url === url)));
     else if (action === 'skip') {

@@ -75,8 +75,8 @@ test('updates replace only the exact ID, collapse duplicate copies and sanitise 
   updateStateRow(path, ['1', 'https://example.com/1', 'completed', '', '', '001', '4', 'line\nwith\ttabs\r', '1']);
   const lines = readFileSync(path, 'utf8').trimEnd().split('\n');
   assert.equal(lines.length, 3);
-  assert.equal(lines[1].split('\t')[0], '2');
-  assert.equal(lines[2].split('\t')[7], 'line with tabs ');
+  assert.equal(lines[2].split('\t')[0], '2');
+  assert.equal(lines[1].split('\t')[7], 'line with tabs ');
   const before = readFileSync(path, 'utf8');
   assert.throws(() => updateStateRow(path, ['1']), /Invalid state row/);
   assert.equal(readFileSync(path, 'utf8'), before);

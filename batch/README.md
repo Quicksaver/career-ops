@@ -34,6 +34,8 @@ Parallelism resolves as `--parallel`, profile `batch.parallel`, then `1` for bot
 
 Batch state transactions use `state-store.mjs` with native OS process ownership and a unique ownership token. This prevents Git Bash PID mismatches from reclaiming a live writer's lock. Each update reads and atomically replaces the state file once, preserves unrelated rows, and keeps empty TSV fields intact. A dead owner is recovered through the shared lock protocol; a live owner is never evicted by age.
 
+When `--queue-file` selects work from a large historical input, the runner validates the queue and selects exact matching rows in one pass before dispatch. It leaves the queue and input files unchanged and retains user and local-capture containment checks.
+
 ## Options
 
 | Flag | Default | Purpose |

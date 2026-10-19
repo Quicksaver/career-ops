@@ -2529,16 +2529,24 @@ main() {
   local -a pending_notes=()
 
   if [[ -z "$LIVE_INPUTS" ]]; then
+  # Validate and select once. Starting Node and rechecking every local capture
+  # for each historical input row made large Windows queues take minutes to
+  # prepare before the first worker could start.
+  local selected_input="$INPUT_FILE" selected_tmp=""
+  if [[ -n "$QUEUE_FILE" ]]; then
+    selected_tmp=$(mktemp "$BATCH_DIR/queue-selection.XXXXXX.tsv") || exit 1
+    if ! node "$SCRIPT_DIR/manual-inputs.mjs" select "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$INPUT_FILE" > "$selected_tmp"; then
+      rm -f "$selected_tmp"
+      exit 1
+    fi
+    selected_input="$selected_tmp"
+  fi
   while IFS=$'\t' read -r id url source notes; do
     [[ "$id" == "id" ]] && continue  # skip header
     [[ -z "$id" || -z "$url" ]] && continue
 
     # Guard against non-numeric id values
     [[ "$id" =~ ^[0-9]+$ ]] || continue
-
-    if [[ -n "$QUEUE_FILE" ]] && ! node "$SCRIPT_DIR/manual-inputs.mjs" contains "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$url"; then
-      continue
-    fi
 
     # Skip if before start-from
     if (( id < START_FROM )); then
@@ -2606,7 +2614,8 @@ main() {
     if (( LIMIT > 0 && ${#pending_ids[@]} >= LIMIT )); then
       break
     fi
-  done < "$INPUT_FILE"
+  done < "$selected_input"
+  [[ -z "$selected_tmp" ]] || rm -f "$selected_tmp"
   fi
 
   local pending_count=${#pending_ids[@]}

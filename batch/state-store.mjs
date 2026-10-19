@@ -37,14 +37,14 @@ export function updateStateRow(path, fields) {
   }).join('\t');
   const lines = existsSync(path) ? readFileSync(path, 'utf8').replace(/\r\n/g, '\n').split('\n').filter(Boolean) : [HEADER];
   let found = false;
-  const output = lines.filter((line, index) => {
-    if (index === 0 || line.split('\t', 1)[0] !== fields[0]) return true;
-    found = true;
-    return false;
-  });
+  const output = [];
+  for (const [index, line] of lines.entries()) {
+    if (index === 0 || line.split('\t', 1)[0] !== fields[0]) output.push(line);
+    else if (!found) { output.push(row); found = true; }
+  }
   // Exactly one row for the updated ID, including recovery from prior duplicate
   // writes. Other IDs, including historical rows, remain byte-for-byte intact.
-  output.push(row);
+  if (!found) output.push(row);
   atomicStateWrite(path, output);
   return found;
 }
