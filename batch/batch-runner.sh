@@ -480,6 +480,17 @@ init_state() {
 STATE_LOCK_STALE_AGE_SECONDS=15
 
 acquire_state_lock() {
+  if [[ -f "${SCRIPT_DIR:-}/state-store.mjs" ]]; then
+    local state_bash_pid="${BASHPID:-$$}" state_native_pid
+    state_native_pid="$state_bash_pid"
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*) state_native_pid=$(cat "/proc/$state_bash_pid/winpid") || return 1 ;;
+    esac
+    STATE_NATIVE_PATH="$STATE_FILE.state-owner.pid"
+    STATE_NATIVE_TOKEN=$(node "$SCRIPT_DIR/state-store.mjs" acquire "$STATE_NATIVE_PATH" "$state_native_pid" "$((STATE_LOCK_TIMEOUT_SECONDS * 1000))") || return 1
+    STATE_LOCK_OWNED=1
+    return 0
+  fi
   if [[ "${STATE_LOCK_DISABLED:-0}" -eq 1 ]]; then
     return 0
   fi
@@ -585,6 +596,12 @@ remove_benign_state_lock_entries() {
 }
 
 release_state_lock() {
+  if [[ -n "${STATE_NATIVE_TOKEN:-}" ]]; then
+    node "$SCRIPT_DIR/state-store.mjs" release "$STATE_NATIVE_PATH" "$STATE_NATIVE_TOKEN" || return 1
+    STATE_NATIVE_TOKEN=""
+    STATE_LOCK_OWNED=0
+    return 0
+  fi
   if [[ "${STATE_LOCK_OWNED:-0}" -ne 1 ]]; then
     return
   fi
@@ -604,7 +621,7 @@ run_with_state_lock() {
     status=$?
   fi
 
-  release_state_lock
+  release_state_lock || return $?
   return "$status"
 }
 
@@ -687,6 +704,10 @@ sed_replacement_escape() {
 }
 
 mark_stale_processing_unlocked() {
+  if [[ -f "${SCRIPT_DIR:-}/state-store.mjs" ]]; then
+    node "$SCRIPT_DIR/state-store.mjs" recover "$STATE_FILE"
+    return $?
+  fi
   if [[ ! -f "$STATE_FILE" ]]; then
     return 0
   fi
@@ -832,6 +853,10 @@ log_discard() {
 # Caller must hold STATE_LOCK_DIR while this runs.
 update_state_unlocked() {
   local id="$1" url="$2" status="$3" started="$4" completed="$5" report_num="$6" score="$7" error="$8" retries="$9"
+  if [[ -f "${SCRIPT_DIR:-}/state-store.mjs" ]]; then
+    node "$SCRIPT_DIR/state-store.mjs" update "$STATE_FILE" "$@"
+    return $?
+  fi
 
   # batch-state.tsv is tab-separated with one row per line -- a literal tab,
   # newline, or carriage return inside $error (e.g. from a worker's raw error

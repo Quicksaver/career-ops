@@ -40,6 +40,7 @@ The full fork review adds production-boundary checks beyond the original runner 
 - Duplicate repairs compare posting identities and report references against fresh evidence under the tracker lock. Partial manual holds cross tracker/report boundaries; a broad mixed-posting exception still permits an independently proven exact subgroup. Cross-type subgroup comparison requires complete tracker-to-report mappings in the shared report identity domain; manual holds, equal-set exceptions and ambiguous mappings remain binding. Pending action reuse binds to the pending input generation, and name-scoped verification findings retain stable identities when neighboring findings disappear.
 - Batch supervisors are owned before worker registration. Windows workers join an owned Job Object before executing, and normal launcher exit drains its Job members before validation. Owned launch JSON files preserve argv capacity and worker stdin. Failed cleanup persists evidence and returns a fatal outcome independently of child closure; the parent skips a failed-stop wait and attempts other cleanup before retaining ownership. Sequential preparation and quarantine failures stop the run before merge. Worker timeouts accept finite nonnegative seconds, including zero to disable and fractional values.
 - The coordinator retains separate bounded stdout and stderr buffers so a late progress burst cannot erase the useful failure diagnostic. JSON parsing and merge-result checks continue to consume stdout.
+- Batch state transactions use native OS owner PIDs and ownership tokens through the shared lock protocol. Git Bash PID mismatches cannot reclaim a live writer. State rewrites use one atomic replacement with a unique temporary file instead of per-row shell appends, preserving unrelated rows and empty TSV fields while supporting concurrent workers.
 - Web CV template selection reads the selected user's profile even when the web process uses `CAREER_OPS_ROOT` for the system checkout. CLI LaTeX output checks canonical containment, PDF theme insertion preserves literal CSS values, and dashboard report URLs take precedence over synthesized company URL fallbacks.
 - OpenRouter help routes before selected-user context, environment-file loading or model discovery. Bare `help` is a command; an operand such as `evaluate help` still requires a selected user. Plugin removal validates a plain slug before deleting files or changing configuration.
 - Scans reopen only eligible pre-application rows after a matching live rediscovery, preserve recorded URLs and evaluation dates, write the canonical transition ledger under the tracker transaction, and use liveness before reopening when requested. Authenticated scans share canonical queue/history admission and persist missing-JD holds. HTML provider shape changes fail visibly, optional browser subresources do not abort an otherwise valid board, and pagination/categories retain posting identity.
@@ -1230,6 +1231,7 @@ Files:
 - `lib/run-queue.mjs`
 - `batch/manual-inputs.mjs`
 - `batch/runner-ownership.mjs`
+- `batch/state-store.mjs`
 - `resolve-codex-config.mjs`
 - `lib/run-summary.mjs`
 - `lib/verification-review.mjs`

@@ -479,6 +479,7 @@ const SYSTEM_PATHS = [
   'batch/validate-worker-artifacts.mjs',
   'batch/manual-inputs.mjs',
   'batch/runner-ownership.mjs',
+  'batch/state-store.mjs',
   'batch/worker-process.mjs',
   'schemas/',
   'batch/aggregate-tokens.mjs',

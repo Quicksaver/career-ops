@@ -32,6 +32,8 @@ Codex model and reasoning resolve independently from command-line `--model` / `-
 
 Parallelism resolves as `--parallel`, profile `batch.parallel`, then `1` for both CLIs. After a transient rate limit, the owning batch pool reduces new dispatch to one worker for the rest of that batch. Active workers drain normally; quota/session holds still require explicit recovery.
 
+Batch state transactions use `state-store.mjs` with native OS process ownership and a unique ownership token. This prevents Git Bash PID mismatches from reclaiming a live writer's lock. Each update reads and atomically replaces the state file once, preserves unrelated rows, and keeps empty TSV fields intact. A dead owner is recovered through the shared lock protocol; a live owner is never evicted by age.
+
 ## Options
 
 | Flag | Default | Purpose |
