@@ -120,3 +120,16 @@ test('tracking parameters and delayed selected IDs preserve exact posting identi
     assert.equal(requests, 1);
   } finally { await context.close(); }
 });
+
+test('HTTP closure evidence must retain the exact posting identity', async () => {
+  for (const status of [404, 410]) {
+    for (const destination of ['/jobs/view/1234567890/', '/jobs/view/999/', '/authwall']) {
+      const context = await browser.newContext();
+      try {
+        await context.route('**/*', route => route.fulfill({ status, contentType: 'text/html', body: `<script>history.replaceState(null, '', ${JSON.stringify(destination)})</script><main>Unavailable</main>` }));
+        const result = await recoverPosting(await context.newPage(), url);
+        assert.equal(result.status, destination === '/jobs/view/1234567890/' ? 'closed' : 'unavailable');
+      } finally { await context.close(); }
+    }
+  }
+});
