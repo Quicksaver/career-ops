@@ -31,6 +31,9 @@ for (const relativePath of [
   'tracker-parse.mjs',
   'tracker-utils.mjs',
   'lib/user-context.mjs',
+  // pipeline-lock.mjs and tracker-utils.mjs run the shared lock protocol from
+  // lib/dir-lock.mjs (#5358), so the fixture carries it too.
+  'lib/dir-lock.mjs',
   'lib/context-budget.mjs',
   // ollama-eval builds its tracker-addition row with the shared helpers
   // (#3796), so the fixture has to carry the module they were consolidated

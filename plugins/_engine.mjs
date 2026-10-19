@@ -223,6 +223,13 @@ export function validateManifest(m, dir, dirName) {
     if (isLoopback && !allowsLocalhost) { warnSkip(label, `allowedHosts contains a loopback host without allowsLocalhost: ${h}`); return null; }
   }
 
+  // Optional: the plugin's ingest/search results are job postings, so they get
+  // the scanner's discovery filters (data/blacklist.md, title_filter,
+  // location_filter) and a scan-history row. Absent means the results may be
+  // something else — an interview event, an enrichment record — and only the
+  // tracker/pipeline/scan-history dedup applies (#5478).
+  if (m.jobPostings !== undefined && typeof m.jobPostings !== 'boolean') { warnSkip(label, 'jobPostings must be true or false'); return null; }
+
   const entry = typeof m.entry === 'string' && m.entry.trim() ? m.entry : 'index.mjs';
   if (!entry.endsWith('.mjs')) { warnSkip(label, `entry "${entry}" must be a .mjs file`); return null; }
   const entryAbs = path.resolve(dir, entry);
@@ -253,6 +260,7 @@ export function validateManifest(m, dir, dirName) {
     entry,
     skill,
     humanInTheLoop: true,
+    jobPostings: m.jobPostings === true,
     name: typeof m.name === 'string' ? m.name : undefined,
     version: typeof m.version === 'string' ? m.version : undefined,
     homepage: typeof m.homepage === 'string' ? m.homepage : undefined,

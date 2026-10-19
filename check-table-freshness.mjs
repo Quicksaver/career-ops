@@ -54,12 +54,12 @@ import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as yaml from 'js-yaml';
-import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
+import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
 import { flagValue, validateFlags } from './lib/cli-flags.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { parseDate } from './lib/parse-date.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = getCareerOpsRoot();
@@ -584,7 +584,7 @@ if (isMainModule(import.meta.url)) {
       process.exit(1);
     }
   } else {
-    const cfg = loadConfigMaxAge(userPath(userContext, 'config/profile.yml'));
+    const cfg = loadConfigMaxAge(getProfilePath());
     if (cfg.warning) configWarnings.push(cfg.warning);
     maxAgeMonths = cfg.months ?? DEFAULT_MAX_AGE_MONTHS;
   }

@@ -148,6 +148,20 @@ language:
 #   responded_subsequent_days: 3
 #   interview_thankyou_days: 1
 
+# (Optional) Rename the session after the posting it handles, e.g.
+# "VP Infrastructure, Acme Health", in hosts that let the agent set its own
+# session title. Single-posting modes only; a no-op elsewhere. Default: auto.
+# Set to off to keep your own titles.
+# session_title: auto
+
+# Optional. Private repos the `expand` mode's GitHub evidence step
+# (`node github-evidence.mjs`, needs a logged-in `gh`) may use as evidence.
+# Empty by default: a private repo appears only by name and PR count, never with
+# PR titles, until you add it here yourself as "owner/repo". Only PR metadata is
+# read, never source code, and nothing reaches cv.md without your confirmation.
+# github_evidence:
+#   private_allowlist: []            # e.g. ["acme-corp/billing-service"]
+
 # Controls which model tier evaluates your offers. Valid values:
 #   economy  -- cheapest/fastest model, no extended thinking. Best for high-volume scanning.
 #   standard -- balanced model, no extended thinking. Default if this key is absent.
@@ -166,10 +180,14 @@ spend_tier: standard
 # batch:
 #   parallel: 1
 #   agency_confirmation: required # or posting_evidence: let the agent identify agencies without asking
-# (Optional) Paper size for every generated PDF: "letter" or "a4".
+
+# (Optional) Paper size for every generated PDF: "letter", "a4" or "auto".
 # One setting for the CV, the cover letter and the HTML body width, so they
 # cannot disagree. Absent means letter. An explicit --format flag or a payload
 # page_format still wins for a single render.
+# "auto" picks the sheet from the employer's country (payload `country`, or
+# --country on the renderers): Letter where Unicode CLDR lists it as the
+# primary size, A4 everywhere else, letter when the country is unknown.
 # page_format: letter
 
 # (Optional) Visual theming for the generated CV and cover-letter PDFs (#1837).
@@ -253,11 +271,12 @@ cv:
 # Enforces structural capping on the "Cultural signals" dimension during evaluation.
 #
 # culture_screen:
-#   # What you actively look for in a team culture (e.g. org size, meeting frequency, async-first).
+#   # What you actively look for in a team culture (e.g. org size, meeting frequency, async-first, hiring process).
 #   # If absent/commented, the dimension is scored qualitatively without a hard cap.
 #   require:
 #     - "Small, flat teams (under 15 engineers)"
 #     - "Async-first communication, low meeting overhead"
+#     - "Practical interview processes (pair programming, system design); avoid multiple LeetCode rounds or unpaid take-home assignments over ~6 hours"
 #   # If true, the dimension is capped at 2/5 if the JD lacks any evidence for the required criteria.
 #   # If false (or absent), lack of evidence defaults to a neutral 3/5.
 #   deprioritize_if_absent: true

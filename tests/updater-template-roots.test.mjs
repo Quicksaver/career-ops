@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { configuredTemplateDataRoots, snapshotConfiguredTemplateVariants } from '../update-system.mjs';
+import { configuredTemplateDataRoots, snapshotConfiguredTemplateVariantsAcrossProfiles } from '../update-system.mjs';
 
 test('updates preserve configured templates in the checkout for multiple independent user profiles', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'career-ops-template-roots-'));
@@ -21,9 +21,14 @@ test('updates preserve configured templates in the checkout for multiple indepen
     for (const file of files) writeFileSync(join(systemRoot, file), `selected local ${file}`);
     const dataRoots = configuredTemplateDataRoots({ systemRoot, dataRoot: external, usersDir: users });
     assert.deepEqual(new Set(dataRoots), new Set([external, join(users, 'fictional-a'), join(users, 'fictional-b')]));
-    const snapshot = await snapshotConfiguredTemplateVariants({ systemRoot, dataRoots, remoteFiles: files, readRemoteContent: () => 'upstream content' });
+    const snapshot = await snapshotConfiguredTemplateVariantsAcrossProfiles({
+      systemRoot,
+      profilePaths: dataRoots.map((root) => join(root, 'config', 'profile.yml')),
+      remoteFiles: files,
+      readRemoteContent: () => 'upstream content',
+    });
     assert.deepEqual(new Set(snapshot.preservedPaths), new Set(files));
     assert.deepEqual(new Set(snapshot.configuredVariants.cv), new Set(['variant-a', 'variant-b']));
-    assert.equal(snapshot.configuredVariants.cover, 'external-cover');
+    assert.deepEqual(snapshot.configuredVariants.cover, ['external-cover']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

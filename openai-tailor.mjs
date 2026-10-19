@@ -3,7 +3,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getProfilePath } from './path-resolver.mjs';
 /**
  * openai-tailor.mjs — OpenAI-compatible CV Tailoring for career-ops
  *
@@ -46,7 +46,7 @@ const PATHS = {
   writing:  join(ROOT, 'modes', '_writing.md'),
   pdfMode:  join(ROOT, 'modes', 'pdf.md'),
   cv:       userContext.userRoot ? userPath(userContext, 'cv.md') : '',
-  profile:  userContext.userRoot ? userPath(userContext, 'config/profile.yml') : '',
+  profile:  userContext.userRoot ? getProfilePath() : '',
   profileMode: userContext.userRoot ? userPath(userContext, 'modes/_profile.md') : '',
   customMode: userContext.userRoot ? userPath(userContext, 'modes/_custom.md') : '',
   template: join(ROOT, 'templates', 'cv-template.html'),

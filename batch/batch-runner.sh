@@ -30,6 +30,9 @@ RECOVERY_DIR=""
 PROFILE_FILE=""
 DISCARD_LOG=""
 APPLICATIONS_FILE=""
+# Workers run unattended, so nobody can confirm a change to the user's standing
+# rules. modes/_shared.md tells an agent that sees this flag not to write them.
+export CAREER_OPS_HEADLESS=1
 
 STATE_LOCK_TIMEOUT_SECONDS=30
 MAIN_PID="${BASHPID:-$$}"
@@ -75,7 +78,7 @@ is_decimal_number() {
 usage() {
   cat <<'USAGE'
 career-ops batch runner — process job offers in batch via headless workers
-Supports Claude, Codex, OpenCode, Gemini, or Qwen workers.
+Supports Claude, Codex, OpenCode, Gemini, Qwen, or Grok workers.
 Claude workers use spend_tier from the active user's config/profile.yml unless --model overrides it.
 
 Usage: batch-runner.sh [OPTIONS]
@@ -95,10 +98,11 @@ Options:
   --limit N            Max offers: positive integer; omit for no limit
   --max-retries N      Failed-attempt ceiling per offer (default: 3)
   --min-score N        Mark completed evaluations below N skipped (default: 0 = off)
-  --cli NAME           Headless CLI to use: claude, codex, opencode, gemini, qwen (default: codex,
-                       or CAREER_OPS_BATCH_CLI)
+  --cli NAME           Headless CLI to use: claude, codex, opencode, gemini, qwen, grok
+                       (default: codex, or CAREER_OPS_BATCH_CLI)
   --worker-timeout N   Seconds before a worker is killed and artifact recovery
-                       is attempted (default: 900, or CAREER_OPS_WORKER_TIMEOUT_SECONDS)
+                       is attempted (default: 900, or CAREER_OPS_WORKER_TIMEOUT_SECONDS;
+                       0 = no limit)
   --skip-pdf           Skip PDF generation entirely (write ❌ in tracker PDF column)
   --rate-limit-sleep N Maximum adaptive retry delay in seconds; 0 pauses immediately
                        (default: 300; range: 0–2147483647; claude only)
@@ -405,7 +409,8 @@ check_prerequisites() {
     opencode) command -v opencode &>/dev/null && cli_cmd="opencode" || cli_cmd="ollama" ;;
     gemini)   cli_cmd="gemini" ;;
     qwen)     cli_cmd="qwen" ;;
-    *) echo "ERROR: Unknown --cli '$CLI'. Supported: claude, codex, opencode, gemini, qwen"; exit 1 ;;
+    grok)     cli_cmd="grok" ;;
+    *) echo "ERROR: Unknown --cli '$CLI'. Supported: claude, codex, opencode, gemini, qwen, grok"; exit 1 ;;
   esac
 
   if ! command -v "$cli_cmd" &>/dev/null; then
@@ -792,7 +797,7 @@ read_spend_tier() {
 # Tier -> model mapping. Keep in sync with the table in modes/_shared.md.
 spend_tier_to_model() {
   case "$1" in
-    economy) echo "claude-haiku-4-5" ;;
+    economy) echo "claude-haiku-5-5" ;;
     premium) echo "claude-opus-5-5" ;;
     standard|*) echo "claude-sonnet-5-5" ;;
   esac
@@ -878,7 +883,10 @@ update_state_unlocked() {
   # Write header
   head -1 "$STATE_FILE" > "$tmp"
 
-  # Process existing lines
+  # Process existing lines. Don't split a row with `IFS=$'\t' read`: tab is IFS
+  # whitespace, so the two tabs around an empty cell collapse into one and
+  # every later cell shifts left. Read the line raw and split on \x1f after
+  # translating the tabs, as reconcile_recovery_records does.
   local state_line
   while IFS= read -r state_line; do
     IFS=$'\x1f' read -r sid surl sstatus sstarted scompleted sreport sscore serror sretries \
@@ -1287,7 +1295,7 @@ try {
 }
 const ok =
   payload &&
-  ["completed", "failed", "closed", "needs_confirmation"].includes(payload.status) &&
+  ["completed", "failed", "closed", "needs_confirmation", "skipped"].includes(payload.status) &&
   typeof payload.id === "string" &&
   typeof payload.report_num === "string" &&
   typeof payload.company === "string" &&
@@ -1712,7 +1720,7 @@ process_offer() {
 
   url="$original_url"
 
-  echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)), remaining $remaining)"
+  echo "--- Processing offer #$id${JOB_POS:+ ($JOB_POS)}: $url (report $report_num, attempt $((retries + 1)), remaining $remaining)"
 
   # Build the prompt with placeholders replaced
   local prompt
@@ -1844,13 +1852,16 @@ process_offer() {
     rm -f "$worker_registration.timeout"
     case "$CLI" in
       claude|codex) node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" "$CLI" "${worker_args[@]}" < "$stdin_file" > "$log_file" 2>&1 & ;;
+      # Prompt-as-argument CLIs get a closed stdin, so one that waits for input
+      # reads EOF instead of hanging on the runner's terminal.
       opencode)
         if command -v opencode &>/dev/null; then
-          node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" opencode run ${model_args[@]+"${model_args[@]}"} "$full_prompt" > "$log_file" 2>&1 &
+          node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" opencode run ${model_args[@]+"${model_args[@]}"} "$full_prompt" < /dev/null > "$log_file" 2>&1 &
         else
-          node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" ollama launch opencode ${model_args[@]+"${model_args[@]}"} -y -- run "$full_prompt" > "$log_file" 2>&1 &
+          node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" ollama launch opencode ${model_args[@]+"${model_args[@]}"} -y -- run "$full_prompt" < /dev/null > "$log_file" 2>&1 &
         fi ;;
-      gemini|qwen) node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" "$CLI" ${model_args[@]+"${model_args[@]}"} -p "$full_prompt" > "$log_file" 2>&1 & ;;
+      gemini|qwen) node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" "$CLI" ${model_args[@]+"${model_args[@]}"} -p "$full_prompt" < /dev/null > "$log_file" 2>&1 & ;;
+      grok) node "$SCRIPT_DIR/worker-process.mjs" run "$WORKER_TIMEOUT_SECONDS" "$worker_registration" grok --always-approve --output-format plain ${model_args[@]+"${model_args[@]}"} -p "$full_prompt" < /dev/null > "$log_file" 2>&1 & ;;
     esac
     local worker_pid=$!
     wait "$worker_pid" || exit_code=$?
@@ -2115,6 +2126,73 @@ process_offer() {
       return 0
     fi
 
+  # A dealbreaker hit is a finished skip, not a hold or a failed attempt
+  # (batch-prompt.md "Dealbreaker gate"). The worker writes exactly one SKIP
+  # tracker addition quoting the broken rule and the JD line, and no report,
+  # CV or JD artifact. Accept it only when the result names this posting and
+  # reservation and the row proves it; anything else becomes a failed attempt
+  # whose artifacts the contract-failure path below quarantines.
+  if [[ "$parsed_status" == "skipped" ]]; then
+    local skip_note="" skip_validation_error="" skip_artifact
+    local -a skip_artifacts=()
+    shopt -s nullglob
+    for skip_artifact in "$REPORTS_DIR/$report_num-"*.md "$USER_ROOT/output/$report_num-"* "$USER_ROOT/jds/$report_num-"*; do
+      [[ "$skip_artifact" == *-RESERVED.md || ! -f "$skip_artifact" ]] || skip_artifacts+=("$skip_artifact")
+    done
+    shopt -u nullglob
+    if [[ "$exit_code" -ne 0 || "$timed_out" == "true" ]]; then
+      skip_validation_error="worker did not exit successfully"
+    elif (( ${#skip_artifacts[@]} )); then
+      skip_validation_error="a dealbreaker skip must not write a report, CV or JD artifact"
+    elif ! skip_note=$(node --input-type=module -e '
+      import { readFileSync } from "node:fs";
+      import { basename, resolve } from "node:path";
+      import { pathToFileURL } from "node:url";
+      const [scriptDir, json, id, url, reportNum, trackerPath, userRoot, answersPath, user] = process.argv.slice(1);
+      const { parseTrackerAddition, postingIdentity, allowedPostingIdentities } = await import(pathToFileURL(resolve(scriptDir, "validate-worker-artifacts.mjs")).href);
+      const { resolveTsvColumns } = await import(pathToFileURL(resolve(scriptDir, "../tracker-parse.mjs")).href);
+      const flat = (s) => String(s ?? "").replace(/[\x00-\x1f\x7f]+/g, " ").replace(/ +/g, " ").trim();
+      const fail = (message) => { process.stderr.write(message); process.exit(1); };
+      const result = JSON.parse(json);
+      if (result.status !== "skipped" || result.reason !== "dealbreaker") fail("invalid dealbreaker status/reason");
+      if (result.id !== id || result.url !== url || result.report_num !== reportNum) fail("dealbreaker skip identity mismatch");
+      for (const field of ["score", "legitimacy", "via", "company_confidential", "pdf", "report", "error", "question"]) {
+        if (result[field] !== null) fail(`dealbreaker skip ${field} must be null`);
+      }
+      if (!flat(result.company) || !flat(result.role)) fail("dealbreaker skip must name company and role");
+      if (typeof result.tracker !== "string" || basename(result.tracker.trim()) !== basename(trackerPath)) fail("dealbreaker skip tracker path disagrees with the tracker artifact");
+      let content;
+      try { content = readFileSync(trackerPath, "utf8"); } catch { fail("dealbreaker skip has no tracker addition"); }
+      const row = parseTrackerAddition(content);
+      if (!row.headered) fail("dealbreaker SKIP row must carry the labeled header");
+      const header = content.split(/\r?\n/).find((line) => line.trim() !== "").split("\t");
+      const notes = flat(row.parts[resolveTsvColumns(header).map.notes]);
+      // merge-tracker keeps the TSV num as the row id, so it must be the number
+      // this runner reserved (zero padding aside).
+      if (!/^\d+$/.test(row.num) || Number(row.num) !== Number(reportNum)) fail("dealbreaker SKIP row must use the reserved report number");
+      if (row.status !== "SKIP" || !["N/A", "-", ""].includes(row.score) || row.pdf !== "❌" || !["-", ""].includes(row.report)) fail("dealbreaker row must be SKIP with no score, PDF or report");
+      if (!allowedPostingIdentities(url, userRoot, answersPath || null, user).has(postingIdentity(row.url))) fail("dealbreaker row URL disagrees with expected posting identity");
+      if (row.company !== flat(result.company) || row.role !== flat(result.role)) fail("dealbreaker row company/role disagrees with the result");
+      if (!notes.startsWith("Dealbreaker: \"")) fail("dealbreaker row notes must quote the broken rule");
+      process.stdout.write(notes.slice("Dealbreaker: ".length));
+    ' "$SCRIPT_DIR" "$worker_result_json" "$id" "$original_url" "$report_num" "$TRACKER_DIR/$id.tsv" "$USER_ROOT" "$ANSWERS_FILE" "$USER_ID" 2>&1); then
+      skip_validation_error="${skip_note:-dealbreaker skip validation failed}"
+      skip_note=""
+    fi
+    if [[ -z "$skip_validation_error" ]]; then
+      # Keep the reservation. The SKIP row uses this number and no report file
+      # holds it, so releasing now would hand it to the next job before the
+      # merge. merge_tracker releases it once the row is in the tracker.
+      update_state_retrying "$id" "$original_url" skipped "$started_at" "$completed_at" "$report_num" "-" "dealbreaker: $skip_note" "$retries" || return 2
+      echo "    ⏭️  Skipped (dealbreaker): $original_url — $skip_note"
+      return 0
+    fi
+    final_json_status="failed"
+    parsed_status="failed"
+    final_json_error="invalid dealbreaker skip: $skip_validation_error"
+    echo "WARN: Worker #$id $final_json_error" >> "$log_file"
+  fi
+
 
   # A normal report occupies its number without the sentinel. Confirmation
   # violations return above and retain the reservation after quarantine.
@@ -2213,6 +2291,16 @@ merge_tracker() {
   echo ""
   echo "=== Merging tracker additions ==="
   node "$PROJECT_DIR/merge-tracker.mjs" --user "$USER_ID"
+  # A dealbreaker SKIP row holds its report number until it is merged. The
+  # tracker row now holds it for reserve-report-num.mjs, so drop the sentinel.
+  if [[ -f "$STATE_FILE" ]]; then
+    local mid mstatus mnum merror
+    while IFS=$'\x1f' read -r mid _ mstatus _ _ mnum _ merror _; do
+      if [[ "$mid" != "id" && "$mstatus" == "skipped" && "$merror" == dealbreaker:* ]]; then
+        release_report_num "$mnum"
+      fi
+    done < <(tr '\t' '\037' < "$STATE_FILE")
+  fi
   echo ""
   echo "=== Reconciling pipeline.md ==="
   node "$PROJECT_DIR/reconcile-pipeline.mjs" --user "$USER_ID" || echo "⚠️  Pipeline reconcile had issues (see above)"
@@ -2224,6 +2312,11 @@ merge_tracker() {
     VERIFICATION_FAILED=true
     echo "❌ Verification found blocking integrity errors."
   fi
+}
+
+# The live pool has no fixed total: its queue can grow while it runs.
+report_progress() {
+  echo "=== Progress: $1${2:+/$2} offers finished, $((SECONDS - BATCH_START))s elapsed ==="
 }
 
 # Print summary
@@ -2238,8 +2331,9 @@ print_summary() {
 
   local total=0 completed=0 skipped=0 closed=0 failed=0 pending=0 needs_confirmation=0
   local score_sum=0 score_count=0
+  local -a dealbreaker_lines=()
 
-  while IFS=$'\x1f' read -r sid _ sstatus _ _ _ sscore _ _; do
+  while IFS=$'\x1f' read -r sid surl sstatus _ _ _ sscore serror _; do
     [[ "$sid" == "id" ]] && continue
     total=$((total + 1))
     case "$sstatus" in
@@ -2249,7 +2343,9 @@ print_summary() {
           score_count=$((score_count + 1))
         fi
         ;;
-      skipped) skipped=$((skipped + 1)) ;;
+      skipped) skipped=$((skipped + 1))
+        [[ "$serror" == dealbreaker:* ]] && dealbreaker_lines+=("#$sid $surl — $serror")
+        ;;
       closed) closed=$((closed + 1)) ;;
       failed) failed=$((failed + 1)) ;;
       needs_confirmation) needs_confirmation=$((needs_confirmation + 1)) ;;
@@ -2258,6 +2354,14 @@ print_summary() {
   done < <(tr '\t' '\037' < "$STATE_FILE")
 
   echo "Total: $total | Completed: $completed | Skipped: $skipped | Closed: $closed | Failed: $failed | Pending: $pending | Needs confirmation: $needs_confirmation"
+
+  if (( ${#dealbreaker_lines[@]} > 0 )); then
+    echo "Dealbreaker skips: ${#dealbreaker_lines[@]} (SKIP rows merged; to evaluate one anyway, rerun it in a session and say \"evaluate anyway\")"
+    local dealbreaker_line
+    for dealbreaker_line in "${dealbreaker_lines[@]}"; do
+      echo "  $dealbreaker_line"
+    done
+  fi
 
   if (( score_count > 0 )); then
     local avg
@@ -2391,7 +2495,7 @@ watch_status() {
 # Preparation still runs outside conditional lists, preserving errexit.
 process_live_offers() {
   local -a pids=() active_urls=()
-  local rc=0 worker_rc=0 running=0 selection mode id url source notes reset_hold explicit_retry
+  local rc=0 worker_rc=0 running=0 finished=0 selection mode id url source notes reset_hold explicit_retry
   while true; do
     for j in "${!pids[@]}"; do
       if ! kill -0 "${pids[$j]}" 2>/dev/null; then
@@ -2400,6 +2504,8 @@ process_live_offers() {
         if (( worker_rc != 0 )); then rc=$worker_rc; fi
         unset 'pids[j]'
         unset 'active_urls[j]'
+        finished=$((finished + 1))
+        report_progress "$finished"
       fi
     done
     pids=(${pids[@]+"${pids[@]}"})
@@ -2432,6 +2538,8 @@ process_live_offers() {
     worker_rc=0
     wait "$pid" 2>/dev/null || worker_rc=$?
     if (( worker_rc != 0 )); then rc=$worker_rc; fi
+    finished=$((finished + 1))
+    report_progress "$finished"
   done
   if (( rc != 0 )); then echo "ERROR: live worker failed; tracker merge skipped." >&2; fi
   return "$rc"
@@ -2646,6 +2754,8 @@ main() {
   fi
 
   # Process offers
+  BATCH_START=$SECONDS
+  local done_jobs=0
   if [[ -n "$LIVE_INPUTS" ]]; then
     process_live_offers
   elif (( PARALLEL <= 1 )); then
@@ -2653,6 +2763,7 @@ main() {
     local -a pids=()
     for i in "${!pending_ids[@]}"; do
       local worker_rc=0
+      JOB_POS="$((i + 1))/$pending_count"
       # Run outside a conditional list so errexit remains active in preparation
       # and quarantine steps. The parent owns and waits for this offer job.
       process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))" &
@@ -2663,6 +2774,8 @@ main() {
         echo "ERROR: a sequential worker failed fatally; tracker merge skipped. Inspect the worker log and repair state before rerunning." >&2
         return "$worker_rc"
       fi
+      done_jobs=$((done_jobs + 1))
+      report_progress "$done_jobs" "$pending_count"
       if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
         echo "=== Batch paused: session/rate limit reached. Resume later with --resume-paused. ==="
         break
@@ -2699,6 +2812,8 @@ main() {
             unset 'pids[j]'
             unset 'pid_ids[j]'
             running=$((running - 1))
+            done_jobs=$((done_jobs + 1))
+            report_progress "$done_jobs" "$pending_count"
           fi
         done
         # Compact arrays
@@ -2723,6 +2838,7 @@ main() {
       fi
 
       # Launch worker in background
+      JOB_POS="$((i + 1))/$pending_count"
       process_offer "${pending_ids[$i]}" "${pending_urls[$i]}" "${pending_sources[$i]}" "${pending_notes[$i]}" "$((pending_count - i - 1))" &
       pids+=($!)
       pid_ids+=("${pending_ids[$i]}")
@@ -2736,6 +2852,8 @@ main() {
       if (( worker_rc != 0 )); then
         parallel_rc=$worker_rc
       fi
+      done_jobs=$((done_jobs + 1))
+      report_progress "$done_jobs" "$pending_count"
     done
     if (( parallel_rc != 0 )); then
       echo "ERROR: a parallel worker failed fatally; tracker merge skipped. Inspect the worker log and repair state before rerunning." >&2

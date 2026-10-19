@@ -6,6 +6,8 @@ All candidate files and data paths in these instructions are relative to the exp
 
 Interactive mode for when the candidate is filling out an application form in Chrome. It reads what is on the screen, loads the previous context of the job, and generates personalized responses for each form question.
 
+**Unattended runs** (`modes/_shared.md` → **Unattended runs**): never ask, never wait and never submit. A blacklist hit stops before drafting and ends with `needs_confirmation: blacklist "{company}" - rerun with "apply anyway" to draft`. A company or role mismatch, or an agency that needs acknowledgement, stops before drafting and ends with `needs_confirmation: apply_preflight {company} - confirm the company and role, then rerun`. A posting that appears closed ends with `needs_confirmation: posting_closed {company} - rerun with the reason to apply anyway`. When liveness cannot be verified, the run ends with `needs_confirmation: liveness_unverified {company} - confirm the company, role and active posting, then rerun`. Otherwise draft only answers backed by the tailored CV, `cv.md`, `config/profile.yml`, the report, or answers the prompt gives for this application, leave every other field blank, and end with `needs_confirmation: apply_input {n} questions - answer them, then rerun`.
+
 ## Requirements
 
 - **Best with Playwright in visible mode**: In visible mode, the candidate sees the browser and the agent can interact with the page.
@@ -179,7 +181,7 @@ If the role on screen differs from the one evaluated:
 
 The document uploaded to the form is the tailored CV the `pdf` mode built for this
 report — the active bundle's `cv/tailored/vNNN/cv.pdf`, or a flat
-`users/{USER}/output/cv-{candidate}-{company}-{YYYY-MM-DD}.pdf`. It is deliberately not `cv.md`:
+`users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf`. It is deliberately not `cv.md`:
 bullets are reselected and reordered, role framing is rewritten toward the
 employer's domain, and engagements may be regrouped under an umbrella firm. A
 reviewer reads the structured fields and the attached document side by side, so a
@@ -198,7 +200,7 @@ tailoring that made the application relevant.
 2. Several tailoring versions? The bundle keys them `v001`, `v002`, and so on. Take
    the highest one that exists on disk, and pass it back as `--version N` when you
    want the other paths beside it.
-3. No bundle, so a flat `users/{USER}/output/cv-{candidate}-{company}-{YYYY-MM-DD}.html`.
+3. No bundle, so a flat `users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.html`.
    `users/{USER}/data/pdf-index.tsv` can shorten the search here, but it is a hint and not an
    answer. Its columns are `report \t pdf \t html \t format \t date` and there is
    no document-kind column: `generate-pdf.mjs` drops every earlier row for a report
@@ -210,9 +212,10 @@ tailoring that made the application relevant.
    kind of document that is either. A CV built through the `latex` / `latex-tex`
    path is not in the manifest at all, since only `generate-pdf.mjs` writes it.
 4. Manifest silent or pointing at the wrong kind of document? Fall back to a
-   filename match in `users/{USER}/output/`: a `cv-…` artifact for this application's company,
-   preferring `.html` or `.tex` (readable) over `.pdf`. Match the company slug at a
-   token boundary — `cv-…-meta-…` must not resolve Metabase's CV. These filenames
+   filename match in `users/{USER}/output/`: the `{REPORT_NUM}-{company-slug}-…` artifact for
+   this report, preferring `.html` or `.tex` (readable) over `.pdf`. Without one, a legacy
+   `cv-…` artifact for this application's company may match. Match the company slug at a
+   token boundary — `cv-…-meta-…` must not resolve Metabase's CV. Legacy filenames
    carry the company and a date but not the role, so if `users/{USER}/output/` holds more than
    one CV for that company, do not take the newest: ask which one was built for this
    report. Two roles at one employer is exactly the case where the newest file is
@@ -278,7 +281,7 @@ For every free-text field, inspect the **rendered form control** before drafting
 
 For each question, generate the response following:
 
-1. **Report context**: Use proof points from block B, STAR stories from block F
+1. **Report context**: Use proof points from block B, STAR stories from block F. Block F stories and story-bank entries supply narrative; a figure from one goes into an answer only if it appears in `cv.md` or `article-digest.md`, or `node story-provenance-check.mjs --summary` puts it in `existing`. Otherwise leave the number out, or ask the candidate with AGENTS.md's four outcomes (confirm as stated, give the correct figure, narrative only, "I don't know"). Never use a figure from a `user-cannot-confirm` story. An answer carrying an unconfirmed figure is not ready for copy-paste
 2. **Previous Section H / Application Answers**: If a draft or final response exists, use it as a base and refine
 3. **"I'm choosing you" tone**: Same auto-pipeline framework
 4. **Specificity**: Reference something specific from the JD visible on screen

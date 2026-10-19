@@ -60,7 +60,7 @@ import { decodeEntities } from './_html-entities.mjs';
  * Exported for unit testing.
  *
  * @param {string} text  Raw comment text (may contain HTML; tags are stripped).
- * @param {string} threadUrl  Fallback url (the HN thread) if no URL in comment.
+ * @param {string} threadUrl  Fallback url if no URL in comment (fetch() passes the comment's own permalink).
  * @returns {{ title: string, url: string, company: string, location: string, description: string } | null}
  *   null when the comment is empty, deleted, or carries no usable title.
  */

@@ -921,6 +921,8 @@ async function main() {
       });
       summary.batch_counts = Object.fromEntries(['completed', 'skipped', 'closed', 'failed', 'needs_confirmation', 'paused_rate_limit', 'processing']
         .map(status => [status, changedStates.filter(row => row.status === status).length]));
+      // A dealbreaker hit is a terminal skip with a merged SKIP row (batch-prompt.md Dealbreaker gate).
+      summary.batch_counts.dealbreaker = changedStates.filter(row => row.status === 'skipped' && row.error.startsWith('dealbreaker:')).length;
       summary.pipeline = { status: finalQueue.pending.length || finalQueue.blocked.length ? 'partial' : 'completed',
         processed: Math.max(0, discoveredPending - finalQueue.pending.length), limit: batchLimit ? Number(batchLimit) : null };
 
@@ -1110,6 +1112,8 @@ function printHumanSummary(summary) {
   print(`[run] summary: ${summary.status}`);
   print(`[run] queue ${summary.baseline_pending ?? 0} → ${summary.final_pending ?? 'unknown'} runnable/pending, ${summary.final_blocked} blocked; processed ${summary.pipeline?.processed || 0}`);
   print(`[run] discovered: scan ${summary.scan?.added_pending || 0}, handoff ${summary.handoff?.observed_added_pending || 0}, LinkedIn ${summary.linkedin?.added_pending || 0}`);
+  const counts = summary.batch_counts;
+  if (counts) print(`[run] batch: completed ${counts.completed}, skipped ${counts.skipped} (dealbreaker ${counts.dealbreaker || 0}), closed ${counts.closed}, failed ${counts.failed}, held ${counts.needs_confirmation}, paused ${counts.paused_rate_limit}`);
   if (summary.verification_review) {
     const unresolvedFindings = summary.verification_review.unresolved_findings || [];
     print(`[run] verification: reviewed ${reviewedCount(summary.verification_review)}, repaired ${repairedCount(summary.verification_review)}, unresolved ${unresolvedFindings.length}`);

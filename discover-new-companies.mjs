@@ -31,17 +31,18 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import * as yaml from 'js-yaml';
-import { getCareerOpsRoot } from './path-resolver.mjs';
-import { buildCompanyCanonicalizer } from './scan.mjs';
+import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 import { parseScanHistoryLine, scanHistoryLineHasColumn } from './lib/scan-history-columns.mjs';
 
-const DATA_ROOT = getCareerOpsRoot();
-const HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY || join(DATA_ROOT, 'data', 'scan-history.tsv');
-const PORTALS_PATH = process.env.CAREER_OPS_PORTALS || join(DATA_ROOT, 'portals.yml');
-
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+let userContext;
+try {
+  userContext = getUserContext(rawArgs, { requireUser: !rawArgs.includes('--help') });
+} catch (err) {
+  printUserContextErrorAndExit(err);
+}
+const args = userContext.args;
 const has = (f) => args.includes(f);
 const val = (f, d = null) => {
   const i = args.indexOf(f);
@@ -58,10 +59,11 @@ const val = (f, d = null) => {
 };
 
 if (has('--help')) {
-  console.log(`Usage: node discover-new-companies.mjs [options]
+  console.log(`Usage: node discover-new-companies.mjs --user <id> [options]
 
 Reads data/scan-history.tsv, subtracts every company already tracked in
-portals.yml, and emits the remainder as a discover-ats.mjs input file.
+portals.yml or on data/blacklist.md, and emits the remainder as a
+discover-ats.mjs input file.
 
 Options:
   --since <n>       Only companies first seen in the last N days (default: 30)
@@ -80,6 +82,14 @@ Typical loop:
 `);
   process.exit(0);
 }
+
+// Every input belongs to the selected user, resolved after --user parsing
+// (same as discover-ats.mjs). scan.mjs fixes its own paths at import, so it is
+// loaded only once the user is known.
+const HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY || userPath(userContext, 'data/scan-history.tsv');
+const PORTALS_PATH = process.env.CAREER_OPS_PORTALS || userPath(userContext, 'portals.yml');
+const BLACKLIST_PATH = process.env.CAREER_OPS_BLACKLIST || userPath(userContext, 'data/blacklist.md');
+const { buildCompanyCanonicalizer, findBlacklistEntry, loadBlacklist } = await import('./scan.mjs');
 
 const SINCE_DAYS = Number(val('--since', '30'));
 const MIN_ROWS   = Number(val('--min-rows', '2'));
@@ -114,6 +124,15 @@ for (const entry of portalsRaw.tracked_companies || []) {
   if (entry && typeof entry.name === 'string') tracked.add(canon(entry.name));
 }
 
+// ── Do-not-apply list ───────────────────────────────────────────────────────
+// A blacklisted employer is never worth resolving to a board: scan.mjs would
+// drop every posting from it anyway. Matched per row with the scanner's own
+// findBlacklistEntry (company name, or an opt-in domain-scope host suffix), and
+// one matching row excludes the whole company — a name-only row and a
+// domain-matched row for the same employer must not split into "keep" and "skip".
+const blacklist = loadBlacklist(BLACKLIST_PATH);
+const blacklisted = new Set();
+
 // ── Walk the history ────────────────────────────────────────────────────────
 // Legacy headerless scan-history.tsv files exist and are never rewritten (see
 // appendToScanHistory in scan.mjs), so detect the header instead of assuming
@@ -133,6 +152,10 @@ for (let i = hasHeader ? 1 : 0; i < rows.length; i++) {
   if (!scanHistoryLineHasColumn(rows[i], 'status')) continue;
   const row = parseScanHistoryLine(rows[i]);
 
+  // A title-filtered row is evidence the company posted something the user
+  // does not want, not a reason to track it (#2695).
+  if (row.status.trim() === 'skipped_title') continue;
+
   const rawName = row.company.trim();
   if (!rawName) continue;
 
@@ -144,7 +167,12 @@ for (let i = hasHeader ? 1 : 0; i < rows.length; i++) {
   }
 
   const key = canon(rawName);
-  if (!key || tracked.has(key)) continue;
+  if (!key || tracked.has(key) || blacklisted.has(key)) continue;
+  if (findBlacklistEntry(blacklist, rawName, row.url)) {
+    blacklisted.add(key);
+    found.delete(key);
+    continue;
+  }
 
   if (!found.has(key)) {
     found.set(key, { name: rawName, rows: 0, added: 0, lastSeen: seen, titles: new Set(), hosts: new Set() });
@@ -173,7 +201,7 @@ candidates = candidates.slice(0, LIMIT);
 if (has('--summary')) {
   console.log('='.repeat(78));
   console.log('  New companies seen by scanners but absent from portals.yml');
-  console.log(`  candidates: ${totalBeforeLimit} | shown: ${candidates.length} | window: ${SINCE_DAYS}d`);
+  console.log(`  candidates: ${totalBeforeLimit} | shown: ${candidates.length} | window: ${SINCE_DAYS}d | blacklisted skipped: ${blacklisted.size}`);
   console.log('='.repeat(78));
   for (const c of candidates) {
     console.log(`  ${c.name}`);
@@ -188,7 +216,7 @@ if (has('--summary')) {
 
 if (has('--json')) {
   console.log(JSON.stringify({
-    metadata: { candidates: totalBeforeLimit, emitted: candidates.length, sinceDays: SINCE_DAYS, minRows: MIN_ROWS, addedOnly: ADDED_ONLY },
+    metadata: { candidates: totalBeforeLimit, emitted: candidates.length, blacklistedSkipped: blacklisted.size, sinceDays: SINCE_DAYS, minRows: MIN_ROWS, addedOnly: ADDED_ONLY },
     companies: candidates.map((c) => ({
       name: c.name, rows: c.rows, added: c.added, lastSeen: c.lastSeen,
       hosts: [...c.hosts], sampleTitles: [...c.titles],
@@ -199,7 +227,7 @@ if (has('--json')) {
 
 const doc = yaml.dump({ companies: candidates.map((c) => ({ name: c.name })) });
 const banner = `# Generated by discover-new-companies.mjs — ${new Date().toISOString().slice(0, 10)}\n`
-  + `# ${totalBeforeLimit} candidate(s) found, ${candidates.length} emitted (window ${SINCE_DAYS}d, min-rows ${MIN_ROWS}).\n`
+  + `# ${totalBeforeLimit} candidate(s) found, ${candidates.length} emitted (window ${SINCE_DAYS}d, min-rows ${MIN_ROWS}); ${blacklisted.size} blacklisted company/companies skipped.\n`
   + `# Feed to: node discover-ats.mjs --in <this file> --summary\n`;
 
 if (OUT_FILE) {

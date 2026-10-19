@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { resolveCodeRoot } from "./core/code-root.mjs";
 import { resolveDataRoot } from "./core/data-root.mjs";
+import { profileOverride } from "./core/profile-path.mjs";
 
 /** Resolve system code independently of the selected user's data. */
 export function careerOpsSystemRoot() {
@@ -34,7 +35,17 @@ export function careerOpsRoot() {
   }, process.env, path.resolve, path.join);
 }
 
-/** @returns {NodeJS.ProcessEnv} */
+/**
+ * Children run with the system checkout or the data root as cwd, so relative
+ * CAREER_OPS_PROFILE / CAREER_OPS_PORTALS values are passed as the absolute
+ * paths the web itself reads (resolved against the selected data root).
+ * @returns {NodeJS.ProcessEnv}
+ */
 export function careerOpsCoreEnv() {
-  return { ...process.env, CAREER_OPS_USER: careerOpsUserId(), CAREER_OPS_USERS_DIR: careerOpsUsersRoot(), CAREER_OPS_CODE_ROOT: careerOpsSystemRoot(), CAREER_OPS_ROOT: careerOpsRoot(), CAREER_OPS_DATA_DIR: careerOpsRoot() };
+  const root = careerOpsRoot();
+  const profile = profileOverride(root);
+  const env = { ...process.env, CAREER_OPS_USER: careerOpsUserId(), CAREER_OPS_USERS_DIR: careerOpsUsersRoot(), CAREER_OPS_CODE_ROOT: careerOpsSystemRoot(), CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root, ...(profile && { CAREER_OPS_PROFILE: profile }) };
+  const portals = env.CAREER_OPS_PORTALS?.trim();
+  if (portals) env.CAREER_OPS_PORTALS = path.resolve(root, portals);
+  return env;
 }

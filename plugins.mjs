@@ -29,7 +29,9 @@ import {
 import { loadRegistry, findInRegistry, classifySource, sourceBadge, successorFor } from './plugins/_registry.mjs';
 import { readLock, writeLockEntry, removeLockEntry, hashPluginTree, consentSurface } from './plugins/_lock.mjs';
 import { installFromRepo, scaffoldNew, parseRepoArg } from './plugin-install.mjs';
-import { appendToPipeline } from './scan.mjs';
+import { appendToPipeline, appendToScanHistory, PORTALS_PATH } from './scan.mjs';
+import { createAdmissionGate, formatSkipCounts } from './lib/admission-gate.mjs';
+import { localToday } from './lib/local-today.mjs';
 import { postingKey } from './url-key.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
@@ -85,6 +87,17 @@ function existingPipelineUrls() {
   return urls;
 }
 
+/** portals.yml, for its title_filter and location_filter. An unreadable file stops the run, as in scan.mjs. */
+function loadPortalsConfig() {
+  if (!existsSync(PORTALS_PATH)) return {};
+  try {
+    return yaml.load(readFileSync(PORTALS_PATH, 'utf8')) || {};
+  } catch (err) {
+    console.error(`Error: failed to parse ${PORTALS_PATH}: ${err.message}`);
+    process.exit(1);
+  }
+}
+
 /** Jobs whose posting is not in the pipeline yet, one per posting. */
 export function newPipelineJobs(found, pipelineUrls) {
   const seen = new Set([...pipelineUrls].map(postingKey));
@@ -94,6 +107,35 @@ export function newPipelineJobs(found, pipelineUrls) {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * The ingest/search results that go into data/pipeline.md (#5478).
+ *
+ * newPipelineJobs first collapses one posting's alert and job-page URLs. Every
+ * result is then checked against the tracker, the pipeline and scan-history by
+ * normalized URL: checking the pipeline alone re-queued roles already applied
+ * to. A plugin whose manifest declares `jobPostings: true` also gets the
+ * scanner's discovery filters, data/blacklist.md and the title and location
+ * filters. Other ingests (google-calendar and outlook-interviews return
+ * interview events titled "Interview with Acme") would lose every row to a
+ * title filter written for job titles, so they skip those filters.
+ *
+ * @param {Array<object>} found - Sanitized hook results.
+ * @param {object} options
+ * @param {string} options.id - Plugin id, recorded as the posting's source.
+ * @param {boolean} [options.jobPostings] - The manifest's jobPostings flag.
+ * @param {Set<string>} [options.pipelineUrls]
+ * @param {object} [options.config] - Parsed portals.yml.
+ * @param {object} [options.gateOptions] - Overrides for createAdmissionGate (tests).
+ */
+export function admitPluginJobs(found, { id, jobPostings = false, pipelineUrls = new Set(), config = {}, gateOptions = {} }) {
+  const discoveryFilters = jobPostings
+    ? { config }
+    : { titleFilter: () => true, locationFilter: () => true, blacklist: new Map() };
+  const gate = createAdmissionGate({ ...discoveryFilters, ...gateOptions });
+  const { admitted } = gate.partition(newPipelineJobs(found, pipelineUrls).map(j => ({ ...j, source: `plugin:${id}` })));
+  return { jobs: admitted, counts: gate.counts };
 }
 
 /** Frozen, read-only view of the user's tracker for `export` hooks. No file handle. */
@@ -181,10 +223,23 @@ async function cmdRun(args) {
     if (hook === 'search' && !payload) { console.error(`search needs a query: node plugins.mjs run ${id} search "<query>"`); process.exit(1); }
     const results = filterResultsForId(await runHook(hook, payload, { root: ROOT, dataRoot: DATA_ROOT, dryRun, pluginId: id }), id);
     const found = results.filter(r => r.ok && Array.isArray(r.result)).flatMap(r => r.result).map(sanitizeJob).filter(Boolean);
-    const jobs = newPipelineJobs(found, existingPipelineUrls());
-    console.log(`${id} ${hook}: ${found.length} found, ${jobs.length} new.`);
+    const { jobs, counts } = admitPluginJobs(found, {
+      id,
+      jobPostings: manifest.jobPostings,
+      pipelineUrls: existingPipelineUrls(),
+      config: manifest.jobPostings ? loadPortalsConfig() : {},
+    });
+    const skipped = formatSkipCounts(counts);
+    console.log(`${id} ${hook}: ${found.length} found, ${jobs.length} new${skipped ? ` (skipped: ${skipped})` : ''}.`);
     if (dryRun) { jobs.slice(0, 20).forEach(j => console.log(`  • ${j.title} — ${j.url}`)); console.log('(--dry-run: pipeline not written)'); return; }
-    if (jobs.length) { await appendToPipeline(jobs); console.log(`→ Appended ${jobs.length} to data/pipeline.md. Run /career-ops pipeline to evaluate.`); }
+    if (jobs.length) {
+      await appendToPipeline(jobs);
+      // Recorded so the next ingest, and every scanner, sees these as known.
+      // Only postings: an interview event in scan-history would read as a
+      // scanned job everywhere scan-history is counted.
+      if (manifest.jobPostings) await appendToScanHistory(jobs, localToday(), 'added');
+      console.log(`→ Appended ${jobs.length} to data/pipeline.md. Run /career-ops pipeline to evaluate.`);
+    }
     return;
   }
 
@@ -299,6 +354,17 @@ export function capabilityCard(manifest, source) {
   ].join('\n');
 }
 
+/**
+ * Who publishes a registry entry. Older entries carry no `author`, so fall back
+ * to the owner in the GitHub repo URL; null when neither says.
+ * @param {{ author?: unknown, repo?: unknown }} entry
+ */
+export function registryAuthor(entry) {
+  if (typeof entry.author === 'string' && entry.author.trim()) return entry.author.trim();
+  const owner = /^https:\/\/github\.com\/([^/]+)\//.exec(String(entry.repo ?? ''));
+  return owner ? owner[1] : null;
+}
+
 async function cmdAvailable() {
   const reg = loadRegistry(ROOT);
   const bundled = discoverPlugins([path.join(ROOT, 'plugins')]);
@@ -313,8 +379,9 @@ async function cmdAvailable() {
     console.log('  (none yet — publish yours as `career-ops-plugin-<name>` and open a registry PR; see docs/PLUGINS.md)');
   } else {
     for (const p of reg.plugins) {
+      const author = registryAuthor(p);
       const seed = p.supersedesBundled === true ? `  🔁 maintained successor of the bundled "${p.id}" reference` : '';
-      console.log(`  ${p.name}  [${p.hooks.join(', ')}]  ✓ approved (pinned ${String(p.sha).slice(0, 7)})  — ${p.description}  (by ${p.author}, v${p.version})${seed}`);
+      console.log(`  ${p.name}  [${p.hooks.join(', ')}]  ✓ approved (pinned ${String(p.sha).slice(0, 7)})  — ${p.description}  (${author ? `by ${author}, ` : ''}v${p.version})${seed}`);
     }
     console.log('\nInstall:  node plugins.mjs add <name>');
   }

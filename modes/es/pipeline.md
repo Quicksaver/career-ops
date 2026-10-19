@@ -4,7 +4,7 @@ Procesa las URLs de ofertas acumuladas en `users/{USER}/data/pipeline.md`. El ca
 
 ## Workflow
 
-1. **Leer** `users/{USER}/data/pipeline.md` -> encontrar los ítems `- [ ]` en la sección "Pendientes" / "Pending" / "En attente"
+1. **Leer** `users/{USER}/data/pipeline.md` (busca con `grep -n -m 20 '^- \[ \] ' users/{USER}/data/pipeline.md` y repite la búsqueda tras cada lote hasta que solo muestre ítems que dejaste en Pendientes en esta pasada, no leas el archivo entero) -> encontrar los ítems `- [ ]` en la sección "Pendientes" / "Pending" / "En attente"
 2. **Para cada URL pendiente**:
    a. Reservar el siguiente `REPORT_NUM` secuencial de forma atómica ejecutando `node reserve-report-num.mjs` (y liberar el sentinel ejecutando `node reserve-report-num.mjs --release <num>` una vez escrito el report)
    b. **Extraer la oferta** con Playwright (`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch

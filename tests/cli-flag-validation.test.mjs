@@ -17,6 +17,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -68,13 +69,13 @@ for (const [script, typo] of SCRIPTS) {
 
 test('fix-slugs.mjs --help exits 0 and prints usage', () => {
   const r = runScript('fix-slugs.mjs', '--help');
-  assert.equal(r.status, 0, `fix-slugs.mjs --help exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `fix-slugs.mjs --help exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'fix-slugs.mjs --help printed no usage block');
 });
 
 test('fix-slugs.mjs -h exits 0 and prints usage', () => {
   const r = runScript('fix-slugs.mjs', '-h');
-  assert.equal(r.status, 0, `fix-slugs.mjs -h exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `fix-slugs.mjs -h exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'fix-slugs.mjs -h printed no usage block');
 });
 
@@ -87,13 +88,13 @@ test('fix-slugs.mjs --help --bogus still errors', () => {
 
 test('application-artifacts.mjs --help exits 0 and prints usage', () => {
   const r = runScript('application-artifacts.mjs', '--help');
-  assert.equal(r.status, 0, `application-artifacts.mjs --help exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `application-artifacts.mjs --help exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'application-artifacts.mjs --help printed no usage block');
 });
 
 test('application-artifacts.mjs -h exits 0 and prints usage', () => {
   const r = runScript('application-artifacts.mjs', '-h');
-  assert.equal(r.status, 0, `application-artifacts.mjs -h exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `application-artifacts.mjs -h exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'application-artifacts.mjs -h printed no usage block');
 });
 
@@ -113,14 +114,14 @@ test('application-artifacts.mjs --help wins over the missing-required-args error
 
 test('clean-markers.mjs --help exits 0 and prints usage', () => {
   const r = runScript('clean-markers.mjs', '--help');
-  assert.equal(r.status, 0, `clean-markers.mjs --help exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `clean-markers.mjs --help exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'clean-markers.mjs --help printed no usage block');
   assert.doesNotMatch(r.all, /not found/i, '--help was still read as a filename');
 });
 
 test('clean-markers.mjs -h exits 0 and prints usage', () => {
   const r = runScript('clean-markers.mjs', '-h');
-  assert.equal(r.status, 0, `clean-markers.mjs -h exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `clean-markers.mjs -h exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'clean-markers.mjs -h printed no usage block');
 });
 
@@ -154,7 +155,7 @@ test('clean-markers.mjs audits a dash-leading path after --', () => {
       cwd: dir, encoding: 'utf-8', timeout: 30_000,
     });
     const all = `${r.stdout ?? ''}${r.stderr ?? ''}`;
-    assert.equal(r.status, 0, `dash-leading path exited ${r.status}, want 0`);
+    assert.equal(r.status, 0, describeSpawn(r, `dash-leading path exited ${r.status}, want 0`));
     assert.doesNotMatch(all, /unrecognized flag/i, '-draft.md must not be read as a flag after --');
     assert.match(all, /PASS/, 'the dash-leading path should have been audited');
   } finally {
@@ -342,7 +343,7 @@ test('audit-portals: a trailing --baseline does not silently skip the comparison
 
 test('audit-portals: --help alone still prints usage and exits 0', () => {
   const r = runScript('audit-portals.mjs', '--help');
-  assert.equal(r.status, 0, `want exit 0, got ${r.status}`);
+  assert.equal(r.status, 0, describeSpawn(r, `want exit 0, got ${r.status}`));
   assert.match(r.all, /Usage:/i);
 });
 
@@ -404,7 +405,7 @@ test('linkedin-join.mjs rejects a value flag with no operand', () => {
 
 test('linkedin-join.mjs --help exits 0 and prints usage', () => {
   const r = runScript('linkedin-join.mjs', '--help');
-  assert.equal(r.status, 0, `--help exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `--help exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i);
 });
 
@@ -418,13 +419,13 @@ test('linkedin-join.mjs --help --bogus still errors', () => {
 // to be ignored and the tracker was edited at exit 0.
 test('normalize-statuses.mjs --help exits 0 and prints usage', () => {
   const r = runScript('normalize-statuses.mjs', '--help');
-  assert.equal(r.status, 0, `normalize-statuses.mjs --help exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `normalize-statuses.mjs --help exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'normalize-statuses.mjs --help printed no usage block');
 });
 
 test('normalize-statuses.mjs -h exits 0 and prints usage', () => {
   const r = runScript('normalize-statuses.mjs', '-h');
-  assert.equal(r.status, 0, `normalize-statuses.mjs -h exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `normalize-statuses.mjs -h exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'normalize-statuses.mjs -h printed no usage block');
 });
 
@@ -462,7 +463,7 @@ test('normalize-statuses.mjs still accepts --dry-run as a known flag', () => {
       { CAREER_OPS_ROOT: dir, CAREER_OPS_DATA_DIR: '', CAREER_OPS_TRACKER: '' },
       'normalize-statuses.mjs', '--dry-run',
     );
-    assert.equal(r.status, 0, `normalize-statuses.mjs --dry-run exited ${r.status}, want 0`);
+    assert.equal(r.status, 0, describeSpawn(r, `normalize-statuses.mjs --dry-run exited ${r.status}, want 0`));
     assert.doesNotMatch(r.all, /unrecognized flag/i, '--dry-run must not be rejected as unrecognized');
     assert.doesNotMatch(r.all, /No applications\.md found/i, 'the fixture tracker was not the one read');
   } finally {
@@ -511,7 +512,7 @@ test('rank-pipeline.mjs --help exits 0 and prints usage', () => {
   const root = mkdtempSync(join(tmpdir(), 'career-ops-rank-pipeline-'));
   try {
     const r = runRankPipeline(root, '--help');
-    assert.equal(r.status, 0, `rank-pipeline.mjs --help exited ${r.status}, want 0`);
+    assert.equal(r.status, 0, describeSpawn(r, `rank-pipeline.mjs --help exited ${r.status}, want 0`));
     assert.match(r.all, /node rank-pipeline\.mjs \[--limit N\]/, 'rank-pipeline.mjs --help printed no usage block');
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -571,7 +572,7 @@ test('merge-tracker.mjs --help exits 0 and prints usage', () => {
   const root = mkdtempSync(join(tmpdir(), 'career-ops-merge-tracker-'));
   try {
     const r = runMergeTracker(root, '--help');
-    assert.equal(r.status, 0, `merge-tracker.mjs --help exited ${r.status}, want 0`);
+    assert.equal(r.status, 0, describeSpawn(r, `merge-tracker.mjs --help exited ${r.status}, want 0`));
     assert.match(r.all, /Usage: node merge-tracker\.mjs \[options\]/, 'merge-tracker.mjs --help printed no usage block');
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -585,14 +586,14 @@ test('merge-tracker.mjs --help exits 0 and prints usage', () => {
 // rather than through the bare-invocation expectation in test-all.mjs.
 test('cv-sync-check.mjs --help exits 0 and prints usage', () => {
   const r = runScript('cv-sync-check.mjs', '--help');
-  assert.equal(r.status, 0, `cv-sync-check.mjs --help exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `cv-sync-check.mjs --help exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'cv-sync-check.mjs --help printed no usage block');
   assert.doesNotMatch(r.all, /sync check/i, '--help still ran the checks');
 });
 
 test('cv-sync-check.mjs -h exits 0 and prints usage', () => {
   const r = runScript('cv-sync-check.mjs', '-h');
-  assert.equal(r.status, 0, `cv-sync-check.mjs -h exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `cv-sync-check.mjs -h exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'cv-sync-check.mjs -h printed no usage block');
 });
 
@@ -608,7 +609,7 @@ test('cv-sync-check.mjs --help --bogus still errors', () => {
 // to exit before main() launches a browser, which is what keeps them hermetic.
 test('scan-interamt.mjs --help exits 0 and prints usage without scanning', () => {
   const r = runScript('scan-interamt.mjs', '--help');
-  assert.equal(r.status, 0, `scan-interamt.mjs --help exited ${r.status}, want 0`);
+  assert.equal(r.status, 0, describeSpawn(r, `scan-interamt.mjs --help exited ${r.status}, want 0`));
   assert.match(r.all, /Usage:/i, 'scan-interamt.mjs --help printed no usage block');
   assert.match(r.all, /--debug/, 'scan-interamt.mjs --help does not list --debug');
   assert.doesNotMatch(r.all, /Searching "|Fatal:/, '--help still started a scan');

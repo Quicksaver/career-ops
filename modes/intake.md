@@ -2,6 +2,8 @@
 
 All candidate files and data paths in these instructions are relative to the explicitly selected `users/{USER}/` directory. Resolve reads and writes there. System modes, templates, and executable scripts remain relative to the code checkout. Pass `--user {USER}` to child commands or inherit the same `CAREER_OPS_USER`.
 
+**Unattended runs** (`modes/_shared.md` → **Unattended runs**): never ask and never wait. Unless the prompt already approves named items, show the Step 4 proposal table, write nothing, and end with `needs_confirmation: approval {n} proposed edits - rerun with "approve" and the items to apply`.
+
 ## Purpose
 
 A thin profile produces a generic tailored CV. This mode populates

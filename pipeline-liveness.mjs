@@ -18,6 +18,7 @@ import {
   userPath,
 } from './lib/user-context.mjs';
 import { appendExpiredRows, parsePendingRows } from './lib/pipeline-queue.mjs';
+import { isUnreadableVerdict } from './liveness-core.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { writeFileAtomic, loadCanonicalStates, resolveCanonicalStateId } from './tracker-utils.mjs';
 import { parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
@@ -58,9 +59,9 @@ function finish(result, exitCode = 0) {
   } else {
     for (const item of result.results || []) {
       const reason = item.reason ? ` — ${item.reason}` : '';
-      lines.push(`[pipeline-liveness] ${item.result}: ${item.url}${reason}`);
+      lines.push(`[pipeline-liveness] ${isUnreadableVerdict(item) ? 'unreadable' : item.result}: ${item.url}${reason}`);
     }
-    lines.push(`[pipeline-liveness] summary: checked ${result.checked || 0}, active ${result.active || 0}, expired ${result.expired || 0}, uncertain ${result.uncertain || 0}, moved ${result.moved || 0}${result.dry_run ? ' (dry run)' : ''}`);
+    lines.push(`[pipeline-liveness] summary: checked ${result.checked || 0}, active ${result.active || 0}, expired ${result.expired || 0}, unreadable ${result.unreadable || 0}, uncertain ${result.uncertain || 0}, moved ${result.moved || 0}${result.dry_run ? ' (dry run)' : ''}`);
     for (const warning of result.tracker_warnings || []) {
       lines.push(`[pipeline-liveness] tracker warning: ${warning.company} — ${warning.role}: ${warning.message}`);
     }
@@ -124,7 +125,13 @@ if (payload.status !== 'completed' || !Array.isArray(payload.results)) {
   finish(payload, 1);
 }
 
-const expiredUrls = new Set(payload.results.filter((item) => item.result === 'expired').map((item) => item.url));
+// An insufficient_content verdict means the page could not be read, not that
+// the posting closed (#5409): leave it Pending for its worker, which evaluates it
+// or holds it as jd_unavailable, and never close a tracker row on it.
+const unreadable = payload.results.filter((item) => isUnreadableVerdict(item));
+const expiredUrls = new Set(payload.results
+  .filter((item) => item.result === 'expired' && !isUnreadableVerdict(item))
+  .map((item) => item.url));
 // A network sweep can take minutes. Re-read under the writer lock so a scan or
 // inbox edit made meanwhile survives; never replace it with the old snapshot.
 const updated = dryRun ? appendExpiredRows(original, expiredUrls) : await withPipelineLock(pipelinePath, () => {
@@ -178,7 +185,8 @@ const result = {
   status: 'completed',
   checked: webUrls.length,
   active: payload.active,
-  expired: payload.expired,
+  expired: expiredUrls.size,
+  unreadable: unreadable.length,
   uncertain: payload.uncertain + unsupported,
   local,
   unsupported,

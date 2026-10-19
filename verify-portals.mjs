@@ -89,7 +89,7 @@ import { asciiFold } from './lib/ascii-fold.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 
 // getCareerOpsRoot() (not a bare 'portals.yml'): scan.mjs, scan-ats-full.mjs
 // and audit-portals.mjs all resolve their default portals.yml against the
@@ -683,7 +683,7 @@ export async function verifyCompanies(
       const resolved = resolveProvider(company, providers, { skipIds: ['local-parser'] });
       if (resolved && resolved.provider) {
         const probe = await probeProvider(company, resolved.provider, {
-          profilePath: process.env.CAREER_OPS_PROFILE ? resolve(process.env.CAREER_OPS_PROFILE) : join(DATA_ROOT, 'config/profile.yml'),
+          profilePath: getProfilePath(),
           ...(httpCtx || makeHttpCtx()),
         });
         results.push({ name, ...probe });
@@ -882,7 +882,7 @@ async function main() {
   // is read when it is absent).
   const { mergeProviderPlugins } = await import('./plugins/_engine.mjs');
   await mergeProviderPlugins(providers, { root: dirname(PROVIDERS_DIR), dataRoot: DATA_ROOT });
-  const httpCtx = { ...makeHttpCtx(), profilePath: process.env.CAREER_OPS_PROFILE ? resolve(process.env.CAREER_OPS_PROFILE) : join(DATA_ROOT, 'config/profile.yml') };
+  const httpCtx = { ...makeHttpCtx(), profilePath: getProfilePath() };
   const { found, results } = await verifyPortalsFile(filePath, { fetchJson, providers, httpCtx });
   if (!found) {
     // Graceful no-op: fresh setups (and CI, which ships no portals.yml) have

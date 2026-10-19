@@ -33,11 +33,12 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
+import { flagValue, hasFlag, safeIntFlag, validateFlags } from './lib/cli-flags.mjs';
 import { sanitizeMarkdownField } from './scan.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
+import { readRememberedCli } from './lib/agent-cli.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = getCareerOpsRoot();
@@ -61,7 +62,7 @@ export const CLI_CANDIDATES = [
   { bin: 'codex', args: p => ['exec', p] },
   { bin: 'copilot', args: p => ['-p', p] },
   { bin: 'qwen', args: p => ['-p', p] },
-  { bin: 'agy', args: p => ['-p', p] },
+  { bin: 'agy', id: 'antigravity', args: p => ['-p', p] },
   { bin: 'grok', args: p => ['-p', p] },
   { bin: 'pi', args: p => ['-p', p] },
 ];
@@ -300,7 +301,12 @@ async function main(args) {
   }
 
   const dryRun = hasFlag(args, '--dry-run');
-  const limit = flagValue(args, '--limit') ?? DEFAULT_LIMIT;
+  const rawLimit = flagValue(args, '--limit');
+  const limit = safeIntFlag(rawLimit, hasFlag(args, '--limit') ? 0 : DEFAULT_LIMIT);
+  if (limit <= 0 || rawLimit?.trim() !== rawLimit) {
+    console.error('--limit must be a positive integer.');
+    return 1;
+  }
   const model = flagValue(args, '--model');
   const forced = flagValue(args, '--cli') ?? process.env.CAREER_OPS_RANK_CLI;
 
@@ -314,7 +320,8 @@ async function main(args) {
     return 0;
   }
 
-  const active = CLI_CANDIDATES.find(c => c.bin === process.env.CAREER_OPS_CLI);
+  const remembered = readRememberedCli(DATA_ROOT);
+  const active = CLI_CANDIDATES.find(c => c.bin === remembered || c.id === remembered);
   const cli = forced
     ? CLI_CANDIDATES.find(c => c.bin === forced) ?? { bin: forced, args: p => ['-p', p] }
     : detectCli(active ? [active, ...CLI_CANDIDATES] : CLI_CANDIDATES);

@@ -5,6 +5,7 @@
 //
 // Run:  node --test tests/story-provenance-marker-anchor.test.mjs
 
+import './user-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyStoryBank, parseStoryBlocks } from '../story-provenance-check.mjs';

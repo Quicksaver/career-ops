@@ -134,23 +134,27 @@ else if (phase === 'codex-mock') {
     appendFileSync(join(root, 'dispatched.jsonl'), JSON.stringify(row) + '\n');
     const reason = config.holds?.[row.url];
     const answered = answers.some(a => a.url === row.url && a.reason === reason);
-    let status = config.quota ? 'paused_rate_limit' : reason && !answered ? 'needs_confirmation' : config.retry || config.stall ? 'failed' : 'completed';
+    let status = config.quota ? 'paused_rate_limit' : reason && !answered ? 'needs_confirmation' : config.retry || config.stall ? 'failed' : config.dealbreakers?.includes(row.url) ? 'skipped' : 'completed';
     const old = states.find(s => s.url === row.url);
-    const state = { ...row, status, retries: String(config.retry ? Number(old?.retries || 0) + 1 : 0) };
+    const error = status === 'skipped' ? 'dealbreaker: "No fully on-site roles" vs "On site five days a week."' : '';
+    const state = { ...row, status, error, retries: String(config.retry ? Number(old?.retries || 0) + 1 : 0) };
     if (old) states.splice(states.indexOf(old), 1, state); else states.push(state);
     if (status === 'needs_confirmation') {
       writeFileSync(join(root, `batch/logs/${row.id}.hold.json`), JSON.stringify({ schema_version: 1, user: 'fictional', id: row.id, url: row.url, status, reason, question: 'Please provide the exact posting answer.', company: '', role: '', score: null, legitimacy: null, via: null, company_confidential: null, pdf: null, report: null, tracker: null, error: null }));
-    } else if (status === 'completed') {
+    } else if (status === 'completed' || status === 'skipped') {
+      // Stands in for reconcile-pipeline, which moves both out of Pending.
       const text = read(pipeline);
       const parsed = parsePendingRows(text);
       const index = parsed.rows.find(r => r.url === row.url)?.lineIndex;
       if (index !== undefined) { parsed.lines.splice(index, 1); writeFileSync(pipeline, parsed.lines.join('\n')); }
-      mkdirSync(join(root, 'output'), { recursive: true });
-      writeFileSync(join(root, `output/${row.id}.done`), row.url);
+      if (status === 'completed') {
+        mkdirSync(join(root, 'output'), { recursive: true });
+        writeFileSync(join(root, `output/${row.id}.done`), row.url);
+      }
     }
     if (config.quota) { writeFileSync(join(root, 'batch/batch-runner.paused'), 'fixture quota'); break; }
   }
-  writeFileSync(join(root, 'batch/batch-state.tsv'), 'id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n' + states.map(s => [s.id, s.url, s.status, '', '', '', '', '', s.retries].join('\t')).join('\n') + '\n');
+  writeFileSync(join(root, 'batch/batch-state.tsv'), 'id\turl\tstatus\tstarted\tcompleted\treport\tscore\terror\tretries\n' + states.map(s => [s.id, s.url, s.status, '', '', '', '', s.error || '', s.retries].join('\t')).join('\n') + '\n');
   if (config.concurrent && !existsSync(join(root, 'added-once'))) {
     writeFileSync(join(root, 'added-once'), '1');
     writeFileSync(pipeline, read(pipeline).replace('## Pending', `## Pending\n- [ ] ${config.concurrent}`));
@@ -159,5 +163,9 @@ else if (phase === 'codex-mock') {
   const urls = read(value('--file')).trim().split(/\r?\n/);
   writeFileSync(join(root, 'checked.json'), JSON.stringify(urls));
   writeFileSync(pipeline, read(pipeline).replace('## Pending', '## Pending\n- [ ] https://jobs.example.org/concurrent'));
-  emit({ status: 'completed', active: 0, expired: urls.length, uncertain: 0, results: urls.map(url => ({ url, result: 'expired' })) });
+  // config.unreadable: URLs the checker could not read (expired + insufficient_content, #5409).
+  const unreadable = new Set(config.unreadable || []);
+  emit({ status: 'completed', active: 0, expired: urls.length, uncertain: 0, results: urls.map(url => (unreadable.has(url)
+    ? { url, result: 'expired', code: 'insufficient_content', reason: 'insufficient content — likely nav/footer only' }
+    : { url, result: 'expired' })) });
 }

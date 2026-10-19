@@ -326,9 +326,11 @@ process_offer() {
 }
 merge_tracker() { echo MERGED; }
 print_summary() { echo SUMMARY; }
+report_progress() { echo "PROGRESS:$1/$2"; }
 run() {
   local VERIFICATION_FAILED=false pending_count=3 PARALLEL=2 BATCH_PAUSED=false LIVE_INPUTS="" PAUSE_FILE="$PWD/no-pause"
   local pending_ids=(1 2${count === 3 ? ' 3' : ''})
+  local pending_count=${count}
   local pending_urls=(one two three) pending_sources=(test test test) pending_notes=(note note note)
 ${runner.slice(start, end)}
 }
@@ -339,6 +341,7 @@ run
       }), (error) => {
         assert.equal(error.status, 2, error.stderr);
         assert.match(error.stdout, /DRAINED:2/, 'in-flight workers are drained');
+        assert.match(error.stdout, new RegExp(`PROGRESS:2/${count}`), 'each finished worker is counted');
         assert.doesNotMatch(error.stdout, /MERGED|SUMMARY|LAUNCHED:3/);
         assert.match(error.stderr, /tracker merge skipped/);
         return true;

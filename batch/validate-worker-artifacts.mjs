@@ -8,6 +8,7 @@ import { normalizeVia, looksLikeTsvHeaderRow, resolveTsvColumns } from '../track
 import { hasEmbeddedJdArchive } from '../check-jd-archive.mjs';
 import { loadAnswers, validLocal, validUrl } from './manual-inputs.mjs';
 import { promoteKnownFragmentIdentity } from '../url-key.mjs';
+import { getProfilePath } from '../path-resolver.mjs';
 
 function clean(value) {
   const text = value == null ? '' : String(value).trim();
@@ -138,7 +139,8 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
     if (blocked && tracker.pdf === '✅') errors.push('Skip/hard stops cannot have a primary PDF');
     if (/^(null|undefined)$/i.test(tracker.via)) errors.push('direct Via must be an empty TSV field, never a null string');
     if (userRoot) {
-      const profilePath = resolve(userRoot, 'config/profile.yml');
+      // The batch lane reads the selected user's own profile, like run-workflow.mjs.
+      const profilePath = getProfilePath(userRoot);
       const profile = existsSync(profilePath) ? yaml.load(readFileSync(profilePath, 'utf8')) : {};
       if (['text', 'latex'].includes(profile?.cv?.output_format) && tracker.pdf === '✅') errors.push('configured text/latex output cannot claim a PDF');
       const threshold = profile?.auto_pdf_score_threshold ?? 3;

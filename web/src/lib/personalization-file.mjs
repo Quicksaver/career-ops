@@ -7,7 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
 import { NOTES_START, NOTES_END, profilePath } from "./profile-memory.mjs";
-import { renderSection, scanHeadings, sectionState, SECTIONS } from "./personalization.mjs";
+import { renderSection, withSavedPreferences } from "./personalization.mjs";
+import { getProfilePath } from "./core/profile-path.mjs";
 
 /**
  * Thrown when a write cannot be proven safe: the file's section boundaries are
@@ -32,7 +33,8 @@ export class UnsureProfileParseError extends Error {
  * its own section, so the notes stay last the way rememberFact() expects.
  * Throws UnsureProfileParseError rather than guess at a boundary.
  */
-export function mergeSections(existingMd, rendered) {
+export function mergeSections(existingMd, rendered, core) {
+  const { scanHeadings, SECTIONS } = core;
   // Contract: bodies arrive already rendered (renderSection). Fail loudly here
   // rather than let an array or object stringify into the user's file.
   for (const [id, body] of Object.entries(rendered ?? {})) {
@@ -127,23 +129,24 @@ function readTemplate(codeRoot) {
 }
 
 /**
- * Section state of the user's file against the shipped template. Throws when
- * either cannot be read: with no template every section compares as "filled",
- * and an unreadable profile compares as "missing".
+ * Section state of the user's file against the shipped template, with saved
+ * profile.yml preferences overlaid. Throws when any of them cannot be read:
+ * with no template every section compares as "filled", and an unreadable
+ * profile compares as "missing".
  *
  * @param {string} dataRoot career-ops home, i.e. careerOpsRoot()
  * @param {string} codeRoot engine checkout, i.e. resolveCodeRoot()
  */
-export function readPersonalizationState(dataRoot, codeRoot) {
+export function readPersonalizationState(dataRoot, codeRoot, core) {
   const user = readExact(profilePath(dataRoot));
   const template = readTemplate(codeRoot);
-  const configFile = path.join(dataRoot, "config", "profile.yml");
+  const configFile = getProfilePath(dataRoot);
   const source = readExact(configFile);
   const profile = source === null ? {} : yaml.load(source, { filename: configFile }) ?? {};
   if (typeof profile !== "object" || Array.isArray(profile)) {
     throw new Error("config/profile.yml must contain a YAML mapping");
   }
-  return { exists: user !== null, sections: sectionState(user ?? "", template, profile) };
+  return { exists: user !== null, sections: withSavedPreferences(core.sectionState(user ?? "", template), profile) };
 }
 
 /**
@@ -153,17 +156,17 @@ export function readPersonalizationState(dataRoot, codeRoot) {
  * is merged, never replaced. Throws before writing on anything it cannot read
  * or is not sure how to splice.
  *
- * @param {{ dataRoot: string, codeRoot: string, patch: Record<string, unknown>, dryRun?: boolean, write: (file: string, content: string) => unknown }} opts
+ * @param {{ dataRoot: string, codeRoot: string, patch: Record<string, unknown>, dryRun?: boolean, write: (file: string, content: string) => unknown, core: { scanHeadings: Function, SECTIONS: Array<{ id: string, heading: string }> } }} opts
  *   `patch` is already coerced (coercePersonalization); `write` is atomicWriteWithBackup.
  * @returns {{ ids: string[], merged: string }}
  */
-export function savePersonalization({ dataRoot, codeRoot, patch, dryRun = false, write }) {
+export function savePersonalization({ dataRoot, codeRoot, patch, dryRun = false, write, core }) {
   const ids = Object.keys(patch);
   const file = profilePath(dataRoot);
   const base = readExact(file) ?? readTemplate(codeRoot);
   const rendered = {};
   for (const id of ids) rendered[id] = renderSection(id, patch[id]);
-  const merged = mergeSections(base, rendered);
+  const merged = mergeSections(base, rendered, core);
   if (!dryRun) write(file, merged);
   return { ids, merged };
 }

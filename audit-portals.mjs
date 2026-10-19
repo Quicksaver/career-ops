@@ -62,7 +62,7 @@ import * as yaml from 'js-yaml';
 import { makeHttpCtx } from './providers/_http.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
 import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { DEFAULT_SMALL_THRESHOLD, isSmallBoard, smallBoardDetail } from './lib/small-board.mjs';
 
@@ -235,7 +235,7 @@ export async function auditCompanies(companies, {
       let result = { provider: providerId, scanMethod: entry.scan_method || null };
       if (providerId) {
         try {
-          const ctx = { profilePath: process.env.CAREER_OPS_PROFILE ? resolve(process.env.CAREER_OPS_PROFILE) : join(ROOT, 'config/profile.yml'),
+          const ctx = { profilePath: getProfilePath(),
             ...(httpCtx || { ...makeHttpCtx(), maxPages: AUDIT_MAX_PAGES }) };
           result.jobs = (await resolved.provider.fetch(entry, ctx)) || [];
         } catch (err) {

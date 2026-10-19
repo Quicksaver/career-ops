@@ -420,9 +420,9 @@ try {
   } else {
     fail(`batch Codex argv missing resolved settings: ${JSON.stringify(codexArgv)}`);
   }
-  if (batchOutput.includes('Processing offer #1: https://example.com/one (report 001, attempt 1, remaining 2)') &&
-      batchOutput.includes('Processing offer #2: https://example.com/two (report 001, attempt 1, remaining 1)') &&
-      batchOutput.includes('Processing offer #3: https://example.com/three (report 001, attempt 1, remaining 0)')) {
+  if (batchOutput.includes('Processing offer #1 (1/3): https://example.com/one (report 001, attempt 1, remaining 2)') &&
+      batchOutput.includes('Processing offer #2 (2/3): https://example.com/two (report 001, attempt 1, remaining 1)') &&
+      batchOutput.includes('Processing offer #3 (3/3): https://example.com/three (report 001, attempt 1, remaining 0)')) {
     pass('parallel batch progress reports the number of queued offers remaining after each launch');
   } else {
     fail(`batch progress missing remaining counts: ${JSON.stringify(batchOutput)}`);

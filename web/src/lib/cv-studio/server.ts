@@ -9,6 +9,7 @@ import { matchesTailoredCv, sortNewestFirst } from "@/lib/apply/cv-match.mjs";
 import { markTrackerReady, spawnGeneratePdf } from "@/lib/pdf-render.mjs";
 import { htmlText, parseBlocks, renderBlocks, type BlockTree } from "./html-blocks.mjs";
 import { parseBaseCv } from "./base-cv.mjs";
+import { unsupportedClaims } from "./rewrite.mjs";
 import { buildStudioDoc, emptyEdits, parseEdits, resolveStudio, type StudioDoc, type StudioEdits } from "./studio.mjs";
 
 const EDITED_SUFFIX = "-edited";
@@ -141,6 +142,19 @@ export async function keywordsInText(n: string, text: string): Promise<string[] 
   return km.extractKeywords(fs.readFileSync(id.file, "utf8")).filter((k) => km.keywordCount(k, text) > 0);
 }
 
+type VerifyCvFacts = {
+  verifyFacts: (text: string, opts: { sourcePaths: string[]; configPath: string }) => Parameters<typeof unsupportedClaims>[0];
+  auditClaims: (text: string, sourceText: string) => Parameters<typeof unsupportedClaims>[1];
+};
+
+/** The claims in a rewrite that cv.md and article-digest.md do not support, and the metrics its own bullet does not carry. */
+export async function unsupportedRewriteClaims(text: string, bulletText: string): Promise<string[]> {
+  const root = careerOpsRoot();
+  const { verifyFacts, auditClaims } = await coreModule<VerifyCvFacts>("verify-cv-facts");
+  const cv = verifyFacts(text, { sourcePaths: [path.join(root, "cv.md"), path.join(root, "article-digest.md")], configPath: path.join(root, "config", "cv-facts.json") });
+  return unsupportedClaims(cv, auditClaims(text, bulletText));
+}
+
 export type RenderOutcome = { ok: true; pdf: string; indexed: boolean; warnings: string[] } | { ok: false; error: string };
 
 /**
@@ -167,7 +181,7 @@ export async function renderEditedPdf(load: Extract<StudioLoad, { ok: true }>, e
     return { ok: false, error: render.stderr || "PDF rendering failed." };
   }
   const warnings = render.stderr.split("\n").map((l: string) => l.trim()).filter(Boolean);
-  const mark = await markTrackerReady({ spawnFn: spawn, execPath: process.execPath, root, reportNum: load.reportNum });
+  const mark = await markTrackerReady({ spawnFn: spawn, execPath: process.execPath, root, systemRoot: careerOpsSystemRoot(), env: careerOpsCoreEnv(), reportNum: load.reportNum });
   if (!mark.ok) warnings.push(`PDF rendered, but the tracker's PDF column was not updated${mark.data?.error ? `: ${mark.data.error}` : "."}`);
   const index = await pdfPathStatusForReport(load.reportNum);
   return { ok: true, pdf: path.basename(editedPdf), indexed: index.status === "found" && index.path === path.resolve(editedPdf), warnings };

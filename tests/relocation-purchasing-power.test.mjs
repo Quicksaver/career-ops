@@ -28,6 +28,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { describeSpawn, exitedNonZero } from './helpers/describe-spawn.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SCRIPT = join(ROOT, 'salary-gap.mjs');
@@ -51,7 +52,7 @@ test('ad hoc --relocation mode reproduces the #4694 motivating example (Halifax 
     '--home-location', 'Midland, ON',
     '--currency', 'CAD',
   ]);
-  assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+  assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, true, `expected ok:true, got ${JSON.stringify(out)}`);
   assert.equal(out.inputs.homeCode, 'CA-ON');
@@ -80,7 +81,7 @@ test('ad hoc --relocation mode refuses a USD gross figure against the CAD table 
     '--home-location', 'Midland, ON',
     '--currency', 'USD',
   ]);
-  assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+  assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, false, `expected ok:false for a USD gross against a CAD table, got ${JSON.stringify(out)}`);
   assert.equal(out.reason, 'currency-mismatch');
@@ -95,7 +96,7 @@ test('ad hoc --relocation mode refuses an UNKNOWN currency against the CAD table
     '--home-location', 'Midland, ON',
     '--currency', 'UNKNOWN',
   ]);
-  assert.equal(r.status, 0);
+  assert.equal(r.status, 0, describeSpawn(r));
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, false);
   assert.equal(out.reason, 'currency-mismatch');
@@ -107,7 +108,7 @@ test('ad hoc --relocation mode with --currency omitted entirely is treated as UN
     '--posting-location', 'Halifax, NS',
     '--home-location', 'Midland, ON',
   ]);
-  assert.equal(r.status, 0);
+  assert.equal(r.status, 0, describeSpawn(r));
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, false, `omitting --currency must not silently compute a CAD take-home, got ${JSON.stringify(out)}`);
   assert.equal(out.reason, 'currency-mismatch');
@@ -127,7 +128,7 @@ test('ad hoc --relocation mode: a same-named foreign city (Surrey, UK) never fal
     '--home-location', 'Midland, ON',
     '--currency', 'CAD',
   ]);
-  assert.equal(r.status, 0);
+  assert.equal(r.status, 0, describeSpawn(r));
   const out = JSON.parse(r.stdout);
   assert.equal(out.inputs.destCode, null, 'Surrey, UK must not resolve to CA-BC');
   assert.equal(out.ok, false);
@@ -140,7 +141,7 @@ test('ad hoc --relocation mode with no resolvable jurisdiction reports a reason,
     '--posting-location', 'Somewhere Unrecognized',
     '--home-location', 'Also Unrecognized',
   ]);
-  assert.equal(r.status, 0);
+  assert.equal(r.status, 0, describeSpawn(r));
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, false);
   assert.equal(out.reason, 'no-jurisdiction-match');
@@ -148,7 +149,7 @@ test('ad hoc --relocation mode with no resolvable jurisdiction reports a reason,
 
 test('ad hoc --relocation mode requires --gross and --posting-location (usage error, not a silent default)', () => {
   const r = run(['--relocation', '--posting-location', 'Halifax, NS']);
-  assert.notEqual(r.status, 0, 'missing --gross must fail, not silently proceed');
+  assert.ok(exitedNonZero(r), describeSpawn(r, 'missing --gross must fail, not silently proceed'));
   assert.match(r.stderr, /Usage: node salary-gap\.mjs --relocation/);
 });
 
@@ -182,7 +183,7 @@ test('ad hoc --relocation mode: --posting-location-file resolves the same jurisd
       '--home-location', 'Midland, ON',
       '--currency', 'CAD',
     ]);
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const out = JSON.parse(r.stdout);
     assert.equal(out.inputs.destCode, 'CA-NS');
     assert.equal(out.inputs.postingLocation, 'Halifax, NS', 'trailing newline from the file is trimmed');
@@ -198,7 +199,7 @@ test('ad hoc --relocation mode: --posting-location-file content containing shell
       '--home-location', 'Midland, ON',
       '--currency', 'CAD',
     ]);
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const out = JSON.parse(r.stdout);
     assert.equal(out.inputs.postingLocation, 'Halifax, NS $(touch should-not-exist.txt)',
       'the command-substitution-shaped text is passed through literally, not executed and not stripped');
@@ -215,7 +216,7 @@ test('ad hoc --relocation mode: --posting-location-file takes precedence over --
       '--home-location', 'Midland, ON',
       '--currency', 'CAD',
     ]);
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 0, describeSpawn(r));
     const out = JSON.parse(r.stdout);
     assert.equal(out.inputs.postingLocation, 'Halifax, NS', 'the file form wins — it is the safe path, not a value a caller meant to replace');
   });
@@ -228,7 +229,7 @@ test('ad hoc --relocation mode: an unreadable --posting-location-file is a usage
     '--home-location', 'Midland, ON',
     '--currency', 'CAD',
   ]);
-  assert.notEqual(r.status, 0);
+  assert.ok(exitedNonZero(r), describeSpawn(r, 'expected a non-zero exit'));
   assert.match(r.stderr, /Could not read --posting-location-file/);
 });
 
@@ -248,7 +249,7 @@ test('ad hoc --relocation mode: a trailing --posting-location-file with no opera
     '--currency', 'CAD',
     '--posting-location-file',
   ]);
-  assert.notEqual(r.status, 0, 'a missing operand must not silently succeed');
+  assert.ok(exitedNonZero(r), describeSpawn(r, 'a missing operand must not silently succeed'));
   assert.match(r.stderr, /--posting-location-file requires a file path operand/);
   assert.doesNotMatch(r.stderr, /Could not read --posting-location-file/,
     'a missing operand is a distinct usage error, not a failed file read');
@@ -260,7 +261,7 @@ test('ad hoc --relocation mode: --posting-location-file followed by another flag
     '--posting-location-file', '--home-location', 'Midland, ON',
     '--currency', 'CAD',
   ]);
-  assert.notEqual(r.status, 0, 'an operand that looks like another flag must not be read as a path');
+  assert.ok(exitedNonZero(r), describeSpawn(r, 'an operand that looks like another flag must not be read as a path'));
   assert.match(r.stderr, /--posting-location-file requires a file path operand/);
   assert.doesNotMatch(r.stderr, /Could not read --posting-location-file '--home-location'/,
     'must reject before ever attempting to read "--home-location" as a file');
@@ -273,7 +274,7 @@ test('ad hoc --relocation mode: --posting-location-file= with an empty operand i
     '--home-location', 'Midland, ON',
     '--currency', 'CAD',
   ]);
-  assert.notEqual(r.status, 0);
+  assert.ok(exitedNonZero(r), describeSpawn(r, 'expected a non-zero exit'));
   assert.match(r.stderr, /--posting-location-file requires a file path operand/);
 });
 
@@ -292,7 +293,7 @@ test('ad hoc --relocation mode: "Hamilton, Quebec" never false-matches CA-ON (un
       '--home-location', 'Toronto, ON',
       '--currency', 'CAD',
     ]);
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 0, describeSpawn(r));
     const out = JSON.parse(r.stdout);
     assert.equal(out.inputs.destCode, null, '"Hamilton, Quebec" must not resolve to CA-ON');
     assert.equal(out.ok, false);
@@ -307,31 +308,40 @@ test('ad hoc --relocation mode: "Hamilton, QC" never false-matches CA-ON either'
     '--home-location', 'Toronto, ON',
     '--currency', 'CAD',
   ]);
-  assert.equal(r.status, 0);
+  assert.equal(r.status, 0, describeSpawn(r));
   const out = JSON.parse(r.stdout);
   assert.equal(out.inputs.destCode, null, '"Hamilton, QC" must not resolve to CA-ON');
   assert.equal(out.ok, false);
 });
+
+// Batch workers run the canonical oferta mode, which loads Signal 17 from its
+// own file when the trigger holds (#5229). Require that link, then read both.
+function batchSignal17() {
+  const { oferta } = batchCanonicalContext();
+  const signal = 'modes/oferta-signals/17-relocation-purchasing-power.md';
+  assert.ok(oferta.includes(signal), `modes/oferta.md must load ${signal}`);
+  return oferta + readFile(signal);
+}
 
 // ── Prompt-spec wiring: both files must instruct the safe (file-based) form
 //    for the JD-controlled posting location, never the raw shell-argument
 //    form that motivated the CWE-78 finding. ──
 
 test('modes/oferta.md Signal 17 passes the JD location through a file, never --posting-location "<JD', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.match(oferta, /--posting-location-file/, 'Signal 17 uses the safe file-based flag');
   assert.doesNotMatch(oferta, /--posting-location "<JD/, 'the JD-controlled value is never shell-interpolated directly');
 });
 
 test('batch/batch-prompt.md Signal 17 passes the JD location through a file, never --posting-location "<JD', () => {
-  const batchPrompt = batchCanonicalContext().oferta;
+  const batchPrompt = batchSignal17();
   assert.match(batchPrompt, /--posting-location-file/, 'Signal 17 uses the safe file-based flag');
   assert.doesNotMatch(batchPrompt, /--posting-location "<JD/, 'the JD-controlled value is never shell-interpolated directly');
 });
 
 test('both Signal 17 prompts annualize only explicit, sufficiently specified compensation periods', () => {
-  for (const path of ['modes/oferta.md', 'batch/batch-prompt.md']) {
-    const prompt = path === 'batch/batch-prompt.md' ? batchCanonicalContext().oferta : readFile(path);
+  for (const path of ['modes/oferta-signals/17-relocation-purchasing-power.md', 'batch/batch-prompt.md']) {
+    const prompt = path === 'batch/batch-prompt.md' ? batchSignal17() : readFile(path);
     assert.match(prompt, /monthly[\s\S]{0,80}`midpoint × 12`/, `${path} documents monthly-to-annual conversion`);
     assert.match(prompt, /hourly[\s\S]{0,220}(?:JD states weekly hours|JD's stated weekly hours)/, `${path} requires JD-stated weekly hours for hourly annualization`);
     assert.match(prompt, /`midpoint × (?:the JD's stated|stated) weekly hours × 52`/, `${path} documents hourly-to-annual conversion`);
@@ -351,25 +361,25 @@ test('both Signal 17 prompts annualize only explicit, sufficiently specified com
 //    in either prompt file. ──
 
 test('modes/oferta.md Signal 17 no longer uses a heredoc to write the JD location (heredoc delimiter collision, CWE-78 round 2)', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.doesNotMatch(oferta, /<<'?JD_LOCATION_EOF'?/, 'the fixed-delimiter heredoc must be gone, not just renamed');
   assert.doesNotMatch(oferta, /cat <<'/, 'no heredoc of any delimiter name should remain for the posting location');
 });
 
 test('batch/batch-prompt.md Signal 17 no longer uses a heredoc to write the JD location (heredoc delimiter collision, CWE-78 round 2)', () => {
-  const batchPrompt = batchCanonicalContext().oferta;
+  const batchPrompt = batchSignal17();
   assert.doesNotMatch(batchPrompt, /<<'?JD_LOCATION_EOF'?/, 'the fixed-delimiter heredoc must be gone, not just renamed');
   assert.doesNotMatch(batchPrompt, /cat <<'/, 'no heredoc of any delimiter name should remain for the posting location');
 });
 
 test('modes/oferta.md Signal 17 writes the posting-location file via base64-decoded Node, not a shell-interpolated or heredoc-fed value', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.match(oferta, /Buffer\.from\("<base64-encoded JD location/, 'decodes a base64 string literal, never raw JD text');
   assert.match(oferta, /"base64"/, 'uses base64 decoding');
 });
 
 test('batch/batch-prompt.md Signal 17 writes the posting-location file via base64-decoded Node, not a shell-interpolated or heredoc-fed value', () => {
-  const batchPrompt = batchCanonicalContext().oferta;
+  const batchPrompt = batchSignal17();
   assert.match(batchPrompt, /Buffer\.from\("<base64-encoded JD location/, 'decodes a base64 string literal, never raw JD text');
   assert.match(batchPrompt, /"base64"/, 'uses base64 decoding');
 });
@@ -418,7 +428,7 @@ test('documented base64-decode pattern round-trips a non-ASCII JD location (acce
       '--home-location', 'Toronto, ON',
       '--currency', 'CAD',
     ]);
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const out = JSON.parse(r.stdout);
     assert.equal(out.inputs.postingLocation, rawLocation, 'the non-ASCII location reaches salary-gap.mjs byte-for-byte');
   } finally {
@@ -491,7 +501,7 @@ test('folded output annotates the application with a relocation comparison from 
   const dataRoot = fixtureDataRoot();
   try {
     const r = run([], { CAREER_OPS_ROOT: dataRoot, CAREER_OPS_DATA_DIR: '' });
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const out = JSON.parse(r.stdout);
     const app = out.applications.find((a) => a.company === 'WidgetCo');
     assert.ok(app, `WidgetCo application not found in ${JSON.stringify(out.applications)}`);
@@ -531,7 +541,7 @@ test('a re-evaluated application pairs the selected advertised compensation with
     ].join('\n'));
 
     const r = run([], { CAREER_OPS_ROOT: dataRoot, CAREER_OPS_DATA_DIR: '' });
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const app = JSON.parse(r.stdout).applications.find((a) => a.company === 'WidgetCo');
     assert.ok(app);
     assert.equal(app.advertised.raw, '90k CAD per year');
@@ -567,7 +577,7 @@ test('a later advertised compensation without posting_location is never paired w
     ].join('\n'));
 
     const r = run([], { CAREER_OPS_ROOT: dataRoot, CAREER_OPS_DATA_DIR: '' });
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const app = JSON.parse(r.stdout).applications.find((a) => a.company === 'WidgetCo');
     assert.ok(app);
     assert.equal(app.advertised.raw, '90k CAD per year');
@@ -583,7 +593,7 @@ test('folded relocation requires an explicit annual period', () => {
   const dataRoot = fixtureDataRoot('60k CAD');
   try {
     const r = run([], { CAREER_OPS_ROOT: dataRoot, CAREER_OPS_DATA_DIR: '' });
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const out = JSON.parse(r.stdout);
     const app = out.applications.find((a) => a.company === 'WidgetCo');
     assert.ok(app);
@@ -599,7 +609,7 @@ test('folded relocation accepts an annual period written before the currency', (
   const dataRoot = fixtureDataRoot('60k per year CAD');
   try {
     const r = run([], { CAREER_OPS_ROOT: dataRoot, CAREER_OPS_DATA_DIR: '' });
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     const out = JSON.parse(r.stdout);
     const app = out.applications.find((a) => a.company === 'WidgetCo');
     assert.ok(app?.relocation?.ok, `expected annual comparison, got ${JSON.stringify(app?.relocation)}`);
@@ -614,7 +624,7 @@ test('--summary mode renders the relocation line with the not-financial-advice c
   const dataRoot = fixtureDataRoot();
   try {
     const r = run(['--summary'], { CAREER_OPS_ROOT: dataRoot, CAREER_OPS_DATA_DIR: '' });
-    assert.equal(r.status, 0, `exit 0 expected, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exit 0 expected, got ${r.status}`));
     assert.match(r.stdout, /relocation:.*Ontario, Canada.*Nova Scotia, Canada/);
     assert.match(r.stdout, /not financial\/tax advice/);
   } finally {
@@ -628,9 +638,9 @@ test('--summary mode renders the relocation line with the not-financial-advice c
 //    header: "NEW TESTS GO IN A FILE OF THEIR OWN") ──
 
 test('modes/oferta.md Block G carries Signal 17 and its Risk Summary row', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.match(oferta, /\*\*17\. Relocation Purchasing Power\*\*/, 'Signal 17 heading present');
-  assert.match(oferta, /node salary-gap\.mjs --relocation --gross/, 'Signal 17 instructs running the real CLI, not hand-computing the arithmetic');
+  assert.match(oferta, /node salary-gap\.mjs (?:--user \{USER\} )?--relocation --gross/, 'Signal 17 instructs running the real CLI, not hand-computing the arithmetic');
   assert.match(oferta, /Not financial or tax advice|not financial or tax advice/i, 'Signal 17 carries the not-financial/tax-advice disclaimer');
   // The end bound is searched from the section start, as in test-all.mjs's
   // #2892 check: a block placed before Risk Summary that shows its own
@@ -674,7 +684,7 @@ test('no posting_location, no relocation field attached — absence of data is s
       '| 2 | 2026-09-02 | OtherCorp | Eng | 4.0/5 | Applied | ❌ | [51](reports/051-othercorp-2026-09-02.md) | n |', '',
     ].join('\n'));
     const r = run([], { CAREER_OPS_ROOT: dataRoot, CAREER_OPS_DATA_DIR: '' });
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 0, describeSpawn(r));
     const out = JSON.parse(r.stdout);
     const app = out.applications.find((a) => a.company === 'OtherCorp');
     assert.ok(app);

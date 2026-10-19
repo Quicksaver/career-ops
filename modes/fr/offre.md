@@ -115,8 +115,11 @@ Sauvegarder l'evaluation complete dans `users/{USER}/reports/{###}-{company-slug
 **Date :** {YYYY-MM-DD}
 **Archetype :** {detecte}
 **Score :** {X/5}
+**Décision:** {Postuler | Envisager | Chercher d'abord | Passer}
 **URL :** {URL de l'offre}
 **PDF :** {chemin ou en attente}
+
+{la phrase postuler ou non, copiée telle quelle}
 
 ---
 

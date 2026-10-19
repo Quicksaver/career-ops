@@ -115,8 +115,11 @@ Sla de volledige evaluatie op in `users/{USER}/reports/{###}-{company-slug}-{YYY
 **Datum:** {YYYY-MM-DD}
 **Archetype:** {gedetecteerd}
 **Score:** {X/5}
+**Beslissing:** {Solliciteren | Overwegen | Eerst onderzoeken | Overslaan}
 **URL:** {URL van de vacature}
 **PDF:** {pad of in afwachting}
+
+{de zin over wel of niet solliciteren, woordelijk gekopieerd}
 
 ---
 

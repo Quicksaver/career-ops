@@ -48,6 +48,7 @@ import workday from './providers/workday.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 let PORTALS_PATH = process.env.CAREER_OPS_PORTALS || '';
+let BLACKLIST_PATH = process.env.CAREER_OPS_BLACKLIST || '';
 import workable from './providers/workable.mjs';
 import smartrecruiters from './providers/smartrecruiters.mjs';
 import recruitee from './providers/recruitee.mjs';
@@ -56,7 +57,7 @@ import bamboohr from './providers/bamboohr.mjs';
 import pinpoint from './providers/pinpoint.mjs';
 import rippling from './providers/rippling.mjs';
 import joinProvider from './providers/join.mjs';
-
+import { findBlacklistEntry, loadBlacklist } from './scan.mjs';
 
 // Safe charset for a slug that will be interpolated into an ATS URL. Consistent
 // with the SLUG_RE guard in scan-ats-full.mjs and seeds/vc-portfolios.mjs — a
@@ -820,6 +821,43 @@ export async function resolveCompany(company, { vendors = VENDOR_ORDER, ctx, inc
   return { unresolved };
 }
 
+/**
+ * Split companies on the user's do-not-apply list (data/blacklist.md) away from
+ * the rest, using scan.mjs's own findBlacklistEntry so discovery and scanning
+ * agree on what is blacklisted. Before probing, a company is checked by name and
+ * by every URL it carries (a Workday URL hint AND `website`: either one can be
+ * the host a domain-scope entry names); after probing, `urlsOf` lets the caller
+ * re-check a resolved board's careers_url. A blacklisted company is never
+ * written to portals.yml: scan.mjs would drop every posting from it anyway.
+ *
+ * @returns {{allowed:any[], blacklisted:{name:string, entry:string, reason:string}[]}}
+ */
+export function partitionBlacklisted(companies, blacklist, urlsOf = (c) => [typeof c.workday === 'string' ? c.workday : null, c.website]) {
+  const allowed = [];
+  const blacklisted = [];
+  for (const c of companies) {
+    const urls = urlsOf(c).filter(Boolean).map(asBlacklistUrl);
+    let hit = null;
+    for (const url of urls.length ? urls : ['']) {
+      hit = findBlacklistEntry(blacklist, c.name, url);
+      if (hit) break;
+    }
+    if (hit) blacklisted.push({ name: c.name, entry: hit.company, reason: hit.reason });
+    else allowed.push(c);
+  }
+  return { allowed, blacklisted };
+}
+
+/**
+ * The input format documents a bare `website: mollie.com`, which `new URL()`
+ * inside findBlacklistEntry rejects, so a scheme-less value would never reach a
+ * domain-scope entry. Give it one; a value that already has a scheme is kept.
+ */
+function asBlacklistUrl(value) {
+  const v = String(value).trim();
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`;
+}
+
 /** Bounded-concurrency map (mirrors scan-ats-full.mjs parallelEach; not exported there). */
 async function parallelEach(items, limit, fn) {
   let i = 0;
@@ -853,10 +891,10 @@ export async function runDiscovery(companies, { vendors = VENDOR_ORDER, ctx, con
 
 // ── Summary output ────────────────────────────────────────────────────
 
-function printSummary({ resolved, unresolved, duplicates }) {
+function printSummary({ resolved, unresolved, duplicates, blacklisted = [] }) {
   console.log(`\n${'='.repeat(78)}`);
   console.log('  ATS Discovery — career-ops');
-  console.log(`  resolved: ${resolved.length} | unresolved: ${unresolved.length} | duplicates skipped: ${duplicates.length}`);
+  console.log(`  resolved: ${resolved.length} | unresolved: ${unresolved.length} | duplicates skipped: ${duplicates.length} | blacklisted skipped: ${blacklisted.length}`);
   console.log(`${'='.repeat(78)}\n`);
 
   if (resolved.length) {
@@ -875,6 +913,14 @@ function printSummary({ resolved, unresolved, duplicates }) {
     for (const u of unresolved) {
       const site = u.website ? ` [${u.website}]` : '';
       console.log(`    - ${u.name}${site}: ${u.reason}`);
+    }
+    console.log('');
+  }
+
+  if (blacklisted.length) {
+    console.log('  Skipped — on data/blacklist.md (never added):');
+    for (const b of blacklisted) {
+      console.log(`    - ${b.name} (matched "${b.entry}")${b.reason ? `: ${b.reason}` : ''}`);
     }
     console.log('');
   }
@@ -1145,6 +1191,7 @@ async function main() {
   }
   const opts = parseArgs(['node', 'discover-ats.mjs', ...userContext.args]);
   PORTALS_PATH = process.env.CAREER_OPS_PORTALS || userPath(userContext, 'portals.yml');
+  BLACKLIST_PATH = process.env.CAREER_OPS_BLACKLIST || userPath(userContext, 'data/blacklist.md');
 
   let rawYaml = '';
   if (opts.inPath) {
@@ -1164,17 +1211,25 @@ async function main() {
     // zero-company run gets the documented envelope, not undefined fields.
     const out = {
       metadata: {
-        resolved: 0, unresolved: 0, duplicatesSkipped: 0, fresh: 0, freshWritten: 0,
+        resolved: 0, unresolved: 0, duplicatesSkipped: 0, blacklistedSkipped: 0, fresh: 0, freshWritten: 0,
         written: false, previewOnly: true, portalsPath: PORTALS_PATH, warnings,
       },
-      resolved: [], unresolved: [],
+      resolved: [], unresolved: [], blacklisted: [],
     };
     if (opts.summary) printSummary({ resolved: [], unresolved: [], duplicates: [] });
     else console.log(JSON.stringify(out, null, 2));
     process.exit(0);
   }
 
-  const { resolved, unresolved } = await runDiscovery(companies, { vendors: opts.vendors, includeWorkday: opts.includeWorkday });
+  const blacklist = loadBlacklist(BLACKLIST_PATH);
+  const pre = partitionBlacklisted(companies, blacklist);
+  const discovered = await runDiscovery(pre.allowed, { vendors: opts.vendors, includeWorkday: opts.includeWorkday });
+  const unresolved = discovered.unresolved;
+  // A resolved board's host can hit a domain-scope entry the name did not
+  // (e.g. a company listed under a different name on a blacklisted host).
+  const post = partitionBlacklisted(discovered.resolved, blacklist, (r) => [r.careers_url]);
+  const resolved = post.allowed;
+  const blacklisted = [...pre.blacklisted, ...post.blacklisted];
   // Advisory only: resolution and exit codes are unchanged (#4772).
   flagSmallBoards(resolved, opts.smallThreshold);
 
@@ -1222,6 +1277,7 @@ async function main() {
     resolved: resolved.length,
     unresolved: unresolved.length,
     duplicatesSkipped: duplicates.length,
+    blacklistedSkipped: blacklisted.length,
     fresh: fresh.length,
     freshWritten: written ? fresh.length : 0,
     written,
@@ -1231,9 +1287,9 @@ async function main() {
   };
 
   if (opts.summary) {
-    printSummary({ resolved, unresolved, duplicates });
+    printSummary({ resolved, unresolved, duplicates, blacklisted });
   } else {
-    const out = { metadata, resolved, unresolved };
+    const out = { metadata, resolved, unresolved, blacklisted };
     // Show the would-be YAML whenever we didn't write it (preview, or --write
     // that couldn't find the file), so the user can paste it manually.
     if (!written) out.pendingEntries = snippets.join('');

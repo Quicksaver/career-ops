@@ -115,8 +115,11 @@ Gem den fulde evaluering i `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-D
 **Dato:** {YYYY-MM-DD}
 **Arketype:** {detekteret}
 **Score:** {X/5}
+**Beslutning:** {Søg | Overvej | Undersøg først | Spring over}
 **URL:** {opslagets URL}
 **PDF:** {sti eller afventer}
+
+{sætningen om at søge, kopieret ordret}
 
 ---
 

@@ -115,8 +115,11 @@ Zapisz pełną ocenę w `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-DD}.
 **Data:** {YYYY-MM-DD}
 **Archetyp:** {wykryty}
 **Score:** {X/5}
+**Decyzja:** {Aplikuj | Rozważ | Najpierw sprawdź | Pomiń}
 **URL:** {URL oferty}
 **PDF:** {ścieżka lub w toku}
+
+{zdanie o aplikacji, skopiowane słowo w słowo}
 
 ---
 

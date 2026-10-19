@@ -21,7 +21,9 @@ import { ScoreMethodology } from "@/components/score-methodology";
 import { ScoreLevers } from "@/components/score-levers";
 import { PrepPack } from "@/components/prep-pack";
 import { GeneratePdfButton } from "@/components/generate-pdf-button";
+import { CoverDraftButton } from "@/components/cover-draft-button";
 import { ApplyButton } from "@/components/apply-button";
+import { MarkPdfReadyButton } from "@/components/mark-pdf-ready-button";
 import { DeleteFromTracker } from "@/components/delete-from-tracker";
 import { ReportMarkdown } from "@/components/report-markdown";
 import { KeywordCoverage } from "@/components/keyword-coverage";
@@ -103,6 +105,8 @@ export function ReportView({
   pdfReadyFromIndex = false,
   coverReady = false,
   backHref = "/pipeline",
+  applyHref,
+  reportNum = null,
 }: {
   id: string;
   app: Application | null;
@@ -113,10 +117,12 @@ export function ReportView({
   canDelete?: boolean;
   pdfReadyFromIndex?: boolean;
   /** A tailored cover letter for THIS application exists in output/ (resolved by
-   *  the page, see resolveTailoredCover). View only — covers are never generated
-   *  from here. */
+   *  the page, see resolveTailoredCover). The page drafts letters through the
+   *  cover run but does not render them, so this link only finds CLI PDFs. */
   coverReady?: boolean;
   backHref?: string;
+  applyHref?: string;
+  reportNum?: number | null;
 }) {
   const signals = report ? parseMachineSummarySignals(report) : null;
   const meta = report ? parseReport(report) : null;
@@ -156,6 +162,16 @@ export function ReportView({
         <div className="mt-4 flex flex-wrap items-center gap-2.5">
           {app && <StatusSelect n={id} current={app.status} />}
           <GeneratePdfButton n={id} company={app?.company ?? meta?.title ?? id} pdfReady={pdfReady} />
+          {app && report && <CoverDraftButton n={id} company={companyName} />}
+          {applyHref && (
+            <Link
+              href={applyHref}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:border-brand/40 hover:text-brand max-sm:min-h-[44px]"
+            >
+              Apply checklist
+            </Link>
+          )}
+          <MarkPdfReadyButton reportNum={reportNum} ready={pdfReady} />
           {coverReady && (
             <a
               href={`/api/cover-pdf?application=${encodeURIComponent(id)}`}

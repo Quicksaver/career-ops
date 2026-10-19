@@ -225,6 +225,20 @@ test('real liveness helper preserves concurrent additions and excludes LinkedIn 
   assert.ok(!pending.includes(A));
 });
 
+test('real liveness keeps an unreadable posting pending instead of expiring it', async t => {
+  const f = fixture(t, { rows: [A, B], unreadable: [B] });
+  cpSync(join(repo, 'pipeline-liveness.mjs'), join(f.root, 'pipeline-liveness.mjs'));
+  const { result, code } = await f.run([], 'pipeline-liveness.mjs');
+  assert.equal(code, 0, JSON.stringify(result));
+  assert.equal(result.expired, 1);
+  assert.equal(result.unreadable, 1);
+  assert.equal(result.moved, 1);
+  const [pending, processed] = f.read('data/pipeline.md').split('## Processed');
+  assert.ok(pending.includes(`- [ ] ${B}`), 'the unreadable posting stays Pending for its worker');
+  assert.ok(!pending.includes(A));
+  assert.ok(processed.includes(A) && !processed.includes(B));
+});
+
 test('concurrent real synchronizers preserve unique stable job IDs', async t => {
   const f = fixture(t, { rows: [A, B, C] });
   const runs = await Promise.all(Array.from({ length: 4 }, () => f.run([], 'sync-pipeline-batch.mjs')));
@@ -382,4 +396,20 @@ test('a late stdout burst cannot evict stderr diagnostics from a failed phase', 
   const {result}=await f.run();
   assert.notEqual(result.status,'completed');
   assert.match(JSON.stringify(result),/offline provider diagnostic retained/);
+});
+
+test('a dealbreaker skip is terminal, counted, and never redispatched', async t => {
+  const f = fixture(t, { rows: [A, B], dealbreakers: [A] });
+  const first = await f.run(['--skip-scan']);
+  assert.equal(first.result.status, 'completed', JSON.stringify(first.result));
+  assert.equal(first.result.batch_counts.skipped, 1);
+  assert.equal(first.result.batch_counts.dealbreaker, 1);
+  assert.equal(first.result.batch_counts.completed, 1);
+  assert.equal(first.result.remaining, 0);
+  assert.deepEqual(f.dispatched().sort(), [A, B]);
+  // A stale Pending copy (reconcile not yet run) must not be redispatched.
+  writeFileSync(join(f.user, 'data/pipeline.md'), `# Fictional test inbox\n\n## Pending\n- [ ] ${A}\n\n## Processed\n`);
+  const second = await f.run(['--skip-scan']);
+  assert.deepEqual(f.dispatched().sort(), [A, B]);
+  assert.equal(second.result.batch_counts.dealbreaker, 0);
 });

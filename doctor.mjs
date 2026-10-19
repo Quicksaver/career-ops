@@ -12,9 +12,11 @@ import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import * as yaml from 'js-yaml';
 import dotenv from 'dotenv';
+import { AGENT_CLIS } from './lib/agent-cli.mjs';
 import { findTitleFilterConflicts } from './lib/title-filter-conflicts.mjs';
+import { sectionState, scanHeadings, SECTIONS } from './lib/personalization.mjs';
 import { discoverPlugins, pluginRoots, pluginStatus } from './plugins/_engine.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath, hasProfileOverride } from './path-resolver.mjs';
 import { validateProfile, EXAMPLE_PATH } from './validate-profile.mjs';
 import { resolveExtractorMode } from './browser-extract.mjs';
 import { parseConfigByExtension } from './jsonc-parse.mjs';
@@ -28,7 +30,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 
 // CLIs the doctor recognises.
-const VALID_CLIS = ['claude', 'codex', 'opencode', 'pi', 'antigravity', 'grok', 'qwen', 'kimi', 'copilot', 'gemini', 'hermes'];
 
 // --help ran the full diagnostic and printed the report at exit 0 (#2856), so
 // a mistyped flag was indistinguishable from a clean run — and --targe
@@ -49,7 +50,7 @@ const USAGE = `Usage:
   node doctor.mjs --cli <name>       # check a specific CLI's integration
   node doctor.mjs --help             # show this message
 
-CLIs: ${VALID_CLIS.join(', ')}`;
+CLIs: ${AGENT_CLIS.join(', ')}`;
 
 // requireOperand: without it, `--target --json` reads --json as the target
 // path (argv[targetIdx + 1] below has no adjacency check of its own), and the
@@ -62,6 +63,24 @@ validateFlags(argv, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS, requireOperan
 const targetIdx = argv.indexOf('--target');
 const explicitTarget = targetIdx !== -1 && argv[targetIdx + 1] ? argv[targetIdx + 1] : null;
 const projectRoot = explicitTarget || getCareerOpsRoot();
+// --target diagnoses a whole other checkout, so that checkout's profile is the
+// one that counts; otherwise CAREER_OPS_PROFILE applies as it does everywhere.
+// With no override the path is the root the doctor started from: the human run
+// loads the root's whole .env later, and a CAREER_OPS_ROOT in it must not move
+// this one check to another root.
+const profilePathFor = (root) => (explicitTarget || !hasProfileOverride() ? getProfilePath(root) : getProfilePath());
+// Only scan.mjs, the evaluators, openai-tailor.mjs and openrouter-runner load a .env; most readers
+// of the profile see the process environment alone. Doctor reports what they see,
+// so an override set only in the root's .env is looked up for the advice below
+// but never counted as a found profile.
+const profileFromEnvFile = (root) => {
+  try {
+    const value = dotenv.parse(readFileSync(join(root, '.env'))).CAREER_OPS_PROFILE;
+    return value?.trim() ? value.trim() : null;
+  } catch {
+    return null; // no .env, or unreadable
+  }
+};
 // node_modules and .git belong to the CODE checkout, not the resolved data
 // root — under a split checkout (CAREER_OPS_ROOT/CAREER_OPS_DATA_DIR or the
 // .career-ops-data marker) those are two different directories, and neither
@@ -183,6 +202,25 @@ function checkDependencies() {
     pass: false,
     label: `Dependencies missing: ${missing.join(', ')}`,
     fix: 'Run: npm install',
+  };
+}
+
+// The web UI is optional, so missing web/ dependencies are a warning: only
+// `npm run ui` needs them, and a CLI-only install never does.
+function checkWebDependencies() {
+  const webDir = join(codeRoot, 'web');
+  if (!existsSync(join(webDir, 'package.json'))) return null;
+  let missing;
+  try {
+    missing = findMissingDependencies(webDir);
+  } catch (err) {
+    return { warn: true, label: `Web UI dependencies could not be checked: web/package.json unreadable (${err.message})` };
+  }
+  if (missing.length === 0) return { pass: true, label: 'Web UI dependencies installed' };
+  return {
+    warn: true,
+    label: `Web UI dependencies are not installed (${missing.length} missing, including ${missing[0]}), so npm run ui cannot start`,
+    fix: 'Run: npm --prefix web ci',
   };
 }
 
@@ -581,23 +619,26 @@ function isPlaywrightMcpConfigured(root, activeCli) {
 // missing file is normal, malformed values are caught per call below.
 function resolveActiveCli() {
   if (cliFlag !== undefined && cliFlag !== null) {
-    if (!VALID_CLIS.includes(cliFlag)) {
-      return { cli: 'unknown', source: 'flag', warning: `Unknown --cli "${cliFlag}". Valid: ${VALID_CLIS.join(', ')}.` };
+    if (!AGENT_CLIS.includes(cliFlag)) {
+      return { cli: 'unknown', source: 'flag', warning: `Unknown --cli "${cliFlag}". Valid: ${AGENT_CLIS.join(', ')}.` };
     }
     return { cli: cliFlag, source: 'flag' };
   }
   if (process.env.CAREER_OPS_CLI) {
-    if (!VALID_CLIS.includes(process.env.CAREER_OPS_CLI)) {
-      return { cli: 'unknown', source: 'env', warning: `CAREER_OPS_CLI="${process.env.CAREER_OPS_CLI}" is not a recognized CLI. Valid: ${VALID_CLIS.join(', ')}.` };
+    if (!AGENT_CLIS.includes(process.env.CAREER_OPS_CLI)) {
+      return { cli: 'unknown', source: 'env', warning: `CAREER_OPS_CLI="${process.env.CAREER_OPS_CLI}" is not a recognized CLI. Valid: ${AGENT_CLIS.join(', ')}.` };
     }
     return { cli: process.env.CAREER_OPS_CLI, source: 'env' };
   }
   // .env is best-effort: missing file → fall through to default. dotenv does
   // not throw on a missing path when `quiet: true`, so no try/catch is needed.
+  // The load must not make a .env-only CAREER_OPS_PROFILE look like a shell one.
+  const hadProfileOverride = hasProfileOverride();
   dotenv.config({ path: join(projectRoot, '.env'), quiet: true });
+  if (!hadProfileOverride) delete process.env.CAREER_OPS_PROFILE;
   if (process.env.CAREER_OPS_CLI) {
-    if (!VALID_CLIS.includes(process.env.CAREER_OPS_CLI)) {
-      return { cli: 'unknown', source: '.env', warning: `CAREER_OPS_CLI in .env is not a recognized CLI. Valid: ${VALID_CLIS.join(', ')}.` };
+    if (!AGENT_CLIS.includes(process.env.CAREER_OPS_CLI)) {
+      return { cli: 'unknown', source: '.env', warning: `CAREER_OPS_CLI in .env is not a recognized CLI. Valid: ${AGENT_CLIS.join(', ')}.` };
     }
     return { cli: process.env.CAREER_OPS_CLI, source: '.env' };
   }
@@ -625,7 +666,7 @@ function resolveActiveCli() {
 }
 
 function checkPlaywrightMcp(root, activeCli) {
-  // Unknown CLI (typo / not in VALID_CLIS).
+  // Unknown CLI (typo / not in AGENT_CLIS).
   if (activeCli === 'unknown') return null;
 
   // Known CLI without an MCP file mapping.
@@ -664,7 +705,7 @@ function checkPlaywrightMcp(root, activeCli) {
 // is selected but the helper is missing, the modes fall back to MCP — surface
 // that as a warning, never a failure.
 function checkScanExtractor(root) {
-  const mode = resolveExtractorMode(join(root, 'config', 'profile.yml'));
+  const mode = resolveExtractorMode(profilePathFor(root));
   if (mode === 'cli') {
     if (existsSync(join(__dirname, 'browser-extract.mjs'))) {
       return { pass: true, label: 'Scan extractor: cli (browser-extract.mjs)' };
@@ -722,6 +763,7 @@ const CLI_NAMES = 'claude, codex, gemini, opencode, qwen, agy or grok';
 const PORTALS_PREREQ = USER_LAYER_PREREQS.find(({ path }) => path === 'portals.yml');
 
 function prereqFile(root, { path, env }) {
+  if (path === 'config/profile.yml') return profilePathFor(root);
   return (env && process.env[env]) || join(root, ...path.split('/'));
 }
 
@@ -729,10 +771,42 @@ function prereqPresent(root, prereq) {
   return existsSync(prereqFile(root, prereq));
 }
 
+// The root's .env names a profile. scan.mjs, the evaluators, openai-tailor.mjs and
+// openrouter-runner.mjs load a .env, and all four follow CAREER_OPS_PROFILE once
+// it is loaded (scan.mjs from the data root, the evaluators and openai-tailor.mjs
+// from a working-directory config(), openrouter-runner.mjs from the code root).
+// The other readers load none. That is a split whether or not a data-root profile exists, so it is
+// reported either way. A shell value shadows the .env, so it is not a split then.
+function checkEnvFileProfile(root) {
+  const fromEnvFile = explicitTarget || hasProfileOverride() ? null : profileFromEnvFile(root);
+  if (!fromEnvFile) return null;
+  return {
+    warn: true,
+    label: `.env sets CAREER_OPS_PROFILE=${fromEnvFile}, but of the profile readers, only scan.mjs, the evaluators, openai-tailor.mjs and openrouter-runner.mjs load .env; cv-sync-check, generate-pdf, upskill and the other readers use ${profilePathFor(root)}`,
+    fix: [`Export CAREER_OPS_PROFILE=${fromEnvFile} in your shell so every command reads the same file, or remove it from .env`],
+  };
+}
+
 function checkPrereq(prereq) {
   const { path, fix } = prereq;
   if (prereqPresent(projectRoot, prereq)) {
     return { pass: true, label: `${path} found` };
+  }
+  if (path === 'config/profile.yml' && !explicitTarget && hasProfileOverride()) {
+    const named = profilePathFor(projectRoot);
+    return {
+      warn: true,
+      label: `${path} not found (CAREER_OPS_PROFILE names ${named})`,
+      fix: [`Create ${named}, or unset CAREER_OPS_PROFILE to use the profile in the data root`],
+    };
+  }
+  const fromEnvFile = path === 'config/profile.yml' && !explicitTarget ? profileFromEnvFile(projectRoot) : null;
+  if (fromEnvFile) {
+    return {
+      warn: true,
+      label: `${path} not found (.env sets CAREER_OPS_PROFILE=${fromEnvFile}, but most commands never load .env)`,
+      fix: [`Export CAREER_OPS_PROFILE=${fromEnvFile} in your shell so every command sees it, or remove it from .env and put the profile at ${profilePathFor(projectRoot)}`],
+    };
   }
   return { warn: true, label: `${path} not found (user setup required)`, fix };
 }
@@ -953,7 +1027,7 @@ function checkCvShape(root) {
 }
 
 function checkProfileShape(root) {
-  const profilePath = process.env.CAREER_OPS_PROFILE || join(root, 'config', 'profile.yml');
+  const profilePath = profilePathFor(root);
   if (!existsSync(profilePath)) return null;   // the prereq check owns "absent"
   let findings;
   try {
@@ -984,6 +1058,7 @@ async function main() {
     geminiNodeFloor(activeCli, process.versions.node),
     checkBillingSource(),
     checkDependencies(),
+    checkWebDependencies(),
     checkTrackedBakFiles(codeRoot),
     checkSkillEntrypoints(codeRoot),
     await checkPlaywright(),
@@ -1000,6 +1075,8 @@ async function main() {
     checkAutoDir('output'),
     checkAutoDir('reports'),
     checkPlugins(projectRoot),
+    // checkPrereq already explains the .env case when the profile is missing.
+    prereqPresent(projectRoot, { path: 'config/profile.yml' }) ? checkEnvFileProfile(projectRoot) : null,
   ].filter(Boolean);
 
   // Network-bound portals.yml reachability probe — only under --strict.
@@ -1098,8 +1175,12 @@ function unpersonalizedFiles(root) {
   const out = [];
   for (const { path, template, impact } of PERSONALIZATION_FILES) {
     const targetPath = join(root, ...path.split('/'));
-    const rootTemplatePath = join(root, ...template.split('/'));
-    const templatePath = existsSync(rootTemplatePath) ? rootTemplatePath : join(__dirname, ...template.split('/'));
+    // The checkout's template first, as the web reads it, so doctor and the web
+    // agree on which sections are still template text even when a separate data
+    // root holds an older copy. The data root's copy only covers a checkout
+    // that ships none (#5340).
+    const checkoutTemplatePath = join(__dirname, ...template.split('/'));
+    const templatePath = existsSync(checkoutTemplatePath) ? checkoutTemplatePath : join(root, ...template.split('/'));
     if (!existsSync(targetPath) || !existsSync(templatePath)) continue;
     let target, tpl;
     try {
@@ -1107,6 +1188,45 @@ function unpersonalizedFiles(root) {
       tpl = readFileSync(templatePath, 'utf-8');
     } catch {
       continue; // unreadable → let the existence checks speak
+    }
+    // An empty file is neither identical to the template nor carries a
+    // placeholder, so it would pass as personalized while the web asks for
+    // every section (#5340).
+    if (!target.trim()) {
+      out.push({ path, reason: 'is empty', impact });
+      continue;
+    }
+    if (path === 'modes/_profile.md') {
+      // A _profile.md written in the user's own structure, without any of the
+      // eight ## Your … headings, is quiet here rather than reported as missing
+      // every section (#5126). Missing prerequisites speak for absent files.
+      const userHeadings = new Set(scanHeadings(target).heads.filter((h) => h.level === 2).map((h) => h.heading));
+      const hasAnyTemplateHeading = SECTIONS.some((s) => userHeadings.has(s.heading));
+      if (!hasAnyTemplateHeading) {
+        const left = [...templatePlaceholders(tpl)].filter((p) => target.includes(p));
+        if (left.length > 0) {
+          out.push({
+            path,
+            reason: `still has ${left.length} unfilled placeholder${left.length === 1 ? '' : 's'} (e.g. ${left[0]})`,
+            impact,
+          });
+        }
+        continue;
+      }
+      const states = sectionState(target, tpl);
+      const unfilled = states.filter((s) => s.state !== 'filled');
+      if (unfilled.length > 0) {
+        const n = unfilled.length;
+        const templateCount = unfilled.filter((s) => s.state === 'template').length;
+        const missingCount = unfilled.filter((s) => s.state === 'missing').length;
+        const ids = unfilled.map((s) => s.id).join(', ');
+        out.push({
+          path,
+          reason: `still has ${n} unfilled section${n === 1 ? '' : 's'}: ${templateCount} on template, ${missingCount} missing (${ids})`,
+          impact,
+        });
+      }
+      continue;
     }
     if (target === tpl) {
       out.push({ path, reason: 'still identical to the shipped template', impact });
@@ -1221,12 +1341,14 @@ function onboardingState(root) {
   const bakCheck = checkTrackedBakFiles(codeRoot);
   const skillCheck = checkSkillEntrypoints(codeRoot);
   const cvShape = checkCvShape(root);
+  const envFileProfile = checkEnvFileProfile(root);
   const warnings = [
     ...(cliWarning ? [cliWarning] : []),
     ...(mcpCheck?.warn ? [`${mcpCheck.label}\n→ ${[].concat(mcpCheck.fix || []).join('\n  ')}`] : []),
     ...(bakCheck.warn ? [`${bakCheck.label}\n→ ${[].concat(bakCheck.fix || []).join('\n  ')}`] : []),
     ...(skillCheck.warn ? [`${skillCheck.label}\n→ ${[].concat(skillCheck.fix || []).join('\n  ')}`] : []),
     ...(cvShape?.warn ? [`${cvShape.label}\n→ ${[].concat(cvShape.fix || []).join('\n  ')}`] : []),
+    ...(envFileProfile ? [`${envFileProfile.label}\n→ ${envFileProfile.fix.join('\n  ')}`] : []),
     ...unpersonalized.map((u) => `${u.path} ${u.reason} — ${u.impact}\n→ Personalize it from cv.md before running evaluations.`),
   ];
 

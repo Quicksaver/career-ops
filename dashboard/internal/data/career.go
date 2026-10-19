@@ -3,6 +3,7 @@ package data
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -165,6 +166,25 @@ func resolveTrackerPath(careerOpsPath string) string {
 		return dataPath
 	}
 	return filepath.Clean(filepath.Join(careerOpsPath, "applications.md"))
+}
+
+// reportHeaderBytes is how much of a report the URL enrichment scans.
+const reportHeaderBytes = 1000
+
+// readFileHead returns at most the first n bytes of the file at path. A file
+// shorter than n is returned whole.
+func readFileHead(path string, n int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	buf := make([]byte, n)
+	read, err := io.ReadFull(f, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, err
+	}
+	return buf[:read], nil
 }
 
 // ParseApplications reads applications.md and returns parsed applications.

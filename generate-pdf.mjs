@@ -4,8 +4,8 @@
  * generate-pdf.mjs — HTML → PDF via Playwright
  *
  * Usage:
- *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--kind=cv|cover] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]
- *   node career-ops/generate-pdf.mjs --batch=<manifest.json> [--format=letter|a4] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]
+ *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--country=XX] [--report=NNN] [--kind=cv|cover] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]
+ *   node career-ops/generate-pdf.mjs --batch=<manifest.json> [--format=letter|a4] [--country=XX] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]
  *
  * --batch renders every document in a JSON manifest (an array of
  * {input, output, format?, reportNum?}) through ONE shared Chromium instead of
@@ -47,14 +47,14 @@ import { readFile } from 'fs/promises';
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { randomUUID } from 'node:crypto';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath, hasProfileOverride } from './path-resolver.mjs';
 import { readStyleTokens, injectThemeStyle, readCvSectionOrder } from './theme-style.mjs';
 import { validateCvExperienceOrder } from './cv-experience-order.mjs';
 import { resolvePdfIndexPath, resolveTrackerPath, resolveWorkspaceRootFor, writeFileAtomic } from './tracker-utils.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { stripEmptyRenderedSections } from './cv-sections-core.mjs';
-import { PAGE_CSS_SIZE, PAGE_FORMATS, normalizePageFormat, resolvePageFormat } from './lib/page-format.mjs';
+import { PAGE_CSS_SIZE, PAGE_FORMATS, normalizePageFormat, pageFormatForCountry, resolvePageFormat } from './lib/page-format.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const trackerPath = resolveTrackerPath(getCareerOpsRoot());
@@ -84,8 +84,7 @@ const THEME_VARIABLES = {
   accent: '--cv-accent',
 };
 
-async function loadThemeOverrides(root) {
-  const profilePath = resolve(root, 'config/profile.yml');
+async function loadThemeOverrides(profilePath) {
   if (!existsSync(profilePath)) return {};
 
   try {
@@ -142,6 +141,17 @@ function applyThemeOverrides(html, theme) {
 }
 
 const PDF_PAGE_MARGIN = '0.6in';
+
+/**
+ * The profile a render reads. An explicit root is the workspace the caller
+ * named, so the environment does not redirect it. Otherwise CAREER_OPS_PROFILE
+ * names the file outright, and without it the profile sits in the workspace
+ * (which CAREER_OPS_TRACKER can move off the data root, #2471).
+ */
+function workspaceProfilePath(explicitRoot) {
+  if (explicitRoot) return getProfilePath(explicitRoot);
+  return hasProfileOverride() ? getProfilePath() : getProfilePath(workspaceRoot);
+}
 
 // Canonical tracker workspace: realpath so a symlinked ancestor (e.g. macOS
 // /var -> /private/var) is compared like-for-like by assertInsideWorkspace.
@@ -1339,13 +1349,14 @@ export function isWorkspaceOutputPath(pathValue, rootDir = currentWorkspaceRoot(
   }
 }
 
-export function injectPrintPageCss(html, format) {
+export function injectPrintPageCss(html, format, country) {
   // The only place the sheet size is set: page.pdf() below runs with
   // preferCSSPageSize, so this @page rule IS the paper. It resolves through
   // lib/page-format.mjs so a caller that passes nothing gets the user's
   // configured size instead of a fallback private to this file.
   const pageSize = PAGE_CSS_SIZE[resolvePageFormat(format, {
-    profilePath: resolve(workspaceRoot, 'config', 'profile.yml'),
+    profilePath: workspaceProfilePath(),
+    country,
   })];
   // Read --page-margin (set by the template's own :root default, and overridden
   // by injectThemeStyle's block when style.margin is configured) instead of
@@ -1536,7 +1547,7 @@ async function runFactGate(html, label) {
   // fixtures also ship no cv.md, so the gate is never entered there. If the
   // module is genuinely missing in a real workspace this throws and the render
   // fails, which is the correct direction to fail for a fact gate.
-  const { assertFacts, printAdvisoryFacts } = await import('./verify-cv-facts.mjs');
+  const { assertFacts, printFactWarnings } = await import('./verify-cv-facts.mjs');
   const factCheck = assertFacts(html, { label });
   // Ahead of the verdict, because it qualifies it: with no config the phrase
   // lists are empty, so a "passed" below covers metrics and facts only.
@@ -1545,8 +1556,7 @@ async function runFactGate(html, label) {
   }
   if (factCheck.verdict === 'warn') {
     console.warn(`⚠️  CV fact check warning: ${label}`);
-    for (const phrase of factCheck.warnings) console.warn(`  - advisory phrase: ${phrase}`);
-    printAdvisoryFacts(factCheck.advisoryFacts, console.warn);
+    printFactWarnings(factCheck, console.warn);
   } else {
     console.log(`✅ Fact check passed: ${label}`);
   }
@@ -1570,12 +1580,18 @@ async function generatePDF() {
   let kindFlag = '', kindSupplied = false, reportSupplied = false;
   // No flag seen yet: null, not a paper size. The default belongs to
   // lib/page-format.mjs, which ranks it below the user's config/profile.yml.
-  let inputPath, outputPath, format = null, reportNum = '', allowReorder = false, allowNonChronological = false;
+  let inputPath, outputPath, format = null, country = null, reportNum = '', allowReorder = false, allowNonChronological = false;
   let maxPages = 2, maxPagesInput = '2', strictPages = false, batchManifestPath = null;
 
   for (const arg of args) {
     if (arg.startsWith('--format=')) {
       format = arg.split('=')[1].toLowerCase();
+    } else if (arg.startsWith('--country=')) {
+      country = arg.slice('--country='.length);
+    } else if (arg === '--country') {
+      // A flag missing its operand, not an absent flag: left alone it falls through
+      // to the positional arms and the render succeeds on the default sheet.
+      country = '';
     } else if (arg.startsWith('--report=')) {
       reportSupplied = true;
       reportNum = arg.split('=')[1].trim();
@@ -1652,7 +1668,21 @@ async function generatePDF() {
     }
     format = normalized;
   }
-  format = resolvePageFormat(format, { profilePath: resolve(workspaceRoot, 'config', 'profile.yml') });
+  // --country only matters under `page_format: auto`. It is validated like
+  // --format, because a typo that quietly fell back to the default would print a
+  // German employer's CV on Letter.
+  if (country !== null) {
+    const sheet = pageFormatForCountry(country);
+    if (!sheet) {
+      console.error(`Invalid country "${country}". Use a two-letter ISO 3166-1 code, e.g. --country=DE.`);
+      process.exit(1);
+    }
+    country = country.trim().toUpperCase();
+  }
+  // The pre-resolution flag travels to the batch so an entry's own country can
+  // still steer `auto`; the resolved size below would already have settled it.
+  const flagFormat = format;
+  format = resolvePageFormat(format, { profilePath: workspaceProfilePath(), country });
 
   // Batch mode (#2384): render every document in the manifest through one
   // Chromium. Applies the global --max-pages/--strict-pages/--allow-reorder/
@@ -1677,15 +1707,15 @@ async function generatePDF() {
       console.error('--kind is not valid with --batch. Set "kind" per entry in the manifest instead.');
       process.exit(1);
     }
-    return runBatchFromManifest(batchManifestPath, { format, maxPages, strictPages, allowReorder, allowNonChronological, skipFactCheck });
+    return runBatchFromManifest(batchManifestPath, { format, flagFormat, country, maxPages, strictPages, allowReorder, allowNonChronological, skipFactCheck });
   }
 
   if (!inputPath || !outputPath) {
-    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--kind=cv|cover] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]');
-    console.error('   or: node generate-pdf.mjs --batch=<manifest.json> [--format=letter|a4] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]');
+    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--country=XX] [--report=NNN] [--kind=cv|cover] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]');
+    console.error('   or: node generate-pdf.mjs --batch=<manifest.json> [--format=letter|a4] [--country=XX] [--allow-reorder] [--allow-nonchronological] [--max-pages=N] [--strict-pages] [--skip-fact-check]');
     console.error('');
     console.error('Batch mode renders every document in the JSON manifest (an array of');
-    console.error('{input, output, format?, reportNum?, kind?}) through one shared Chromium and writes');
+    console.error('{input, output, format?, country?, reportNum?, kind?}) through one shared Chromium and writes');
     console.error('<manifest>.results.json; it exits non-zero if any document fails.');
     console.error('Relative input and output paths in the manifest resolve against the');
     console.error("manifest's own folder, not the current directory.");
@@ -1750,7 +1780,7 @@ async function generatePDF() {
   // __dirname anchor made CAREER_OPS_TRACKER split one logical profile across
   // two files — style from the workspace, section order from the checkout —
   // and validated the workspace's CV against the checkout's declared order.
-  html = reorderCvSections(html, readCvSectionOrder(resolve(workspaceRoot, 'config', 'profile.yml')));
+  html = reorderCvSections(html, readCvSectionOrder(workspaceProfilePath()));
 
   validateCvSectionOrder(html, cvMarkdown, { allowReorder });
   validateCvExperienceOrder(html, { allowNonChronological });
@@ -1775,7 +1805,7 @@ async function generatePDF() {
     inputPath,
     maxPages,
     strictPages,
-    styleTokens: readStyleTokens(resolve(workspaceRoot, 'config', 'profile.yml')),
+    styleTokens: readStyleTokens(workspaceProfilePath()),
   });
 }
 
@@ -1796,7 +1826,7 @@ async function generatePDF() {
  * for success; it exits zero only when every document rendered.
  *
  * @param {string} manifestPath - Path to the JSON manifest.
- * @param {{format: string, maxPages: number, strictPages: boolean, allowReorder: boolean, allowNonChronological: boolean, skipFactCheck: boolean}} globals
+ * @param {{format: string, flagFormat?: string|null, country?: string|null, maxPages: number, strictPages: boolean, allowReorder: boolean, allowNonChronological: boolean, skipFactCheck: boolean}} globals
  * @returns {Promise<{ok: number, failed: number, results: Array}>}
  */
 async function runBatchFromManifest(manifestPath, globals) {
@@ -1848,7 +1878,7 @@ async function runBatchFromManifest(manifestPath, globals) {
   }
   // Read one workspace profile for the batch. The working directory must not
   // choose a different theme from the single-document render.
-  const profilePath = resolve(workspaceRoot, 'config', 'profile.yml');
+  const profilePath = workspaceProfilePath();
   const cvSectionOrder = readCvSectionOrder(profilePath);
   const styleTokens = readStyleTokens(profilePath);
 
@@ -1859,11 +1889,16 @@ async function runBatchFromManifest(manifestPath, globals) {
         throw new Error('each entry needs a string "input" and "output"');
       }
 
-      const declaredFormat = spec.format || globals.format;
-      const entryFormat = normalizePageFormat(declaredFormat);
-      if (!entryFormat) {
-        throw new Error(`invalid format "${declaredFormat}" (use: ${[...PAGE_FORMATS].join(', ')})`);
+      if (spec.format && !normalizePageFormat(spec.format)) {
+        throw new Error(`invalid format "${spec.format}" (use: ${[...PAGE_FORMATS].join(', ')})`);
       }
+      if (spec.country != null && !pageFormatForCountry(spec.country)) {
+        throw new Error(`invalid country "${spec.country}" (use a two-letter ISO 3166-1 code)`);
+      }
+      const entryFormat = resolvePageFormat(spec.format || globals.flagFormat, {
+        profilePath,
+        country: spec.country ?? globals.country,
+      });
 
       // An OMITTED kind falls through to inference from the entry's output name.
       // A kind that is present but empty is a different thing: the manifest
@@ -2102,7 +2137,7 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
  */
 async function renderInPage(browser, html, outputPath, opts = {}) {
   const outputRoot = opts.workspaceRoot || workspaceRoot;
-  const format = resolvePageFormat(opts.format, { profilePath: resolve(outputRoot, 'config', 'profile.yml') });
+  const format = resolvePageFormat(opts.format, { profilePath: workspaceProfilePath(opts.workspaceRoot), country: opts.country });
   const requestedBaseDir = resolve(opts.baseDir || outputRoot);
   // Temporary HTML is an output too: never let an external input path or
   // caller-supplied baseDir choose an arbitrary directory. If the requested
@@ -2140,11 +2175,11 @@ async function renderInPage(browser, html, outputPath, opts = {}) {
   // properties so the templates' var(--x, <default>) reads pick them up (#1837).
   // No `style:` block → no tokens → byte-identical output. Both the CV path and
   // the cover-letter path flow through here, so both are themed from one place.
-  const styleTokens = opts.styleTokens ?? readStyleTokens(resolve(outputRoot, 'config', 'profile.yml'));
+  const styleTokens = opts.styleTokens ?? readStyleTokens(workspaceProfilePath(opts.workspaceRoot));
   html = injectThemeStyle(html, styleTokens);
-  html = applyThemeOverrides(html, await loadThemeOverrides(outputRoot)).html;
+  html = applyThemeOverrides(html, await loadThemeOverrides(workspaceProfilePath(opts.workspaceRoot))).html;
 
-  html = injectPrintPageCss(html, format);
+  html = injectPrintPageCss(html, format, opts.country);
   html = await inlineLocalFonts(html);
 
   // Write HTML to a temp file in baseDir so page.goto() gives a file://
@@ -2202,8 +2237,9 @@ async function renderInPage(browser, html, outputPath, opts = {}) {
     });
 
     // Write PDF only after rendering has completed. Renderer cleanup still runs
-    // if an injected browser fails before producing a buffer.
-    await writeFile(outputPath, pdfBuffer);
+    // if an injected browser fails before producing a buffer. The atomic write
+    // keeps the previous PDF intact if this write fails partway.
+    writeFileAtomic(outputPath, pdfBuffer);
 
     // Read the root page-tree count so page-like text in streams is ignored.
     const pageCount = countRenderedPdfPages(pdfBuffer);

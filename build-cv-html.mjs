@@ -40,7 +40,7 @@ import { fileURLToPath } from 'url';
 import { tmpdir } from 'os';
 import * as yaml from 'js-yaml';
 import { stripEmptySections } from './cv-sections-core.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 import { hasRequiredFields, validatePayload } from './lib/cv-payload-schema.mjs';
 import { PAGE_WIDTHS, resolvePageFormat } from './lib/page-format.mjs';
 import { PARTIAL_SECTIONS, declaredSections, parseMeta } from './lib/template-manifest.mjs';
@@ -51,7 +51,7 @@ const TEMPLATE_PATH = resolve(__dirname, 'templates', 'cv-template.html');
 const PLACEHOLDER_RE = /\{\{[A-Z_]+\}\}/g;
 const CONTACT_ROW_RE = /<div class="contact-row">[\s\S]*?<\/div>/;
 
-const PROFILE_PATH = resolve(DATA_ROOT, 'config', 'profile.yml');
+const PROFILE_PATH = getProfilePath();
 const PHOTO_MIME_BY_EXT = new Map([
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
@@ -736,7 +736,7 @@ function renderReport(payload, partials) {
   const candidate = payload.candidate || {};
   // The sheet this body has to fit is chosen by generate-pdf.mjs, so both read
   // the same resolver rather than each keeping a fallback of their own.
-  const pageWidth = PAGE_WIDTHS[resolvePageFormat(payload.page_format, { profilePath: PROFILE_PATH })];
+  const pageWidth = PAGE_WIDTHS[resolvePageFormat(payload.page_format, { profilePath: PROFILE_PATH, country: payload.country })];
 
   const substitutions = {
     LANG: escapeHtml(payload.lang || 'en'),

@@ -10,15 +10,17 @@ Export a tailored, ATS-optimized CV as a `.tex` file and compile it to PDF via `
 2. Read `config/profile.yml` for candidate identity and contact info
 3. Ask the user for the JD if not already in context (text or URL)
 4. Extract 15-20 keywords from the JD
-5. Detect JD language → CV language (EN default)
+5. Use `language.output` for the CV language. The JD language and `language.modes_dir` supply market vocabulary and evaluation context, but never override the configured output language.
 6. Detect role archetype → adapt framing
 7. Rewrite Professional Summary injecting JD keywords (same rules as `pdf` mode — NEVER invent skills)
 8. Select top 3-4 most relevant projects for the offer, and populate `awards[]` from `cv.md`'s Awards / Honors section when it has entries that support the role (omit the key otherwise — the section is dropped, header included; never invent an award)
 9. Reorder experience bullets by JD relevance
 10. Inject keywords naturally into existing achievements
-11. Build a JSON payload (see schema below) and write to `/tmp/cv-{candidate}-{company}.json`
-12. Run: `node build-cv-latex.mjs --user {USER} /tmp/cv-{candidate}-{company}.json users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex`
-13. Run: `node generate-latex.mjs users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf`
+11. Build a JSON payload (see schema below) and write to `/tmp/cv-{candidate}-{company}.json` — if a report number is already assigned for this run (auto-pipeline, batch, or any parallel fan-out per AGENTS.md "Parallel fan-outs"), include it: `/tmp/cv-{candidate}-{report}-{company}.json`, where `{report}` is the same `{REPORT_NUM}` used in the output basename. Two parallel agents handling the same company on the same day otherwise write the *same* temp path and can silently read each other's JSON.
+12. Run: `node build-cv-latex.mjs --user {USER} /tmp/cv-{candidate}[-{report}]-{company}.json users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex`
+13. Run: `node generate-latex.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf`
+    - This runs the CV fact gate (`verify-cv-facts.mjs`) on the `.tex` before compiling, the same hard gate `pdf` mode runs in step 19. It reads the selected user's `cv.md`, so pass `--user {USER}` (or inherit `CAREER_OPS_USER`); without a selected user the command refuses to run. A blocked document is not compiled, and the JSON report carries `factCheck.verdict: "block"` with the claims it could not find in `cv.md` / `article-digest.md`.
+    - If it blocks, stop and fix the step 11 payload (remove the invented claim, or add verified evidence to `cv.md`, `article-digest.md` or `config/cv-facts.json`), rebuild the `.tex`, and re-run. Never pass `--skip-fact-check` unless the user explicitly asks for it.
 14. Report: .tex path, .pdf path, file sizes, section count, keyword coverage %
 
 **Naming rule:** All generated CV artifacts in `users/{USER}/output/` MUST use the same report-linked basename:

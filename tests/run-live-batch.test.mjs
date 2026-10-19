@@ -42,6 +42,7 @@ node() {
   fi
 }
 process_offer() { touch throttle; sleep 1; touch drained; }
+report_progress() { :; }
 ${loop}
 process_live_offers
 [[ -f drained ]]
@@ -138,6 +139,7 @@ set -euo pipefail
 PROJECT_DIR="$CAREER_OPS_ROOT"; USER_ROOT="$PROJECT_DIR"; USER_ID=fictional
 LIVE_INPUTS="$PROJECT_DIR/live.json"; ANSWERS_FILE="$PROJECT_DIR/answers.json"; QUEUE_FILE="$PROJECT_DIR/queue.txt"
 MAX_RETRIES=2; LIMIT=0; RETRY_FAILED=false; RESUME_PAUSED=false; PARALLEL=2; PAUSE_FILE="$PROJECT_DIR/pause"
+report_progress() { :; }
 get_retries() { awk -F '\\t' -v id="$1" '$1==id{print $9; found=1} END{if(!found) print 0}' "$PROJECT_DIR/batch/batch-state.tsv"; }
 update_state_retrying() { node "$PROJECT_DIR/state.mjs" "$1" "$2" "$3" "$9"; }
 process_offer() {

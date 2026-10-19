@@ -431,6 +431,9 @@ function readMaybe(path) {
       'paired-ref fixture did not arrange its FETCH_HEAD distractor',
     );
 
+    // A withheld update leaves a durable baseline that rollback must clear.
+    g('update-ref', 'refs/career-ops/staged-update', 'HEAD');
+
     const result = runRollback(dir);
     const userCv = readMaybe(join(dir, 'cv.md'));
     const userSibling = readMaybe(join(dir, 'writing-samples/private.md'));
@@ -438,6 +441,11 @@ function readMaybe(path) {
       result.status === 0 && !result.error,
       'real rollback CLI succeeds with a readable paired target ref',
       `paired rollback failed (status ${result.status}): ${outputOf(result)}`,
+    );
+    check(
+      g('for-each-ref', '--format=%(refname)', 'refs/career-ops/staged-update') === '',
+      'successful rollback clears the withheld update baseline',
+      'rollback left the withheld update baseline behind',
     );
     check(
       readMaybe(join(dir, 'system/root.txt')) === 'backup root\n'
@@ -1065,6 +1073,45 @@ function readMaybe(path) {
       'the restored files are still on disk when the commit fails',
       'a failed commit left the worktree unrestored',
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ── 18b. Real CLI: with unrelated work staged, the recovery hint stays scoped ──
+//    A bare `git commit` here would take the user's staged file along with the
+//    rollback, so the hint has to name the pathspec file the failed commit left.
+{
+  const fixture = seedRollbackRepo('co-rollback-commit-fails-scoped-', {
+    paired: true,
+    fetchTarget: false,
+  });
+  const { dir, g } = fixture;
+  try {
+    put(dir, 'my-own-notes.txt', 'staged by the user before rollback\n');
+    g('add', '--', 'my-own-notes.txt');
+    const hooks = join(dir, '.git', 'failing-hooks');
+    mkdirSync(hooks, { recursive: true });
+    writeFileSync(join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    g('config', 'core.hooksPath', hooks);
+
+    const output = outputOf(runRollback(dir));
+    const hint = output.match(/git --literal-pathspecs commit -m "([^"]+)" "--pathspec-from-file=([^"]+)" --pathspec-file-nul/);
+    check(
+      Boolean(hint),
+      'a failed scoped rollback commit prints a scoped recovery command',
+      `no scoped recovery command in: ${JSON.stringify(output.slice(-400))}`,
+    );
+    if (hint) {
+      g('config', '--unset', 'core.hooksPath');
+      g('--literal-pathspecs', 'commit', '-m', hint[1], `--pathspec-from-file=${hint[2]}`, '--pathspec-file-nul');
+      check(
+        !g('show', '--name-only', '--format=', 'HEAD').split('\n').includes('my-own-notes.txt')
+          && g('diff', '--cached', '--name-only') === 'my-own-notes.txt',
+        "running the printed command commits the rollback and leaves the user's file staged",
+        `commit: ${g('show', '--name-only', '--format=', 'HEAD')}; staged: ${g('diff', '--cached', '--name-only')}`,
+      );
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

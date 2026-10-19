@@ -40,9 +40,17 @@ plugins/<id>/
   "hooks": ["provider"],             // any of: provider, ingest, search, notify, export
   "requiredEnv": ["WELLFOUND_TOKEN"],// env VAR NAMES only — values go in .env
   "allowedHosts": ["api.wellfound.com"], // required when requiredEnv is non-empty
-  "humanInTheLoop": true             // must be true
+  "humanInTheLoop": true,            // must be true
+  "jobPostings": true                // optional: ingest/search results are job postings
 }
 ```
+
+`jobPostings: true` tells the engine that what your `ingest` or `search` hook
+returns are job postings. They then pass the scanner's discovery filters
+(`data/blacklist.md`, `portals.yml` `title_filter` and `location_filter`) and
+are recorded in `data/scan-history.tsv`. Leave it out when your results are
+something else, such as interview events: those are only de-duplicated against
+the tracker, the pipeline and scan history.
 
 ### Hooks (`index.mjs` default export)
 

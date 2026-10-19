@@ -26,6 +26,7 @@
         "completed",
         "failed",
         "closed",
+        "skipped",
         "needs_confirmation"
       ]
     },
@@ -104,6 +105,7 @@
         "agency_confirmation",
         "jd_unavailable",
         "posting_closed",
+        "dealbreaker",
         null
       ]
     },

@@ -19,7 +19,8 @@ import { chromium } from 'playwright';
 import { execFileSync, execFile } from 'child_process';
 import { promisify } from 'util';
 import { rejectPrivateOrInvalid, checkUrlLiveness, LIVENESS_CONTEXT_OPTIONS } from './liveness-browser.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { isUnreadableVerdict } from './liveness-core.mjs';
+import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { TSV_ADDITION_HEADER } from './tracker-parse.mjs';
@@ -53,7 +54,7 @@ export const PATHS = {
   //
   // gemini-eval.mjs:89 and ollama-eval.mjs:56 both already use DATA_ROOT here.
   profile:     join(DATA_ROOT, 'modes', '_profile.md'),
-  profileYml:  join(DATA_ROOT, 'config', 'profile.yml'),
+  profileYml:  getProfilePath(),
   reports:     join(DATA_ROOT, 'reports'),
   // DATA_ROOT, matching gemini-eval.mjs:93. These TSVs are the batch's OUTPUT —
   // one per evaluated offer, for merge-tracker.mjs to fold into the tracker —
@@ -264,7 +265,7 @@ export async function processOffer(browser, line, idx, _evaluate = evaluateWithR
     // Neither model output nor a failed scrape proves closure. Verify the URL
     // independently; active/uncertain results preserve pending work.
     const liveness = await _checkLiveness(browser, url);
-    if (liveness?.result !== 'expired' || liveness?.code === 'insufficient_content') {
+    if (liveness?.result !== 'expired' || isUnreadableVerdict(liveness)) {
       return { line, processed: false, outcome: 'unconfirmed-dead-posting' };
     }
     const label = match[2] ? `${companyHint} | ${titleHint}` : url;

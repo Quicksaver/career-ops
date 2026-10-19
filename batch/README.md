@@ -2,7 +2,7 @@
 
 Process job offers with headless Codex workers by default. Explicit `--cli claude` selects Claude. `CAREER_OPS_BATCH_CLI` overrides the system CLI default; a command-line `--cli` takes precedence over that environment variable.
 
-The coordinated `run` workflow supports Codex and Claude. Standalone batch retains legacy OpenCode, Gemini and Qwen dispatch with one worker; those choices do not implement the coordinated queue contract.
+The coordinated `run` workflow supports Codex and Claude. Standalone batch retains legacy OpenCode, Gemini, Qwen and Grok dispatch with one worker; those choices do not implement the coordinated queue contract.
 
 Select a user on every invocation. User state, inputs, reports and output live under the active user data root, normally `users/{USER}/`. This directory follows the configured data-root overrides.
 
@@ -41,7 +41,7 @@ When `--queue-file` selects work from a large historical input, the runner valid
 | Flag | Default | Purpose |
 |---|---|---|
 | `--user ID` | required | Select the user |
-| `--cli NAME` | `codex` | Select Codex or Claude |
+| `--cli NAME` | `codex` | Select Codex or Claude; legacy `opencode`, `gemini`, `qwen` and `grok` run one worker |
 | `--parallel N` | profile `batch.parallel`, then `1` | Limit concurrent workers |
 | `--model NAME` | profile, then system default | Override model |
 | `--reasoning-effort LEVEL` | profile, then `medium` | Codex reasoning override |
@@ -55,7 +55,7 @@ When `--queue-file` selects work from a large historical input, the runner valid
 | `--resume-paused` | off | Select jobs paused by Codex or Claude session/rate limits |
 | `--include-pending` | off | Internal coordinator flag that unions recovery selections with ordinary pending eligibility |
 | `--max-retries N` | `3` | Failed-attempt ceiling, counting the initial attempt |
-| `--worker-timeout N` | `900` | Finite nonnegative seconds; zero disables the timeout and decimals are accepted |
+| `--worker-timeout N` | `900`, or `CAREER_OPS_WORKER_TIMEOUT_SECONDS` | Finite nonnegative seconds before a worker is stopped and artifact recovery is attempted; zero disables the timeout and decimals are accepted |
 | `--rate-limit-sleep N` | `300` | Maximum adaptive Claude retry delay; zero pauses immediately |
 | `--skip-pdf` | off | Disable PDF rendering |
 | `--recover-artifact-failures` | off | Revalidate known false artifact failures without workers |
@@ -88,6 +88,8 @@ Supply a read-only answer file explicitly:
 A JD answer that resumes evaluation requires nonempty `jd_text` or a public non-LinkedIn `employer_url`; an explicit `resolution: "skip"` instead closes the posting without evaluation. A failed job can be discarded with `{"url":"https://example.com/job","reason":"job_failed","answer":"","resolution":"skip"}`. This is a skip command only, not another hold reason or retry authorization. It applies even at the retry ceiling, preserves retry history, quarantines a partial unmerged addition, and moves the inbox row to Processed without evaluation artifacts. An agency answer identifies/confirms the intermediary in `answer`, or explicitly corrects it to direct with `direct_employer: true`. The runner resumes only a hold with the same user, exact URL, job ID and reason. A JD answer never confirms agency. User-contained `local:jds/...` identities are accepted; traversal and escaping symlinks are rejected.
 
 The `run` coordinator automatically retries ordinary failures until three attempts have failed, then presents a failed-job question. Earlier failures remain normal status output. The persisted failure count survives restarts, so a restart uses only the remaining attempts. Standalone batch uses the same ceiling across invocations; `--max-retries` overrides it there. Confirmation holds and quota pauses keep their separate handling.
+
+A worker whose posting breaks one of the selected user's hard rules (a dealbreaker or `compensation.minimum`, stated in the JD) stops before evaluating. It writes only a SKIP tracker addition that quotes the rule and the JD line, with no report or CV. The runner records the job as `skipped` with a `dealbreaker:` reason, merges the row, reconciles the posting out of the pipeline inbox, and lists it under "Dealbreaker skips" in the batch summary. A dealbreaker result without a valid SKIP row for the exact posting, or with a report, fails the attempt and its artifacts are quarantined. To evaluate such a posting anyway, run it in a session and say "evaluate anyway".
 
 Confirmed closed postings finish immediately as `closed` with reason `posting-closed` in `batch-state.tsv`, without consuming a failed attempt, generating evaluation artifacts or asking a question. They move from Pending or blocked rows to Processed as Closed and remain terminal across restarts and retry flags. A uniquely matched existing Evaluated tracker row becomes Closed through the canonical status writer; other application statuses are preserved. Missing JD, login/loading/errors and absent search results do not establish closure.
 

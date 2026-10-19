@@ -4,7 +4,7 @@ Memproses URL lowongan yang menumpuk di `users/{USER}/data/pipeline.md`. Kandida
 
 ## Alur kerja
 
-1. **Baca** `users/{USER}/data/pipeline.md` -> temukan item `- [ ]` di bagian "Menunggu" / "Pending" / "Pendientes"
+1. **Baca** `users/{USER}/data/pipeline.md` (cari dengan `grep -n -m 20 '^- \[ \] ' users/{USER}/data/pipeline.md` dan ulangi pencarian setelah setiap batch sampai yang muncul hanya item yang Anda biarkan di Pending pada putaran ini, jangan baca seluruh file) -> temukan item `- [ ]` di bagian "Menunggu" / "Pending" / "Pendientes"
 2. **Untuk setiap URL yang menunggu**:
    a. Pesan `REPORT_NUM` urut berikutnya secara atomik dengan menjalankan `node reserve-report-num.mjs` (dan lepas sentinel dengan menjalankan `node reserve-report-num.mjs --release <num>` setelah report ditulis)
    b. **Ekstrak lowongan** dengan Playwright (`browser_navigate` + `browser_snapshot`) -> WebFetch -> WebSearch

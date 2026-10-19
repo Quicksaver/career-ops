@@ -1,6 +1,7 @@
 package data
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -1081,4 +1082,63 @@ func describeTrackerLock(dir string) string {
 	}
 	return fmt.Sprintf("lock dir %s STILL EXISTS, held by pid %d token %s since %s — the release did not remove it",
 		dir, owner.PID, owner.Token, owner.StartedAt)
+}
+
+func TestReadFileHeadReturnsAtMostNBytes(t *testing.T) {
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big.md")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("x"), 1<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readFileHead(big, reportHeaderBytes); err != nil || len(got) != reportHeaderBytes {
+		t.Fatalf("big file: got %d bytes, err %v; want %d", len(got), err, reportHeaderBytes)
+	}
+	small := filepath.Join(dir, "small.md")
+	if err := os.WriteFile(small, []byte("**URL:** https://x.test/1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readFileHead(small, reportHeaderBytes); err != nil || string(got) != "**URL:** https://x.test/1\n" {
+		t.Fatalf("small file: got %q, err %v", got, err)
+	}
+	if _, err := readFileHead(filepath.Join(dir, "missing.md"), reportHeaderBytes); err == nil {
+		t.Fatal("missing file must be an error")
+	}
+	if _, err := readFileHead(dir, reportHeaderBytes); err == nil {
+		t.Fatal("a directory must be an error, not an empty header")
+	}
+}
+
+// The enrichment reads only each report's header, so a large report body
+// changes nothing: a URL in the header is found, one past it is not.
+func TestParseApplicationsReadsOnlyTheReportHeaderForURLs(t *testing.T) {
+	tempDir, _ := writeTracker(t, `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 1 | 2026-08-28 | Acme | Engineer | 4.0/5 | Evaluated | — | [1](../reports/001-acme.md) | header URL |
+| 2 | 2026-08-28 | Globex | Engineer | 4.0/5 | Evaluated | — | [2](../reports/002-globex.md) | body URL |
+`)
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Repeat("lorem ipsum dolor sit amet\n", 40_000)
+	for name, content := range map[string]string{
+		"001-acme.md":   "# Acme\n\n**URL:** https://jobs.example.com/header\n\n" + body,
+		"002-globex.md": "# Globex\n\n" + body + "**URL:** https://jobs.example.com/body\n",
+	} {
+		if err := os.WriteFile(filepath.Join(reportsDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apps := mustParseApplications(t, tempDir)
+	if len(apps) != 2 {
+		t.Fatalf("expected 2 applications, got %d", len(apps))
+	}
+	if got := apps[0].JobURL; got != "https://jobs.example.com/header" {
+		t.Errorf("header URL = %q, want it found", got)
+	}
+	if got := apps[1].JobURL; got != "" {
+		t.Errorf("a URL past the header must not be used, got %q", got)
+	}
 }

@@ -7,6 +7,8 @@ Works in two modes:
 
 ---
 
+**Unattended runs** (`modes/_shared.md` → **Unattended runs**): never ask and never wait. With no JD, or when Steps 3 to 6 need the candidate's confirmation or answers, write no letter and end with `needs_confirmation: cover_input {first missing item} - rerun with the JD and those answers`.
+
 ## Step 0 — JD Gate (mandatory)
 
 Before doing anything, confirm a job description is present.

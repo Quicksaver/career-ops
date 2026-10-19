@@ -20,6 +20,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SCRIPT = join(ROOT, 'ats-payload.mjs');
@@ -65,7 +66,7 @@ const DIRTY_PAYLOAD = {
 test('stdout parses as the transformed payload and nothing else', () => {
   withFixture(DIRTY_PAYLOAD, (file) => {
     const r = run([file]);
-    assert.equal(r.status, 0, `exited ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, describeSpawn(r, `exited ${r.status}`));
     const out = JSON.parse(r.stdout); // throws if a finding leaked into stdout
     assert.deepEqual(out.competencies, []);
     assert.deepEqual(out.skills[0], {
@@ -91,7 +92,7 @@ test('findings go to stderr as JSON by default', () => {
 test('--summary prints the human report to stderr and leaves stdout machine-readable', () => {
   withFixture(DIRTY_PAYLOAD, (file) => {
     const r = run([file, '--summary']);
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 0, describeSpawn(r));
     assert.match(r.stderr, /ATS Payload Transform/);
     assert.match(r.stderr, /reported, NOT applied/);
     assert.doesNotThrow(() => JSON.parse(r.stdout));
@@ -114,7 +115,7 @@ test('the input file is never rewritten', () => {
 
 test('a payload can be piped in on stdin', () => {
   const r = run(['-'], { input: JSON.stringify(DIRTY_PAYLOAD) });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 0, describeSpawn(r));
   assert.deepEqual(JSON.parse(r.stdout).competencies, []);
 });
 
@@ -147,7 +148,7 @@ test('the folded payload renders comma-delimited under Skills, with no CSS-only 
     const build = spawnSync(process.execPath, [join(ROOT, 'build-cv-html.mjs'), foldedFile, htmlFile], {env: userFixtureEnv({ ...process.env, CAREER_OPS_ROOT: fixturePath.dirname(htmlFile) }), 
       cwd: ROOT, encoding: 'utf-8', timeout: 30_000,
     });
-    assert.equal(build.status, 0, `build-cv-html.mjs failed: ${build.stderr}`);
+    assert.equal(build.status, 0, describeSpawn(build, `build-cv-html.mjs failed`));
 
     const html = readFileSync(htmlFile, 'utf-8');
     // The defect: competency tags separated by `gap: 8px` and nothing else, so
@@ -168,7 +169,7 @@ test('the folded payload renders comma-delimited under Skills, with no CSS-only 
 
 test('--help exits 0 and prints usage', () => {
   const r = run(['--help']);
-  assert.equal(r.status, 0);
+  assert.equal(r.status, 0, describeSpawn(r));
   assert.match(r.stdout, /Usage:/);
 });
 
@@ -243,7 +244,7 @@ test('a valid array skills field is preserved through the fold', () => {
   const r = run(['-'], {
     input: JSON.stringify({ competencies: ['AWS'], skills: [{ category: 'Languages', items: 'Python' }] }),
   });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 0, describeSpawn(r));
   const out = JSON.parse(r.stdout);
   assert.deepEqual(out.skills, [
     { category: 'Core Competencies', items: 'AWS' },
@@ -253,7 +254,7 @@ test('a valid array skills field is preserved through the fold', () => {
 
 test('an absent skills field is still fine', () => {
   const r = run(['-'], { input: JSON.stringify({ competencies: ['AWS'] }) });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 0, describeSpawn(r));
   assert.deepEqual(JSON.parse(r.stdout).skills, [{ category: 'Core Competencies', items: 'AWS' }]);
 });
 
@@ -274,7 +275,7 @@ test('a numeric competency is accepted, not refused', () => {
   // (tests/cv-numeric-scalars.test.mjs). Rejecting it would make this script
   // stricter than the builder it feeds.
   const r = run(['-'], { input: JSON.stringify({ competencies: ['AWS', 2024] }) });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 0, describeSpawn(r));
   assert.equal(JSON.parse(r.stdout).skills[0].items, 'AWS, 2024');
 });
 
@@ -297,7 +298,7 @@ test('a skills category the fold never touches is not policed for it', () => {
       skills: [{ category: 'Languages', items: ['X', { y: 1 }] }],
     }),
   });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 0, describeSpawn(r));
 });
 
 test('a scalar items on the merge target is refused and reaches stdout not at all', () => {
@@ -318,7 +319,7 @@ test('a string items on the merge target merges instead of being replaced', () =
   const r = run(['-'], {
     input: JSON.stringify({ competencies: ['A'], skills: [{ category: 'Core Competencies', items: 'X' }] }),
   });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 0, describeSpawn(r));
   assert.equal(JSON.parse(r.stdout).skills[0].items, 'X, A');
 });
 
@@ -326,7 +327,7 @@ test('a scalar items on a category the fold never touches is not policed', () =>
   const r = run(['-'], {
     input: JSON.stringify({ competencies: ['A'], skills: [{ category: 'Languages', items: 2024 }] }),
   });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 0, describeSpawn(r));
   assert.equal(JSON.parse(r.stdout).skills[1].items, 2024, 'the untouched value must pass through unchanged');
 });
 

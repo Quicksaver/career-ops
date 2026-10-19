@@ -151,10 +151,13 @@ export async function runWorker(command, args, { timeoutSeconds, registrationPat
     clearInterval(timeout);
     process.removeListener('SIGINT', interrupt);
     process.removeListener('SIGTERM', interrupt);
-    removeLaunchPayload(registrationPath);
     if (drained) {
+      removeLaunchPayload(registrationPath);
       if (existsSync(registrationPath)) unlinkSync(registrationPath);
     } else {
+      // A surviving Windows job worker can still hold its payload open, and an
+      // unlink failure here would mask the cleanup error. The guard removes it
+      // once it proves the tree dead.
       child?.unref();
       record.state = 'cleanup_failed'; record.error = stoppingError?.message || 'Worker tree cleanup unconfirmed';
       save();

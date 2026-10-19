@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractWithAI, hnScanConfig } from '../scan-hn.mjs';
+import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 test('Hacker News AI Extraction Logic', async (t) => {
   const mockModel = {
@@ -73,13 +74,13 @@ function writeFetchFixture(dir, { serveHn = true, posts = [
       status, headers: { 'content-type': 'application/json' },
     });
     const serveHn = ${serveHn};
-    globalThis.fetch = async (input) => {
+    globalThis.fetch = async function (input) {
       const url = String(input?.url ?? input);
       if (serveHn && url.includes('hn.algolia.com/api/v1/search_by_date')) {
         return json({ hits: [{ objectID: '424242', title: 'Ask HN: Who is hiring? (September 2026)' }] });
       }
       if (serveHn && url.includes('hn.algolia.com/api/v1/items/424242')) {
-        return json({ children: ${JSON.stringify(posts.map(text => ({ text })))} });
+        return json({ children: ${JSON.stringify(posts.map((text, i) => ({ id: 1001 + i, text })))} });
       }
       appendFileSync(${JSON.stringify(unexpected)}, url + '\\n');
       throw new Error('network forbidden in test: ' + url);
@@ -132,7 +133,7 @@ test('scan-hn --help prints usage and an unknown flag is refused, neither runs t
 
     const help = runScanHn(dir, preload, ['--help']);
     assert.equal(help.error, undefined, `scan-hn failed to spawn: ${help.error?.message}`);
-    assert.equal(help.status, 0, `expected --help to exit 0, got ${help.status}\n${help.stderr}`);
+    assert.equal(help.status, 0, describeSpawn(help, `expected --help to exit 0, got ${help.status}\n`));
     assert.match(help.stdout, /Usage:\n\s+node scan-hn\.mjs/);
     assert.match(help.stdout, /data\/pipeline\.md/, 'usage should say what the scan writes');
 
@@ -163,7 +164,7 @@ test('scan-hn refuses a portals.yml that does not parse instead of scanning with
     writeFileSync(portals, keywords);
     const valid = runScanHn(dir, served.preload, [], { GEMINI_API_KEY: '' });
     assert.equal(valid.error, undefined, `scan-hn failed to spawn: ${valid.error?.message}`);
-    assert.equal(valid.status, 0, `expected a valid portals.yml to exit 0, got ${valid.status}\n${valid.stderr}`);
+    assert.equal(valid.status, 0, describeSpawn(valid, `expected a valid portals.yml to exit 0, got ${valid.status}\n`));
     assert.match(valid.stdout, /Total jobs found:\s+2/);
     assert.match(valid.stdout, /New offers added:\s+0/, 'legacy keywords should provide a title policy when none is configured');
 
@@ -245,7 +246,8 @@ tracked_companies:
     const receipt = JSON.parse(result.stdout);
     assert.equal(receipt.found, 6);
     assert.equal(receipt.added, 1);
-    assert.deepEqual(receipt.added_urls, ['https://allowed.example/jobs/1']);
+    // The hiring comment is the posting identity; its external link stays in the description.
+    assert.deepEqual(receipt.added_urls, ['https://news.ycombinator.com/item?id=1001']);
     const pipeline = readFileSync(join(data, 'pipeline.md'), 'utf8');
     assert.match(pipeline, /AllowedCo/);
     assert.doesNotMatch(pipeline, /WrongLocation|WrongTitle|BlockedCo|WrongTier|BlacklistedCo/);

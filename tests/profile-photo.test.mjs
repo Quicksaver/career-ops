@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { describeSpawn, exitedNonZero } from './helpers/describe-spawn.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATE = join(ROOT, 'templates', 'cv-template.html');
@@ -104,7 +105,7 @@ test('single-letter Windows drive paths reach local file handling', () => {
   writeProfile(root, winPath);
   const result = spawnSync(process.execPath, ['build-cv-html.mjs', input, output, TEMPLATE], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, CAREER_OPS_ROOT: root } });
 
-  assert.notEqual(result.status, 0);
+  assert.ok(exitedNonZero(result), describeSpawn(result, 'expected a non-zero exit'));
   assert.doesNotMatch(result.stderr, /Unsupported profile photo URL scheme/);
   assert.match(result.stderr, /not found or unreadable/);
 });
@@ -119,7 +120,7 @@ test('a payload photo path that config/profile.yml does not name is refused (#50
   ];
   for (const [label, profilePhoto] of cases) {
     const { result, output } = buildWith(payload(secret), profilePhoto);
-    assert.notEqual(result.status, 0, label);
+    assert.ok(exitedNonZero(result), describeSpawn(result, label));
     assert.match(result.stderr, /does not match candidate\.photo in config\/profile\.yml/, label);
     assert.equal(existsSync(output), false, label);
   }
@@ -127,7 +128,7 @@ test('a payload photo path that config/profile.yml does not name is refused (#50
 
 test('a relative path that climbs out of the project is refused unless the profile names it (#5094)', () => {
   const { result, output } = buildWith(payload('../../../../etc/hosts.png'), 'docs/logo.png');
-  assert.notEqual(result.status, 0);
+  assert.ok(exitedNonZero(result), describeSpawn(result, 'expected a non-zero exit'));
   assert.match(result.stderr, /does not match candidate\.photo in config\/profile\.yml/);
   assert.equal(existsSync(output), false);
 });
@@ -167,7 +168,7 @@ test('missing, unsupported, and invalid-style photos fail clearly', () => {
     writeProfile(root, value.candidate.photo);
     const result = spawnSync(process.execPath, ['build-cv-html.mjs', input, output, TEMPLATE], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, CAREER_OPS_ROOT: root } });
 
-    assert.notEqual(result.status, 0);
+    assert.ok(exitedNonZero(result), describeSpawn(result, 'an invalid profile photo must fail the build'));
     assert.match(result.stderr, expected);
     assert.equal(existsSync(output), false);
   }

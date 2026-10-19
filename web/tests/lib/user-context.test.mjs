@@ -6,7 +6,7 @@ import nextConfig from "../../next.config.mjs";
 import { careerOpsUserId, careerOpsRoot, careerOpsSystemRoot, careerOpsUsersRoot, careerOpsCoreEnv } from "../../src/lib/user-context.mjs";
 import { validateUserId } from "../../../lib/user-context.mjs";
 
-const KEYS = ["CAREER_OPS_USER", "CAREER_OPS_ROOT", "CAREER_OPS_USERS_DIR", "CAREER_OPS_CODE_ROOT", "CAREER_OPS_DATA_DIR"];
+const KEYS = ["CAREER_OPS_USER", "CAREER_OPS_ROOT", "CAREER_OPS_USERS_DIR", "CAREER_OPS_CODE_ROOT", "CAREER_OPS_DATA_DIR", "CAREER_OPS_PROFILE", "CAREER_OPS_PORTALS"];
 
 function withEnv(values, run) {
   const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
@@ -79,5 +79,20 @@ test("system metadata and production builds remain independent of user selection
   withEnv({}, () => {
     assert.equal(careerOpsSystemRoot(), path.resolve(process.cwd(), ".."));
     assert.doesNotThrow(() => nextConfig(PHASE_PRODUCTION_BUILD));
+  });
+});
+
+test("child environments receive profile and portals overrides resolved against the selected data root", () => {
+  const system = path.resolve("fixture-system");
+  const userRoot = path.join(system, "users", "alice");
+  withEnv({ CAREER_OPS_USER: "alice", CAREER_OPS_ROOT: system, CAREER_OPS_PROFILE: "config/alt.yml", CAREER_OPS_PORTALS: " alt-portals.yml " }, () => {
+    const env = careerOpsCoreEnv();
+    assert.equal(env.CAREER_OPS_PROFILE, path.join(userRoot, "config", "alt.yml"));
+    assert.equal(env.CAREER_OPS_PORTALS, path.join(userRoot, "alt-portals.yml"));
+  });
+  withEnv({ CAREER_OPS_USER: "alice", CAREER_OPS_ROOT: system }, () => {
+    const env = careerOpsCoreEnv();
+    assert.equal(env.CAREER_OPS_PROFILE, undefined);
+    assert.equal(env.CAREER_OPS_PORTALS, undefined);
   });
 });

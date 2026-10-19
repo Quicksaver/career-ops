@@ -22,6 +22,7 @@
 //
 // Run:  node --test tests/story-provenance-non-ascii.test.mjs
 
+import './user-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyStoryBank } from '../story-provenance-check.mjs';

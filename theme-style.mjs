@@ -32,6 +32,7 @@
  */
 import { readFileSync, existsSync } from 'fs';
 import * as yaml from 'js-yaml';
+import { getProfilePath } from './path-resolver.mjs';
 
 // Recognized style tokens → the CSS custom property each maps to. Anything not
 // listed here is ignored, so a typo or an unrelated `style:` key is inert.
@@ -75,9 +76,11 @@ export const STYLE_VAR_MAP = {
  * @param {string} [profilePath]
  * @returns {Record<string,string>}
  */
-export function readStyleTokens(profilePath = null) {
+export function readStyleTokens(profilePath) {
   try {
-    if (!profilePath) return {};
+    // Resolved inside the try: with no selected user the default throws, and
+    // an unreadable profile must never stop a CV rendering.
+    profilePath ??= getProfilePath();
     if (!existsSync(profilePath)) return {};
     const raw = yaml.load(readFileSync(profilePath, 'utf-8')) || {};
     return styleTokensFrom(raw?.style);
@@ -113,8 +116,9 @@ export function styleTokensFrom(style) {
  * @param {string} [profilePath]
  * @returns {string[]}
  */
-export function readCvSectionOrder(profilePath = 'config/profile.yml') {
+export function readCvSectionOrder(profilePath) {
   try {
+    profilePath ??= getProfilePath();
     if (!existsSync(profilePath)) return [];
     const raw = yaml.load(readFileSync(profilePath, 'utf-8')) || {};
     return cvSectionOrderFrom(raw?.cv);

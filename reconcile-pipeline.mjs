@@ -34,7 +34,7 @@ import { withPipelineLock, LockTimeoutError } from './pipeline-lock.mjs';
 import { writeFileAtomic, loadCanonicalStates, resolveCanonicalStateId } from './tracker-utils.mjs';
 import { parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
 import { normalizeUrl } from './url-key.mjs';
-import { parsePendingRows, parseBlockedRows, pendingCount } from './lib/pipeline-queue.mjs';
+import { parsePendingRows, parseBlockedRows, pendingCount, PENDING_HEADER, PROCESSED_HEADER } from './lib/pipeline-queue.mjs';
 import { JD_SKIP_REASON, JOB_SKIP_REASON, POSTING_CLOSED_REASON, validLocal, validUrl } from './batch/manual-inputs.mjs';
 
 const CAREER_OPS = getCareerOpsRoot();
@@ -106,12 +106,15 @@ for (const line of readFileSync(STATE_FILE, 'utf-8').split(/\r?\n/)) {
   const c = line.split('\t');
   if (c.length < 7) continue;
   const [, url, status, , , reportNum, score, reason] = c;
-  // Evaluated jobs need reports; an explicit missing-JD dismissal has none.
+  // Evaluated jobs need reports; an explicit missing-JD dismissal has none. A
+  // dealbreaker skip (batch-prompt.md "Dealbreaker gate") is finished without
+  // one too: its SKIP tracker row is the record.
   if (status !== 'completed' && status !== 'skipped' && status !== 'closed') continue;
   if (!url || !url.trim()) continue;
   DONE.set(url.trim(), { reportNum: (reportNum || '').trim(), score: (score || '').trim(),
     jdSkipped: status === 'skipped' && reason === JD_SKIP_REASON && reportNum === '-' && score === '-',
     jobSkipped: status === 'skipped' && reason === JOB_SKIP_REASON && reportNum === '-' && score === '-',
+    dealbreaker: status === 'skipped' && (reason || '').startsWith('dealbreaker:'),
     closed: status === 'closed' && reason === POSTING_CLOSED_REASON && reportNum === '-' && score === '-' });
 }
 
@@ -233,8 +236,9 @@ function resolvePdf(reportFile) {
 }
 
 // ---- parse pipeline.md ----
-const PENDING_RE = /^##\s+(Pendientes|Pending)\s*$/i;
-const PROCESSED_RE = /^##\s+(Procesadas|Processed)\s*$/i;
+// The queue reader's section headers, so an inbox that syncs also reconciles.
+const PENDING_RE = PENDING_HEADER;
+const PROCESSED_RE = PROCESSED_HEADER;
 const SECTION_RE = /^##\s+/;
 
 // The whole read → compute → write runs under the pipeline lock (#4895).
@@ -304,6 +308,15 @@ function reconcile() {
       removeIdx.add(i);
       moved.push({ url, jdSkipped: done.jdSkipped, jobSkipped: done.jobSkipped, closed: done.closed });
       procUrls.add(url);
+      continue;
+    }
+
+    if (done.dealbreaker) {
+      const [, company = '', role = ''] = body.split('|').map(s => s.trim());
+      movedProcLines.push(`- [x] SKIP | ${url} | ${company} | ${role} | N/A | PDF ❌`);
+      moved.push({ url, company, role, num: '-', score: 'SKIP, dealbreaker' });
+      procUrls.add(url);
+      removeIdx.add(i);
       continue;
     }
 
