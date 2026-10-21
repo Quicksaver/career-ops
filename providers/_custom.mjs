@@ -724,11 +724,18 @@ function getJobsChDetailPathTemplate(locale) {
   return '/en/vacancies/detail/{ID}/';
 }
 
+// jobs.ch answers a `+`-encoded space with a 301 to the `%20` spelling, and
+// providers refuse redirects, so every search URL is serialized with `%20`.
+function formatJobsChUrl(url) {
+  url.search = url.searchParams.toString().replace(/\+/g, '%20');
+  return url.toString();
+}
+
 function buildJobsChSearchUrl(baseUrl, term) {
   const url = new URL(baseUrl);
   url.searchParams.set('term', String(term || ''));
   url.searchParams.delete('page');
-  return url.toString();
+  return formatJobsChUrl(url);
 }
 
 function getJobsChConfig(company) {
@@ -1982,7 +1989,7 @@ function buildJobsChPageUrl(url, pageNumber) {
     pageUrl.searchParams.set('term', '');
   }
 
-  return pageUrl.toString();
+  return formatJobsChUrl(pageUrl);
 }
 
 function buildMakeItInGermanyPageUrl(url, pageNumber) {
@@ -2006,7 +2013,7 @@ function formatJobsChLocation(job) {
   return [...new Set([place, ...regions].filter(Boolean))].join(' | ');
 }
 
-function parseJobsChJob(job, origin, detailPathTemplate, seenUrls) {
+function parseJobsChJob(job, origin, detailPathTemplate) {
   const id = normalizeWhitespace(String(job.id || ''));
   const title = normalizeWhitespace(String(job.title || ''));
   const company = normalizeWhitespace(String(job.company?.name || ''));
@@ -2018,11 +2025,6 @@ function parseJobsChJob(job, origin, detailPathTemplate, seenUrls) {
   const encodedId = safeEncodeURIComponent(id);
   if (encodedId === null) return null;
   const url = new URL(detailPathTemplate.replace('{ID}', encodedId), origin).toString();
-  if (seenUrls.has(url)) {
-    return null;
-  }
-
-  seenUrls.add(url);
 
   return {
     title,
@@ -2047,12 +2049,23 @@ function parseJobsChSearchPage(html, sourceUrl, seenUrls) {
   const source = new URL(sourceUrl);
   const locale = getJobsChLocaleFromPathname(source.pathname);
   const detailPathTemplate = globalData?.ROUTES?.VACANCY_DETAIL?.[locale] || getJobsChDetailPathTemplate(locale);
-  const jobs = [];
+  const parsed = results.map(item => parseJobsChJob(item, source.origin, detailPathTemplate)).filter(Boolean);
+  const totalHits = Number(initData?.vacancy?.results?.main?.meta?.totalHits);
 
-  for (const item of results) {
-    const parsed = parseJobsChJob(item, source.origin, detailPathTemplate, seenUrls);
-    if (parsed) jobs.push(parsed);
+  // A silent zero hides a payload change: hits without rows, or rows that no
+  // longer carry the fields a posting needs, must fail the board visibly.
+  if (results.length === 0 && totalHits > 0) {
+    throw new Error(`jobs.ch reported ${totalHits} hits but embedded no result rows at ${sourceUrl}`);
   }
+  if (results.length > 0 && parsed.length === 0) {
+    throw new Error(`Unsupported jobs.ch result shape at ${sourceUrl}: none of ${results.length} rows carry an active id, title and company`);
+  }
+
+  const jobs = parsed.filter(job => {
+    if (seenUrls.has(job.url)) return false;
+    seenUrls.add(job.url);
+    return true;
+  });
 
   const pageCount = Number(initData?.vacancy?.results?.main?.meta?.numPages || 1);
   return {
@@ -2076,7 +2089,16 @@ function getMakeItInGermanyPageCount(html) {
   return maxPage;
 }
 
+// Radware Bot Manager answers HTTP 200 with a "Verifying your browser" page.
+// career-ops does not solve bot challenges, so it is reported as such.
+function assertNoMakeItInGermanyChallenge(html, sourceUrl) {
+  if (/<title>\s*Radware Page\s*<\/title>|Verifying your browser before proceeding|__uzdbm_\d/i.test(html)) {
+    throw new Error(`Make it in Germany served a Radware bot challenge instead of listings at ${sourceUrl}; career-ops does not solve bot challenges`);
+  }
+}
+
 function parseMakeItInGermanyPage(html, sourceUrl, seenUrls) {
+  assertNoMakeItInGermanyChallenge(html, sourceUrl);
   const origin = new URL(sourceUrl).origin;
   const jobs = [];
   const listHtml = html.match(/<ul class="list list--jobs">([\s\S]*?)(?:<div class="pagination|<!--TYPO3SEARCH_end|<\/main>|$)/i)?.[1] || html;
@@ -2445,6 +2467,19 @@ async function fetchJobsInEnglishJobs(url, company) {
   return jobs;
 }
 
+// Cloudflare answers non-browser TLS clients with a 403 managed challenge
+// (`cf-mitigated: challenge`). career-ops does not solve bot challenges.
+function assertDevJobsDeTransport(assertTransport) {
+  try {
+    assertTransport();
+  } catch (error) {
+    if (error?.status === 403 && /\/cdn-cgi\/challenge-platform\/|Just a moment/i.test(String(error.body || ''))) {
+      throw new Error('DEVjobs.de answered with a Cloudflare bot challenge (HTTP 403); career-ops does not solve bot challenges', { cause: error });
+    }
+    throw error;
+  }
+}
+
 async function fetchDevJobsDeJobs(url, company) {
   const seenUrls = new Set();
   const jobs = [];
@@ -2464,8 +2499,8 @@ async function fetchDevJobsDeJobs(url, company) {
     for (const listUrl of listUrls) {
       for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
         const pageUrl = buildDevJobsDePageUrl(listUrl, pageNumber);
-        const pageJobs = await fetchDevJobsDeSearchPage(page, pageUrl, seenUrls).catch(error => { assertTransport(); throw error; });
-        assertTransport();
+        const pageJobs = await fetchDevJobsDeSearchPage(page, pageUrl, seenUrls).catch(error => { assertDevJobsDeTransport(assertTransport); throw error; });
+        assertDevJobsDeTransport(assertTransport);
 
         if (pageJobs.length === 0) {
           break;
