@@ -23,7 +23,8 @@ test('retired custom branches route through direct provider modules while active
 });
 const position = (id, extra = {}) => ({ id, name: 'Engineer', locations: ['Berlin'], ...extra });
 const payload = (positions, count = positions.length) => ({ data: { positions, count } });
-const ctx = fetchJson => ({ fetchJson, sleep: async () => {} });
+// PCSX reads raw responses (for its session cookie); the other boards read JSON.
+const ctx = (fetchJson, extra = {}) => ({ fetchJson, fetchResponse: async (url, opts) => Response.json(await fetchJson(url, opts)), sleep: async () => {}, ...extra });
 
 const boards = {
   pcsx: entry.api, devitjobs: 'https://devitjobs.uk/api/jobsLight',
@@ -257,15 +258,61 @@ test('PCSX detail content and posting date supersede listing metadata, with miss
 test('shared retries honor Retry-After and stop on nonretryable errors', async () => {
   let calls=0;
   const delays=[];
-  await fetchCustomProvider('pcsx',entry,{
-    fetchJson:async()=>{calls++; if(calls===1)throw Object.assign(new Error('limited'),{status:429,retryAfter:'2'});return payload([]);},
+  await fetchCustomProvider('pcsx',entry,ctx(async()=>{calls++; if(calls===1)throw Object.assign(new Error('limited'),{status:429,retryAfter:'2'});return payload([]);},{
     sleep:async ms=>delays.push(ms),
-  });
+  }));
   assert.equal(calls,2);
   assert.deepEqual(delays,[2000]);
   calls=0;
   await assert.rejects(fetchCustomProvider('pcsx',entry,ctx(async()=>{calls++;throw Object.assign(new Error('missing'),{status:404});})),/missing/);
   assert.equal(calls,1);
+});
+
+test('PCSX paces pages and keeps the newest pages when a rate limit outlasts the retry budget', async () => {
+  const limited = () => Object.assign(new Error('HTTP 429 Too Many Requests'), {status:429, retryAfter:null});
+  const sleeps=[];
+  const starts=[];
+  const warnings=[];
+  const originalError=console.error;
+  console.error=message=>warnings.push(String(message));
+  try {
+    const jobs=await fetchCustomProvider('pcsx',entry,ctx(async url=>{
+      const start=Number(new URL(url).searchParams.get('start'));
+      starts.push(start);
+      if(start>=20) throw limited();
+      return payload(Array.from({length:10},(_,i)=>position(`${start+i}`)),2401);
+    },{sleep:async ms=>sleeps.push(ms)}));
+    assert.equal(jobs.length,20);
+    assert.equal(starts.filter(start=>start===20).length>2,true,'429 pages are retried before giving up');
+    assert.match(warnings.join('\n'),/stopped early on HTTP 429 \(20 of 2401 jobs\)/);
+    const pageDelays=sleeps.slice(0,2);
+    assert.equal(pageDelays[0],pageDelays[1]);
+    assert.ok(pageDelays[0]>=1000,`pages are paced for Microsoft's edge, got ${pageDelays[0]}ms`);
+  } finally {
+    console.error=originalError;
+  }
+  let calls=0;
+  await assert.rejects(fetchCustomProvider('pcsx',entry,ctx(async()=>{calls++;throw limited();})),/HTTP 429/);
+  assert.ok(calls>1 && calls<10,`first-page 429 retries within a bounded budget, got ${calls} attempts`);
+});
+
+test('PCSX carries the session cookies its host sets on later pages and details', async () => {
+  const sent=[];
+  const jobs=await fetchCustomProvider('pcsx',{...entry,fetchDetails:true,detailLimit:1},{sleep:async()=>{},fetchResponse:async(url,opts)=>{
+    sent.push([new URL(url).pathname+new URL(url).search.replace(/.*start=/,'?start='),opts.headers.cookie,opts.redirect]);
+    const start=Number(new URL(url).searchParams.get('start'));
+    const body=url.includes('position_details')?{data:position('0',{jobDescription:'Detail'})}:payload([position(String(start))],2);
+    const headers=new Headers({'content-type':'application/json'});
+    if(start===0&&!url.includes('position_details')) {
+      headers.append('set-cookie','_vs=session-1; Domain=example; Secure; HttpOnly; Path=/');
+      headers.append('set-cookie','_vscid=2; Secure; Path=/');
+    }
+    return new Response(JSON.stringify(body),{headers});
+  }});
+  assert.equal(jobs.length,2);
+  assert.equal(jobs[0].description,'Detail');
+  assert.deepEqual(sent.map(([,cookie])=>cookie),[undefined,'_vs=session-1; _vscid=2','_vs=session-1; _vscid=2']);
+  assert.ok(sent.every(([,,redirect])=>redirect==='error'));
 });
 
 test('source URLs reject HTTP, credentials, custom ports and deceptive vendor hosts before transport', async () => {
@@ -313,6 +360,19 @@ for (const [id, api, html] of [
     } else assert.deepEqual(jobs,[]);
   });
 }
+
+test('rustjobs reports a Vercel security checkpoint as unscannable instead of retrying it', {skip: !existsSync(chromium.executablePath()) && 'Chromium is not installed'}, async()=>{
+  const provider=(await import('../../providers/rustjobs.mjs')).default;
+  const challenge='<!DOCTYPE html><html><head><title>Vercel Security Checkpoint</title></head><body></body></html>';
+  for(const [body,expected] of [[challenge,/requires a Vercel browser security check.*disable this entry/],['busy',/^Error: HTTP 429$/]]) {
+    let calls=0;
+    await assert.rejects(provider.fetch({name:'Fixture',careers_url:'https://rustjobs.dev',api_params:{location:['remote','europe']}},{fetchResponse:async()=>{
+      calls++;
+      throw Object.assign(new Error('HTTP 429'),{status:429,body});
+    }}),expected);
+    assert.equal(calls,1);
+  }
+});
 
 const fakeRequest = (url='https://rustjobs.dev/') => ({url:()=>url,resourceType:()=> 'document',method:()=> 'GET',postData:()=>null,headers:()=>({})});
 test('browser boards route all requests through context transport and surface guarded failures', async () => {

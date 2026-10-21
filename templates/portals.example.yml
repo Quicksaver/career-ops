@@ -1055,11 +1055,13 @@ search_queries:
 #   - RustJobs.dev can be configured with `provider: rustjobs` +
 #     `careers_url: https://rustjobs.dev`. Optional `api_params.location:`
 #     values include slugs like `remote`, `europe`, `united-states`,
-#     `united-kingdom`, `germany`, and `netherlands`. Direct HTTP fetches are
-#     rate-limited, so the scanner uses Playwright to render the first-party
-#     location pages, click `Load more jobs`, and extract canonical job URLs,
-#     company, location, salary, remote policy, posted date, and apply URL
-#     from the DOM.
+#     `united-kingdom`, `germany`, and `netherlands`. The scanner uses
+#     Playwright to render the first-party location pages, click
+#     `Load more jobs`, and extract canonical job URLs, company, location,
+#     salary, remote policy, posted date, and apply URL from the DOM. Since
+#     2026-10 Vercel answers every path (robots.txt included) with a browser
+#     security checkpoint; the provider reports that as unscannable instead
+#     of solving the challenge, so keep the entry disabled.
 #   - NoDesk uses `provider: nodesk` with its public RSS feed at
 #     https://nodesk.co/remote-jobs/index.xml. Apply targeting through the
 #     common scanner filters; Algolia options and detail enrichment are unsupported.
@@ -2317,7 +2319,7 @@ tracked_companies:
         - remote
         - europe
     api_max_pages: 10
-    notes: "Rust-exclusive board. Direct HTTP requests are rate-limited, but the first-party location pages render cleanly in Playwright and expose detail URLs, company, location, salary, remote policy, posted date, and apply links on each card."
+    notes: "Rust-exclusive board. Not scannable since 2026-10: Vercel answers every path, robots.txt included, with a browser security checkpoint (HTTP 429, x-vercel-mitigated: challenge), and the provider does not solve bot challenges. Its location pages previously rendered in Playwright with detail URLs, company, location, salary, remote policy, posted date, and apply links on each card."
     enabled: false
 
   # -- Voice AI & Conversational AI --

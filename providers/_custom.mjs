@@ -7,7 +7,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { safeEncodeURIComponent } from './_safe-url.mjs';
-import { fetchJsonWithRetry, fetchTextWithRetry, makeHttpCtx, sleep, BROWSER_LIKE_USER_AGENT } from './_http.mjs';
+import { fetchJsonWithRetry, fetchResponseWithRetry, fetchTextWithRetry, makeHttpCtx, sleep, BROWSER_LIKE_USER_AGENT } from './_http.mjs';
 import { decodeEntities as decodeHtmlEntities } from './_html-entities.mjs';
 import { htmlToText } from './_html-to-text.mjs';
 
@@ -129,7 +129,16 @@ export async function routeCustomBrowserRequests(context, ctx) {
   });
   return () => { if (failure) throw failure; };
 }
-const PCSX_DETAIL_CONCURRENCY = 20;
+// Microsoft's PCSX API (measured 2026-10-21) serves 10 rows per page whatever
+// the page-size parameter and throttles requests without a session: those
+// share one bucket, and 4 of 10 got `429 Please try again later` even 1.5s
+// apart, while 20 of 20 carrying the session cookie the API itself sets
+// passed. Neither answer carries Retry-After or rate-limit headers, so pages
+// are spaced and a 429 backs off for up to about 75 seconds.
+const PCSX_MAX_PAGES = 500;
+const PCSX_PAGE_DELAY_MS = 1_000;
+const PCSX_RETRY_POLICY = { retries: 4, baseDelayMs: 5_000, maxDelayMs: 40_000 };
+const PCSX_DETAIL_CONCURRENCY = 1;
 const EUREMOTEJOBS_DETAIL_CONCURRENCY = 5;
 const EUREMOTEJOBS_MAX_PAGES = 5;
 const EUREMOTEJOBS_CATEGORY_PATH_RE = /^\/job-category\/([^/]+)(?:\/(?:feed|page\/\d+)\/?|\/)?$/;
@@ -2229,6 +2238,29 @@ async function fetchText(url) {
     return fetchTextWithRetry(currentContext(), url, { headers, redirect: 'error' });
 }
 
+// Sends back the cookies the PCSX host set on earlier responses, as a browser
+// session on the public careers site does, and only ever to that same host.
+function createPcsxSession() {
+  const cookies = new Map();
+  let host = '';
+  return {
+    async fetchJson(url) {
+      const requestHost = assertRequestUrl(url).hostname;
+      if (host && host !== requestHost) cookies.clear();
+      host = requestHost;
+      const headers = { accept: 'application/json' };
+      if (cookies.size) headers.cookie = [...cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+      const response = await fetchResponseWithRetry(currentContext(), url, { headers, redirect: 'error' }, PCSX_RETRY_POLICY);
+      for (const cookie of response.headers.getSetCookie?.() || []) {
+        const [pair] = cookie.split(';');
+        const separator = pair.indexOf('=');
+        if (separator > 0) cookies.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());
+      }
+      return response.json();
+    },
+  };
+}
+
 async function fetchPcsxJobs(url, company) {
   const pageUrl = new URL(url);
   const jobs = [];
@@ -2237,10 +2269,20 @@ async function fetchPcsxJobs(url, company) {
   let total = Infinity;
   let requests = 0;
 
-  while (start < total && requests < pageLimit(Math.max(1, Math.min(500, Number(company.api_max_pages) || 500)))) {
+  while (start < total && requests < pageLimit(Number(company.api_max_pages) || PCSX_MAX_PAGES)) {
     pageUrl.searchParams.set('start', String(start));
+    if (requests > 0) await sleep(PCSX_PAGE_DELAY_MS, currentContext());
 
-    const json = await fetchJson(pageUrl.toString());
+    let json;
+    try {
+      json = await company._pcsxSession.fetchJson(pageUrl.toString());
+    } catch (error) {
+      // Pages arrive newest first (sort_by=timestamp), so a rate limit that
+      // outlasts the retry budget leaves a usable board: keep it, and say so.
+      if (error?.status !== 429 || jobs.length === 0) throw error;
+      console.error(`⚠️  pcsx: ${company.name} stopped early on HTTP 429 (${jobs.length} of ${total} jobs) — the board is partial, not empty`);
+      break;
+    }
     const pageJobs = parsePcsx(json, company);
     const count = Number(json.data.count ?? json.data.positions.length);
 
@@ -2264,7 +2306,6 @@ async function fetchPcsxJobs(url, company) {
     // Invalid rows do not prove that a server ignored the requested offset.
     if (validOnPage > 0 && addedOnPage === 0) break;
     start += json.data.positions.length;
-    if (start < total && requests < pageLimit(500)) await sleep(100, currentContext());
   }
 
   return jobs;
@@ -2319,7 +2360,7 @@ async function fetchPcsxPositionDetails(company, job) {
   const detailUrl = buildPcsxDetailUrl(company, job.positionId, job.queriedLocation);
   if (!detailUrl) return job;
 
-  const json = await fetchJson(detailUrl);
+  const json = await company._pcsxSession.fetchJson(detailUrl);
   const position = json.data || null;
 
   if (!position) return job;
@@ -2342,8 +2383,10 @@ async function enrichPcsxJobs(company, jobs) {
 
   const detailConcurrency = Math.max(1, Math.min(Number(company.detail_concurrency) || PCSX_DETAIL_CONCURRENCY, jobs.length));
 
+  let detailRequests = 0;
   const tasks = jobs.map((job, index) => async () => {
     if (!job.positionId || index >= limit) return job;
+    if (detailRequests++ > 0) await sleep(PCSX_PAGE_DELAY_MS, currentContext());
 
     try {
       return await fetchPcsxPositionDetails(company, job);
@@ -2701,7 +2744,25 @@ async function extractRustJobsCards(page) {
   });
 }
 
+// Vercel's bot mitigation now answers every rustjobs.dev path, robots.txt
+// included, with a JavaScript challenge page (live 2026-10-21: HTTP 429,
+// `x-vercel-mitigated: challenge`, title "Vercel Security Checkpoint"). Passing
+// it means solving a bot challenge, which CONTRIBUTING.md rules out, so the
+// board fails with the reason instead of a bare 429 that reads as transient.
+function isVercelChallenge(error) {
+  return [403, 429].includes(error?.status) && /<title>\s*Vercel Security Checkpoint\s*<\/title>/i.test(String(error?.body || ''));
+}
+
 async function fetchRustJobsJobs(url, company) {
+  try {
+    return await fetchRustJobsPages(url, company);
+  } catch (error) {
+    if (!isVercelChallenge(error)) throw error;
+    throw new Error(`rustjobs: rustjobs.dev now requires a Vercel browser security check (HTTP ${error.status}); not scannable without solving a bot challenge, so disable this entry`, { cause: error });
+  }
+}
+
+async function fetchRustJobsPages(url, company) {
   const seenUrls = new Set();
   const jobs = [];
   const listUrls = company._api?.rustjobs?.listUrls || [url];
@@ -2844,7 +2905,7 @@ export async function fetchCustomProvider(id, entry, ctx = makeHttpCtx()) {
     }
 
     assertSourceUrl(resolved.type, resolved.url);
-    const company = { ...entry, _api: resolved };
+    const company = { ...entry, _api: resolved, ...(resolved.type === 'pcsx' ? { _pcsxSession: createPcsxSession() } : {}) };
     let jobs = await fetchJobs(company);
     if (!Array.isArray(jobs)) throw new Error(`${id}: provider must return an array`);
     jobs = jobs.map(job => normalizeCustomJob(job, { allowApplyUrl: resolved.type !== 'euremotejobs' })).filter(Boolean)

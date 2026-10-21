@@ -2446,11 +2446,12 @@ try {
   const jobs = await fetchCustomProvider('pcsx', {
     name: 'Fixture', api: 'https://careers.example/api/pcsx/search?domain=fixture',
   }, {
-    fetchJson: async (_url, opts) => {
+    // PCSX reads raw responses so it can carry the API's session cookie.
+    fetchResponse: async (_url, opts) => {
       calls++;
       if (opts.redirect !== 'error') throw new Error('unguarded redirects');
       if (calls === 1) throw Object.assign(new Error('quota'), {status:429,retryAfter:'1'});
-      return {data:{count:1,positions:[{id:'1',name:'Engineer',jobDescription:'<p>Build systems</p>'}]}};
+      return Response.json({data:{count:1,positions:[{id:'1',name:'Engineer',jobDescription:'<p>Build systems</p>'}]}});
     },
     sleep: async ms => delays.push(ms),
   });
