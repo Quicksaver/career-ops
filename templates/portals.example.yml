@@ -998,9 +998,10 @@ search_queries:
 #     listing-page filters (`date`, `work_model`, `location`, `salary`, `type`,
 #     `contract`) and optional `api_max_pages:`
 #   - EU Remote Jobs can be configured with `provider: euremotejobs` +
-#     `api:` pointing to `https://euremotejobs.com/job-listings/feed/` or a
-#     category feed such as `https://euremotejobs.com/job-category/engineering/feed/`,
-#     plus optional `api_max_pages:` for `?paged=N` RSS pagination
+#     `careers_url:` pointing to a public category page such as
+#     `https://euremotejobs.com/job-category/engineering/`, plus optional
+#     `api_max_pages:` for `/page/N/` pagination. The board closed its RSS feed
+#     and REST API, so a legacy feed `api:` is ignored
 #   - SAPO Emprego can be configured with `provider: sapo` + `api_params:` using
 #     search/listing filters such as `pesquisa`, `categoria`, `modelo`,
 #     `distrito`, and optional `api_max_pages:`
@@ -2098,9 +2099,8 @@ tracked_companies:
   - name: EU Remote Jobs
     careers_url: https://euremotejobs.com/job-category/engineering/
     provider: euremotejobs
-    api: https://euremotejobs.com/job-listings/feed/
     api_max_pages: 4
-    notes: "WordPress RSS feed with paginated `?paged=N` archives, canonical job URLs, publish dates, and normalized summaries. Better fit than HTML scraping or WebSearch for zero-token scanning."
+    notes: "Server-rendered public category pages with `/page/N/` pagination, canonical job URLs, company, location and posted dates. The RSS feed and REST API are closed (401)."
     enabled: false
 
   - name: English Job Search Switzerland

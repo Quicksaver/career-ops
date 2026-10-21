@@ -132,6 +132,7 @@ export async function routeCustomBrowserRequests(context, ctx) {
 const PCSX_DETAIL_CONCURRENCY = 20;
 const EUREMOTEJOBS_DETAIL_CONCURRENCY = 5;
 const EUREMOTEJOBS_MAX_PAGES = 5;
+const EUREMOTEJOBS_CATEGORY_PATH_RE = /^\/job-category\/([^/]+)(?:\/(?:feed|page\/\d+)\/?|\/)?$/;
 const ITJOBS_MAX_PAGES = 5;
 const SAPO_MAX_PAGES = 5;
 const PORTALEMPREGO_MAX_PAGES = 5;
@@ -274,18 +275,26 @@ function getItjobsConfig(company) {
   };
 }
 
-function getEuRemoteJobsConfig(company) {
-  const baseUrl = company.api || company.careers_url || 'https://euremotejobs.com/job-listings/feed/';
-
-  let feedUrl;
+// The board closed its RSS feed and REST API (401), and /job-listings/ loads
+// through jm-ajax. Only the public category pages are server-rendered, so a
+// legacy feed `api:` is ignored in favour of the category `careers_url`.
+function getEuRemoteJobsCategoryUrl(value) {
+  if (!value) return null;
   try {
-    feedUrl = new URL(baseUrl);
+    const url = new URL(value);
+    const slug = url.pathname.match(EUREMOTEJOBS_CATEGORY_PATH_RE)?.[1];
+    return slug ? new URL(`/job-category/${slug}/`, url.origin).toString() : null;
   } catch {
     return null;
   }
+}
+
+function getEuRemoteJobsConfig(company) {
+  const categoryUrl = getEuRemoteJobsCategoryUrl(company.careers_url) || getEuRemoteJobsCategoryUrl(company.api);
+  if (!categoryUrl) return null;
 
   return {
-    feedUrl: feedUrl.toString(),
+    categoryUrl,
     maxPages: Math.max(1, Number(company.api_max_pages) || EUREMOTEJOBS_MAX_PAGES),
   };
 }
@@ -855,9 +864,9 @@ function detectApi(company) {
     return itjobs ? { type: 'itjobs', url: itjobs.listUrls[0], itjobs } : null;
   }
 
-  if (company.api_provider === 'euremotejobs' || /https?:\/\/(?:www\.)?euremotejobs\.com\/(?:job-listings\/feed\/?|job-category\/[^/?#]+\/feed\/?)(?:[?#].*)?$/.test(company.api || company.careers_url || '')) {
+  if (company.api_provider === 'euremotejobs' || [company.api, company.careers_url].some(value => /^https?:\/\/(?:www\.)?euremotejobs\.com\/(?:job-listings\/feed\/?|job-category\/)/.test(value || ''))) {
     const euremotejobs = getEuRemoteJobsConfig(company);
-    return euremotejobs ? { type: 'euremotejobs', url: euremotejobs.feedUrl, euremotejobs } : null;
+    return euremotejobs ? { type: 'euremotejobs', url: euremotejobs.categoryUrl, euremotejobs } : null;
   }
 
   if (
@@ -964,22 +973,6 @@ function parsePcsx(json, company) {
   return json.data.positions.filter(position => position && typeof position === 'object').map(position => parsePcsxPosition(position, company)).filter(Boolean);
 }
 
-function stripCdata(value) {
-  return String(value || '')
-    .replace(/^<!\[CDATA\[/, '')
-    .replace(/\]\]>$/, '');
-}
-
-function extractXmlTag(block, tagName) {
-  const match = block.match(new RegExp(`<${tagName}(?:\s[^>]*)?>([\\s\\S]*?)<\/${tagName}>`));
-  return match ? stripCdata(match[1]) : '';
-}
-
-function cleanFeedText(value) {
-  const cleaned = cleanHtmlText(stripCdata(value));
-  return cleaned === 'false' ? '' : cleaned;
-}
-
 function extractMetaContent(html, attribute, name) {
   const escapedName = escapeRegExp(name);
   const match = html.match(new RegExp(String.raw`<meta[^>]+${attribute}=["']${escapedName}["'][^>]+content=["']([\s\S]*?)["'][^>]*>`, 'i'))
@@ -993,19 +986,12 @@ function parseLandingJobsDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function buildEuRemoteJobsFeedPageUrl(url, pageNumber) {
-  const feedUrl = new URL(url);
-  if (pageNumber <= 1) {
-    feedUrl.searchParams.delete('paged');
-  } else {
-    feedUrl.searchParams.set('paged', String(pageNumber));
-  }
-  return feedUrl.toString();
+function buildEuRemoteJobsPageUrl(categoryUrl, pageNumber) {
+  return pageNumber <= 1 ? categoryUrl : new URL(`page/${pageNumber}/`, categoryUrl).toString();
 }
 
-function extractEuRemoteJobsFirstParagraph(content) {
-  const match = content.match(/<p>([\s\S]*?)<\/p>/i);
-  return match ? cleanHtmlText(match[1]) : '';
+function hasEuRemoteJobsNextPage(html, pageNumber) {
+  return new RegExp(`href=["'][^"']*/job-category/[^/"']+/page/${pageNumber + 1}/?["']`).test(html);
 }
 
 function extractEuRemoteJobsCompanyFromText(text, title = '') {
@@ -1031,15 +1017,30 @@ function extractEuRemoteJobsCompanyFromText(text, title = '') {
   return '';
 }
 
-function extractEuRemoteJobsCompany(content) {
-  const match = content.match(/<p><strong>(?:Company|Employer):<\/strong>\s*([\s\S]*?)<\/p>/i);
-  if (match) return cleanHtmlText(match[1]);
-  return extractEuRemoteJobsCompanyFromText(extractEuRemoteJobsFirstParagraph(content));
+function extractEuRemoteJobsCardField(cardHtml, className) {
+  const match = cardHtml.match(new RegExp(`<div[^>]*class=["'][^"']*\\b${className}\\b[^"']*["'][^>]*>([\\s\\S]*?)<\\/div>`, 'i'));
+  return match ? cleanHtmlText(match[1]) : '';
 }
 
-function extractEuRemoteJobsLocation(content) {
-  const match = content.match(/<p><strong>Location:\s*<\/strong>\s*([\s\S]*?)<\/p>/i);
-  return match ? cleanHtmlText(match[1]) : '';
+function parseEuRemoteJobsCategoryPage(html, sourceUrl) {
+  const jobs = [];
+
+  for (const match of html.matchAll(/<a\b([^>]*\bclass=["'][^"']*\bjob-card-link\b[^"']*["'][^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const href = match[1].match(/\bhref=["']([^"']+)["']/i)?.[1];
+    const card = match[2];
+    const title = cleanHtmlText(card.match(/<h[1-6][^>]*class=["'][^"']*\bjob-title\b[^"']*["'][^>]*>([\s\S]*?)<\/h[1-6]>/i)?.[1] || '');
+    if (!href || !title) continue;
+
+    jobs.push({
+      title,
+      url: new URL(decodeHtmlEntities(href), sourceUrl).toString(),
+      company: extractEuRemoteJobsCardField(card, 'company-name') || 'EU Remote Jobs',
+      location: extractEuRemoteJobsCardField(card, 'meta-location'),
+      postedDate: card.match(/<time\b[^>]*\bdatetime=["']([^"']+)["']/i)?.[1] || '',
+    });
+  }
+
+  return jobs;
 }
 
 function parseEuRemoteJobsDetailPage(html, fallbackTitle = '') {
@@ -1055,31 +1056,6 @@ function parseEuRemoteJobsDetailPage(html, fallbackTitle = '') {
     location: cleanHtmlText(locationMatch?.[1] || ''),
     jobDescription: metaDescription,
   };
-}
-
-function parseEuRemoteJobsFeed(xml) {
-  const jobs = [];
-
-  for (const match of xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/g)) {
-    const item = match[1];
-    const title = cleanFeedText(extractXmlTag(item, 'title'));
-    const url = cleanFeedText(extractXmlTag(item, 'link'));
-    const content = stripCdata(extractXmlTag(item, 'content:encoded')) || stripCdata(extractXmlTag(item, 'description'));
-    const company = extractEuRemoteJobsCompany(content) || extractEuRemoteJobsCompanyFromText(cleanFeedText(extractXmlTag(item, 'description')), title);
-
-    if (!title || !url) continue;
-
-    jobs.push({
-      title,
-      url,
-      company: company || 'EU Remote Jobs',
-      location: extractEuRemoteJobsLocation(content),
-      publishedAt: cleanFeedText(extractXmlTag(item, 'pubDate')),
-      jobDescription: cleanFeedText(content),
-    });
-  }
-
-  return jobs;
 }
 
 async function fetchEuRemoteJobsJobDetails(job) {
@@ -1428,6 +1404,11 @@ function parsePortalEmpregoPage(html, sourceUrl, seenUrls) {
   }
 
   return jobs;
+}
+
+// "Não existem resultados para a sua pesquisa" renders as the list's only child.
+function isPortalEmpregoEmptyResults(html) {
+  return /<div id="listCont"[^>]*>\s*<div[^>]*class="[^"]*\bno_results\b/.test(html);
 }
 
 function getPortalEmpregoPageCount(html) {
@@ -2197,6 +2178,11 @@ async function fetchText(url) {
       headers['accept-language'] = 'en-US,en;q=0.9';
     }
 
+    if (/https?:\/\/(?:www\.)?euremotejobs\.com\//.test(url)) {
+      headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
+      headers['accept-language'] = 'en-US,en;q=0.9';
+    }
+
     if (/https?:\/\/(?:www\.)?jobs\.ch\//.test(url)) {
       headers['user-agent'] = BROWSER_LIKE_USER_AGENT;
       headers['accept-language'] = 'en-US,en;q=0.9';
@@ -2268,29 +2254,28 @@ async function fetchEuRemoteJobsJobs(url, company) {
   const maxPages = pageLimit(company._api?.euremotejobs?.maxPages || EUREMOTEJOBS_MAX_PAGES);
 
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
-    const pageUrl = buildEuRemoteJobsFeedPageUrl(url, pageNumber);
-    const xml = await fetchText(pageUrl);
-    const pageJobs = parseEuRemoteJobsFeed(xml);
-
-    if (pageJobs.length === 0) break;
-
-    let addedOnPage = 0;
-    for (const job of pageJobs) {
-      if (seenUrls.has(job.url)) continue;
-      seenUrls.add(job.url);
-      jobs.push(job);
-      addedOnPage += 1;
+    const pageUrl = buildEuRemoteJobsPageUrl(url, pageNumber);
+    const html = await fetchText(pageUrl);
+    let pageJobs;
+    if (pageNumber === 1) {
+      pageJobs = parseFirstHtmlPage(parseEuRemoteJobsCategoryPage, html, url, seenUrls);
+    } else {
+      // Pagination only follows a linked next page, so an empty one is a redesign.
+      const parsed = parseEuRemoteJobsCategoryPage(html, url);
+      if (parsed.length === 0) throw new Error(`Unsupported listing page at ${pageUrl}: no job cards`);
+      pageJobs = parsed.filter(job => !seenUrls.has(job.url) && seenUrls.add(job.url));
     }
 
-    if (addedOnPage === 0) break;
+    jobs.push(...pageJobs);
+    // Featured cards repeat on every page; a page of repeats means no progress.
+    if ((pageNumber > 1 && pageJobs.length === 0) || !hasEuRemoteJobsNextPage(html, pageNumber)) break;
   }
 
   const limit = detailLimit(company, jobs.length);
   const detailConcurrency = Math.max(1, Math.min(EUREMOTEJOBS_DETAIL_CONCURRENCY, limit));
   const tasks = jobs.map((job, index) => async () => {
-    if (index >= limit || (job.company && job.company !== 'EU Remote Jobs' && job.location)) {
-      return job;
-    }
+    // Category cards carry no description, so every enabled detail adds one.
+    if (index >= limit) return job;
 
     try {
       return await fetchEuRemoteJobsJobDetails(job);
@@ -2395,6 +2380,7 @@ async function fetchPortalEmpregoJobs(url, company) {
 
   for (const listUrl of listUrls) {
     const firstPageHtml = await fetchText(listUrl);
+    if (isPortalEmpregoEmptyResults(firstPageHtml)) continue;
     const pageCount = getPortalEmpregoPageCount(firstPageHtml);
     const maxPages = Math.min(pageLimit(company._api?.portalemprego?.maxPages || PORTALEMPREGO_MAX_PAGES), pageCount);
     jobs.push(...parseFirstHtmlPage(parsePortalEmpregoPage, firstPageHtml, listUrl, seenUrls));

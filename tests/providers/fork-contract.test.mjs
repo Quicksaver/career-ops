@@ -1,10 +1,10 @@
 import '../user-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { detectCustomProvider, fetchCustomProvider, routeCustomBrowserRequests } from '../../providers/_custom.mjs';
-import { makeHttpCtx } from '../../providers/_http.mjs';
+import { makeHttpCtx, BROWSER_LIKE_USER_AGENT } from '../../providers/_http.mjs';
 import { normalizeJob } from '../../providers/arbeitsagentur.mjs';
 import workingnomads from '../../providers/workingnomads.mjs';
 import { loadProviders, resolveProvider } from '../../providers/_registry.mjs';
@@ -30,7 +30,7 @@ const boards = {
   swissdevjobs: 'https://swissdevjobs.ch/api/jobsLight', germantechjobs: 'https://germantechjobs.de/api/jobsLight',
   itjobs: 'https://www.itjobs.pt/emprego', sapo: 'https://emprego.sapo.pt/offers',
   portalemprego: 'https://www.portalemprego.pt/anuncios/', dice: 'https://www.dice.com/jobs',
-  euremotejobs: 'https://euremotejobs.com/job-listings/feed/', remoteineurope: 'https://remoteineurope.com/',
+  euremotejobs: 'https://euremotejobs.com/job-category/engineering/', remoteineurope: 'https://remoteineurope.com/',
   englishjobs: 'https://englishjobsearch.ch/', jobsinenglish: 'https://jobsinenglish.dk/',
   jobsch: 'https://www.jobs.ch/en/vacancies/', makeitingermany: 'https://www.make-it-in-germany.com/en/working-in-germany/job-listings',
 };
@@ -73,17 +73,52 @@ test('PCSX rejects malformed feeds and preserves canonical metadata and posting 
   assert.equal(epoch.postedAt, 0);
 });
 
-test('EU Remote Jobs details are bounded opt-in enrichment and probes retain the feed description/date', async()=>{
-  const feed='<rss><channel>'+[1,2].map(id=>`<item><title>Engineer ${id}</title><link>https://euremotejobs.com/job/${id}/</link><description>Build systems</description><pubDate>2026-01-02</pubDate></item>`).join('')+'</channel></rss>';
+const euRemoteJobsCategory = readFileSync(new URL('../fixtures/euremotejobs-category.html', import.meta.url), 'utf8');
+const euRemoteJobsCard = (host, id) => `<a href="https://${host}/job/${id}/" class="job-card-link"><div class="job-card"><h2 class="job-title">Engineer ${id}</h2><div class="company-name">Fixture</div><div class="meta-item meta-location"> Europe</div><time datetime="2026-01-02">Posted</time></div></a>`;
+
+test('EU Remote Jobs reads public category pages, follows linked pagination, and ignores the closed legacy feed', async () => {
+  const legacy = { name: 'Fixture', provider: 'euremotejobs', careers_url: boards.euremotejobs, api: 'https://euremotejobs.com/job-listings/feed/', api_max_pages: 4 };
+  assert.deepEqual(detectCustomProvider('euremotejobs', legacy), { url: boards.euremotejobs });
+  assert.deepEqual(detectCustomProvider('euremotejobs', { name: 'Fixture', api: 'https://euremotejobs.com/job-category/marketing/feed/' }), { url: 'https://euremotejobs.com/job-category/marketing/' });
+  assert.equal(detectCustomProvider('euremotejobs', { name: 'Fixture', api: 'https://euremotejobs.com/job-listings/feed/' }), null);
+
+  const calls = [];
+  const jobs = await fetchCustomProvider('euremotejobs', legacy, { fetchText: async (url, options) => {
+    calls.push(url);
+    // The board answers 403 to the default scanner user agent.
+    assert.equal(options.headers['user-agent'], BROWSER_LIKE_USER_AGENT);
+    // Page 2 repeats the featured card and adds one; it links no page 3.
+    if (url.endsWith('/page/2/')) return euRemoteJobsCategory.replace(/<nav[\s\S]*<\/nav>/, '').replace(/manager-forward-deployed-engineering/g, 'page-two-role');
+    return euRemoteJobsCategory;
+  } });
+  assert.deepEqual(calls, [boards.euremotejobs, `${boards.euremotejobs}page/2/`]);
+  assert.equal(jobs.length, 4);
+  assert.deepEqual(jobs[0], {
+    title: 'Senior Back-end Developer', url: 'https://euremotejobs.com/job/lemon-io-senior-back-end-developer/',
+    company: 'Lemon.io', location: 'APAC, Europe, LATAM, North America', postedDate: '2026-10-15', postedAt: Date.parse('2026-10-15'),
+  });
+  assert.equal(jobs[2].title, 'Staff Software Engineer – Platform');
+  assert.equal(jobs[3].url, 'https://euremotejobs.com/job/page-two-role/');
+});
+
+test('EU Remote Jobs fails visibly on a redesigned category page instead of returning zero', async () => {
+  const entry = { name: 'Fixture', careers_url: boards.euremotejobs };
+  await assert.rejects(fetchCustomProvider('euremotejobs', entry, { fetchText: async () => '<html>Unexpected redesign</html>' }), /Unsupported listing page/);
+  assert.deepEqual(await fetchCustomProvider('euremotejobs', entry, { fetchText: async () => '<html>No jobs found</html>' }), []);
+  await assert.rejects(fetchCustomProvider('euremotejobs', entry, { fetchText: async url => url.endsWith('/page/2/') ? '<html>Unexpected redesign</html>' : euRemoteJobsCategory }), /Unsupported listing page at .*\/page\/2\//);
+});
+
+test('EU Remote Jobs details are bounded opt-in enrichment and probes keep the card fields', async()=>{
+  const listing=[1,2].map(id=>euRemoteJobsCard('euremotejobs.com',id)).join('');
   for(const [options,extraCtx,expected] of [[{}, {},0],[{fetchDetails:true,detailLimit:1},{},1],[{fetchDetails:true},{maxPages:1},0]]) {
     let details=0;
-    const jobs=await fetchCustomProvider('euremotejobs',{name:'Fixture',api:boards.euremotejobs,api_max_pages:1,...options},{...extraCtx,fetchText:async url=>{
-      if(url.includes('/job/')) {details++;return '<meta name="description" content="Engineer at Fixture">';}
-      return feed;
+    const jobs=await fetchCustomProvider('euremotejobs',{name:'Fixture',careers_url:boards.euremotejobs,...options},{...extraCtx,fetchText:async url=>{
+      if(url.includes('/job/')) {details++;return '<meta name="description" content="Build systems">';}
+      return listing;
     }});
     assert.equal(details,expected);
     assert.equal(jobs.length,2);
-    assert.equal(jobs[0].description,'Build systems');
+    assert.equal(jobs[0].description,expected ? 'Build systems' : undefined);
     assert.equal(jobs[0].postedAt,Date.parse('2026-01-02'));
   }
 });
@@ -91,15 +126,39 @@ test('EU Remote Jobs details are bounded opt-in enrichment and probes retain the
 test('EU Remote Jobs refuses off-board details before transport and accepts www source URLs', async () => {
   for (const host of ['unrelated.example', 'euremotejobs.com.unrelated.example', 'www.euremotejobs.com']) {
     const calls = [];
-    const jobs = await fetchCustomProvider('euremotejobs', {name:'Fixture',api:boards.euremotejobs,fetchDetails:true,detailLimit:1,api_max_pages:1}, {fetchText:async url=>{
+    const jobs = await fetchCustomProvider('euremotejobs', {name:'Fixture',careers_url:boards.euremotejobs,fetchDetails:true,detailLimit:1}, {fetchText:async url=>{
       calls.push(url);
-      if (url === boards.euremotejobs) return `<rss><channel><item><title>Engineer</title><link>https://${host}/job/1/</link><description>Build systems</description></item></channel></rss>`;
-      return '<meta name="description" content="Engineer at Fixture">';
+      if (url === boards.euremotejobs) return euRemoteJobsCard(host, 1);
+      return '<meta name="description" content="Build systems">';
     }});
     assert.equal(jobs.length, 1);
     assert.equal(calls.length, host === 'www.euremotejobs.com' ? 2 : 1);
-    assert.equal(jobs[0].description, 'Build systems');
+    assert.equal(jobs[0].description, host === 'www.euremotejobs.com' ? 'Build systems' : undefined);
   }
+});
+
+test('Portal Emprego parses listing cards and skips an explicit empty search without failing the board', async () => {
+  const fixture = name => readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8');
+  const calls = [];
+  const jobs = await fetchCustomProvider('portalemprego', { name: 'Fixture', api: boards.portalemprego, api_params: { pesquisa: ['automation', 'engenheiro'] }, api_max_pages: 2 }, { fetchText: async url => {
+    calls.push(url);
+    if (url.includes('pesquisa-automation')) return fixture('portalemprego-empty.html');
+    const listing = fixture('portalemprego-listing.html');
+    return url.includes('/pagina-2/') ? listing.replace(/referencia-0/g, 'referencia-2') : listing;
+  } });
+  assert.deepEqual(calls, [
+    'https://www.portalemprego.pt/anuncios/pesquisa-automation/mostrar-20/',
+    'https://www.portalemprego.pt/anuncios/pesquisa-engenheiro/mostrar-20/',
+    'https://www.portalemprego.pt/anuncios/pesquisa-engenheiro/mostrar-20/pagina-2/',
+  ]);
+  assert.equal(jobs.length, 4);
+  assert.deepEqual(jobs[0], {
+    title: 'Engenheiro de Processos | Fanhões [269-000261-1]',
+    url: 'https://www.portalemprego.pt/emprego/full-time/lisboa/engenheiro-de-processos-fanhoes-269-000261-1-/referencia-0512123/',
+    company: 'Adecco Recursos Humanos, E.T.T., Lda.', location: 'Lisboa | Full-time', publicationDate: '2026-10-21', postedAt: Date.parse('2026-10-21'),
+  });
+  // The marker only counts as the list's first child, so a redesign still fails.
+  await assert.rejects(fetchCustomProvider('portalemprego', { name: 'Fixture', api: boards.portalemprego }, { fetchText: async () => '<div id="listCont" class="jobs"><article>redesign</article><div class="message no_results"></div></div>' }), /Unsupported listing page/);
 });
 
 test('Remote in Europe bounds details and falls back from unusable employer alternatives',async()=>{
