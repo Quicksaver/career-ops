@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { normalizeTextKey } from './tracker-parse.mjs';
+import { replaceUserFile } from './tracker-utils.mjs';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 import { join, dirname } from 'path';
 import { getCareerOpsRoot } from './path-resolver.mjs';
@@ -283,11 +284,11 @@ async function main() {
     const written = [];
     try {
       if (payload.cv && out.result.cv?.status === 'added') {
-        writeFileSync(cvFile, out.cv);
+        replaceUserFile(cvFile, out.cv);
         written.push('cv.md');
       }
       if (payload.articleDigest && (out.result.articleDigest?.status === 'added' || out.result.articleDigest?.status === 'created')) {
-        writeFileSync(articleDigestFile, out.articleDigest);
+        replaceUserFile(articleDigestFile, out.articleDigest);
         written.push('article-digest.md');
       }
     } catch (e) {

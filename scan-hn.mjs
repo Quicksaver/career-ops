@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import { getUserContext } from './lib/user-context.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
@@ -47,7 +48,7 @@ export async function extractWithAI(rawText, model) {
   const prompt = `--- BEGIN UNTRUSTED DATA ---\n${rawText.substring(0, 2000)}\n--- END UNTRUSTED DATA ---`;
   const result = await model.generateContent(prompt);
   try {
-    const parsed = yaml.load(result.response.text().replace(/```yaml|```/g, '').trim());
+    const parsed = loadYaml(result.response.text().replace(/```yaml|```/g, '').trim());
     if (!parsed || typeof parsed !== 'object') return null;
     return {
       company: (parsed.company || parsed.COMPANY || '').trim(),
@@ -78,7 +79,7 @@ export async function scanHn(argv = process.argv.slice(2)) {
   if (!existsSync(portalsPath)) throw new Error('portals.yml not found. Run onboarding first.');
   let config;
   try {
-    config = yaml.load(readFileSync(portalsPath, 'utf8'));
+    config = loadYaml(readFileSync(portalsPath, 'utf8'));
   } catch (err) {
     throw new Error(`failed to parse ${portalsPath}: ${err.message}`);
   }

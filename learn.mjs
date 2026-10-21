@@ -466,6 +466,8 @@ async function main(argv) {
 }
 
 if (isMainModule(import.meta.url)) {
+  // Selecting the user consumes --user from argv before the command is parsed.
+  if (process.argv.slice(2).some((a) => a === '--user' || a === '-u' || a.startsWith('--user='))) getCareerOpsRoot();
   main(process.argv.slice(2)).then(
     (code) => { process.exitCode = code; },
     (err) => {

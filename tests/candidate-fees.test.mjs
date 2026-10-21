@@ -22,10 +22,11 @@ const raw = read('templates', 'jurisdiction-candidate-fees.yml');
 const doc = yaml.load(raw);
 const rows = doc?.jurisdictions || {};
 const on = rows['CA-ON'];
+const uk = rows['UK'];
 
 // --- table shape ---
-check('table has exactly one live seed row (Ontario); other candidates stay comments',
-  Object.keys(rows).length === 1 && Boolean(on),
+check('table has exactly two live rows (Ontario and UK); other candidates stay comments',
+  Object.keys(rows).length === 2 && Boolean(on) && Boolean(uk),
   `rows: ${Object.keys(rows).join(', ')}`);
 check('Ontario row carries the verified dates',
   on?.effective === '2023-10-26' && /^\d{4}-\d{2}-\d{2}$/.test(String(on?.as_of)) && String(on?.as_of) >= '2026-10-18', `${on?.effective} / ${on?.as_of}`);
@@ -53,19 +54,41 @@ check('Ontario row makes no claim of a general ban for citizens or permanent res
 check('header documents contribution rule, never-assert rule and official-source-only requirement',
   raw.includes('CONTRIBUTION RULE') && raw.includes('NEVER-ASSERT RULE') && raw.includes('never a third-party mirror'),
   'header sections missing');
-check('ILO C181, UK, AU, SG and US are listed only as commented candidates',
-  ['ILO', 'GB', 'AU', 'SG', 'US'].every((k) => new RegExp(`#\\s+- ${k}\\s*:`).test(raw))
+check('ILO C181, AU, SG and US are listed only as commented candidates, and UK is no longer one',
+  ['ILO', 'AU', 'SG', 'US'].every((k) => new RegExp(`#\\s+- ${k}\\s*:`).test(raw))
+    && !/#\s+- (GB|UK)\s*:/.test(raw)
     && ['GB', 'US', 'AU', 'SG', 'ILO'].every((k) => !(k in rows)),
   'candidate comments missing or promoted to rows');
 
+// --- Great Britain row (#5515) ---
+check('UK row is keyed like agency-licensing.yml and carries the verified dates',
+  uk?.jurisdiction_name === 'United Kingdom (Great Britain)' && uk?.effective === '2010-10-01' && uk?.as_of === '2026-10-19'
+    && raw.includes('s. 6(1) as substituted dates from 2004-04-06'),
+  `${uk?.jurisdiction_name} / ${uk?.effective} / ${uk?.as_of}`);
+check('UK applies_to protects any work-seeker whatever their immigration status and excludes Northern Ireland',
+  /any work-seeker in Great\s+Britain, whatever their immigration status/.test(uk?.applies_to || '')
+    && /does NOT cover Northern Ireland/.test(uk?.applies_to || ''),
+  'scope missing');
+const ukEx = (uk?.exceptions || []).join('\n');
+check('UK row cites s. 6(1)(a)-(c), s. 6(2) and reg. 26(1)-(5) and describes Schedule 3 without listing occupations',
+  ['s. 6(1)(a)', 's. 6(1)(b)', 's. 6(1)(c)', 's. 6(2)', 'reg. 26(1)', 'reg. 26(2)', 'reg. 26(3)', 'reg. 26(4)', 'reg. 26(5)', 'Schedule 3']
+    .every((c) => ukEx.includes(c))
+    && /entertainment and modelling occupations/.test(ukEx) && !/walk-ons?/i.test(ukEx),
+  'citation missing or occupation list copied');
+check('UK official_source is the s. 6 page and what_it_shows names the reg. 26 URL',
+  uk?.official_source?.url === 'https://www.legislation.gov.uk/ukpga/1973/35/section/6'
+    && (uk?.official_source?.what_it_shows || '').match(/https?:\/\/[^\s)]+/g)?.map((u) => u.replace(/[.,;]+$/, ''))
+      .some((u) => u === 'https://www.legislation.gov.uk/uksi/2003/3319/regulation/26'),
+  String(uk?.official_source?.url));
+
 // --- freshness validator discovers it ---
 const found = extractRows(doc);
-check('check-table-freshness discovers the Ontario row with as_of',
-  found.length === 1 && found[0].row.jurisdiction === 'CA-ON' && !found[0].missingAsOf,
+check('check-table-freshness discovers the Ontario and UK rows with as_of',
+  found.length === 2 && ['CA-ON', 'UK'].every((k) => found.some((f) => f.row.jurisdiction === k && !f.missingAsOf)),
   `found ${found.length}`);
-const verdict = checkFreshness([{ file: 'jurisdiction-candidate-fees.yml', doc }], new Date(Date.UTC(2026, 9, 18)));
-check('freshly verified row produces no findings',
-  verdict.rowsChecked === 1 && verdict.findings.length === 0 && verdict.warnings.length === 0,
+const verdict = checkFreshness([{ file: 'jurisdiction-candidate-fees.yml', doc }], new Date(Date.UTC(2026, 9, 19)));
+check('freshly verified rows produce no findings',
+  verdict.rowsChecked === 2 && verdict.findings.length === 0 && verdict.warnings.length === 0,
   JSON.stringify(verdict));
 
 // --- synthetic fixtures for the four cases in the issue ---
@@ -80,6 +103,7 @@ const fixtures = {
   feeDemanded: 'Sample Staffing Inc. Warehouse Associate, Mississauga. A $250 onboarding fee is payable to Sample Staffing before your first shift.',
   thirdParty: 'Placeholder Care Ltd. Support Worker, Hamilton. You must hold a valid first-aid certificate issued by the Red Cross, and a police record check ordered from your local police service.',
   noFee: 'Example Widgets Ltd. Support Analyst, London. Join a friendly team. Hybrid. Competitive benefits and employer-paid training.',
+  ukFeeDemanded: 'Sample Recruitment Ltd. Office Administrator, Manchester. A GBP 200 processing fee is payable to Sample Recruitment before we put your CV forward.',
   noRowJurisdiction: 'Example Jobs Pty. Customer Agent, Perth. You will be asked to pay a training fee to our agent to secure the position.',
 };
 check('fixture 1: fee demanded matches the trigger pattern', feeRe.test(fixtures.feeDemanded), 'no match');
@@ -87,6 +111,9 @@ check('fixture 2: third-party credential produces no trigger',
   !feeRe.test(fixtures.thirdParty) && thirdPartyRe.test(fixtures.thirdParty), 'wrong classification');
 check('fixture 3: no fee mentioned produces no trigger (employer-paid benefit is not a fee)',
   !feeRe.test(fixtures.noFee), 'unexpected match');
+check('fixture UK: a processing fee in a Great Britain posting matches the trigger and the UK row covers every work-seeker',
+  feeRe.test(fixtures.ukFeeDemanded) && Boolean(uk) && /whatever their immigration status/.test(uk?.applies_to || ''),
+  'wrong classification');
 check('fixture 4: fee demanded in a jurisdiction with no row still matches, and no AU row exists (scam-pattern note only)',
   feeRe.test(fixtures.noRowJurisdiction) && !('AU-WA' in rows) && !('AU' in rows), 'wrong classification');
 
@@ -97,6 +124,10 @@ check('signal handles fee-demanded, silent, third-party and no-row outcomes',
     && /licence or credential bought from a third party/.test(signal) && /has no table row, append only the scam-pattern part/.test(signal)
     && /there is no silence check/.test(signal),
   'outcome sections missing');
+check('signal is table-driven: a row that protects every work-seeker may say so, no Ontario-only rule text',
+  /protects every work-seeker \(Great Britain\)/.test(signal) && /rows for Ontario and Great Britain/.test(signal)
+    && !/Ontario: foreign nationals under EPFNA/.test(signal),
+  'table-driven wording missing');
 check('signal never says a fee is unlawful for citizens or PRs and never accuses',
   /never say it is unlawful for a Canadian citizen or permanent resident/.test(signal)
     && /NEVER say or imply that the employer or agency broke the law/.test(signal)

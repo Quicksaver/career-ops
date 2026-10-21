@@ -50,6 +50,7 @@ When `--queue-file` selects work from a large historical input, the runner valid
 | `--dry-run` | off | Preview dispatch without workers |
 | `--limit N` | unlimited when omitted | Positive maximum count; explicit zero is invalid |
 | `--start-from N` | `0` | Ignore input IDs below this value |
+| `--company NAME` | absent | Standalone runs only: dispatch just the input rows whose posting or notes name this company, before `--limit` is counted; rejected with `--live-inputs` |
 | `--min-score N` | `0`, disabled | Mark completed evaluations below the threshold skipped in batch state |
 | `--retry-failed` | off | Select failed jobs, granting one additional dispatch even at the retry cap |
 | `--resume-paused` | off | Select jobs paused by Codex or Claude session/rate limits |
@@ -60,7 +61,7 @@ When `--queue-file` selects work from a large historical input, the runner valid
 | `--skip-pdf` | off | Disable PDF rendering |
 | `--recover-artifact-failures` | off | Revalidate known false artifact failures without workers |
 | `--defer-verification` | off | Leave final verification to the parent |
-| `--status` / `--watch` | off | Inspect persisted progress |
+| `--status` / `--watch` | off | Inspect persisted progress; `--status --summary` prints only the totals |
 
 ## Manual holds and exact answers
 

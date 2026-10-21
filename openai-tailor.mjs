@@ -21,7 +21,8 @@ import { getProfilePath } from './path-resolver.mjs';
  *   OPENAI_MODEL (or --model)   — the model id
  */
 
-import * as yaml from 'js-yaml';
+import { validateLockedSections, sectionKey } from './generate-pdf.mjs';
+import { readLockedSections } from './theme-style.mjs';
 
 try {
   const { config } = await import('dotenv');
@@ -337,6 +338,10 @@ try {
   const artifactBase = `${reportNum}-${companySlug}-${reportDate}`;
   const filename = `${artifactBase}.html`;
   const htmlPath = join(PATHS.output, filename);
+
+  const lockedKeys = readLockedSections(PATHS.profile, sectionKey);
+  const cvMarkdown = readFileSync(PATHS.cv, 'utf-8');
+  validateLockedSections(tailoredHtml, cvMarkdown, lockedKeys);
 
   writeFileSync(htmlPath, tailoredHtml, 'utf-8');
   console.log(`\n✅  Tailored HTML saved: ${htmlPath}`);

@@ -50,6 +50,7 @@ RESUME_PAUSED=false
 INCLUDE_PENDING=false
 START_FROM=0
 MAX_RETRIES=3
+SCOPE_COMPANY=""
 MIN_SCORE=0
 SKIP_PDF=false
 MODEL=""  # explicit override; otherwise Claude uses spend_tier and Codex uses profile settings or system defaults
@@ -62,6 +63,7 @@ RESOLVED_SPEND_TIER=""
 RATE_LIMIT_SLEEP=300
 BATCH_PAUSED=false
 STATUS_ONLY=false
+STATUS_FULL=true
 WATCH_MODE=false
 DEFER_VERIFICATION=false
 VERIFICATION_FAILED=false
@@ -95,6 +97,9 @@ Options:
   --resume-paused      Select offers paused by a session/rate limit
   --include-pending    Internal coordinator flag: union recovery selections with normal pending eligibility
   --start-from N       Start from offer ID N (skip earlier IDs)
+  --company A,B        Only process offers whose company matches (case- and
+                       punctuation-insensitive substring of the notes' company
+                       half or of the URL; comma-separated). Applies before --limit
   --limit N            Max offers: positive integer; omit for no limit
   --max-retries N      Failed-attempt ceiling per offer (default: 3)
   --min-score N        Mark completed evaluations below N skipped (default: 0 = off)
@@ -112,7 +117,9 @@ Options:
   --reasoning-effort LEVEL
                        Codex reasoning effort: minimal, low, medium, high, or xhigh
   --status             Show batch progress and a per-job table, then exit
-  --watch              Live-refresh progress until the run completes
+  --summary            With --status, print the totals only (the table is one row per offer)
+  --full               With --status, print the per-job table (the default)
+  --watch              Live-refresh progress (always with the per-job table) until the run completes
   --defer-verification Skip the batch-local final verifier because a parent
                        coordinator will run structured verification
   --recover-artifact-failures
@@ -169,6 +176,9 @@ while [[ $# -gt 0 ]]; do
     --resume-paused) RESUME_PAUSED=true; shift ;;
     --include-pending) INCLUDE_PENDING=true; shift ;;
     --start-from) START_FROM="$2"; shift 2 ;;
+    --company)
+      [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { echo "ERROR: --company requires an argument"; exit 1; }
+      SCOPE_COMPANY="$2"; shift 2 ;;
     --limit)
       if [[ $# -lt 2 ]] || ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" =~ ^0+$ ]]; then
         echo "ERROR: --limit must be a positive integer; omit --limit for no limit."
@@ -206,6 +216,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --status) STATUS_ONLY=true; shift ;;
+    --summary) STATUS_FULL=false; shift ;;
+    --full) STATUS_FULL=true; shift ;;
     --watch) WATCH_MODE=true; shift ;;
     --defer-verification) DEFER_VERIFICATION=true; shift ;;
     --recover-artifact-failures) RECOVER_ARTIFACT_FAILURES=true; shift ;;
@@ -414,11 +426,13 @@ check_prerequisites() {
   esac
 
   if ! command -v "$cli_cmd" &>/dev/null; then
-    echo "ERROR: '$cli_cmd' not found in PATH (required for --cli $CLI)."
+    local level="ERROR"
+    [[ "$DRY_RUN" == "true" ]] && level="WARN"
+    echo "$level: '$cli_cmd' not found in PATH (required for --cli $CLI)."
     if [[ "$CLI" == "opencode" ]]; then
       echo "       Install opencode (https://opencode.ai) or Ollama (https://ollama.ai) with an opencode model."
     fi
-    exit 1
+    [[ "$DRY_RUN" == "true" ]] || exit 1
   fi
 
   # Parallelism, the rate-limit retry loop, and --strict-mcp-config are
@@ -1538,6 +1552,8 @@ process_offer() {
       return 2
     fi
   fi
+  local jd_raw_file=""
+  local curl_status=0
   if command -v curl >/dev/null 2>&1; then
     if [[ ! -s "$jd_file" ]]; then
     # Reject loopback, link-local, and private-network destinations before curl
@@ -1547,7 +1563,6 @@ process_offer() {
     local _url_safe
     local current_url="$url"
     local redirect_count=0
-    local curl_status=0
     local redirect_headers
     local redirect_location
     while :; do
@@ -1614,6 +1629,11 @@ process_offer() {
         break
       fi
     done
+      # Keep the bytes curl downloaded: the strip below discards <script> blocks,
+      # which is where a JS-rendered board keeps its JD (schema.org JobPosting,
+      # hydration payload), so jd-rescue.mjs reads this copy, not the stripped text.
+      jd_raw_file="${jd_file}.raw"
+      cp "$jd_file" "$jd_raw_file" 2>/dev/null || true
       # Strip HTML tags and count visible words to distinguish a real JD (hundreds
       # of words) from a JS shell (near zero visible text).
       jd_prefetch_words=$(node -e "
@@ -1635,6 +1655,22 @@ process_offer() {
       # miscompare. Strip everything that is not a digit and default to 0.
       jd_prefetch_words="${jd_prefetch_words//[^0-9]/}"
       jd_prefetch_words="${jd_prefetch_words:-0}"
+      # Zero-token JD rescue: read the JD out of the structured data the board
+      # already shipped in the bytes above. It only replaces the text when the page
+      # is thin or the rescued JD is longer, and it fails open (any failure leaves
+      # the stripped text as is, and the checks below decide as before).
+      if [[ -f "$SCRIPT_DIR/jd-rescue.mjs" && -s "$jd_raw_file" ]]; then
+        if _rs_line=$(node "$SCRIPT_DIR/jd-rescue.mjs" "$url" "$jd_raw_file" "$jd_file" "$jd_prefetch_words" 2>/dev/null); then
+          IFS=$'\t' read -r _rs_words _rs_method <<< "$_rs_line"
+          _rs_words="${_rs_words//[^0-9]/}"
+          _rs_words="${_rs_words:-0}"
+          if [[ "$_rs_words" -ge "$prefetch_min_words" ]]; then
+            echo "    ℹ️  JD rescue: recovered ${_rs_words} words via ${_rs_method} (visible text had ${jd_prefetch_words})"
+            jd_prefetch_words="$_rs_words"
+          fi
+        fi
+      fi
+      rm -f "$jd_raw_file"
       if [[ "$jd_prefetch_words" -lt "$prefetch_min_words" ]]; then
         : > "$jd_file"
         echo "    ℹ️  JD prefetch: thin content (${jd_prefetch_words} words) — trying API/browser fallback"
@@ -1775,9 +1811,9 @@ process_offer() {
     {
       printf '\n\n---\n\n'
       printf '## Runtime paths: data root outside the checkout\n\n'
-      printf 'This install keeps the user layer in a separate data root. Wherever this prompt names one of the paths below, resolve it under the data root, not the working directory:\n\n'
+      printf 'This install keeps the user layer in a separate data root. The profile for this run is `%s`. Where this prompt names `config/profile.yml`, read that file instead. Wherever this prompt names one of the paths below, resolve it under the data root, not the working directory:\n\n' "$PROFILE_FILE"
       printf 'Data root: %s\n\n' "$DATA_ROOT"
-      printf '`cv.md`, `article-digest.md`, `config/profile.yml`, `modes/_profile.md`, `modes/_custom.md`, `reports/`, `output/`, `data/`, `interview-prep/`, `batch/tracker-additions/`\n\n'
+      printf '`cv.md`, `article-digest.md`, `modes/_profile.md`, `modes/_custom.md`, `reports/`, `output/`, `data/`, `interview-prep/`, `batch/tracker-additions/`\n\n'
       printf 'Write the report under `reports/` in the data root and the tracker TSV under `batch/tracker-additions/` in the data root, and give scripts absolute data-root paths for these files. Markdown links written inside the report and the tracker TSV keep the relative form this prompt shows (`reports/...`). Every other path (`templates/`, the `.mjs` scripts, the other `modes/` files) stays relative to the working directory.\n'
     } >> "$resolved_prompt"
   fi
@@ -2379,6 +2415,8 @@ print_summary() {
 }
 
 print_status_table() {
+  # $1 = "full" forces the per-job table whatever STATUS_FULL says (--watch).
+  local force_full="${1:-}"
   if [[ ! -f "$STATE_FILE" ]]; then
     echo "No state file found at $STATE_FILE"
     return
@@ -2428,6 +2466,10 @@ print_status_table() {
     avg=$(LC_ALL=C awk -v sum="$score_sum" -v count="$score_count" 'BEGIN{printf "%.1f", sum / count}' 2>/dev/null || echo "N/A")
     echo "Average score: $avg/5 ($score_count scored)"
   fi
+
+  if [[ "$force_full" != "full" && "$STATUS_FULL" != "true" ]]; then
+    return
+  fi
   echo ""
 
   # Format the per-job table:
@@ -2471,7 +2513,7 @@ watch_status() {
     while kill -0 "$active_pid" 2>/dev/null; do
       clear || printf "\033[c"
       echo "=== Watching Batch Progress (PID $active_pid) ==="
-      print_status_table
+      print_status_table full
       sleep 2
     done
     echo ""
@@ -2481,7 +2523,7 @@ watch_status() {
   fi
 
   echo "Showing final status:"
-  print_status_table
+  print_status_table full
 
   # Chain verify-pipeline.mjs
   if [[ -f "$PROJECT_DIR/verify-pipeline.mjs" ]]; then
@@ -2551,6 +2593,11 @@ main() {
   configure_user_paths
   if [[ -n "$LIVE_INPUTS" ]] && { [[ -z "$ANSWERS_FILE" || -z "$QUEUE_FILE" ]] || [[ "$DRY_RUN" == "true" ]]; }; then
     echo "ERROR: --live-inputs requires --answers-file, --queue-file and a real run" >&2
+    exit 1
+  fi
+  # The coordinator's live pool selects its own postings; a company scope would be silently ignored there.
+  if [[ -n "$LIVE_INPUTS" && -n "$SCOPE_COMPANY" ]]; then
+    echo "ERROR: --company cannot be combined with --live-inputs" >&2
     exit 1
   fi
   if [[ -n "$ANSWERS_FILE" || -n "$QUEUE_FILE" ]]; then
@@ -2649,6 +2696,18 @@ main() {
     fi
     selected_input="$selected_tmp"
   fi
+  # --company: resolve the matching ids ONCE (batch/company-scope.mjs), then skip
+  # every other row before --limit is counted.
+  local scope_ids=""
+  if [[ -n "$SCOPE_COMPANY" ]]; then
+    if ! scope_ids=$(node "$SCRIPT_DIR/company-scope.mjs" --input "$selected_input" --company "$SCOPE_COMPANY"); then
+      echo "ERROR: could not resolve --company scope (company-scope.mjs failed)." >&2
+      exit 1
+    fi
+    scope_ids=" $(echo "$scope_ids" | tr '\n' ' ') "
+    echo "Scope: company=$SCOPE_COMPANY ($(echo "$scope_ids" | wc -w | tr -d ' ') matching row(s))"
+  fi
+
   while IFS=$'\t' read -r id url source notes; do
     [[ "$id" == "id" ]] && continue  # skip header
     [[ -z "$id" || -z "$url" ]] && continue
@@ -2658,6 +2717,10 @@ main() {
 
     # Skip if before start-from
     if (( id < START_FROM )); then
+      continue
+    fi
+
+    if [[ -n "$SCOPE_COMPANY" && "$scope_ids" != *" $id "* ]]; then
       continue
     fi
 
@@ -2794,13 +2857,18 @@ main() {
         break
       fi
 
-      if (( PARALLEL > 1 )) && [[ -f "${THROTTLE_FILE:-}" ]]; then
-        PARALLEL=1
-        echo "=== Rate limited: running the remaining offers on 1 worker. ==="
-      fi
-
-      # Wait if we're at parallel limit
-      while (( running >= PARALLEL )); do
+      # Wait if we're at parallel limit. The throttle check opens every pass,
+      # so it also runs after the sleep below: a rate limit recorded while this
+      # loop slept drops the run to one worker before the next offer starts,
+      # not after it.
+      while :; do
+        if (( PARALLEL > 1 )) && [[ -f "${THROTTLE_FILE:-}" ]]; then
+          PARALLEL=1
+          echo "=== Rate limited: running the remaining offers on 1 worker. ==="
+        fi
+        if (( running < PARALLEL )); then
+          break
+        fi
         # Wait for any child to finish
         for j in "${!pids[@]}"; do
           if ! kill -0 "${pids[$j]}" 2>/dev/null; then
@@ -2825,10 +2893,6 @@ main() {
         if [[ "$BATCH_PAUSED" == "true" || -f "$PAUSE_FILE" ]]; then
           echo "=== Batch paused: session/rate limit reached. Waiting for running workers, not scheduling new offers. ==="
           break
-        fi
-        if (( PARALLEL > 1 )) && [[ -f "${THROTTLE_FILE:-}" ]]; then
-          PARALLEL=1
-          echo "=== Rate limited: running the remaining offers on 1 worker. ==="
         fi
         sleep 1
       done

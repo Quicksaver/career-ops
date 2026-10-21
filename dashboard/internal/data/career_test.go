@@ -538,6 +538,43 @@ func TestParseApplicationsResolvesTrackerRelativeReportLinks(t *testing.T) {
 	}
 }
 
+// A report named with parentheses must resolve whole: a `[^)]+` link regex
+// cut `001-acme-(berlin)-….md` at the first `)` (career-ops-hq/career-ops#5482).
+func TestParseApplicationsKeepsParenthesesInReportLink(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	reportsDir := filepath.Join(tempDir, "reports")
+	for _, dir := range []string{dataDir, reportsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+	const report = "001-acme-(berlin)-2026-10-01.md"
+	applications := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 1 | 2026-10-01 | Acme (Berlin) | Engineer | 4.2/5 | Evaluated | ❌ | [1](../reports/` + report + `) | note |
+`
+	if err := os.WriteFile(filepath.Join(dataDir, "applications.md"), []byte(applications), 0o644); err != nil {
+		t.Fatalf("failed to write applications tracker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(reportsDir, report), []byte("# Report\n"), 0o644); err != nil {
+		t.Fatalf("failed to write report: %v", err)
+	}
+
+	apps := mustParseApplications(t, tempDir)
+	if len(apps) != 1 {
+		t.Fatalf("expected 1 parsed application, got %d", len(apps))
+	}
+	if apps[0].ReportNumber != "1" {
+		t.Fatalf("expected report number 1, got %q", apps[0].ReportNumber)
+	}
+	if want := filepath.Join("reports", report); apps[0].ReportPath != want {
+		t.Fatalf("expected report path %q, got %q", want, apps[0].ReportPath)
+	}
+}
+
 // writeTracker writes applications.md under data/ and returns the temp root and
 // the tracker path.
 func writeTracker(t *testing.T, body string) (string, string) {

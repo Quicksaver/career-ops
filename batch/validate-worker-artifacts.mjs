@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { basename, resolve, dirname } from 'path';
 import { isMainModule } from '../lib/is-main-module.mjs';
-import * as yaml from 'js-yaml';
+import { loadYaml } from '../lib/yaml-document.mjs';
 import { normalizeVia, looksLikeTsvHeaderRow, resolveTsvColumns } from '../tracker-parse.mjs';
 import { hasEmbeddedJdArchive } from '../check-jd-archive.mjs';
 import { loadAnswers, validLocal, validUrl } from './manual-inputs.mjs';
@@ -27,7 +27,7 @@ function option(args, name) {
 export function parseMachineSummary(reportContent) {
   const match = reportContent.match(/##\s*Machine Summary\s*\n+```(?:yaml|yml)\s*\n([\s\S]*?)\n```/i);
   if (!match) throw new Error('report is missing a YAML Machine Summary');
-  const parsed = yaml.load(match[1]);
+  const parsed = loadYaml(match[1]);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('report Machine Summary is not an object');
   }
@@ -97,7 +97,7 @@ export function allowedPostingIdentities(expectedUrl, userRoot, answersPath, use
     const text = readFileSync(resolve(userRoot, expectedUrl.slice(6)), 'utf8');
     const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
     if (frontmatter) {
-      const metadata = yaml.load(frontmatter[1]);
+      const metadata = loadYaml(frontmatter[1]);
       for (const field of ['application_url', 'source_url']) {
         const identity = postingIdentity(metadata?.[field]);
         if (identity) allowed.add(identity);
@@ -141,7 +141,7 @@ export function validateWorkerArtifacts({ reportPath, trackerPath, finalPath = n
     if (userRoot) {
       // The batch lane reads the selected user's own profile, like run-workflow.mjs.
       const profilePath = getProfilePath(userRoot);
-      const profile = existsSync(profilePath) ? yaml.load(readFileSync(profilePath, 'utf8')) : {};
+      const profile = existsSync(profilePath) ? loadYaml(readFileSync(profilePath, 'utf8')) : {};
       if (['text', 'latex'].includes(profile?.cv?.output_format) && tracker.pdf === '✅') errors.push('configured text/latex output cannot claim a PDF');
       const threshold = profile?.auto_pdf_score_threshold ?? 3;
       if (tracker.pdf === '✅' && (typeof report.score !== 'number' || report.score < threshold)) errors.push('primary PDF is below the configured score gate');

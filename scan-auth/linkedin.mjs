@@ -30,7 +30,7 @@
  */
 
 
-import * as yaml from 'js-yaml';
+import { loadYaml } from '../lib/yaml-document.mjs';
 import { readLinkedInDetail } from './linkedin-detail.mjs';
 
 // ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ export default class LinkedInScanner {
   // -------------------------------------------------------------------------
 
   parseConfig(raw) {
-    const doc = yaml.load(raw);
+    const doc = loadYaml(raw);
     const ls = doc.linkedin_searches || {};
     return {
       title_filter: doc.title_filter || { positive: [], negative: [] },

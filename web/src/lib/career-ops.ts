@@ -15,6 +15,7 @@ import { parseInbox, splitLines } from "@/lib/pipeline-table.mjs";
 // One definition of the `{n}-RESERVED.md` convention, shared with
 // run-cli-support.mjs — see report-files.mjs for why it lives there.
 import { isReservedReportFile } from "@/lib/report-files.mjs";
+import { firstMarkdownLinkTarget } from "@/lib/posting-url.mjs";
 import { resolvePdfIndexPath } from "@/lib/core/pdf-index";
 // Pure parser, no I/O — shared with the apply flow's CV resolver so the two
 // don't drift into two different definitions of "which report does this
@@ -369,7 +370,7 @@ export function findReportFile(n: string): string | null {
   const target = Number(n);
   const root = careerOpsRoot();
   const app = readApplications().find((a) => parseInt(a.n, 10) === target);
-  const linked = app?.report.match(/\]\(([^)]+)\)/)?.[1];
+  const linked = firstMarkdownLinkTarget(app?.report);
   if (linked) {
     const p = path.resolve(root, "data", linked);
     // Containment: a hand-edited link must not resolve outside the project.

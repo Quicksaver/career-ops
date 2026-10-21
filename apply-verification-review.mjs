@@ -9,7 +9,7 @@ import {
   rmSync,
 } from 'fs';
 import { basename, dirname, extname, join, relative, resolve } from 'path';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -151,7 +151,7 @@ function reportMetadata(reportPath) {
   let summary = {};
   if (summaryMatch) {
     try {
-      const parsed = yaml.load(summaryMatch[1]);
+      const parsed = loadYaml(summaryMatch[1]);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) summary = parsed;
     } catch {}
   }

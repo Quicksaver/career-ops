@@ -80,7 +80,8 @@ test('native Git Bash ownership survives rejected concurrent runner and token mi
   const f = fixture(); let running;
   try {
     running = f.start(['--limit', '1']);
-    for (let i=0; i<200 && !existsSync(join(f.root, 'ready')); i++) await delay(25);
+    // Up to 15 s: under a parallel suite the worker start alone can pass 5 s.
+    for (let i=0; i<600 && !existsSync(join(f.root, 'ready')); i++) await delay(25);
     assert.ok(existsSync(join(f.root, 'ready')), 'first runner launched its fixture worker');
     const owner = inspectOwnership(f.pid);
     assert.equal(owner.status, 'alive'); process.kill(owner.pid, 0);

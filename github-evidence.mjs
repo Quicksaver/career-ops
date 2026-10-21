@@ -48,7 +48,7 @@
 import { spawnSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, relative } from 'path';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import { getCareerOpsRoot, getProfilePath, hasProfileOverride } from './path-resolver.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
@@ -435,7 +435,7 @@ export function renderMarkdown(result) {
 
 function loadProfile(path) {
   if (!existsSync(path)) return null;
-  return yaml.load(readFileSync(path, 'utf8')) || {};
+  return loadYaml(readFileSync(path, 'utf8')) || {};
 }
 
 /**

@@ -104,13 +104,13 @@ function setupEnvironment() {
 
   const modelArg = process.argv.find(a => a.startsWith('--model='));
   const resolvedSpendTier = readSpendTier();
-  modelName = modelArg ? modelArg.split('=')[1] : spendTierToModel(resolvedSpendTier); // GitHub diff trigger
+  modelName = modelArg ? modelArg.split('=')[1] : spendTierToModel(resolvedSpendTier);
   const genAI = new GoogleGenerativeAI(apiKey);
   model = genAI.getGenerativeModel({
     model: modelName,
     generationConfig: { temperature: 0.4, maxOutputTokens: 8192 },
   });
-} // GitHub diff trigger for bot outdate
+}
 
 // --- File Helpers ---
 function readFile(path, label) {
@@ -121,7 +121,7 @@ function readFile(path, label) {
   return readFileSync(path, 'utf-8').trim();
 }
 
-async function nextReportNumber() { // outdate-bot
+async function nextReportNumber() {
   const { stdout } = await execFileAsync(process.execPath, [join(ROOT, 'reserve-report-num.mjs')], { encoding: 'utf-8' });
   return stdout.trim();
 }
@@ -232,7 +232,7 @@ async function evaluateWithRetry(jdText, retries = 5) {
       console.error(`⚠️ API Error (attempt ${attempt}/${retries}): ${err.message}`);
       const status = err?.status ?? err?.response?.status;
       const retryable = status === 429 || status === 503;
-      if (attempt >= retries || !retryable) throw err; // outdate-bot
+      if (attempt >= retries || !retryable) throw err;
       console.log(`⏳ Waiting ${delay/1000}s before retry...`);
       await new Promise(r => setTimeout(r, delay));
       delay *= 2; // Exponential backoff
@@ -335,8 +335,8 @@ export async function processOffer(browser, line, idx, _evaluate = evaluateWithR
 **Date:** ${today}
 **URL:** ${url}
 **Archetype:** ${archetype}
-**Score:** ${score} <!-- outdate bot -->
-**Legitimacy:** ${legitimacy} <!-- GitHub diff trigger for bot outdate -->
+**Score:** ${score}
+**Legitimacy:** ${legitimacy}
 **PDF:** pending
 **Tool:** Gemini (${modelName})\n
 ---\n
@@ -408,7 +408,7 @@ async function main() {
   const limitCount = limitArg ? parseInt(limitArg.split("=")[1], 10) : 0;
   
   const concArg = process.argv.find(a => a.startsWith("--concurrency="));
-  let CONCURRENCY = concArg ? parseInt(concArg.split("=")[1], 10) : 2; // outdate-bot
+  let CONCURRENCY = concArg ? parseInt(concArg.split("=")[1], 10) : 2;
   if (isNaN(CONCURRENCY) || CONCURRENCY < 1) CONCURRENCY = 2;
 
   if (!existsSync(PATHS.pipeline)) {

@@ -59,7 +59,7 @@ import {
   formatReportNumber, releaseReportNumbers, reserveReportNumbers,
 } from './reserve-report-num.mjs';
 import { buildBudgetedPrompt } from './lib/context-budget.mjs';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 
 // ---------------------------------------------------------------------------
 // Bootstrap: load .env before anything else
@@ -132,7 +132,7 @@ function resolveModesDirCandidate(customModesDir) {
 if (existsSync(PATHS.profileYml)) {
   try {
     const yamlContent = stripBom(readFileSync(PATHS.profileYml, 'utf-8'));
-    const profile = yaml.load(yamlContent);
+    const profile = loadYaml(yamlContent);
     const rawModesDir = profile && profile.language && profile.language.modes_dir;
     if (rawModesDir) {
       const candidates = Array.isArray(rawModesDir) ? rawModesDir : [rawModesDir];

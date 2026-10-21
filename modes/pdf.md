@@ -8,6 +8,8 @@ Optional passes:
 
 ## Full pipeline
 
+**Locked Sections:** If `cv.locked_sections` is defined in `profile.yml`, NEVER remove, shorten, or paraphrase those sections during CV generation or tailoring. They must appear verbatim.
+
 ## Application-scoped artifacts
 
 When the user requests comparison or reuse history for an application, initialize a supplementary bundle with `npm run application:init -- --user {USER} --report {report-number} --company "{company}" --role "{role}" --version 1`. Keep comparison JDs, the source CV, change notes, and the reuse decision under the printed bundle root inside `users/{USER}/output/`. Resolve the application/report first with `node find.mjs --user {USER} {report-or-tracker-number}` so the bundle uses the report number, not an ambiguous tracker row.
@@ -199,7 +201,7 @@ Examples of legitimate reformulation:
 
 ## Template HTML
 
-**Before generating: read `modes/_custom.md` (if it exists) and apply its formatting/content house rules to every CV in this session — including every item of a batch.** Rules recorded there (date formats, section-order preferences, content to always/never include) are persistent user instructions, not suggestions; in an interactive session, if the user corrects the same thing twice in conversation, write it into `modes/_custom.md` so it stops drifting. A batch or delegated worker never writes `modes/_custom.md`, `modes/_profile.md`, or `config/profile.yml`. It reports the preference to its parent instead.
+**Before generating: read `modes/_custom.md` (if it exists) and apply its formatting/content house rules to every CV in this session — including every item of a batch.** Rules recorded there (date formats, section-order preferences, content to always/never include) are persistent user instructions, not suggestions; in an interactive session, if the user corrects the same thing twice in conversation, propose it through the `retro` mode (`modes/retro.md`), which writes to `modes/_custom.md` only the rules the user accepts. A batch or delegated worker never writes `modes/_custom.md`, `modes/_profile.md`, or `config/profile.yml`. It reports the preference to its parent instead.
 
 ### Selecting the template
 

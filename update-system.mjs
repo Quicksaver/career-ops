@@ -239,6 +239,7 @@ const SYSTEM_PATHS = [
   'modes/titles.md',
   'modes/upskill.md',
   'modes/intake.md',
+  'modes/retro.md',
   'documents/.gitkeep',
   // Empty scaffolds are system-owned exceptions inside otherwise user-owned
   // directories. Ship only these exact files; the data they sit beside stays
@@ -304,6 +305,7 @@ const SYSTEM_PATHS = [
   'scripts/ui-server.mjs',
   'story-provenance-check.mjs',
   'img-to-pdf.mjs',
+  'apply-scope.mjs',
   'archive-posting.mjs',
   'application-answers.mjs',
   'generate-cover-letter.mjs',
@@ -330,6 +332,7 @@ const SYSTEM_PATHS = [
   'tracker-aliases.json',
   'session-activity.mjs',
   'set-status.mjs',
+  'onboard-write.mjs',
   'mark-pdf-ready.mjs',
   'normalize-statuses.mjs',
   'fix-report-links.mjs',
@@ -362,6 +365,7 @@ const SYSTEM_PATHS = [
   'jd-skill-gap.mjs',
   'career-profile.mjs',
   'cv-title-check.mjs',
+  'filter-audit.mjs',
   'prepare-application.mjs',
   'application-artifacts.mjs',
   'evaluation-cache.mjs',
@@ -460,6 +464,7 @@ const SYSTEM_PATHS = [
   'coverage-check.mjs',
   'agent-inbox.mjs',
   'followup-seed.mjs',
+  'debrief-sync.mjs',
   'profile-language.mjs',
   'title-keywords.mjs',
   'gemini-eval.mjs',
@@ -502,6 +507,8 @@ const SYSTEM_PATHS = [
   'batch/state-store.mjs',
   'batch/worker-process.mjs',
   'schemas/',
+  'batch/company-scope.mjs',
+  'batch/jd-rescue.mjs',
   'batch/aggregate-tokens.mjs',
   'batch/README.md',
   'utils/token-tracker.mjs',
@@ -3042,6 +3049,83 @@ export function probeAbsentUpstream(spec, ref, ctx = {}) {
 }
 
 /**
+ * Sort apply()'s system paths into the ones one batched checkout can take and
+ * the ones it must leave out, from a single listing of the target tree.
+ *
+ * apply() used to run one `git checkout <target> -- <path>` per manifest entry,
+ * roughly 360 git processes per update. The per-path loop let git's own error
+ * say which entries were absent upstream or cancelled out by their exclusions.
+ * With the whole target tree in hand both are known up front, by the same rules
+ * the loop applies: a path whose upstream content is all preserved is skipped
+ * silently (pathFullyPreserved), and a path the target tree does not contain is
+ * the "absent upstream" skip (probeAbsentUpstream). Everything else matches at
+ * least one upstream file and can share one checkout.
+ *
+ * @param {string[]} updatePaths - Manifest entries (`dir/` or a file).
+ * @param {string[]} preservedPaths - Files the update keeps out of the checkout.
+ * @param {string[]} upstreamFiles - Every file in the target tree (`ls-tree -r --name-only`).
+ * @returns {{checkout: string[], absent: string[], preserved: string[]}}
+ */
+export function planSystemCheckout(updatePaths, preservedPaths, upstreamFiles) {
+  const preservedSet = new Set(preservedPaths);
+  const plan = { checkout: [], absent: [], preserved: [] };
+  for (const path of updatePaths) {
+    const spec = path.endsWith('/') ? path.slice(0, -1) : path;
+    const upstream = upstreamFiles.filter((f) => f === spec || f.startsWith(`${spec}/`));
+    // The loop's rule, fed this listing instead of a per-directory ls-tree.
+    const fullyPreserved = pathFullyPreserved(path, preservedPaths, preservedSet, '', { git: () => upstream.join('\n') });
+    if (fullyPreserved === true) plan.preserved.push(path);
+    else if (upstream.length === 0) plan.absent.push(path);
+    else plan.checkout.push(path);
+  }
+  return plan;
+}
+
+/**
+ * apply()'s batched system checkout: every path planSystemCheckout() says needs
+ * one, in argvBatches() runs so no single git call outgrows a Windows command
+ * line, the fixed git arguments counted in the budget. A directory with
+ * preserved files under it is named file by file, its upstream files minus the
+ * preserved ones, instead of as `dir/` plus one `:(exclude)` per preserved
+ * file: a long preserved list would otherwise ride on the command line however
+ * the paths were split. `git checkout <tree> -- <paths>` only adds and updates,
+ * so the two name the same files. Throws on the first failed run;
+ * `ctx.attempted` then holds every manifest entry a run was started for, which
+ * is what the caller has to restore.
+ *
+ * @param {string[]} updatePaths
+ * @param {string[]} preservedPaths
+ * @param {string[]} upstreamFiles - Every file in the target tree.
+ * @param {string} targetCommit
+ * @param {{git?: Function, attempted?: string[]}} [ctx] - `git` is a test seam.
+ * @returns {{updated: string[], skipped: string[]}} Checked-out paths, and paths absent upstream.
+ */
+export function checkoutSystemPathsBatched(updatePaths, preservedPaths, upstreamFiles, targetCommit, ctx = {}) {
+  const runGitQuiet = ctx.git || gitQuiet;
+  const attempted = ctx.attempted || [];
+  const plan = planSystemCheckout(updatePaths, preservedPaths, upstreamFiles);
+  const preservedSet = new Set(preservedPaths);
+  // Each pathspec, and the manifest entry it came from. A file entry that is
+  // itself preserved never reaches plan.checkout, so only a directory entry can
+  // have preserved files under it.
+  const entryOf = new Map();
+  for (const path of plan.checkout) {
+    const hasPreserved = path.endsWith('/') && preservedPaths.some((file) => file.startsWith(path));
+    const specs = hasPreserved ? upstreamFiles.filter((file) => file.startsWith(path) && !preservedSet.has(file)) : [path];
+    for (const spec of specs) entryOf.set(spec, path);
+  }
+  // Literal: with no `:(exclude)` magic left, a file name from the target tree
+  // can never be read as a glob.
+  const fixedArgs = ['--literal-pathspecs', 'checkout', targetCommit, '--'];
+  const fixed = fixedArgs.reduce((total, arg) => total + arg.length + 1, 0);
+  for (const batch of argvBatches([...entryOf.keys()], { budget: ARGV_BUDGET - fixed })) {
+    attempted.push(...new Set(batch.map((spec) => entryOf.get(spec))));
+    runGitQuiet(...fixedArgs, ...batch);
+  }
+  return { updated: plan.checkout, skipped: plan.absent };
+}
+
+/**
  * Preserve byte-for-byte copies of system files before an unavoidable
  * overwrite. The self-bootstrap stage cannot use the normal "keep local"
  * path: it must load the fetched updater to remain forward-compatible. A
@@ -3403,21 +3487,27 @@ const ARGV_BUDGET = 8000;
  * any git call that names files one by one. A single path wider than the
  * budget still goes out on its own.
  *
+ * `cost` is what one path adds to the command line (by default the path and a
+ * separator), and `budget` what the paths may use, for a caller whose command
+ * also carries fixed arguments or per-path extras.
+ *
  * @param {string[]} paths
+ * @param {{cost?: (path: string) => number, budget?: number}} [options]
  * @returns {string[][]}
  */
-function argvBatches(paths) {
+function argvBatches(paths, { cost = (path) => path.length + 1, budget: limit = ARGV_BUDGET } = {}) {
   const batches = [];
   let batch = [];
   let budget = 0;
   for (const path of paths) {
-    if (batch.length > 0 && budget + path.length + 1 > ARGV_BUDGET) {
+    const size = cost(path);
+    if (batch.length > 0 && budget + size > limit) {
       batches.push(batch);
       batch = [];
       budget = 0;
     }
     batch.push(path);
-    budget += path.length + 1;
+    budget += size;
   }
   if (batch.length > 0) batches.push(batch);
   return batches;
@@ -4981,12 +5071,13 @@ async function apply() {
     // quotes a non-ASCII name, and both probes key on exact membership and
     // prefix. A quoted name would read as untracked, so a tracked system doc
     // inside a user directory would be refused instead of updated.
+    const upstreamTreeOutput = git('ls-tree', '-r', '--name-only', '-z', targetCommit);
     const { kept: updatePaths, refused } = rejectUserLayerPaths(
       mergePathLists(SYSTEM_PATHS, remoteSystemPaths, BOOTSTRAP_PATHS),
       effectiveUserPaths(),
       manifestProbes({
         trackedOutput: git('ls-files', '-z'),
-        upstreamOutput: git('ls-tree', '-r', '--name-only', '-z', targetCommit),
+        upstreamOutput: upstreamTreeOutput,
       }),
     );
     const refusedSet = new Set(refused);
@@ -5086,7 +5177,26 @@ async function apply() {
     const preservedSet = new Set(preservedPaths);
 
     const skippedPaths = [];
-    for (const path of updatePaths) {
+    // One checkout for every path that needs one (in chunks, for command-line
+    // limits), not one git process per manifest entry. planSystemCheckout()
+    // decides the skips from the target tree by the loop's own rules. Any
+    // failure falls back to the per-path loop below, which names the path that
+    // failed and restores what was written, including anything this attempt
+    // wrote before it stopped.
+    const batchAttempted = [];
+    let batched = false;
+    const upstreamFiles = upstreamTreeOutput.split('\0').filter(Boolean);
+    if (upstreamFiles.length > 0) {
+      try {
+        const result = checkoutSystemPathsBatched(updatePaths, preservedPaths, upstreamFiles, targetCommit, { attempted: batchAttempted });
+        updated.push(...result.updated);
+        skippedPaths.push(...result.skipped);
+        batched = true;
+      } catch {
+        // Retried path by path below.
+      }
+    }
+    for (const path of batched ? [] : updatePaths) {
       // `git checkout <ref> -- <path> :(exclude)<path>` errors with "did not
       // match any file(s)" when the exclusions cancel the whole pathspec — and
       // that error is indistinguishable from a genuine failure at the catch
@@ -5127,7 +5237,10 @@ async function apply() {
           // failing, and whatever made it fail (a file held open) can make its
           // restore fail too, which must not be reported as the others failing.
           console.error(`Update stopped while checking out ${path}.`);
-          restoreAfterFailedUpdate(updated, initialStatusPaths, { what: 'system path(s) it had already updated', exclude: preservedPaths });
+          // batchAttempted: paths a failed batched checkout may have written
+          // that this loop had not reached yet.
+          const written = mergePathLists(updated, batchAttempted).filter((p) => p !== path);
+          restoreAfterFailedUpdate(written, initialStatusPaths, { what: 'system path(s) it had already updated', exclude: preservedPaths });
           restoreAfterFailedUpdate([path], initialStatusPaths, { what: `path it stopped on (${path})`, exclude: preservedPaths });
           throw err;
         }

@@ -1816,7 +1816,7 @@ func (m PipelineModel) rowCellStyle(width int, color lipgloss.Color, selected bo
 }
 
 func (m PipelineModel) renderLocCell(app model.CareerApplication, width int, selected bool) string {
-	text := app.WorkMode
+	text := i18n.Current.WorkModeLabel(app.WorkMode)
 	if app.Location != "" {
 		if text != "" {
 			text += " · " + app.Location
@@ -2079,7 +2079,7 @@ func (m PipelineModel) renderPreview() string {
 	// and the only place narrow terminals see location/pay/last-contact.
 	var facts []string
 	if app.WorkMode != "" || app.Location != "" {
-		loc := app.WorkMode
+		loc := i18n.Current.WorkModeLabel(app.WorkMode)
 		if app.Location != "" {
 			if loc != "" {
 				loc += " · " + app.Location

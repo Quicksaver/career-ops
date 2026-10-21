@@ -795,9 +795,9 @@ if (!existsSync(PORTALS_FILE)) {
     const { findUnclaimedEntries } = await import('./audit-portals.mjs');
     const { loadProviders } = await import('./providers/_registry.mjs');
     const { mergeProviderPlugins } = await import('./plugins/_engine.mjs');
-    const yaml = await import('js-yaml');
+    const { loadYaml } = await import('./lib/yaml-document.mjs');
 
-    const cfg = yaml.load(readFileSync(PORTALS_FILE, 'utf-8')) || {};
+    const cfg = loadYaml(readFileSync(PORTALS_FILE, 'utf-8')) || {};
     // Both sections, because scan.mjs resolves both through the same registry:
     // an unclaimed aggregator board is exactly as dead as an unclaimed company.
     const entries = [

@@ -8,7 +8,7 @@ description: >-
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[run | verify | scan-handoff | scan-auth | scan | discover | deep | pdf | ats | text | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | triage | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | master-profile | intake | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | calibrate | offer-prep | titles | upskill | followup | reply-watch | outcome | update]"
+argument-hint: "[run | verify | scan-handoff | scan-auth | scan | discover | deep | pdf | ats | text | latex | latex-tex | cover | email | add | expand | eu-swe | oferta | ofertas | apply | triage | batch | tracker | agent-inbox | pipeline | contacto | training | project | interview-prep | interview | master-profile | intake | retro | interview/plan | interview/practice | interview/debrief | interview-redflag | patterns | calibrate | offer-prep | titles | upskill | followup | reply-watch | outcome | update]"
 license: MIT
 ---
 
@@ -102,6 +102,7 @@ Determine the mode from `$mode`:
 | `interview` | `interview` |
 | `master-profile` | `master-profile` |
 | `intake` | `intake` |
+| `retro` | `retro` |
 | `eu-swe` | `regional/eu-swe` |
 | `interview/plan` | `interview/plan` |
 | `interview/practice` | `interview/practice` |
@@ -209,6 +210,7 @@ Available commands:
   /career-ops interview    → Interactive profile/CV onboarding interview
   /career-ops master-profile → Import, review, and validate your Master Career Profile
   /career-ops intake    → Build or enrich your profile from users/{USER}/documents/ (master CV, LinkedIn export; nothing written without confirm)
+  /career-ops retro     → Review this session and keep what you taught it as rules (writes only the ids you accept)
   /career-ops eu-swe    → Calibrate a European SWE application before CV/apply/interview
   /career-ops interview/plan → Time-blocked prep plan for an upcoming interview
   /career-ops interview/practice → Practice interview, one question at a time with feedback
@@ -226,7 +228,7 @@ Available commands:
   /career-ops project   → Evaluate portfolio project idea
   /career-ops tracker   → Application status overview
   /career-ops agent-inbox → Queue/drain requests for the next session (users/{ACTIVE_USER}/data/agent-inbox.md)
-  /career-ops apply     → Live application assistant (reads form + generates answers)
+  /career-ops apply     → Live application assistant (Playwright from this checkout, does not submit)
   /career-ops run        → Scan configured sources, drain the inbox, and surface manual actions
   /career-ops verify    → Review every integrity finding, apply safe fixes, remember verified exceptions, and reverify
   /career-ops scan      → Scan portals and discover new offers
@@ -270,7 +272,7 @@ Applies to: `run`, `scan-handoff`, `scan-auth`, `auto-pipeline`, `oferta`, `ofer
 
 Read `users/{ACTIVE_USER}/modes/_profile.md` (if present) + `users/{ACTIVE_USER}/modes/_custom.md` (if present) + `modes/{mode}.md`, plus any user-layer files the mode names from `users/{ACTIVE_USER}/`.
 
-Applies to: `verify`, `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `master-profile`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `reply-watch`, `outcome`, `cover`, `email`, `add`, `offer-prep`, `discover`, `intake`, `ats`, `calibrate`
+Applies to: `verify`, `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `master-profile`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `latex-tex`, `training`, `project`, `patterns`, `titles`, `upskill`, `followup`, `reply-watch`, `outcome`, `cover`, `email`, `add`, `offer-prep`, `discover`, `intake`, `ats`, `calibrate`, `retro`
 
 ### Modes that load only their mode file
 

@@ -19,14 +19,12 @@
 
 import { isIP } from 'net';
 import { isMainModule } from './lib/is-main-module.mjs';
-import { PENDING_HEADER } from './lib/pipeline-queue.mjs';
+import { sectionKind } from './lib/pipeline-sections.mjs';
 import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
 
 /** Batch source label written into the source column. */
 export const SOURCE = 'pipeline';
 
-/** Localized "Pending" section header (EN/ES/DE/FR), shared with the run queue. */
-export const PENDING_RE = PENDING_HEADER;
 const SECTION_RE = /^##\s+/;
 const PENDING_ITEM_RE = /^- \[ \]\s+/;
 
@@ -195,7 +193,7 @@ export function parsePending(text) {
   const lines = text.split(/\r?\n/);
   let pendStart = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (PENDING_RE.test(lines[i])) { pendStart = i; break; }
+    if (sectionKind(lines[i].trim()) === 'pending') { pendStart = i; break; }
   }
   if (pendStart < 0) return [];
 

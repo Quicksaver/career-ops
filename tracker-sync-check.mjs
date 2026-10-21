@@ -64,7 +64,7 @@ import { loadCanonicalStates, resolveCanonicalStateId, foldStatusInput } from '.
  * Issue #1504 — github.com/career-ops-hq/career-ops
  */
 
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 
 
 
@@ -137,7 +137,7 @@ const STATES_FILE = join(CAREER_OPS, 'templates/states.yml');
  * @returns {{ order: string[], terminal: Set<string>, labels: Record<string,string> }}
  */
 export function loadLifecycle(statesPath) {
-  const doc = yaml.load(readFileSync(statesPath, 'utf-8'));
+  const doc = loadYaml(readFileSync(statesPath, 'utf-8'));
   if (!doc || !Array.isArray(doc.states)) {
     throw new Error(`Malformed states file at ${statesPath}: expected a top-level "states" list`);
   }

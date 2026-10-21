@@ -10,7 +10,7 @@ import { execFileSync } from 'child_process';
 import { homedir } from 'os';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import * as yaml from 'js-yaml';
+import { hasYamlContent, loadYaml } from './lib/yaml-document.mjs';
 import dotenv from 'dotenv';
 import { AGENT_CLIS } from './lib/agent-cli.mjs';
 import { findTitleFilterConflicts } from './lib/title-filter-conflicts.mjs';
@@ -733,6 +733,7 @@ const USER_LAYER_PREREQS = [
   },
   {
     path: 'config/profile.yml',
+    emptyImpact: 'evaluations and scans have none of your targeting',
     fix: [
       'Run: cp config/profile.example.yml config/profile.yml',
       'Then edit it with your details',
@@ -748,6 +749,7 @@ const USER_LAYER_PREREQS = [
   {
     path: 'portals.yml',
     env: 'CAREER_OPS_PORTALS',
+    emptyImpact: 'scans have no companies or filters',
     fix: [
       'Run: cp templates/portals.example.yml portals.yml',
       'Then customize with your target companies',
@@ -771,6 +773,19 @@ function prereqPresent(root, prereq) {
   return existsSync(prereqFile(root, prereq));
 }
 
+const EMPTY_YAML_REASON = 'has no settings (empty or only comments)';
+
+function emptyYamlPrereqs(root) {
+  return USER_LAYER_PREREQS.filter((prereq) => {
+    if (!prereq.emptyImpact || !prereqPresent(root, prereq)) return false;
+    try {
+      return !hasYamlContent(readFileSync(prereqFile(root, prereq), 'utf-8'));
+    } catch {
+      return false;
+    }
+  });
+}
+
 // The root's .env names a profile. scan.mjs, the evaluators, openai-tailor.mjs and
 // openrouter-runner.mjs load a .env, and all four follow CAREER_OPS_PROFILE once
 // it is loaded (scan.mjs from the data root, the evaluators and openai-tailor.mjs
@@ -789,6 +804,9 @@ function checkEnvFileProfile(root) {
 
 function checkPrereq(prereq) {
   const { path, fix } = prereq;
+  if (emptyYamlPrereqs(projectRoot).includes(prereq)) {
+    return { warn: true, label: `${path} ${EMPTY_YAML_REASON}; ${prereq.emptyImpact}`, fix };
+  }
   if (prereqPresent(projectRoot, prereq)) {
     return { pass: true, label: `${path} found` };
   }
@@ -869,12 +887,17 @@ async function checkPortalSlugs(root) {
   try {
     const { verifyPortalsFile } = await import('./verify-portals.mjs');
     const { loadProviders } = await import('./providers/_registry.mjs');
+    const { mergeProviderPlugins } = await import('./plugins/_engine.mjs');
     const { makeHttpCtx } = await import('./providers/_http.mjs');
     // Load the same provider plugins the scanner uses so tier 2 runs: without
     // them every non-ATS entry (all job_boards, plus any Workday/Avature/…
     // tracked_companies) resolves to an un-actionable "skipped" and a broken
     // one would never reach "missing" — a false pass.
     const providers = await loadProviders(join(__dirname, 'providers'));
+    // verify-portals.mjs's own CLI folds in enabled provider plugins (#4026);
+    // this caller builds the map itself, so it must too, or a plugin-provider
+    // entry is probed as unclaimed. No-op when config/plugins.yml is absent.
+    await mergeProviderPlugins(providers, { root: __dirname, dataRoot: root });
     const { results } = await verifyPortalsFile(portalsPath, {
       providers,
       httpCtx: makeHttpCtx(),
@@ -948,7 +971,7 @@ function readPluginConfigSync(root) {
   const cfgPath = join(root, 'config', 'plugins.yml');
   if (!existsSync(cfgPath)) return { cfg: {}, error: null };
   try {
-    return { cfg: yaml.load(readFileSync(cfgPath, 'utf8')) || {}, error: null };
+    return { cfg: loadYaml(readFileSync(cfgPath, 'utf8')) || {}, error: null };
   } catch (err) {
     return { cfg: {}, error: String(err.message).split('\n')[0] };
   }
@@ -1020,7 +1043,7 @@ function checkCvShape(root) {
       ? 'cv.md: no Experience section the CV checks recognize — title and structure checks will not run'
       : 'cv.md: Experience section has no "### Company — Location" entries — title and structure checks will not run',
     fix: [
-      `Name the section ${EXPERIENCE_HEADING_NAMES.map((n) => `"## ${n}"`).join(', ')}`,
+      ...(sections.length === 0 ? [`Name the section ${EXPERIENCE_HEADING_NAMES.map((n) => `"## ${n}"`).join(', ')}`] : []),
       'Start each job with "### Company — Location", then a bold **Title** line, then a dates line (see examples/cv-example.md)',
     ],
   };
@@ -1270,7 +1293,7 @@ function titleFilterConflicts(root) {
   if (!existsSync(portalsPath)) return null;
   let config;
   try {
-    config = yaml.load(readFileSync(portalsPath, 'utf-8'));
+    config = loadYaml(readFileSync(portalsPath, 'utf-8'));
   } catch {
     // A portals.yml that does not parse is a different check's problem; this
     // one only has something to say about a file it could actually read.
@@ -1331,7 +1354,10 @@ function onboardingState(root) {
   // MCP project configuration belongs to the launch checkout. `root` is the
   // user-data layer and may point elsewhere under split-checkout installs.
   const mcpCheck = checkPlaywrightMcp(process.cwd(), activeCli);
-  const unpersonalized = unpersonalizedFiles(root);
+  const unpersonalized = [
+    ...unpersonalizedFiles(root),
+    ...emptyYamlPrereqs(root).map(({ path, emptyImpact }) => ({ path, reason: EMPTY_YAML_REASON, impact: emptyImpact })),
+  ];
   const titleFilterIssues = titleFilterConflicts(root);
   // Every other check in this function is data-layer and correctly uses this
   // function's own `root` parameter. The tracked-.bak check is the one

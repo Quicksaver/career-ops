@@ -26,7 +26,7 @@ import { join, dirname, resolve, relative, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import { normalizeReportLink } from './tracker-links.mjs';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import { flagValue, validateFlags } from './lib/cli-flags.mjs';
@@ -34,8 +34,9 @@ import { withPipelineLock, LockTimeoutError } from './pipeline-lock.mjs';
 import { writeFileAtomic, loadCanonicalStates, resolveCanonicalStateId } from './tracker-utils.mjs';
 import { parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
 import { normalizeUrl } from './url-key.mjs';
-import { parsePendingRows, parseBlockedRows, pendingCount, PENDING_HEADER, PROCESSED_HEADER } from './lib/pipeline-queue.mjs';
+import { parsePendingRows, parseBlockedRows, pendingCount } from './lib/pipeline-queue.mjs';
 import { JD_SKIP_REASON, JOB_SKIP_REASON, POSTING_CLOSED_REASON, validLocal, validUrl } from './batch/manual-inputs.mjs';
+import { sectionKind, processedHeadingFor } from './lib/pipeline-sections.mjs';
 
 const CAREER_OPS = getCareerOpsRoot();
 
@@ -134,7 +135,7 @@ function closeTrackedPosting(url) {
     const capture = join(CAREER_OPS, url.slice(6));
     if (existsSync(capture)) {
       const frontmatter = readFileSync(capture, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-      const metadata = frontmatter ? yaml.load(frontmatter[1]) : null;
+      const metadata = frontmatter ? loadYaml(frontmatter[1]) : null;
       for (const field of ['source_url', 'application_url']) {
         if (validUrl(metadata?.[field])) identities.add(normalizeUrl(metadata[field]));
       }
@@ -229,16 +230,17 @@ function resolveScore(stateScore, reportFile) {
   return 'N/A';
 }
 
+// The batch report header names the PDF path when one was generated, and
+// otherwise says "not generated" in the user's output language. Only the path
+// is the same in every language.
 function resolvePdf(reportFile) {
   const rep = readReportField(reportFile, 'PDF');
-  if (!rep) return '❌';
-  return /not generated/i.test(rep) ? '❌' : '✅';
+  // A filename ending in .pdf (path or basename), not a bare ".pdf" mention in
+  // a localized "not generated" note.
+  return rep && (/[^\s]+\.pdf\b/i.test(rep) || rep.includes('✅')) ? '✅' : '❌';
 }
 
 // ---- parse pipeline.md ----
-// The queue reader's section headers, so an inbox that syncs also reconciles.
-const PENDING_RE = PENDING_HEADER;
-const PROCESSED_RE = PROCESSED_HEADER;
 const SECTION_RE = /^##\s+/;
 
 // The whole read → compute → write runs under the pipeline lock (#4895).
@@ -254,8 +256,9 @@ function reconcile() {
 
   let pendStart = -1, procStart = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (pendStart < 0 && PENDING_RE.test(lines[i].trim())) pendStart = i;
-    else if (procStart < 0 && PROCESSED_RE.test(lines[i].trim())) procStart = i;
+    const kind = sectionKind(lines[i].trim());
+    if (pendStart < 0 && kind === 'pending') pendStart = i;
+    else if (procStart < 0 && kind === 'processed') procStart = i;
   }
 
   if (pendStart < 0) {
@@ -370,9 +373,8 @@ function reconcile() {
   // No Procesadas section yet — create one at the end of the file, matching the
   // language the pending section header already uses.
   if (procStart < 0 && movedProcLines.length > 0) {
-    const processedHeader = /Pending/i.test(lines[pendStart]) ? '## Processed' : '## Procesadas';
     if (out.length && out[out.length - 1].trim() !== '') out.push('');
-    out.push(processedHeader, '', ...movedProcLines);
+    out.push(processedHeadingFor(lines[pendStart].trim()), '', ...movedProcLines);
   }
 
   const newContent = out.join('\n');

@@ -49,6 +49,11 @@
 # note for a citizen or permanent-resident candidate therefore must not say
 # the fee is unlawful.
 #
+# GREAT BRITAIN (key UK, as in agency-licensing.yml): the rule protects every
+# work-seeker, whatever their immigration status, so unlike Ontario the note
+# for a candidate in Great Britain may say the rule applies to them. Northern
+# Ireland has its own regime and is not covered by that row.
+#
 # CANDIDATE ROWS FOR CONTRIBUTORS (comments only — NOT seeds; do NOT add as
 # rows until each has an official source, an effective date, and an as_of
 # date read first-hand):
@@ -56,10 +61,6 @@
 #           agencies shall not charge workers fees or costs; exceptions may
 #           be authorised by the competent authority. Context only, not a
 #           jurisdiction row.
-#   - GB  : United Kingdom. Employment Agencies Act 1973 and the Conduct of
-#           Employment Agencies and Employment Businesses Regulations 2003,
-#           reg. 26 (fees to work-seekers prohibited; exceptions in
-#           Schedule 3, entertainment and modelling occupations).
 #   - AU  : Australia, by state. NSW and Queensland (Private Employment
 #           Agents (Code of Conduct) Regulation 2026) bar charging a work
 #           seeker a fee for finding work. Other states and territories
@@ -108,3 +109,37 @@ jurisdictions:
       - "e-Laws — Employment Protection for Foreign Nationals Act, 2009 (ontario.ca/laws/statute/09e32)"
       - "e-Laws — Employment Standards Act, 2000 (ontario.ca/laws/statute/00e41)"
     as_of: "2026-10-18"
+
+  UK:
+    jurisdiction_name: "United Kingdom (Great Britain)"
+    law_name: "Employment Agencies Act 1973, s. 6(1)(a)-(c) and (2); Conduct of Employment Agencies and Employment Businesses Regulations 2003 (S.I. 2003/3319), reg. 26(1)-(5) and Schedule 3"
+    # s. 6(1) as substituted dates from 2004-04-06; "effective" is the date reg. 26(5)'s current wording took effect.
+    effective: "2010-10-01"
+    applies_to: >-
+      Section 6(1) of the Employment Agencies Act 1973 (extent: England, Wales
+      and Scotland) restricts what a person carrying on an employment agency or
+      an employment business may charge. It is not limited by the work-seeker's
+      nationality or immigration status: it protects any work-seeker in Great
+      Britain, whatever their immigration status. The restriction in s. 6(1) is
+      subject to "such cases or classes of case as the Secretary of State may
+      prescribe". Whether a given intermediary counts as an "employment agency"
+      or an "employment business" is not stated here and is not verified. This
+      row does NOT cover Northern Ireland, which has its own regime.
+    exceptions:
+      - "Employment Agencies Act 1973, s. 6(1)(a): a person carrying on an employment agency shall not request or directly or indirectly receive any fee from any person for providing services (whether by the provision of information or otherwise) for the purpose of finding him employment or seeking to find him employment"
+      - "s. 6(1)(b): a person carrying on an employment business shall not request or directly or indirectly receive any fee from an employee for providing services (whether by the provision of information or otherwise) for the purpose of finding or seeking to find another person, with a view to the employee acting for and under the control of that other person"
+      - "s. 6(1)(c): a person carrying on an employment business shall not request or directly or indirectly receive any fee from a second person for providing services (whether by the provision of information or otherwise) for the purpose of finding or seeking to find a third person, with a view to the second person becoming employed by the first person and acting for and under the control of the third person"
+      - "s. 6(2): a person who contravenes s. 6 is guilty of an offence and liable to a fine on conviction (no other remedy is stated here)"
+      - "Conduct Regulations 2003, reg. 26(1): subject to paragraphs (3) and (4), the s. 6(1)(a) restriction does not apply to a fee charged by an agency for finding or seeking to find a work-seeker employment in an occupation listed in Schedule 3 (a category of entertainment and modelling occupations; the list is not reproduced here)"
+      - "reg. 26(2): where reg. 26(1) applies, subject to paragraph (5), any fee charged by the agency may consist only of a charge or commission payable out of the work-seeker's earnings in employment the agency has found for him"
+      - "reg. 26(3): paragraph (1) does not apply where the agency, or any person connected with it, charges a fee to the hirer in respect of the service of supplying or introducing that work-seeker to him"
+      - "reg. 26(4): where the agency is connected with the hirer, paragraph (1) applies only if, before providing the service for which the fee is to be charged, the agency informs the work-seeker that it is connected with the hirer"
+      - "reg. 26(5): paragraph (2) does not apply to a fee charged for including information about the work-seeker (other than a work-seeker seeking employment as a photographic or fashion model) in a publication, subject to the conditions in reg. 26(5)(a)-(h), which include a 7-day period (30 days for actors, background artists, dancers, extras, musicians, singers and other performers) during which no such fee may be charged and the work-seeker may cancel without penalty; other provisions of reg. 26 are not summarised here"
+    official_source:
+      url: "https://www.legislation.gov.uk/ukpga/1973/35/section/6"
+      what_it_shows: "Official legislation.gov.uk text of the Employment Agencies Act 1973, s. 6 (Restriction on charging persons seeking employment, etc.; extent E+W+S). The Conduct of Employment Agencies and Employment Businesses Regulations 2003, reg. 26 (Circumstances in which fees may be charged to work-seekers) is at https://www.legislation.gov.uk/uksi/2003/3319/regulation/26."
+    legal_basis: "Employment Agencies Act 1973 (c. 35), s. 6(1)(a)-(c) (as substituted from 2004-04-06) and s. 6(2); Conduct of Employment Agencies and Employment Businesses Regulations 2003 (S.I. 2003/3319), reg. 26(1)-(5) (current wording of reg. 26(5) in force since 2010-10-01) and Schedule 3. Extent: England, Wales and Scotland (verified on legislation.gov.uk)"
+    sources:
+      - "legislation.gov.uk — Employment Agencies Act 1973, section 6 (legislation.gov.uk/ukpga/1973/35/section/6)"
+      - "legislation.gov.uk — Conduct of Employment Agencies and Employment Businesses Regulations 2003, regulation 26 (legislation.gov.uk/uksi/2003/3319/regulation/26)"
+    as_of: "2026-10-19"

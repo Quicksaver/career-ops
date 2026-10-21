@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { join, resolve } from 'path';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import {
   getUserContext,
   printUserContextErrorAndExit,
@@ -691,7 +691,7 @@ async function main() {
 
     const portalsPath = process.env.CAREER_OPS_PORTALS || userPath(context, 'portals.yml');
     let portals = {};
-    try { if (existsSync(portalsPath)) portals = yaml.load(readFileSync(portalsPath, 'utf8')) || {}; }
+    try { if (existsSync(portalsPath)) portals = loadYaml(readFileSync(portalsPath, 'utf8')) || {}; }
     catch (error) { addPhaseIssue(summary, 'scan-config', error); }
     const extraSources = [
       ['scan-full', rawArgs.includes('--scan-full'), 'scan-ats-full.mjs'],

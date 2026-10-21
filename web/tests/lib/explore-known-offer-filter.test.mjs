@@ -61,3 +61,16 @@ test("the known-URL list is no longer served to the browser", () => {
   const route = readFileSync(join(webRoot, "src/app/api/explore/ai/route.ts"), "utf8");
   assert.match(route, /makeKnownOfferFilter\(/);
 });
+
+test("AI Explore excludes an existing job when the proposed hostname has a DNS root dot", () => {
+  const saved = "https://jobs.example.com/role/123";
+  const dotted = "https://jobs.example.com./role/123";
+  const different = "https://jobs.example.com./role/124";
+
+  const filter = makeKnownOfferFilter(new Set([canon(saved)]));
+  const duplicateEnvelope = envelope({ url: dotted, company: "Example Co", title: "Software Engineer" });
+  const differentEnvelope = envelope({ url: different, company: "Example Co", title: "Data Engineer" });
+  const output = filter.feed(duplicateEnvelope + differentEnvelope) + filter.flush();
+
+  assert.equal(output, differentEnvelope, "known job must be removed without hiding a distinct opening");
+});

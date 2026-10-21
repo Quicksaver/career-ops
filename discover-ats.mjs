@@ -39,7 +39,7 @@ import { DEFAULT_SMALL_THRESHOLD, isSmallBoard, smallBoardDetail } from './lib/s
  * Issue #1864 — github.com/career-ops-hq/career-ops
  */
 
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 
 import greenhouse from './providers/greenhouse.mjs';
 import ashby from './providers/ashby.mjs';
@@ -215,7 +215,7 @@ export function parseCompanyInput(rawYaml, cliNames = []) {
   if (rawYaml && rawYaml.trim()) {
     let doc;
     try {
-      doc = yaml.load(rawYaml);
+      doc = loadYaml(rawYaml);
     } catch (err) {
       warnings.push(`input: malformed YAML — ${err.message}`);
       doc = null;
@@ -551,7 +551,7 @@ export function insertIntoTrackedCompanies(fileText, snippets) {
  */
 export function splicedCorrectly(text, expectedCount) {
   try {
-    const doc = yaml.load(text);
+    const doc = loadYaml(text);
     return Array.isArray(doc?.tracked_companies) && doc.tracked_companies.length === expectedCount;
   } catch {
     return false;
@@ -1057,7 +1057,7 @@ function runSelfTest() {
   check(inserted.startsWith('title_filter:\n  positive: [a]\n'), 'insert preserves leading bytes');
   check(inserted.includes('job_boards:\n  - name: Foo\n'), 'insert preserves trailing block');
   // idempotency via dedupe: the same board already present → nothing fresh → no insert
-  const parsed = yaml.load(inserted);
+  const parsed = loadYaml(inserted);
   const again = dedupeAgainstPortals([{ name: 'New', careers_url: 'https://jobs.lever.co/new' }], parsed.tracked_companies);
   check(again.fresh.length === 0, 'insert is idempotent through dedupe');
 
@@ -1237,7 +1237,7 @@ async function main() {
   let existingEntries = [];
   if (existsSync(PORTALS_PATH)) {
     try {
-      const parsed = yaml.load(readFileSync(PORTALS_PATH, 'utf-8'));
+      const parsed = loadYaml(readFileSync(PORTALS_PATH, 'utf-8'));
       existingEntries = Array.isArray(parsed?.tracked_companies) ? parsed.tracked_companies : [];
     } catch (err) {
       warnings.push(`portals.yml: could not parse for dedupe — ${err.message}`);

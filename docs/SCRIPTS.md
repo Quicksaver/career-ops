@@ -531,13 +531,13 @@ node funnel-velocity.mjs --self-test
 node funnel-velocity.mjs --benchmarks path/to/benchmarks.yml
 ```
 
-Ledger line format (TSV, appended by `set-status.mjs`, `#`-prefixed lines are comments):
+Ledger line format (TSV, appended by `set-status.mjs` and, for a status a kept duplicate takes over, `dedup-tracker.mjs`; `#`-prefixed lines are comments):
 
 ```text
 {tracker#}\t{YYYY-MM-DD}\t{from}\t{to}\t{source}\t{note}
 ```
 
-`from` may be `-` (unknown prior state); `to` = `-` retracts the row's latest observation; a later `correction`-source line with the same (tracker#, to) replaces the earlier observation's date. Sources: set-status | correction | backfill | manual (only set-status/correction feed day-math).
+`from` may be `-` (unknown prior state); `to` = `-` retracts the row's latest observation; a later `correction`-source line with the same (tracker#, to) replaces the earlier observation's date. Sources are the closed set `VALID_SOURCES` in `funnel-velocity.mjs`. `backfill`, `manual` and `dedup-tracker` are counted but kept out of day-math, because they record a transition found after the fact rather than observed when it happened.
 
 **Exit codes:** `0` always (missing tracker/ledger produce an explanatory empty result), `1` self-test or benchmarks-load failure.
 
@@ -1131,7 +1131,7 @@ Source diagnostics are included in JSON output and surfaced in human output when
 
 ## tracker
 
-SQLite **derived index** for the applications tracker (RFC #918, phase 1). `users/{USER}/data/applications.md` stays the source of truth; `users/{USER}/data/applications.db` is built from it by `sync` and is safe to delete at any time — it regenerates on the next sync. All writes keep going to the markdown exactly as today (`merge-tracker.mjs`, hand edits); the index is read-only infrastructure.
+SQLite **derived index** for the applications tracker (RFC #918, phase 1). `users/{USER}/data/applications.md` stays the source of truth; `users/{USER}/data/applications.db` is built from it (and from the status-log ledger, see below) by `sync` and is safe to delete at any time — it regenerates on the next sync, losing only status changes no ledger row explains. All writes keep going to the markdown exactly as today (`merge-tracker.mjs`, hand edits); the index is read-only infrastructure.
 
 Why: at hundreds of rows a markdown table degrades structurally (encoding corruption, column drift, `|` inside cells shifting columns), and agents grepping it get model-dependent results. The index normalizes on sync, so a query returns the same rows for every model on every CLI — and corruption is detected at sync time instead of propagating silently.
 
@@ -1142,7 +1142,8 @@ node tracker.mjs sync                     # (re)build applications.db from appli
 node tracker.mjs sync --check             # diagnose corruption only, no write (exit 1 if issues found)
 node tracker.mjs query --status Applied --since 2026-05-01
 node tracker.mjs query --company acme --json
-node tracker.mjs history --id 42          # status transitions observed across syncs (Applied → Interview → ...)
+node tracker.mjs --user <id> query --status Evaluated --min-score 4  # scored 4.0/5 or higher, not yet applied to
+node tracker.mjs history --id 42          # status transitions from status-log.tsv (Applied → Interview → ...)
 node tracker.mjs export                   # inverse: index → markdown table on stdout
 node tracker.mjs export --out repaired.md # write to a file (existing file backed up to .bak first)
 node tracker.mjs export --out repaired.md --force  # write even when columns would be dropped
@@ -1150,9 +1151,9 @@ node tracker.mjs delete --num 42 --dry-run # preview: which row would go, and th
 node tracker.mjs delete --num 42          # remove row 42 from applications.md (backed up to .bak first) + reindex
 ```
 
-`query` and `history` auto-resync when the markdown changed since the last sync, so the index can never serve stale reads.
+`query` and `history` auto-resync when the markdown or `status-log.tsv` changed since the last sync, so the index can never serve stale reads.
 
-`sync` detects and reports the corruption classes markdown accumulates — mojibake placeholder cells, scores stranded in the status column, non-canonical statuses (resolved via `templates/states.yml` aliases), missing/malformed/duplicate ids, stray pipes — and normalizes them **in the index only**; the markdown is never modified. Fix at the source with `normalize-statuses.mjs` / `dedup-tracker.mjs`, then re-sync. Status changes between syncs accumulate in a `status_events` table, which gives `analyze-patterns.mjs` a real funnel instead of only the current snapshot.
+`sync` detects and reports the corruption classes markdown accumulates — mojibake placeholder cells, scores stranded in the status column, non-canonical statuses (resolved via `templates/states.yml` aliases), missing/malformed/duplicate ids, stray pipes — and normalizes them **in the index only**; the markdown is never modified. Fix at the source with `normalize-statuses.mjs` / `dedup-tracker.mjs`, then re-sync. `history` reads a `status_events` table that each sync rebuilds from the transition ledger, `status-log.tsv` beside the tracker (written by `set-status.mjs`, folded with `funnel-velocity.mjs`'s `foldObservations()` so `correction` and retraction lines apply), so every transition keeps its own date and two changes between syncs stay two (#5555). A status the ledger does not explain — one changed by hand in `applications.md` — is recorded as an event dated with the sync that saw it and shown as `(no ledger row; observed at sync)`. That event is the only part of the index a rebuild cannot reproduce.
 
 `delete` removes the row numbered `--num` from `applications.md` under the same lock as `merge-tracker.mjs`, after copying the tracker to `applications.md.bak`, and then rebuilds the index. `--dry-run` previews and writes nothing, the backup included. The row's report file is left on disk and named in the output.
 
@@ -1326,6 +1327,18 @@ first ~2000 chars) and the selected postings through that CLI's own auth and
 provider handling — review your chosen CLI's data-retention/provider settings
 before running this on sensitive CV content.
 
+Each call asks for one answer, not an agent session. It runs in an empty temp
+directory, and where the CLI has a switch for it, with tools off
+(`claude --tools "" --disallowedTools "*"`, `grok --disallowed-tools` for its shell, fetch, write and
+MCP tools, `codex exec --sandbox read-only`, `pi --no-tools`,
+`copilot --available-tools` and `--disable-mcp-server` with one name that
+matches no tool or server, so neither built-in nor MCP tools are offered, and opencode with
+`OPENCODE_CONFIG_CONTENT` denying every permission). The prompt asks for scores from
+the listed company, title and URL text, without opening the postings.
+A call times out after 180 s; set `CAREER_OPS_RANK_TIMEOUT_MS` to change that.
+Every row left unranked is listed with the reason, and a run where every call
+fails or returns no usable JSON exits 1, `--dry-run` included.
+
 ```bash
 node rank-pipeline.mjs --user {USER}                  # rank up to 20 pending entries
 node rank-pipeline.mjs --user {USER} --limit 10
@@ -1433,6 +1446,7 @@ These have no `npm run` binding — modes and agents call them with
 
 | Invocation | Purpose |
 |------------|---------|
+| `node onboard-write.mjs --user <id> --answers <file.json\|-> [--force] [--only profile\|portals]` (`--target <dir>` replaces `--user` for a fixture root) | Onboarding writer: copies `config/profile.example.yml` and `templates/portals.example.yml` line for line and changes only the answered fields (contact, targets, archetypes, narrative, title keywords, extra negatives, location allow-list, 45-day posting age). Keeps existing files unless `--force`, and `--only` limits a run to one file; prints `{"written":[],"kept":[]}` |
 | `node set-status.mjs <report#\|company> <State> [--note]` | Canonical tracker write path: strict states.yml validation, shared lock, atomic write. Modes call this instead of hand-editing `applications.md` |
 | `node mark-pdf-ready.mjs <report#> [--dry-run] [--json]` | Mark the matched tracker's PDF cell ready after the web PDF render path finishes; resolves the report number, uses the shared tracker lock, and writes atomically |
 | `node sync-pdf-flags.mjs [--dry-run] [--prune [--write]] [--json]` | Reconcile tracker PDF column against data/pdf-index.tsv; `--prune` drops manifest rows whose PDF is gone from disk (dry run by default, `--write` to commit) |
@@ -1590,6 +1604,7 @@ A bare number or company name is convenient, but becomes ambiguous when multiple
 - `--role <role>`: Narrowing selector that refines a company, report, row, or bare-number match when multiple tracker rows exist for a single target.
 - `--on <date>`: Specifies an explicit transition date (YYYY-MM-DD) for status logs and notes.
 - `--json`: Formats command output as structured JSON.
+- `--expect-row <hash>` / `--expect-status <state>`: For a caller that showed the row to a person before writing (`reply-watch.mjs`). Under the lock, refuse the write if any cell but Status differs from the reviewed row (`trackerRowIdentity` in `tracker-parse.mjs`), or if the status is no longer the reviewed one and not already `<state>`. Unlike `--expect-tracker`, a write to another row does not trip them.
 
 `--row` and `--report` are mutually exclusive. Because an explicit selector answers the report-mismatch guard rather than overriding it, `--row` bypasses that guard without needing `--force` (which silences the check while the ambiguity is still real).
 
@@ -1605,7 +1620,7 @@ Exit codes (the shared `CLI_EXIT` contract in `tracker-utils.mjs`, so these valu
 - `0` success, including an idempotent no-op re-run that changed nothing.
 - `1` for an invalid or conflicting selector, or a non-canonical state.
 - `2` when the selector matches no tracker row.
-- `3` when a bare numeric selector triggers the report-number mismatch guard (`report-number-mismatch`), or a company matches several rows.
+- `3` when a bare numeric selector triggers the report-number mismatch guard (`report-number-mismatch`), a company matches several rows, or a review guard refuses (`tracker-changed`, `row-changed`, `status-changed`).
 - `4` when the shared tracker lock is busy — retryable, unlike the others.
 
 Nothing is written on any non-zero exit.
