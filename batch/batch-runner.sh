@@ -2350,9 +2350,10 @@ merge_tracker() {
   fi
 }
 
-# The live pool has no fixed total: its queue can grow while it runs.
+# The live pool has no fixed total: its queue can grow while it runs, so it
+# passes what is still queued as the third argument instead.
 report_progress() {
-  echo "=== Progress: $1${2:+/$2} offers finished, $((SECONDS - BATCH_START))s elapsed ==="
+  echo "=== Progress: $1${2:+/$2} offers finished${3:+, $3 remaining}, $((SECONDS - BATCH_START))s elapsed ==="
 }
 
 # Print summary
@@ -2537,7 +2538,7 @@ watch_status() {
 # Preparation still runs outside conditional lists, preserving errexit.
 process_live_offers() {
   local -a pids=() active_urls=()
-  local rc=0 worker_rc=0 running=0 finished=0 selection mode id url source notes reset_hold explicit_retry
+  local rc=0 worker_rc=0 running=0 finished=0 reported=0 remaining="" selection mode id url source notes reset_hold explicit_retry
   while true; do
     for j in "${!pids[@]}"; do
       if ! kill -0 "${pids[$j]}" 2>/dev/null; then
@@ -2547,13 +2548,15 @@ process_live_offers() {
         unset 'pids[j]'
         unset 'active_urls[j]'
         finished=$((finished + 1))
-        report_progress "$finished"
       fi
     done
     pids=(${pids[@]+"${pids[@]}"})
     active_urls=(${active_urls[@]+"${active_urls[@]}"})
     running=${#pids[@]}
-    if (( rc != 0 )) || [[ -f "$PAUSE_FILE" ]]; then break; fi
+    if (( rc != 0 )) || [[ -f "$PAUSE_FILE" ]]; then
+      if (( finished > reported )); then report_progress "$finished" "" "$remaining"; fi
+      break
+    fi
     if (( PARALLEL > 1 )) && [[ -f "${THROTTLE_FILE:-}" ]]; then
       PARALLEL=1
       echo "=== Rate limited: running the remaining offers on 1 worker. ==="
@@ -2561,11 +2564,21 @@ process_live_offers() {
     # Also check coordinator ownership while every slot is occupied.
     selection=$(node "$PROJECT_DIR/lib/run-live-inputs.mjs" "$LIVE_INPUTS" "$USER_ROOT" "$USER_ID" "$ANSWERS_FILE" "$QUEUE_FILE" "$running" "$MAX_RETRIES" "$LIMIT" "$RETRY_FAILED" "$RESUME_PAUSED" "$PARALLEL" ${active_urls[@]+"${active_urls[@]}"}) || { rc=125; break; }
     IFS=$'\x1f' read -r mode id url source notes reset_hold explicit_retry <<< "$selection"
+    # The selector's stdout stays fixed for runners already in memory; it
+    # publishes the remaining count in its status file. Reporting after
+    # selecting makes that count include the state finished workers wrote.
+    if [[ -f "$LIVE_INPUTS.status.json" && "$(< "$LIVE_INPUTS.status.json")" =~ \"remaining\":([0-9]+) ]]; then
+      remaining=${BASH_REMATCH[1]}
+    fi
+    if (( finished > reported )); then
+      report_progress "$finished" "" "$remaining"
+      reported=$finished
+    fi
     if [[ "$mode" == "job" ]]; then
       if [[ "$reset_hold" == "true" ]]; then
         update_state_retrying "$id" "$url" pending "" "" "-" "-" "" "$(get_retries "$id")" || { rc=125; break; }
       fi
-      RETRY_FAILED="$explicit_retry" process_offer "$id" "$url" "$source" "$notes" - &
+      RETRY_FAILED="$explicit_retry" process_offer "$id" "$url" "$source" "$notes" "$remaining" &
       pids+=("$!")
       active_urls+=("$url")
       continue
@@ -2581,7 +2594,7 @@ process_live_offers() {
     wait "$pid" 2>/dev/null || worker_rc=$?
     if (( worker_rc != 0 )); then rc=$worker_rc; fi
     finished=$((finished + 1))
-    report_progress "$finished"
+    report_progress "$finished" "" "$remaining"
   done
   if (( rc != 0 )); then echo "ERROR: live worker failed; tracker merge skipped." >&2; fi
   return "$rc"

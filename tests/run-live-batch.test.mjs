@@ -110,7 +110,8 @@ console.error('ordinary fixture failure after launch');process.exitCode=1;`);
   assert.equal(existsSync(join(root, 'ready-4')), false, 'the unheld historical ID cannot take over the posting');
   assert.equal(inspectOwnership(join(root, 'batch/batch-runner.pid')).status, 'absent');
   assert.match(output, /Pending: live queue/);
-  assert.match(output, /remaining -/);
+  assert.match(output, /Processing offer #1: local:jds\/slow\.md \(report 001, attempt 1, remaining 1\)/, 'the held LinkedIn posting is still queued');
+  assert.match(output.split('\n').filter(line => line.startsWith('=== Progress:')).at(-1), /offers finished, 2 remaining, \d+s elapsed ===$/, 'both postings failed at the retry ceiling and stay unresolved');
 });
 
 test('production live loop retains active URL exclusion through reap and failure budget across holds', async t => {

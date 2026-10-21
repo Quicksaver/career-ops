@@ -232,7 +232,8 @@ test('live scheduling uses exact queue/answer identity, bounded retries, termina
   writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tneeds_confirmation\t\t\t\t\t\t0\n`);
   hold(userRoot, '1', A);
   const next = () => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath });
-  assert.equal(next().status, 'idle');
+  const held = next();
+  assert.equal(held.status, 'idle'); assert.equal(held.remaining, 1, 'a hold waiting on an answer is still queued');
   writeAnswers([{ url: B, reason: 'agency_confirmation', answer: 'Agency B' }]); assert.equal(next().status, 'idle');
   writeAnswers([{ url: A, reason: 'jd_unavailable', answer: 'JD', jd_text: 'Some JD' }]); assert.equal(next().status, 'idle');
   writeAnswers([{ url: A, reason: 'agency_confirmation', answer: 'Agency A' }]);
@@ -242,7 +243,8 @@ test('live scheduling uses exact queue/answer identity, bounded retries, termina
   assert.equal(next().status, 'idle'); writeControl([{ url: A, token: 'explicit-1' }]);
   assert.equal(next().selected.explicitRetry, true); assert.equal(next().status, 'idle');
   writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tcompleted\t\t\t\t\t\t9\n`);
-  writeControl([{ url: A, token: 'explicit-2' }]); assert.equal(next().status, 'idle');
+  writeControl([{ url: A, token: 'explicit-2' }]);
+  const finished = next(); assert.equal(finished.status, 'idle'); assert.equal(finished.remaining, 0);
   const invalid = JSON.parse(readFileSync(controlPath)); invalid.owner_pid = 2147483000; writeFileSync(controlPath, JSON.stringify(invalid));
   assert.throws(next, /coordinator exited/);
 });
@@ -328,7 +330,8 @@ test('live retries stop at the ceiling, scope explicit requests, and count limit
   writeFileSync(join(userRoot, 'batch/batch-input.tsv'), `id\turl\tsource\tnotes\n1\t${A}\t\t\n2\t${B}\t\t\n`);
   const state = (a, b) => writeFileSync(join(userRoot, 'batch/batch-state.tsv'), header + `1\t${A}\tfailed\t\t\t\t\t\t${a}\n2\t${B}\tfailed\t\t\t\t\t\t${b}\n`);
   const next = options => nextLiveInput({ controlPath, userRoot, user: 'fictional', answersPath, queuePath, limit: 1, ...options });
-  state(1, 9); assert.equal(next().selected.url, A);
+  state(1, 9);
+  const first = next(); assert.equal(first.selected.url, A); assert.equal(first.remaining, 0, 'B stays outside the one-posting limit');
   state(2, 9); assert.equal(next().selected.url, A, 'the third attempt is still automatic');
   state(3, 9); assert.equal(next().status, 'idle', 'automatic attempts stop at the retry ceiling');
   control.retries = [{ url: A, token: 'requested' }]; writeFileSync(controlPath, JSON.stringify(control));
