@@ -1953,20 +1953,25 @@ function parseDevJobsDeCard(card, seenUrls) {
 }
 
 async function waitForDevJobsDeSearchResults(page) {
-  await page.waitForFunction(() => {
+  // A Cloudflare interstitial is a bot challenge: report it at once instead of
+  // waiting for it to clear, since career-ops does not solve bot challenges.
+  const outcome = await page.waitForFunction(() => {
     const title = document.title || '';
     const text = document.body?.innerText || '';
 
     if (/^Just a moment/i.test(title)) {
-      return false;
+      return 'challenge';
     }
 
     if (document.querySelectorAll('a[href^="/job/"] h2').length > 0) {
-      return true;
+      return 'results';
     }
 
-    return /job openings found|Stellenangebote gefunden|Keinen Job gefunden|No jobs found/i.test(text);
+    return /job openings found|Stellenangebote gefunden|Keinen Job gefunden|No jobs found/i.test(text) ? 'results' : false;
   }, null, { timeout: DEVJOBSDE_NAVIGATION_TIMEOUT_MS });
+  if (await outcome.jsonValue() === 'challenge') {
+    throw new Error('DEVjobs.de served a Cloudflare bot challenge instead of listings; career-ops does not solve bot challenges');
+  }
 }
 
 async function fetchDevJobsDeSearchPage(page, url, seenUrls) {
