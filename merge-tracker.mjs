@@ -1792,8 +1792,11 @@ export async function mergeTracker(options = {}) {
       // 1. Exact report number match
       // 2. Company + role fuzzy match
       const reportNum = extractReportNum(addition.report, addition.notes);
+      // A dealbreaker skip has no report by design (batch-prompt.md "Dealbreaker
+      // gate"), so its row number alone carries the reservation.
+      const reportless = job => job.status === 'skipped' && addition.status === 'SKIP' && reportNum === null && /^-?$/.test(addition.report.trim());
 
-      if (batchJobs?.some(job => !/^\d+$/.test(job.reportNum) || Number(job.reportNum) !== Number(addition.num) || Number(job.reportNum) !== reportNum)) {
+      if (batchJobs?.some(job => !/^\d+$/.test(job.reportNum) || Number(job.reportNum) !== Number(addition.num) || Number(job.reportNum) !== reportNum && !reportless(job))) {
         console.warn(`⚠️  Skipping ${file}: batch job #${jobId} tracker/report identity disagrees with its reserved report number`);
         withheldAdditions.add(file);
         skipped++;

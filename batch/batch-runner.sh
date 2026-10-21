@@ -2209,6 +2209,8 @@ process_offer() {
       if (row.status !== "SKIP" || !["N/A", "-", ""].includes(row.score) || row.pdf !== "❌" || !["-", ""].includes(row.report)) fail("dealbreaker row must be SKIP with no score, PDF or report");
       if (!allowedPostingIdentities(url, userRoot, answersPath || null, user).has(postingIdentity(row.url))) fail("dealbreaker row URL disagrees with expected posting identity");
       if (row.company !== flat(result.company) || row.role !== flat(result.role)) fail("dealbreaker row company/role disagrees with the result");
+      // merge-tracker refuses an undisclosed employer without its channel.
+      if (row.company === "?" && !flat(row.parts[resolveTsvColumns(header).map.via])) fail("dealbreaker row for an undisclosed employer must name its via channel");
       if (!notes.startsWith("Dealbreaker: \"")) fail("dealbreaker row notes must quote the broken rule");
       process.stdout.write(notes.slice("Dealbreaker: ".length));
     ' "$SCRIPT_DIR" "$worker_result_json" "$id" "$original_url" "$report_num" "$TRACKER_DIR/$id.tsv" "$USER_ROOT" "$ANSWERS_FILE" "$USER_ID" 2>&1); then

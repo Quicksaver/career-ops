@@ -39,7 +39,8 @@ const NOTE = `"${RULE}" vs "${JD_LINE}"`;
 const HEADER = 'num\tdate\tcompany\trole\tstatus\tscore\tpdf\treport\tnotes\turl';
 const skipRow = (over = {}) => {
   const f = { num: '042', date: '2026-01-31', company: 'Fabrikam', role: 'Product Designer', status: 'SKIP', score: 'N/A', pdf: '❌', report: '-', notes: `Dealbreaker: ${NOTE}`, url: URL, ...over };
-  return `${HEADER}\n${[f.num, f.date, f.company, f.role, f.status, f.score, f.pdf, f.report, f.notes, f.url].join('\t')}\n`;
+  const [viaLabel, viaValue] = 'via' in over ? ['\tvia', `\t${over.via}`] : ['', ''];
+  return `${HEADER}${viaLabel}\n${[f.num, f.date, f.company, f.role, f.status, f.score, f.pdf, f.report, f.notes, f.url].join('\t')}${viaValue}\n`;
 };
 const skipPayload = (over = {}) => ({
   status: 'skipped', id: '1', report_num: '042', company: 'Fabrikam', role: 'Product Designer',
@@ -173,6 +174,14 @@ test('control characters in the quoted note cannot split the state row', () => {
 test('the reserved number matches the SKIP row with or without zero padding', () => {
   const { fields } = handle(skipPayload(), { tsv: skipRow({ num: '42' }) });
   assert.equal(fields[2], 'skipped');
+});
+
+test('an undisclosed employer\'s SKIP row must name its via channel', () => {
+  const missing = handle(skipPayload({ company: '?' }), { tsv: skipRow({ company: '?' }) });
+  assert.equal(missing.fields[2], 'failed');
+  assert.match(missing.fields[7], /must name its via channel/);
+  const named = handle(skipPayload({ company: '?' }), { tsv: skipRow({ company: '?', via: 'Hays' }) });
+  assert.equal(named.fields[2], 'skipped', named.output);
 });
 
 test('a dealbreaker skip without a tracker row fails and can be retried', () => {

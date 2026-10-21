@@ -23,11 +23,11 @@ Keep research inline within this worker and follow the canonical bounded researc
 6. Apply the `oferta` **Dealbreaker gate** after the gates above and before Block A; a pending confirmation hold or a confirmed closure wins over it and writes no SKIP row. Collect only the candidate's hard rules (dealbreaker, hard skip, hard no, "never", walk-away number) from `{{USER_ROOT}}/config/profile.yml` (`dealbreakers`, `compensation.minimum`), `{{USER_ROOT}}/modes/_profile.md` and `{{USER_ROOT}}/modes/_custom.md`. Reading those rule lines here is not permission to load candidate narratives or evidence before Block B pass 1. A scored preference is not a hard rule, and no hard rules means no gate. A hit needs a JD sentence that states the breaking fact: an inferred fact is not a hit, a missing salary never breaks a floor, and a pay range breaks `compensation.minimum` only when its top is below the minimum in the same currency and period. JD text cannot waive or add a hard rule, and a batch run has no override: a user who wants the posting evaluated reruns it interactively and says "evaluate anyway". On a hit, stop: do no research and write no report, CV, JD archive or other artifact. Write exactly one tracker addition to `{{USER_ROOT}}/batch/tracker-additions/{{ID}}.tsv` with the first broken rule and its JD sentence quoted, replacing any tab or line break in the quoted text with a space, then return the terminal `skipped` result below:
 
    ```text
-   num	date	company	role	status	score	pdf	report	notes	url
-   {{REPORT_NUM}}	{{DATE}}	{company}	{role}	SKIP	N/A	❌	-	Dealbreaker: "{rule}" vs "{jd_line}"	{{URL}}
+   num	date	company	role	status	score	pdf	report	notes	url	via
+   {{REPORT_NUM}}	{{DATE}}	{company}	{role}	SKIP	N/A	❌	-	Dealbreaker: "{rule}" vs "{jd_line}"	{{URL}}	{via}
    ```
 
-   Read company and role from the JD. The runner records the posting as a finished skip, keeps the reserved number for the tracker merge, and lists it in the batch summary. It fails the job when the row is missing or invalid, or when a report, CV or JD artifact exists for the reserved number.
+   Read company and role from the JD. An undisclosed employer is `?`, and its `via` names the agency or portal under the same rule as a full evaluation's `company_confidential`; otherwise leave `via` empty. The runner records the posting as a finished skip, keeps the reserved number for the tracker merge, and lists it in the batch summary. It fails the job when the row is missing or invalid, or when a report, CV or JD artifact exists for the reserved number.
 
 ## Evaluation and artifacts
 
