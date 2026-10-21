@@ -4,16 +4,16 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `8f489289b48cb5c99439da98aa4abbb524854aa4`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `dc95d45ef67158b8bfc20bace751ea7418468db8`, the v1.37 upstream integration with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `267`.
-- Diff size against the incorporated base at that snapshot: `837 files changed, 37289 insertions(+), 8602 deletions(-)`.
+- Incorporated upstream base: `09a554802d4254942aeaf151682e3c824fc2684b`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `c09916c989dbfa8a7be482163494e7565d27e66e`, the post-v1.37 upstream integration at `09a55480` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `269`.
+- Diff size against the incorporated base at that snapshot: `859 files changed, 37408 insertions(+), 9326 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
 ## Upstream integration at 09a55480
 
-This update incorporates the 63 commits from `8f489289b48cb5c99439da98aa4abbb524854aa4` through `09a55480`, post-v1.37 main-branch work with no new release tag. Thirty-seven files conflicted; upstream stays the baseline and the fork's per-user, identity and runner guarantees are re-applied around it.
+This update incorporates the 63 commits from `8f489289b48cb5c99439da98aa4abbb524854aa4` through `09a554802d4254942aeaf151682e3c824fc2684b`, post-v1.37 main-branch work with no new release tag. Thirty-seven files conflicted; upstream stays the baseline and the fork's per-user, identity and runner guarantees are re-applied around it.
 
 - **Batch.** Adopted `--company` (#5526) for standalone runs: it filters the selected input before `--limit`, and the runner rejects it with `--live-inputs`, because the coordinator's live pool picks its own postings. Adopted the zero-token JD rescue from structured page data (#5521), `--status --summary`/`--full` (#5525), dry runs without the agent CLI (#5559) and the throttle re-check before each launch (#5522). Upstream's `batch/company-scope.mjs` and `batch/jd-rescue.mjs` are called from `$SCRIPT_DIR`, since the fork's `$BATCH_DIR` is the user's batch folder. Not adopted: `--thin-action` (#5547), because the fork already makes one owned browser-extraction attempt and then hands a thin JD to the worker, which holds it as `jd_unavailable`; a terminal `skipped` without artifacts would drop a reserved report number outside the run's hold contract. Also not adopted, as before: `CAREER_OPS_PROFILE` in the batch lane (#5544, #5567), so `tests/batch-runner-profile-override.test.mjs` is removed. The shared fixture `tests/helpers/batch-runner-fixture.mjs` copies the owned runner scripts, selects `--cli claude` and a fixture data root, and the throttle test anchors the parallel launch (which carries the remaining count) and asks for three workers, since the fork defaults to one.
 - **Pipeline headings.** Upstream's `lib/pipeline-sections.mjs` (#5520, every mode language) replaces the fork's `PENDING_HEADER`/`PROCESSED_HEADER` in `lib/pipeline-queue.mjs`; reconciliation and `sync-batch-input.mjs` use the same `sectionKind()`. Lines are trimmed before detection, as the fork's queue reader always did, so an indented heading still drains, and a created Processed heading follows the Pending heading's language.
@@ -23,7 +23,7 @@ This update incorporates the 63 commits from `8f489289b48cb5c99439da98aa4abbb524
 - **Other adaptations.** `openrouter-runner.mjs apply` locates reports with upstream's contained `locateApplyReport()` against the selected user's root; `openai-tailor.mjs` validates locked CV sections (#2082) while keeping report-linked names; plugin removal keeps the fork's earlier id guard with upstream's wording; the updater's single `lib/` entry covers the new `lib/` modules, and the two new batch modules are listed. The dashboard shows localized work modes (#5557) in the fork's flat pipeline, and the upstream test drops its grouped-view setup. Upstream's deletion of the unused web tracker lock is accepted.
 - **Tests.** New upstream suites that spawn scripts now select a fixture user, matching the fork's user contract: apply scope, application-artifact markers (which apply only without a users-directory override), dry run without the CLI, status summary, company scope, cover-letter answers, plugin removal, tracker query, empty YAML, upskill (`--json`) and debrief/retro wording.
 
-Validation for this integration is recorded under "Upstream integration validation at 09a55480" below.
+Validation passed `node test-all.mjs --quick --jobs 8` with 17,381 checks and 16 warnings; the one failure under that load was `tests/batch-recovery-ownership.test.mjs`'s 5 s wait for its fixture worker, which pre-merge HEAD also exceeds under the same parallel load, so the wait is now 15 s and the suite passes. All dashboard Go packages pass. Raw `verify-pipeline.mjs --user fixture --json` returned clean against an isolated empty tracker. The queue-flow, interactive, live-batch, parallel, throttle and ownership suites exercise the real Windows Git Bash runner and owned process trees. Web tests, paid evaluations, real providers and user data were not exercised.
 
 ## Upstream integration at 8f489289
 
@@ -108,7 +108,7 @@ Use the merge-base diff to inventory fork changes. The left/right log separately
 
 ## Adopted upstream behavior and merge history
 
-This inventory incorporates core v1.37.0 and web v0.15.0 plus post-release main-branch changes through `8f489289b48cb5c99439da98aa4abbb524854aa4`. Older entries below describe earlier merges. The current fork keeps explicit user selection and adapts upstream data-root support around that requirement.
+This inventory incorporates core v1.37.0 and web v0.15.0 plus post-release main-branch changes through `09a554802d4254942aeaf151682e3c824fc2684b`. Older entries below describe earlier merges. The current fork keeps explicit user selection and adapts upstream data-root support around that requirement.
 
 The entries below record successive upstream merges and their conflict resolutions. Release references and validation counts belong to those historical merges. The active sections that follow define the customization requirements to preserve today.
 
