@@ -705,7 +705,16 @@ resolve_report_url() {
   application_url=$(frontmatter_value "$source_jd" "application_url" || true)
   source_url=$(frontmatter_value "$source_jd" "source_url" || true)
 
-  if [[ -n "$application_url" ]]; then
+  # An employer can enter an email address as its apply link, which LinkedIn
+  # renders as http://name@host. The worker validator refuses a URL that is
+  # not a public posting identity, so hand the worker the source instead.
+  # Literal spaces are encoded first, as postingIdentity does.
+  if [[ -n "$application_url" ]] && node --input-type=module -e '
+    import { resolve } from "node:path";
+    import { pathToFileURL } from "node:url";
+    const { validUrl } = await import(pathToFileURL(resolve(process.argv[1], "manual-inputs.mjs")).href);
+    process.exit(validUrl(process.argv[2].replaceAll(" ", "%20")) ? 0 : 1);
+  ' "$SCRIPT_DIR" "$application_url"; then
     printf '%s\n' "$application_url"
   elif [[ -n "$source_url" ]]; then
     printf '%s\n' "$source_url"

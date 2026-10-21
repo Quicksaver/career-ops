@@ -26,6 +26,7 @@ export function fixture({ handoffUrl = '', workerResult = {} } = {}) {
   writeFileSync(join(root, 'fixture-worker.mjs'), `import {readFileSync,writeFileSync} from 'node:fs';
 const args=process.argv.slice(2), prompt=args.at(-1)==='-'?readFileSync(0,'utf8'):args.at(-1);
 writeFileSync(process.env.FIXTURE_CALLS+'.worker',args.join('\\n'));
+writeFileSync(process.env.FIXTURE_CALLS+'.prompt',prompt);
 const jdPath=prompt.match(/^JD file: (.+)$/m)?.[1];
 if(jdPath) writeFileSync(process.env.FIXTURE_CALLS+'.jd',readFileSync(jdPath));
 const result=JSON.parse(process.env.FIXTURE_RESULT);

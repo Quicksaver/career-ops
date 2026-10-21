@@ -27,6 +27,22 @@ for (const cli of ['claude', 'codex']) test(`${cli} closes a local capture using
   } finally {rmSync(f.root,{recursive:true,force:true});}
 });
 
+test('a local capture hands the worker its apply link only when that link is a public posting URL', () => {
+  const f=fixture({workerResult:{status:'closed',reason:'posting_closed',question:null}});
+  try {
+    const local='local:jds/captured.md';
+    writeFileSync(join(f.batch,'batch-input.tsv'),`id\turl\tsource\tnotes\n1\t${local}\tfixture\t\n`);
+    // LinkedIn renders an employer's apply email as http://name@host.
+    for (const [applicationUrl, expected] of [['http://apply+123@example.com', url], ['https://example.com/jobs/7', 'https://example.com/jobs/7']]) {
+      writeFileSync(join(f.root,'jds/captured.md'),`---\nsource_url: ${url}\napplication_url: "${applicationUrl}"\n---\nArchived posting text.`);
+      rmSync(join(f.batch,'batch-state.tsv'),{force:true});
+      const result=f.run([]);
+      assert.equal(result.status,0,result.stdout+result.stderr);
+      assert.match(readFileSync(`${f.calls}.prompt`,'utf8'),new RegExp(`^URL: ${expected.replace(/[.+?/]/g,'\\$&')}$`,'m'),applicationUrl);
+    }
+  } finally {rmSync(f.root,{recursive:true,force:true});}
+});
+
 test('standalone defaults to Codex with system model/reasoning; env and explicit Claude overrides win', () => {
   const f = fixture();
   try {
