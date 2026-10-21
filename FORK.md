@@ -793,6 +793,7 @@ Future merge notes:
 - Keep upstream Workable, SmartRecruiters, Recruitee, IBM, Arbeitsagentur, Jobstreet, Glints, BambooHR, and Breezy tests intact when changing scanner/provider plumbing; they are now part of the upstream provider baseline that the fork should build around.
 - Preserve the Arbeitsagentur remote/no-remote normalization unless upstream adds an equivalent signal in the provider output or scan filtering layer.
 - Keep Agentic Engineering Jobs on the upstream REST API path unless that API is removed; do not restore the retired HTML parser without a verified API failure and equivalent live-board regression evidence.
+- 2026-10-21: the API failure is verified (every data-backed `/api/v1` endpoint answers 500 `INTERNAL_ERROR` while `/api/v1/health` is ok), but no live board exists to regress against: the homepage, `/jobs` and `sitemap.xml` are prerendered snapshots frozen at 2026-07-27 and uncached pages also 500. The homepage fallback was rejected because it would present that stale snapshot as live postings. The provider now fails with the request URL and API error code; see its header comment.
 - `templates/portals.example.yml` is high-conflict. Preserve upstream example improvements, then reapply only still-useful local source definitions.
 
 ## Scan Company And Location Filters

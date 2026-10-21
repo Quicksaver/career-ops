@@ -249,6 +249,72 @@ try {
     fail('agentic-jobs.fetch() should throw when a later page has a missing/non-array "data" field');
   }
 
+  // A non-empty page where no record normalizes is a record-shape change —
+  // fail on that page, not after silently paging past it.
+  let allInvalidThrew = false;
+  try {
+    await agentic.fetch({ name: 'X', provider: 'agentic-jobs' }, mkCtx([
+      { data: [{ name: 'Engineer', company: 'Acme', id: 1 }], meta: { total: 1, page: 1, per_page: 20 } },
+    ]).ctx);
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('none of the 1 records on page 1')) allInvalidThrew = true;
+    else throw e;
+  }
+  if (allInvalidThrew) {
+    pass('agentic-jobs.fetch() throws when a non-empty page has no normalizable records');
+  } else {
+    fail('agentic-jobs.fetch() should throw when every record on a page fails normalization');
+  }
+
+  // HTTP errors: rethrown with the request URL and the API's error envelope,
+  // keeping status so scan classifies a 500 as a server failure. The live
+  // outage (2026-10-21) answers exactly this body on every /jobs request.
+  const httpErr = Object.assign(new Error('HTTP 500 Internal Server Error'), {
+    status: 500,
+    body: '{"error":{"code":"INTERNAL_ERROR","message":"Internal server error"}}',
+    retryAfter: null,
+  });
+  let serverErr = null;
+  try {
+    await agentic.fetch({ name: 'X', provider: 'agentic-jobs' }, {
+      fetchJson: async () => { throw httpErr; },
+      sleep: async () => {},
+    });
+  } catch (e) {
+    serverErr = e;
+  }
+  if (
+    serverErr instanceof Error &&
+    serverErr.message === 'agentic-jobs: GET https://agentic-engineering-jobs.com/api/v1/jobs?page=1 failed: HTTP 500 Internal Server Error (INTERNAL_ERROR: Internal server error)' &&
+    serverErr.status === 500 &&
+    serverErr.cause === httpErr
+  ) {
+    pass('agentic-jobs.fetch() reports the failing URL, HTTP status and API error code');
+  } else {
+    fail(`agentic-jobs.fetch() HTTP error: ${serverErr?.message} status=${serverErr?.status}`);
+  }
+
+  const { describeAgenticError } = mod;
+  const plain = describeAgenticError(Object.assign(new Error('HTTP 502 Bad Gateway'), { status: 502, body: '<html>bad gateway</html>' }), 'https://agentic-engineering-jobs.com/api/v1/jobs?page=3');
+  if (plain.message === 'agentic-jobs: GET https://agentic-engineering-jobs.com/api/v1/jobs?page=3 failed: HTTP 502 Bad Gateway' && plain.status === 502) {
+    pass('describeAgenticError() keeps the bare status line when the body is not the API envelope');
+  } else {
+    fail(`describeAgenticError() non-JSON body: ${plain.message}`);
+  }
+
+  const netErr = new TypeError('fetch failed');
+  let passedThrough = null;
+  try {
+    await agentic.fetch({ name: 'X', provider: 'agentic-jobs' }, { fetchJson: async () => { throw netErr; }, sleep: async () => {} });
+  } catch (e) {
+    passedThrough = e;
+  }
+  if (passedThrough === netErr) {
+    pass('agentic-jobs.fetch() leaves network errors unwrapped for scan\'s classifier');
+  } else {
+    fail(`agentic-jobs.fetch() should rethrow network errors as-is, got ${passedThrough?.message}`);
+  }
+
   let zeroJobsThrew = false;
   try {
     await agentic.fetch({ name: 'X', provider: 'agentic-jobs' }, mkCtx([{ data: [], meta: { total: 0, page: 1, per_page: 50 } }]).ctx);

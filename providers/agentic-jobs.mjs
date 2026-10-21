@@ -13,7 +13,7 @@ import { countryName } from './_country.mjs';
 // forward — no auth, CORS-enabled, and it's what the site itself recommends
 // for programmatic access (OpenAPI spec at /api/v1/openapi.json).
 //
-//   GET {API_BASE}/jobs?page={n}   — 1-based, PAGE_SIZE per page
+//   GET {API_BASE}/jobs?page={n}   — 1-based, 20 per page (spec; meta.per_page wins)
 //   → { data: [{ title, companyName, slug, location, countries: string[],
 //                description (HTML), postedAt (ISO), salaryMin/Max/Currency,
 //                geoRegion, … }], meta: { total, page, per_page } }
@@ -28,15 +28,50 @@ import { countryName } from './_country.mjs';
 // PAGE_DELAY_MS paces requests comfortably under that even for the largest
 // boards; MAX_PAGES is a hard stop regardless.
 //
+// Failures stay loud: a non-2xx response is rethrown with the request URL and
+// the API's own error code, a page whose records none normalize is a shape
+// change, and zero jobs overall is a canary — never a silent empty board.
+//
+// Outage note (verified 2026-10-21): every data-backed endpoint — /jobs with
+// any or no params, /jobs/{slug}, POST /jobs/by-slugs, /salaries?dimension=
+// overview — answers 500 INTERNAL_ERROR, while /api/v1/health reports ok and
+// param validation still answers 400. Uncached site pages 500 the same way;
+// the homepage, /jobs and sitemap.xml are prerendered snapshots frozen at
+// 2026-07-27. A homepage-markup fallback was considered and rejected: it
+// would present that stale snapshot as live postings. If the board comes back
+// with a different contract, re-check /api/v1/openapi.json first.
+//
 // Wire in via a `job_boards:` entry with `provider: agentic-jobs`.
 
 const SITE_ORIGIN = 'https://agentic-engineering-jobs.com';
 const API_BASE = `${SITE_ORIGIN}/api/v1`;
 const TRUSTED_HOST = 'agentic-engineering-jobs.com';
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 const MAX_PAGES = 40;
 const MAX_JOBS = 2000;
 const PAGE_DELAY_MS = 2100;
+
+/**
+ * Rethrows a transport error with the request URL and, when the API answered
+ * with its documented `{ error: { code, message } }` envelope, that code —
+ * keeping `HTTP <status>` and `status` so scan's error classifier still
+ * files it under the right kind.
+ * @param {any} err
+ * @param {string} url
+ */
+export function describeAgenticError(err, url) {
+  let detail = '';
+  try {
+    const body = JSON.parse(typeof err?.body === 'string' ? err.body : '');
+    const code = typeof body?.error?.code === 'string' ? body.error.code : '';
+    const message = typeof body?.error?.message === 'string' ? body.error.message : '';
+    if (code || message) detail = ` (${[code, message].filter(Boolean).join(': ')})`;
+  } catch { /* non-JSON body — the status line is all there is */ }
+  const wrapped = new Error(`agentic-jobs: GET ${url} failed: ${err?.message ?? err}${detail}`, { cause: err });
+  wrapped.status = err?.status;
+  if (err?.retryAfter !== undefined) wrapped.retryAfter = err.retryAfter;
+  return wrapped;
+}
 
 /** @param {string} url */
 function assertAgenticUrl(url) {
@@ -125,7 +160,14 @@ export default {
     for (let page = 1; page <= MAX_PAGES; page++) {
       if (page > 1) await sleep(PAGE_DELAY_MS, ctx);
       const url = assertAgenticUrl(`${API_BASE}/jobs?page=${page}`);
-      const json = await ctx.fetchJson(url, { redirect: 'error', headers: { accept: 'application/json' } });
+      let json;
+      try {
+        json = await ctx.fetchJson(url, { redirect: 'error', headers: { accept: 'application/json' } });
+      } catch (err) {
+        // Only HTTP errors are rewrapped; network/abort errors keep their
+        // name and message, which scan's classifier keys on.
+        throw typeof err?.status === 'number' ? describeAgenticError(err, url) : err;
+      }
       if (!json || !Array.isArray(json.data)) {
         throw new Error(`agentic-jobs: unexpected API response shape on page ${page} — "data" is missing or not an array`);
       }
@@ -135,12 +177,18 @@ export default {
         ? json.meta.per_page
         : PAGE_SIZE;
 
+      let valid = 0;
       for (const record of records) {
         const job = normalizeAgenticJob(record);
-        if (job && !seen.has(job.url)) {
+        if (!job) continue;
+        valid++;
+        if (!seen.has(job.url)) {
           seen.add(job.url);
           jobs.push(job);
         }
+      }
+      if (records.length > 0 && valid === 0) {
+        throw new Error(`agentic-jobs: none of the ${records.length} records on page ${page} has title/companyName/slug — the record shape likely changed`);
       }
 
       if (jobs.length >= MAX_JOBS) break;
