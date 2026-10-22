@@ -40,7 +40,7 @@ import { RunTerminal } from './lib/run-terminal.mjs';
 import { RunInteractive } from './lib/run-interactive.mjs';
 import { synchronizeBatch } from './lib/run-batch-sync.mjs';
 import { answerFingerprint, DEFAULT_MAX_RETRIES } from './lib/run-live-inputs.mjs';
-import { cleanRunText, createRunOutput } from './lib/run-output.mjs';
+import { cleanRunText, createRunOutput, finishesRunStep, runTextWidth } from './lib/run-output.mjs';
 import { prepareAgencyAnswers } from './lib/agency-policy.mjs';
 
 const HELP = `career-ops deterministic workflow runner
@@ -196,10 +196,20 @@ let terminating = false;
 let interruptedSignal = null;
 let stoppingChildren = null;
 
+let humanLastLine = null;
+function writeHuman(line) {
+  // On a terminal, a step's outcome overwrites its own started line when
+  // nothing came between; redirected output keeps every line.
+  const tty = Boolean(humanStream.isTTY);
+  const replace = tty && finishesRunStep(humanLastLine, line);
+  humanLastLine = tty && runTextWidth(line) < (humanStream.columns || 80) ? line : null;
+  humanStream.write(`${replace ? '\x1b[1A\r\x1b[J' : ''}${humanOutput.format(line)}\n`);
+}
+
 function log(message) {
   if (quiet) return;
   if (terminal) terminal.log(`[run] ${message}`);
-  else humanStream.write(`${humanOutput.format(`[run] ${message}`)}\n`);
+  else writeHuman(`[run] ${message}`);
 }
 
 function readPendingCount() {
@@ -319,7 +329,7 @@ function createProgressForwarder(name, predicate) {
     if (!normalized.trim()) return;
     if (predicate !== true && !predicate(normalized)) return;
     if (terminal) terminal.log(`[run:${name}] ${normalized}`);
-    else humanStream.write(`${humanOutput.format(`[run:${name}] ${normalized}`)}\n`);
+    else writeHuman(`[run:${name}] ${normalized}`);
   }
 
   return {

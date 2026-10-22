@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stripVTControlCharacters } from 'node:util';
-import { cleanRunText, createRunOutput, runLineTone, supportsRunColor } from '../lib/run-output.mjs';
+import { cleanRunText, createRunOutput, finishesRunStep, runLineTone, supportsRunColor } from '../lib/run-output.mjs';
 
 test('colours require a terminal and respect NO_COLOR, FORCE_COLOR=0 and TERM=dumb', () => {
   assert.equal(supportsRunColor({ isTTY: true }, {}), true);
@@ -134,4 +134,22 @@ test('footer highlights shortcuts and counters while leaving pasted input unstyl
   for (const key of ['Enter', 'Ctrl+D', '/skip', '/later']) assert.ok(colored.includes(`\x1b[1;36m${key}\x1b[0m`));
   assert.equal(stripVTControlCharacters(colored), shortcuts);
   assert.equal(output.format('> ERROR: https://example.org/jobs/123', 'input', { kind: 'input' }), '\x1b[1;32m>\x1b[0m ERROR: https://example.org/jobs/123');
+});
+
+test('a step outcome matches only its own started line', () => {
+  const scan = '[run:scan] [scan-progress] started 115/117: Python.org Jobs via pythonorg';
+  for (const [previous, line, expected] of [
+    ['[run] scan started', '[run] scan completed', true],
+    ['[run] scan started', '[run] scan failed', true],
+    ['[run:verify] [verify] review started', '[run:verify] [verify] review completed', true],
+    [scan, '[run:scan] [scan-progress] completed 106/117: Python.org Jobs via pythonorg — 20 found, 0 candidate(s)', true],
+    [scan, '[run:scan] [scan-progress] failed 106/117: Python.org Jobs via pythonorg — 0 found, 0 candidate(s)', true],
+    ['[run] scan started', '[run] scan-auth completed', false],
+    ['[run] scan started', '[run:scan] scan completed', false],
+    [scan, '[run:scan] [scan-progress] completed 107/117: Startup Jobs via startup-jobs — 34 found, 1 candidate(s)', false],
+    [scan, '[run:scan] [scan-progress] completed 106/118: Python.org Jobs via pythonorg — 20 found, 0 candidate(s)', false],
+    [scan, '[run:scan] [scan-progress] completed 106/117: Python.org Jobs via pythonorg2 — 20 found', false],
+    ['[run] scan completed', '[run] scan completed', false],
+    [null, '[run] scan completed', false],
+  ]) assert.equal(finishesRunStep(previous, line), expected, `${previous} -> ${line}`);
 });

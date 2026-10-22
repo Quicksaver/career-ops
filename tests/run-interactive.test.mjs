@@ -67,6 +67,28 @@ test('without a question the terminal emits only rolling logs and reserves no fo
   assert.equal(f.input.isRaw, false);
 });
 
+test('a step outcome overwrites its own started line only when nothing came between', t => {
+  const f = terminal(t);
+  const started = '[run:scan] [scan-progress] started 2/3: Acme via lever';
+  const done = '[run:scan] [scan-progress] completed 1/3: Acme via lever — 4 found, 1 candidate(s)';
+  f.ui.log('[run] scan started'); f.ui.log('[run] scan completed');
+  f.ui.log(started); f.ui.log('[run:scan] [scan-progress] started 3/3: Beta via ashby'); f.ui.log(done);
+  f.ui.log('[run] merge started'); f.ui.log('[run] merge started\n[run] merge completed');
+  assert.equal(f.text(), '[run] scan started\r\n\x1b[1A\r\x1b[J[run] scan completed\r\n'
+    + `${started}\r\n[run:scan] [scan-progress] started 3/3: Beta via ashby\r\n${done}\r\n`
+    + '[run] merge started\r\n[run] merge started\r\n[run] merge completed\r\n');
+  f.ui.log('[run] wrap started'); f.output.emit('resize'); f.ui.log('[run] wrap completed');
+  assert.ok(f.text().endsWith('[run] wrap started\r\n[run] wrap completed\r\n'), 'a resize may rewrap the started line');
+  f.output.columns = 12; f.ui.log('[run] long started'); f.ui.log('[run] long completed');
+  assert.ok(f.text().endsWith('[run] long started\r\n[run] long completed\r\n'), 'a wrapped started line is not one row');
+  f.output.columns = 100;
+  f.ui.setQuestion({ key: 'q', title: 'Agency', question: 'Who?', position: 1, total: 1 });
+  f.ui.log('[run] sync started');
+  const before = f.text().length;
+  f.ui.log('[run] sync completed');
+  assert.ok(f.text().slice(before).startsWith(`\x1b[1;${f.ui.logBottom}r\x1b[${f.ui.logBottom - 1};1H\x1b[2K[run] sync completed\r\n`));
+});
+
 test('the last resolved question releases the footer and later questions can reopen it', t => {
   const f = terminal(t);
   const question = { key: 'first', title: 'Agency', question: 'Who is hiring?', position: 1, total: 1, hint: 'Agency + Enter' };
