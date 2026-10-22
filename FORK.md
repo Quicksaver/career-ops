@@ -4,16 +4,16 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `09a554802d4254942aeaf151682e3c824fc2684b`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `c09916c989dbfa8a7be482163494e7565d27e66e`, the post-v1.37 upstream integration at `09a55480` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `269`.
-- Diff size against the incorporated base at that snapshot: `859 files changed, 37408 insertions(+), 9326 deletions(-)`.
+- Incorporated upstream base: `97f67c6cc56c0d1f65cc52fb7c5f3c59ad430812`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `3882777953c0c01a91b785f4c582de1392df177a`, the post-v1.37 upstream integration at `97f67c6c` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `281`.
+- Diff size against the incorporated base at that snapshot: `867 files changed, 38085 insertions(+), 9345 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
 ## Upstream integration at 97f67c6c
 
-This update incorporates the 31 commits from `09a554802d4254942aeaf151682e3c824fc2684b` through `97f67c6c`, post-v1.37 main-branch work with no new release tag. Twelve files conflicted; upstream stays the baseline and the fork's per-user paths are re-applied around it. Nothing in the batch, liveness, reconciliation or verification lanes that `run` drives changed behavior, so the runner needed no adaptation.
+This update incorporates the 31 commits from `09a554802d4254942aeaf151682e3c824fc2684b` through `97f67c6cc56c0d1f65cc52fb7c5f3c59ad430812`, post-v1.37 main-branch work with no new release tag. Twelve files conflicted; upstream stays the baseline and the fork's per-user paths are re-applied around it. Nothing in the batch, liveness, reconciliation or verification lanes that `run` drives changed behavior, so the runner needed no adaptation.
 
 - **Web profile override.** The web prompts now name the profile through upstream's `profileRef()`/`profileNote()` (`CAREER_OPS_PROFILE`, #5588). `web/src/lib/run-prompts.mjs` keeps the fork's absolute `systemRoot`/`userRoot` paths: with no override the prompts still name `users/{USER}/config/profile.yml`, and with one they name the override and prepend upstream's profile note to the runtime-paths preamble. The assistant prompt moved to upstream's `web/src/lib/assistant-preamble.mjs`, which carries the fork's `CLOSED`/`Closed` states. The batch lane still does not adopt `CAREER_OPS_PROFILE`, as recorded below.
 - **Web telemetry.** `NEXT_TELEMETRY_DISABLED` (#5596) is set in `web/next.config.mjs` beside the fork's user-context imports, and in `web/server.mjs` beside its `webRoot` cwd.
