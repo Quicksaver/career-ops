@@ -55,6 +55,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run application:init -- --user {USER}` | `application-artifacts.mjs` | Initialize one versioned application-scoped JD/CV/PDF artifact bundle under the active user's output root |
 | `npm run paste-reply -- --user {USER}` | `paste-reply.mjs` | Manual/no-Gmail input into the active user's reply-watch pipeline |
 | `npm run closing-soon -- --user {USER}` | `closing-soon.mjs` | List the active user's tracker rows whose Notes (or matching `users/{USER}/jds/` capture) carry a closing date within N days, plus separate `overdue` and `unparsed` groups (read-only) |
+| `npm run reeval-candidates -- --user {USER}` | `reeval-candidates.mjs` | List the active user's `Evaluated` tracker rows whose last evaluation predates the latest change to `cv.md`, `article-digest.md`, `config/profile.yml` or `modes/_profile.md` (read-only) |
 | `npm run freshness` | `check-table-freshness.mjs` | Staleness validator for jurisdiction data tables (`as_of` / `next_effective` watchdog) |
 | `npm run jd-archive` | `check-jd-archive.mjs` | Validate every `reports/*.md` has an archived JD (embedded section or `jds/` capture) — flags `missing-jd-archive` |
 | `npm run openai:tailor` | `openai-tailor.mjs` | Tailor a CV via any OpenAI-compatible endpoint (headless companion to `openai-eval.mjs`) |
@@ -65,6 +66,8 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `node fix-slugs.mjs` | `fix-slugs.mjs` | Write `verify-portals.mjs`'s suggested ATS slug fixes back to portals.yml (dry run by default, `--fix` to write) |
 | `node audit-portals.mjs` | `audit-portals.mjs` | Audit what each portals.yml board actually serves — provider, posting count, sample titles — not just whether it answers (network; `--baseline` diffs against an earlier `--json` run) |
 | `npm run reposts` | `detect-reposts.mjs` | Flag re-listed (ghost) postings from scan history |
+| `npm run filter-audit -- --user {USER}` | `filter-audit.mjs` | Show which `title_filter.positive` keywords never match, add nothing, or bring mostly low-scored offers, replayed over scan history (read-only) |
+| `node coverage-check.mjs --user {USER} <url> --company <name> --title <title>` | `coverage-check.mjs` | Explain why the scanners missed a posting you found by hand, and propose the `portals.yml` change that would have caught it (read-only, zero-network) |
 | `node rank-pipeline.mjs --user {USER}` | `rank-pipeline.mjs` | Opt-in LLM relevance re-ranker — annotates pending pipeline rows with a score + reason (off by default) |
 | `npm run gemini:eval` | `gemini-eval.mjs` | Evaluate a JD with Google Gemini (free-tier alternative) |
 | `npm run ollama:eval` | `ollama-eval.mjs` | Evaluate a JD with a local Ollama model |
@@ -790,6 +793,28 @@ node closing-soon.mjs --tracker path/to/applications.md --jds path/to/jds
 
 ---
 
+## reeval-candidates
+
+Lists tracker rows that were scored against older candidate evidence. A row's score is fixed when the role is evaluated, while the primary sources the evaluation read keep changing (`expand` adds proof points, `add` adds a project, the profile gains a target). This script compares each row's last evaluation date with the last change to `cv.md`, `article-digest.md`, `config/profile.yml` (through `getProfilePath()`, so `CAREER_OPS_PROFILE` is honored) and `modes/_profile.md`, all under the data root, and lists the rows that predate it, oldest evaluation first, with the source(s) that changed after each one.
+
+- **When a source last changed:** the committer date of the last commit that touched it, when the file is tracked in the git repository that contains it and has no uncommitted changes. Otherwise (no git, an untracked or gitignored file, which is the default layout, or uncommitted edits) the file's mtime, labelled `mtime` because it is approximate: a copy, sync, restore or checkout moves it without changing the content.
+- **When a row was last evaluated:** the latest of the Date column (which `merge-tracker.mjs` rewrites on a re-evaluation), every `Re-eval YYYY-MM-DD` marker in Notes, and the header date of each linked report (the first bold header field holding an ISO date, in any label language), falling back to the date in the report filename. The latest wins because a re-evaluation writes its score through to the row. A report link to a missing file is flagged and the row is still dated from the tracker; a row with no readable date at all is listed under `undated`.
+- **Rule:** a row is listed when a source changed on a later calendar day than its evaluation date. A change on the same day is not listed, since the evaluation date has no time of day.
+- **Statuses:** `--status` (default `Evaluated`; any canonical state from `templates/states.yml`, comma-separated). Applied, Rejected, Discarded and the rest are checked only when asked.
+
+Read-only and zero-LLM: it never re-evaluates a row and never writes the tracker, a report or any other file (its `git status` runs with `--no-optional-locks`, so not even the index is refreshed). To refresh a score, evaluate the posting again; the merge updates the row in place.
+
+```bash
+node reeval-candidates.mjs                          # JSON (sources, candidates, undated)
+node reeval-candidates.mjs --summary                # human-readable table
+node reeval-candidates.mjs --status Evaluated,Applied
+node reeval-candidates.mjs --tracker path/to/applications.md
+```
+
+**Exit codes:** `0` on a report (a missing tracker or missing sources yield an empty result with a warning), `1` unrecognized flag, `2` invalid `--status` value or `--json` together with `--summary`.
+
+---
+
 ## update:check
 
 Checks whether a newer career-ops release is published. Changes merged to `main` between releases never report an update: `update` installs the release, not `main`. Outputs JSON to stdout:
@@ -852,7 +877,7 @@ npm run update
 
 **From a linked git worktree** (the default session layout of agents such as Claude Code), `check`, `update`, `rollback` and `dismiss` re-run themselves in the checkout that has `main` checked out, so the update is committed to `main` rather than the worktree's throwaway branch. Afterwards, `git merge main` inside the worktree picks it up. If no checkout has `main`, or that checkout has uncommitted changes to tracked files, `update` and `rollback` refuse without changing anything. Set `CAREER_OPS_UPDATE_IN_WORKTREE=1` to update the worktree's own branch instead.
 
-**Exit codes:** `0` success, `1` lock conflict or safety violation.
+**Exit codes:** `0` success, `1` lock conflict or safety violation, `3` the update was applied but `npm install` failed (run `npm install`). An installed updater from before this exit code existed reports that last case as `1`, after its own "self-reexec failed" lines.
 
 ---
 
@@ -864,7 +889,7 @@ Restores system-layer files from the most recent backup branch created during an
 npm run rollback
 ```
 
-**Exit codes:** `0` success, `1` no backup branch found or git error.
+**Exit codes:** `0` success, `1` no backup branch found, git error, or a failed `npm install` after the files were restored (rollback reinstalls so `node_modules` matches the restored `package.json`; run `npm install`).
 
 ---
 
@@ -1299,6 +1324,47 @@ node detect-reposts.mjs --user {USER}
 
 ---
 
+## filter-audit
+
+Audit of `title_filter.positive` in `portals.yml`. Replays the scanner's own
+keyword matching over the offers in `data/scan-history.tsv` that passed the
+title filter, and joins them with the scores in `reports/`. For each keyword
+it reports `hits` and `unique` (offers no other keyword catches), and flags:
+
+- **dead** — matches nothing in the history;
+- **redundant** — has hits but zero `unique`, so removing it loses no offer;
+- **noisy** — 5+ hits whose evaluated offers average below 2.5.
+
+Rank keywords by `unique`, not `hits`. The audit reads only the positive list:
+offers that `title_filter.negative` or `location_filter` already drop still
+count. Duplicate entries are audited once and listed. Read-only, zero-LLM.
+
+```bash
+npm run filter-audit            # human-readable summary
+node filter-audit.mjs           # JSON
+```
+
+---
+
+## coverage-check
+
+For a posting you found by hand: explains why the scanners did not surface
+it, and proposes the one `portals.yml` change that would have caught it. The
+verdict is one of: already surfaced, seen and dropped by a filter, tracked
+but disabled, tracked with no provider, tracked but dropped by the title or
+location filter, tracked but not seen yet, company not tracked, or company not
+tracked and its job site read by no provider. Zero-network: it reads `portals.yml`,
+`data/scan-history.tsv`, `data/pipeline.md` and the cached reverse-sweep
+company lists. It never edits `portals.yml`.
+
+```bash
+node coverage-check.mjs <url> --company "Acme" --title "QA Engineer" [--location "Berlin"]
+node coverage-check.mjs <url> ... --log [--note "agency posting"]   # also append to data/coverage-misses.tsv
+node coverage-check.mjs <url> ... --json                            # machine-readable verdict
+```
+
+---
+
 ## rank-pipeline
 
 Opt-in LLM relevance re-ranker for `data/pipeline.md`. **Off by default and not
@@ -1447,7 +1513,7 @@ These have no `npm run` binding — modes and agents call them with
 | Invocation | Purpose |
 |------------|---------|
 | `node onboard-write.mjs --user <id> --answers <file.json\|-> [--force] [--only profile\|portals]` (`--target <dir>` replaces `--user` for a fixture root) | Onboarding writer: copies `config/profile.example.yml` and `templates/portals.example.yml` line for line and changes only the answered fields (contact, targets, archetypes, narrative, title keywords, extra negatives, location allow-list, 45-day posting age). Keeps existing files unless `--force`, and `--only` limits a run to one file; prints `{"written":[],"kept":[]}` |
-| `node set-status.mjs <report#\|company> <State> [--note]` | Canonical tracker write path: strict states.yml validation, shared lock, atomic write. Modes call this instead of hand-editing `applications.md` |
+| `node set-status.mjs --user {USER} <tracker#\|company> <State> [--note]` | Canonical tracker write path: strict states.yml validation, shared lock, atomic write. Modes call this instead of hand-editing `applications.md` |
 | `node mark-pdf-ready.mjs <report#> [--dry-run] [--json]` | Mark the matched tracker's PDF cell ready after the web PDF render path finishes; resolves the report number, uses the shared tracker lock, and writes atomically |
 | `node sync-pdf-flags.mjs [--dry-run] [--prune [--write]] [--json]` | Reconcile tracker PDF column against data/pdf-index.tsv; `--prune` drops manifest rows whose PDF is gone from disk (dry run by default, `--write` to commit) |
 | `node followup-cadence.mjs [--summary]` | Follow-up cadence per active application; flags overdue entries |
@@ -1581,7 +1647,7 @@ few example friction patterns worth tagging, illustrative and non-exhaustive:
 Canonical tracker write path: strict `states.yml` validation, shared lock, atomic write. Modes and agents call this instead of hand-editing `applications.md`.
 
 ```bash
-node set-status.mjs <report#|company> <state> [--note "..."] [--on YYYY-MM-DD] [--force] [--dry-run] [--json]
+node set-status.mjs <tracker#|company> <state> [--note "..."] [--on YYYY-MM-DD] [--force] [--dry-run] [--json]
 node set-status.mjs --row N <state> [--note "..."]          # explicit tracker row ID
 node set-status.mjs --report N <state> [--note "..."]       # row whose Report cell links report #N
 node set-status.mjs "Company Name" Applied --role "Role"    # narrow match by role fragment

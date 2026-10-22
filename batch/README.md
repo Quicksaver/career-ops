@@ -61,7 +61,7 @@ When `--queue-file` selects work from a large historical input, the runner valid
 | `--skip-pdf` | off | Disable PDF rendering |
 | `--recover-artifact-failures` | off | Revalidate known false artifact failures without workers |
 | `--defer-verification` | off | Leave final verification to the parent |
-| `--status` / `--watch` | off | Inspect persisted progress; `--status --summary` prints only the totals |
+| `--status` / `--watch` | off | Inspect persisted progress; `--status --summary` prints only the totals, `--status --full` the per-job table (the default) |
 
 ## Manual holds and exact answers
 

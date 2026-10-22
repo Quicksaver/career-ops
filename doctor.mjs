@@ -10,17 +10,12 @@ import { execFileSync } from 'child_process';
 import { homedir } from 'os';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { hasYamlContent, loadYaml } from './lib/yaml-document.mjs';
-import dotenv from 'dotenv';
-import { AGENT_CLIS } from './lib/agent-cli.mjs';
 import { findTitleFilterConflicts } from './lib/title-filter-conflicts.mjs';
 import { sectionState, scanHeadings, SECTIONS } from './lib/personalization.mjs';
 import { discoverPlugins, pluginRoots, pluginStatus } from './plugins/_engine.mjs';
 import { getCareerOpsRoot, getProfilePath, hasProfileOverride } from './path-resolver.mjs';
-import { validateProfile, EXAMPLE_PATH } from './validate-profile.mjs';
-import { resolveExtractorMode } from './browser-extract.mjs';
 import { parseConfigByExtension } from './jsonc-parse.mjs';
-import { validateFlags } from './lib/cli-flags.mjs';
+import { validateFlags, flagValue } from './lib/cli-flags.mjs';
 import { geminiNodeFloor } from './lib/gemini-node-floor.mjs';
 import { SKILL_ENTRYPOINTS } from './scaffolder/bin/skill-entrypoints.mjs';
 import { nodeFloor } from './lib/node-floor.mjs';
@@ -28,6 +23,36 @@ import { findExperienceSections, parseCompanyHeading, EXPERIENCE_HEADING_NAMES }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
+
+// Modules that import an npm package (directly or through their own imports)
+// load here, after the fact, instead of as static imports. A static import of
+// a missing package fails while Node links the module graph, before a single
+// line of this file runs, so a copy with no node_modules (a ZIP download, a
+// copy made without `npm install`) died with a raw ERR_MODULE_NOT_FOUND stack
+// from the very check that exists to report missing dependencies. Loading them
+// dynamically lets that failure be caught and reported with the fix.
+let hasYamlContent, loadYaml, dotenv, AGENT_CLIS, validateProfile, EXAMPLE_PATH, resolveExtractorMode;
+try {
+  [
+    { hasYamlContent, loadYaml },
+    { default: dotenv },
+    { AGENT_CLIS },
+    { validateProfile, EXAMPLE_PATH },
+    { resolveExtractorMode },
+  ] = await Promise.all([
+    import('./lib/yaml-document.mjs'),
+    import('dotenv'),
+    import('./lib/agent-cli.mjs'),
+    import('./validate-profile.mjs'),
+    import('./browser-extract.mjs'),
+  ]);
+} catch (err) {
+  let missing = [];
+  try { missing = findMissingDependencies(__dirname); } catch { /* no readable package.json: rethrow below */ }
+  if (err?.code !== 'ERR_MODULE_NOT_FOUND' || missing.length === 0) throw err;
+  console.error(`career-ops dependencies are not installed in ${__dirname} (missing: ${missing.join(', ')}), so doctor cannot run its checks.\nFix: run \`npm install\` in ${__dirname}, then run doctor again.`);
+  process.exit(1);
+}
 
 // CLIs the doctor recognises.
 
@@ -38,7 +63,9 @@ const argv = process.argv.slice(2);
 // flags before --help so `--help --bogus` still errors.
 const KNOWN_FLAGS = ['--target', '--json', '--init-templates', '--strict', '--cli', '--help', '-h'];
 
-// Both take their value as the next argv token.
+// Both take a value, as the next argv token or as `--flag=value`. validateFlags
+// accepts either form, so both are read with flagValue(): an indexOf() lookup
+// cannot see `--target=<path>` and would diagnose this checkout instead.
 const VALUE_FLAGS = ['--target', '--cli'];
 
 const USAGE = `Usage:
@@ -53,15 +80,14 @@ const USAGE = `Usage:
 CLIs: ${AGENT_CLIS.join(', ')}`;
 
 // requireOperand: without it, `--target --json` reads --json as the target
-// path (argv[targetIdx + 1] below has no adjacency check of its own), and the
+// path (flagValue() below takes the next token as-is), and the
 // doctor silently diagnoses a directory literally named "--json" at exit 0
 // (#3087) — this is the onboarding entrypoint, so that's a user told to
 // create files that already exist. Nothing more specific to say than the
 // shared message.
 validateFlags(argv, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS, requireOperand: true });
 
-const targetIdx = argv.indexOf('--target');
-const explicitTarget = targetIdx !== -1 && argv[targetIdx + 1] ? argv[targetIdx + 1] : null;
+const explicitTarget = flagValue(argv, '--target') || null;
 const projectRoot = explicitTarget || getCareerOpsRoot();
 // --target diagnoses a whole other checkout, so that checkout's profile is the
 // one that counts; otherwise CAREER_OPS_PROFILE applies as it does everywhere.
@@ -99,8 +125,7 @@ if (INIT_TEMPLATES && !JSON_OUT) {
 // Opt-in so the default `npm run doctor` stays fast and fully offline.
 const STRICT = argv.includes('--strict');
 
-const cliIdx = argv.indexOf('--cli');
-const cliFlag = cliIdx !== -1 ? argv[cliIdx + 1] : null;
+const cliFlag = flagValue(argv, '--cli') ?? null;
 
 // ANSI colors (only on TTY)
 const isTTY = process.stdout.isTTY;

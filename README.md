@@ -234,19 +234,9 @@ npx playwright install chromium   # only needed for PDF generation
 # 2. Pick a local user id (all personal data stays in users/<username>/)
 export CAREER_OPS_USER='<username>'
 
-# 3. Check setup
-npm run doctor -- --user <username>       # Validates all prerequisites
-
-# 4. Configure
-mkdir -p users/<username>/config users/<username>/modes
-cp config/profile.example.yml users/<username>/config/profile.yml  # Edit with your details
-cp modes/_profile.template.md users/<username>/modes/_profile.md   # Customize archetypes
-cp templates/portals.example.yml users/<username>/portals.yml       # Customize companies
-
-# 5. Add your CV
-# Create users/<username>/cv.md with your CV in markdown
-
-# 6. Open your AI CLI in this directory
+# 3. Open your AI CLI in this directory. On first launch it walks you
+#    through setup (your CV, profile and target roles) by chatting.
+#    Name the user (<username>) when it asks.
 claude   # or codex / opencode / qwen / agy / grok
 
 # Then ask your CLI to adapt the system to you:
@@ -255,7 +245,7 @@ claude   # or codex / opencode / qwen / agy / grok
 # "Add these 5 companies to my portals for <username>"
 # "Update my profile with this CV I'm pasting"
 
-# 7. Start using
+# 4. Start using
 # Paste a job URL with --user <username>, or run /career-ops scan <username>
 # If your CLI supports slash commands, use /career-ops (or its CLI-specific alias).
 # In Codex, ask for the same mode in plain language, e.g.:
@@ -279,11 +269,11 @@ Set this flag **only when the configured proxy itself blocks connections to priv
 npm i -g @santifer/career-ops
 ```
 
-This installs the `career-ops` binary globally so you can run it directly instead of via `npx`. Unlike `npx @santifer/career-ops init` (which bootstraps a project directory), the global install gives you a persistent `career-ops` command available anywhere in your terminal.
+This installs the `career-ops` binary globally, so you can run `career-ops init [folder]` without `npx`. `init` is its only command: it sets up a workspace, and everything after that happens inside your AI coding CLI (see Usage below), not through this binary.
 
 **Which one should you use?**
 - `npx @santifer/career-ops init`: best for first use; creates a dedicated project folder.
-- `npm i -g @santifer/career-ops`: best once you have a project folder and want to run career-ops commands directly.
+- `npm i -g @santifer/career-ops`: if you'd rather type `career-ops init` than the `npx` form. It adds no other commands.
 
 > **The system is designed to be customized by your AI coding CLI itself.** Modes, archetypes, scoring weights, negotiation scripts -- just ask it to change them. It reads the same files it uses, so it knows exactly what to edit.
 
@@ -538,7 +528,7 @@ GOOS=windows GOARCH=amd64 go build -o ../users/<username>/career-dashboard.exe .
 
 The per-user binary infers `users/<username>/` from its own location, so `--path` is optional. Use `--path` only for unusual layouts.
 
-Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.
+Features: 10 filter tabs, 8 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.
 
 There is also an **experimental web UI** (alpha and opt-in: nothing runs unless you start it): see [`web/README.md`](web/README.md).
 
@@ -667,7 +657,7 @@ The Go dashboard TUI, Node.js scripts, and AI agent modes all automatically resp
 career-ops ([career-ops.org](https://career-ops.org), also known as **careerops**) is an open-source AI job search that runs locally in your AI coding CLI (Claude Code, Codex, OpenCode and others) and leaves every decision to you. It evaluates job offers against your CV, generates ATS-tailored PDFs, finds the right person to contact, and tracks everything in one place: you always have the final call. It is the first reference implementation of the [CareerOps Manifesto](https://career-ops.org/manifesto).
 
 **Can the tailored CV invent things?**
-It must not, and the prompts say so: reformulate, never fabricate. `generate-pdf` blocks a CV whose numbers or facts are missing from your sources, unless you pass `--skip-fact-check`. It does not yet check job titles or judge rewording. Two open issues track that: [#2677](https://github.com/career-ops-hq/career-ops/issues/2677) (job titles must match cv.md) and [#1411](https://github.com/career-ops-hq/career-ops/issues/1411) (fail-closed faithfulness check). Until they merge, read every CV before you send it. The [Legal Disclaimer](LEGAL_DISCLAIMER.md) says the same in longer words.
+It must not, and the prompts say so: reformulate, never fabricate. `generate-pdf` blocks a CV whose numbers or facts are missing from your sources, unless you pass `--skip-fact-check`. The `pdf` mode also runs `cv-title-check.mjs`, which compares each job title in the tailored CV with the title cv.md gives the same job (matched by company and dates) and asks you to keep or revert any that differ. It warns rather than blocks, because reframing a title is sometimes your call. Nothing judges rewording yet: [#1411](https://github.com/career-ops-hq/career-ops/issues/1411) (fail-closed faithfulness check) tracks that. Until then, read every CV before you send it. The [Legal Disclaimer](LEGAL_DISCLAIMER.md) says the same in longer words.
 
 **Can I run career-ops for free, or on a cheaper / local model?**
 Yes. career-ops is CLI-agnostic and runs on free and local models (OpenRouter free models, Ollama or any OpenAI-compatible endpoint), so you are not tied to a paid subscription. See [docs/RUNNING_ON_A_BUDGET.md](docs/RUNNING_ON_A_BUDGET.md) for the full setup.

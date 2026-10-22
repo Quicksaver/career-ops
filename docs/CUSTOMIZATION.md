@@ -34,6 +34,8 @@ Copy from `templates/portals.example.yml` and customize:
 3. **search_queries**: WebSearch queries for job boards (Ashby, Greenhouse, Lever, Indeed, etc.)
 4. **tracked_companies**: Companies to check directly
 
+Once you have a few scans behind you, `node filter-audit.mjs --summary` shows which `title_filter.positive` keywords actually bring offers, and `node coverage-check.mjs` explains why a posting you found by hand never reached you.
+
 **Filtering on a field other than the title (optional).** When a board publishes a structured field that says more than the title does — an occupation code, a department — define a whitelist for it under `field_filters` and set `filter_on` on that target (`filter_on: noc`, or `filter_on: [title, noc]` to require both). The keywords use the same language as `title_filter`. Targets without `filter_on` keep gating on the title. The provider has to emit the field (for example a `local_parser` script); postings that lack it pass and are counted, and the scan warns when a target never supplies it. See the "Declared-field whitelists" section of `templates/portals.example.yml`.
 
 `portals.yml` is meant to stay live, not be a static file — see [Keeping portals.yml live](KEEPING_PORTALS_LIVE.md) for the house rule that auto-adds companies as they come up, and the commands to validate the file after each change.

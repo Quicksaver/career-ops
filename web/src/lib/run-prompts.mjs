@@ -13,6 +13,7 @@ import { CV_ENVELOPE_INSTRUCTION } from "./cv-envelope.mjs";
 import path from "node:path";
 import { REPORT_ENVELOPE_INSTRUCTION } from "./report-envelope.mjs";
 import { COVER_TONES } from "./cover-brief.mjs";
+import { DEFAULT_PROFILE_REF, profileNote } from "./core/profile-path.mjs";
 
 
 /**
@@ -105,16 +106,17 @@ function safeCvTemplate(value) {
     : BASE_CV_TEMPLATE;
 }
 
-export function buildPrompt({ kind, input, memory, today, postedAt, lang, cvTemplate, reportFile, coverBrief, systemRoot = "", userRoot = "", userId = "" }) {
+export function buildPrompt({ kind, input, memory, today, postedAt, lang, cvTemplate, reportFile, coverBrief, systemRoot = "", userRoot = "", userId = "", profile = DEFAULT_PROFILE_REF }) {
   const systemFile = file => path.join(systemRoot, file).replaceAll("\\", "/");
   const userFile = file => path.join(userRoot, file).replaceAll("\\", "/");
   // Report paths arrive relative to the data root; the agent runs from the system checkout.
   const reportPath = reportFile && !path.isAbsolute(reportFile) ? userFile(reportFile) : reportFile;
   const command = file => `node ${systemRoot ? JSON.stringify(systemFile(file)) : file}${userId ? ` --user ${JSON.stringify(userId)}` : ""}`;
+  const profileFile = profile === DEFAULT_PROFILE_REF ? userFile(DEFAULT_PROFILE_REF) : profile;
   const pdfMode = systemFile("modes/pdf.md");
-  const runtimePaths = systemRoot && userRoot && userId
+  const runtimePaths = profileNote(profile) + (systemRoot && userRoot && userId
     ? `Read ${JSON.stringify(systemFile("AGENTS.md"))}. Active user: ${JSON.stringify(userId)}. USER_ROOT: ${JSON.stringify(userRoot)}. System modes, templates and scripts live under ${JSON.stringify(systemRoot)}; candidate files and generated artifacts live under USER_ROOT. Keep tracker TSV report links user-root-relative as reports/....\n\n`
-    : "";
+    : "");
   // AGENTS.md's "Output Language vs Market Modes" composition rule. The CLI
   // picks this up by reading AGENTS.md interactively; a one-shot headless
   // prompt has no such chance, so the rule has to be stated in the prompt or a
@@ -172,7 +174,7 @@ Target: ${input}`;
     // backend (a plain Node process, no CLI sandbox) writes and renders it, so
     // pdf mode runs with no write tool at all.
     return `${runtimePaths}You are tailoring the user's ATS-optimized CV for application #${input}, headless, on their machine. Run the REAL career-ops "pdf" mode's CONTENT step: follow ${pdfMode}'s TAILORING rules exactly (do not improvise your own scoring or format). Apply its CONTENT rules — keyword injection, ordering, the competency grid, project selection, and its never-invent-a-skill rule. Its steps that shell out (the jd-skill-gap.mjs check) and its build/save/render steps are NOT performed on web runs; the platform handles output itself.
-1. Read ${pdfMode}, ${userFile("cv.md")}, ${userFile("config/profile.yml")}, and the evaluation report at ${JSON.stringify(reportPath ?? userFile(`reports/${input}-*.md`))} (for the JD keywords + analysis).
+1. Read ${pdfMode}, ${userFile("cv.md")}, ${profileFile}, and the evaluation report at ${JSON.stringify(reportPath ?? userFile(`reports/${input}-*.md`))} (for the JD keywords + analysis).
 2. Tailor the CV per ${pdfMode}: inject the JD's keywords into the summary + first bullets, reorder experience by relevance, build the competency grid, pick the top 3–4 projects. NEVER invent skills — only reword REAL experience using the JD's vocabulary.
 3. Fill ${systemFile(safeCvTemplate(cvTemplate))}'s {{...}} placeholders with the tailored content. Use that exact file: the platform already resolved it from cv.template through cv-templates.mjs, so do NOT run modes/pdf.md's own template-resolution step. ${CV_ENVELOPE_INSTRUCTION}
 4. Emit the envelope EXACTLY ONCE. The platform writes the HTML, renders the PDF, and updates the tracker's PDF column itself, only after a confirmed successful render. Do not submit anything anywhere.
@@ -226,24 +228,14 @@ End with EXACTLY one final line: VERDICT: {5 if now live, else 1}/5 — {what yo
   // why the drift stayed invisible.
   //
   // And it does not let a failed fetch become a scored report. WebFetch returns
-  // 200 with a login wall, a lazy-loaded shell carrying no description (#2619),
-  // an expired-ad page or a bot challenge, and none of that announces itself as
-  // an error. An agent handed that text will happily grade it: the output is a
-  // confident A–F evaluation of a login screen, shaped exactly like a real one.
-  // Reported by a user against LinkedIn URLs in #2995.
-  //
-  // The REFUSAL IS NOT THIS PROMPT'S POLICY, and saying so matters: the web is a
-  // view over the core's modes, never a parallel engine. modes/oferta.md step 3
-  // already rules that a posting which "appears closed" stops before Block A with
-  // no evaluation, report or CV, and modes/pipeline.md's LinkedIn note already
-  // says never to treat a login wall or partial shell as a verified JD. Both were
-  // written for the interactive path; headless just never had the case spelled
-  // out. So this points AT those rules rather than inventing a third one — if the
-  // core changes its mind, this follows instead of contradicting it.
+  // 200 for a login wall, an empty shell, an expired ad, or a bot challenge.
+  // The refusal is the mode file's rule (a posting that appears closed stops
+  // before Block A). This prompt points at that rule. It does not invent a
+  // second one.
   return `${runtimePaths}You are running the OFFICIAL career-ops job evaluation, HEADLESS, on the user's own machine. Today is ${today}. Run the REAL career-ops evaluation — do NOT improvise your own scoring.
 
 
-1. Read ${systemFile(resolvedLang.evalModeFile)} and follow it EXACTLY — EVERY section its report template specifies, in its order, including the Machine Summary. Do not treat any list of sections in THIS prompt as the set to produce; that file is the only source of truth for which sections exist. Ground the fit in THIS person: read ${userFile("cv.md")}, ${userFile("config/profile.yml")} and ${userFile("modes/_profile.md")}.
+1. Read ${systemFile(resolvedLang.evalModeFile)} and follow it EXACTLY — EVERY section its report template specifies, in its order, including the Machine Summary. Do not treat any list of sections in THIS prompt as the set to produce; that file is the only source of truth for which sections exist. Ground the fit in THIS person: read ${userFile("cv.md")}, ${profileFile} and ${userFile("modes/_profile.md")}.
 
    Use WebFetch to read the posting (you are headless — Playwright is unavailable), and mark the report header "Verification: unconfirmed (batch mode)".
 
