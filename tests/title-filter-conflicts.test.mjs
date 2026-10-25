@@ -28,9 +28,9 @@ console.log('\ntitle_filter conflicts — a positive the negatives veto');
 // over an install whose updater has no entry for lib/title-filter-conflicts.mjs
 // -- and the install is left with a doctor that cannot load. Same shape as the
 // check tests/jd-archive-wiring.test.mjs makes for check-jd-archive.mjs.
-const updaterSrc = readFileSync(join(ROOT, 'update-system.mjs'), 'utf-8');
-const systemBlock = (updaterSrc.match(/SYSTEM_PATHS\s*=\s*\[([\s\S]*?)\]/) || [, ''])[1];
-if ((systemBlock.includes("'lib/title-filter-conflicts.mjs'") || systemBlock.includes("'lib/'"))) {
+const manifestSrc = readFileSync(join(ROOT, 'lib', 'update-manifest.mjs'), 'utf-8');
+const systemBlock = (manifestSrc.match(/SYSTEM_PATHS\s*=\s*\[([\s\S]*?)\]/) || [, ''])[1];
+if (systemBlock.includes("'lib/title-filter-conflicts.mjs'") || systemBlock.includes("'lib/'")) {
   pass('lib/title-filter-conflicts.mjs is in SYSTEM_PATHS (shipped + updatable)');
 } else {
   fail('lib/title-filter-conflicts.mjs is NOT in SYSTEM_PATHS — an upgraded install would get a doctor that cannot load');

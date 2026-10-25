@@ -92,12 +92,13 @@ batch/batch-runner.sh --user {USER} [OPTIONS]
 
 Seçenekler (Options):
 - `--user ID` — zorunlu; `users/` altındaki kullanıcı klasörü
+- `--cli NAME` — çalışan (worker) CLI'ı: `codex` (varsayılan, ya da `CAREER_OPS_BATCH_CLI`), `claude`, `opencode`, `gemini`, `qwen` veya `grok`; `codex` ve `claude` dışındaki her CLI işleri tek tek ve her çalıştırmada tek denemeyle çalıştırır (sonraki bir çalıştırma başarısız bir işi `--max-retries` sınırına kadar yine yeniden dener)
 - `--dry-run` — bekleyen işleri çalıştırmadan listele
 - `--retry-failed` — sadece başarısız olan işleri yeniden dene
 - `--resume-paused` — Claude oturumu/kullanım sınırı aşıldığı için duraklatılan işlere devam et
 - `--start-from N` — N numaralı ID'den başla
 - `--limit N` — bu çalışmada işlenecek maksimum iş (job) sayısı
-- `--parallel N` — isteğe bağlı çalışan (worker) sayısı; verilmezse profildeki `batch.parallel`, o da yoksa `1`
+- `--parallel N` — isteğe bağlı çalışan (worker) sayısı; verilmezse profildeki `batch.parallel`, o da yoksa `1` (yalnızca `codex` ve `claude`; diğer CLI'lar her zaman tek çalışan kullanır)
 - `--max-retries N` — iş başına deneme sayısı (varsayılan: 2)
 - `--rate-limit-sleep N` — anlık rate-limit engeline takılan bir çalışanı yeniden denemeden önce beklenecek saniye (varsayılan: 300; yığını hemen duraklatmak için 0 kullanın)
 

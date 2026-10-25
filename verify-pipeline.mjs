@@ -10,7 +10,7 @@
  * 4. Scores match format X.XX/5 or N/A or DUP
  * 5. All rows have proper pipe-delimited format
  * 6. No pending TSVs in tracker-additions/ (only in merged/ or archived/)
- * 7. states.yml canonical IDs for cross-system consistency
+ * 7. No markdown bold in scores
  * 8. Stale report-number reservation sentinels are garbage-collected
  * 9. No two report files cover the same company+role (warning — see #1425)
  * 10. Every report file has a tracker row referencing it (warning — see #1425)
@@ -23,7 +23,12 @@
  * 16. No invisible control characters in tracker cells (error — see #3892)
  * 17. JD archive coverage — check-jd-archive.mjs's findings (warning/error — see #4525)
  *
- * Run: node career-ops/verify-pipeline.mjs --user <id>
+ * Every error/warning is followed by a one-line `→ fix:` hint (#5796), printed
+ * once per kind. Pass --no-hints for the bare, hint-free output. --json carries
+ * no hints, so the typed findings reviewed verification fingerprints stay as
+ * they were.
+ *
+ * Run: node career-ops/verify-pipeline.mjs --user <id> [--no-hints]
  */
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, unlinkSync, statSync } from 'fs';
@@ -99,7 +104,27 @@ const errorFindings = [];
 const warningFindings = [];
 const findingIds = new Set();
 
-function finding(level, code, id, message, details = {}) {
+// Optional one-line fix hint (#5796). Printed as an indented "→ fix:" line under
+// the finding. Repeated findings of the same kind share one hint string, so it
+// is printed under the first of them only — a tracker with hundreds of identical
+// findings does not print hundreds of identical hints. Hints are static text
+// (no row data) for exactly that reason. `--no-hints` restores the previous
+// output byte-for-byte. Counts, exit codes and --json findings never depend on
+// hints.
+const SHOW_HINTS = !process.argv.includes('--no-hints');
+const printedHints = new Set();
+function printHint(hint) {
+  if (!SHOW_HINTS || !hint || printedHints.has(hint)) return;
+  printedHints.add(hint);
+  // Hints name commands the way upstream writes them; this checkout's scripts
+  // also need the selected user, so it is added to each one.
+  const text = userContext.userId
+    ? hint.replace(/\bnode ([\w.-]+\.mjs)/g, `node $1 --user ${userContext.userId}`)
+    : hint;
+  console.log(`   → fix: ${text}`);
+}
+
+function finding(level, code, id, message, details = {}, hint = '') {
   if (!id || id === code) id = `${code}:${createHash('sha256').update(JSON.stringify({ message, details })).digest('hex').slice(0, 20)}`;
   else if (code.startsWith('portal_') || code.startsWith('tracker_sync_')) {
     // Name-scoped resource IDs need a discriminator even when emitted alone.
@@ -113,18 +138,21 @@ function finding(level, code, id, message, details = {}) {
   if (level === 'error') {
     errors++;
     errorFindings.push(item);
-    if (!JSON_OUTPUT) console.log(`❌ ${message}`);
+    if (!JSON_OUTPUT) { console.log(`❌ ${message}`); printHint(hint); }
   } else {
     warnings++;
     warningFindings.push(item);
-    if (!JSON_OUTPUT) console.log(`⚠️  ${message}`);
+    if (!JSON_OUTPUT) { console.log(`⚠️  ${message}`); printHint(hint); }
   }
 }
-function error(message, code = 'integrity_error', id = code, details = {}) {
-  finding('error', code, id, message, details);
+// Upstream's (message, hint) call shape, with the fork's typed finding fields
+// after it: the stable code, the finding ID and the evidence details that
+// reviewed verification reads from --json.
+function error(message, hint, code = 'integrity_error', id = code, details = {}) {
+  finding('error', code, id, message, details, hint);
 }
-function warn(message, code = 'integrity_warning', id = code, details = {}) {
-  finding('warning', code, id, message, details);
+function warn(message, hint, code = 'integrity_warning', id = code, details = {}) {
+  finding('warning', code, id, message, details, hint);
 }
 function ok(msg) { if (!JSON_OUTPUT) console.log(`✅ ${msg}`); }
 
@@ -259,19 +287,19 @@ for (const e of entries) {
   const statusOnly = clean.replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
 
   if (!CANONICAL_STATUSES.has(statusOnly) && !ALIASES[statusOnly]) {
-    error(`#${e.num}: Non-canonical status "${e.status}"`, 'noncanonical_status', `noncanonical-status:${e.num}`, { tracker_num: e.num, status: e.status });
+    error(`#${e.num}: Non-canonical status "${e.status}"`, "run node normalize-statuses.mjs (maps known aliases); for an unknown word set a state from templates/states.yml with node set-status.mjs <report#|company> <State>", 'noncanonical_status', `noncanonical-status:${e.num}`, { tracker_num: e.num, status: e.status });
     badStatuses++;
   }
 
   // Check for markdown bold in status
   if (e.status.includes('**')) {
-    error(`#${e.num}: Status contains markdown bold: "${e.status}"`, 'bold_status', `bold-status:${e.num}`, { tracker_num: e.num, status: e.status });
+    error(`#${e.num}: Status contains markdown bold: "${e.status}"`, "run node normalize-statuses.mjs to strip the ** markers (add --dry-run to preview)", 'bold_status', `bold-status:${e.num}`, { tracker_num: e.num, status: e.status });
     badStatuses++;
   }
 
   // Check for dates in status
   if (/\d{4}-\d{2}-\d{2}/.test(e.status)) {
-    error(`#${e.num}: Status contains date: "${e.status}" — dates go in date column`, 'dated_status', `dated-status:${e.num}`, { tracker_num: e.num, status: e.status });
+    error(`#${e.num}: Status contains date: "${e.status}" — dates go in date column`, "run node normalize-statuses.mjs to strip the date from the status cell (add --dry-run to preview); put the date in the Date column by hand if it matters", 'dated_status', `dated-status:${e.num}`, { tracker_num: e.num, status: e.status });
     badStatuses++;
   }
 }
@@ -292,6 +320,7 @@ function emitTrackerDuplicate(group, extraDetails = {}) {
   const nums = group.map(e => e.num).sort((a, b) => a - b);
   warn(
     `Possible duplicates: ${group.map(e => `#${e.num}`).join(', ')} (${group[0].company} — ${group[0].role})`,
+    "run node dedup-tracker.mjs --dry-run to preview a merge; if they are genuinely different openings, put each req/job ID in the notes column so they stay distinct",
     'possible_duplicate_tracker',
     `possible-duplicate-tracker:${nums.join(':')}`,
     {
@@ -352,7 +381,7 @@ for (const e of entries) {
   });
   if (inspectionFailure) {
     const codes = [...new Set(inspectionFailure.errors.map(({ error: err }) => err?.code || 'unknown error'))].join(', ');
-    warn(`#${e.num}: Report could not be inspected (${codes}), so it may exist: ${inspectionFailure.link}`,
+    warn(`#${e.num}: Report could not be inspected (${codes}), so it may exist: ${inspectionFailure.link}`, "check read permission on the reports/ directory and the file itself; fix-report-links.mjs does not touch these rows",
       'report_uninspectable', `report-uninspectable:${e.num}`, {
         tracker_num: e.num, report_link: inspectionFailure.link, error_codes: codes,
       });
@@ -360,7 +389,7 @@ for (const e of entries) {
     continue;
   }
   if (link !== null) {
-    error(`#${e.num}: Report not found: ${link}`, 'broken_report_link', `broken-report-link:${e.num}`, { tracker_num: e.num, report_link: link });
+    error(`#${e.num}: Report not found: ${link}`, "restore the missing report file, or run node fix-report-links.mjs --dry-run to preview clearing the dead link to — (repost rows that never had a report belong here)", 'broken_report_link', `broken-report-link:${e.num}`, { tracker_num: e.num, report_link: link });
     brokenReports++;
   }
 }
@@ -370,7 +399,7 @@ if (brokenReports === 0 && uninspectableReports === 0) ok('All report links vali
 let badScores = 0;
 for (const e of entries) {
   if (!looksLikeScoreCell(e.score)) {
-    error(`#${e.num}: Invalid score format: "${e.score}"`, 'invalid_score', `invalid-score:${e.num}`, { tracker_num: e.num, score: e.score });
+    error(`#${e.num}: Invalid score format: "${e.score}"`, "the Score cell must read X.X/5, N/A or DUP; a status word there means the columns are shifted or the row came from a headerless TSV: fix that row by hand (score before status)", 'invalid_score', `invalid-score:${e.num}`, { tracker_num: e.num, score: e.score });
     badScores++;
   }
 }
@@ -383,7 +412,7 @@ for (const line of lines) {
   if (isSeparatorRow(line) || isHeaderRow(line)) continue;
   const parts = line.split('|');
   if (parts.length <= MAX_IDX) {
-    error(`Row with too few columns (need ${MAX_IDX} data cols): ${line.substring(0, 80)}...`, 'malformed_tracker_row', `malformed-tracker-row:${badRows + 1}`, { row: line });
+    error(`Row with too few columns (need ${MAX_IDX} data cols): ${line.substring(0, 80)}...`, "open applications.md and add the missing cells or remove the stray line; a literal | inside a cell splits it, so replace it with / or -", 'malformed_tracker_row', `malformed-tracker-row:${badRows + 1}`, { row: line });
     badRows++;
   }
 }
@@ -397,6 +426,7 @@ if (existsSync(ADDITIONS_DIR)) {
   if (pendingTsvs > 0) {
     warn(
       `${pendingTsvs} pending TSVs in tracker-additions/ (not merged)`,
+      "run node merge-tracker.mjs (add --dry-run to preview)",
       'pending_tracker_additions',
       'pending-tracker-additions',
       { files: files.sort().map(name => `batch/tracker-additions/${name}`) },
@@ -409,7 +439,7 @@ if (pendingTsvs === 0) ok('No pending TSVs');
 let boldScores = 0;
 for (const e of entries) {
   if (e.score.includes('**')) {
-    warn(`#${e.num}: Score has markdown bold: "${e.score}"`, 'bold_score', `bold-score:${e.num}`, { tracker_num: e.num, score: e.score });
+    warn(`#${e.num}: Score has markdown bold: "${e.score}"`, "remove the ** markers from the Score cell by hand (e.g. **4.2/5** -> 4.2/5)", 'bold_score', `bold-score:${e.num}`, { tracker_num: e.num, score: e.score });
     boldScores++;
   }
 }
@@ -431,7 +461,7 @@ if (existsSync(REPORTS_DIR)) {
       const { mtimeMs } = statSync(full);
       if (now - mtimeMs > SENTINEL_MAX_AGE_MS) {
         unlinkSync(full);
-        warn(`Removed stale reservation sentinel: ${name}`, 'stale_reservation_removed', `stale-reservation-removed:${name}`, { file: `reports/${name}`, resolved: true });
+        warn(`Removed stale reservation sentinel: ${name}`, "nothing to do: it was older than 4 h and has already been deleted; if it recurs, a worker crashed between reserve-report-num.mjs and writing its report", 'stale_reservation_removed', `stale-reservation-removed:${name}`, { file: `reports/${name}`, resolved: true });
         staleSentinels++;
       }
     } catch {
@@ -511,6 +541,7 @@ for (const [num, group] of reportsByNumber) {
   const sorted = [...group].sort();
   error(
     `Report number #${num} is used by ${group.length} active files: ${sorted.join(', ')}`,
+    'two files share one report number, so links and artifacts for it are ambiguous: keep the file the tracker links, then rename the other to a fresh number from node reserve-report-num.mjs or archive it if it is a leftover',
     'duplicate_report_number',
     `duplicate-report-number:${num}`,
     { report_num: num, files: sorted.map(name => `reports/${name}`) },
@@ -546,7 +577,7 @@ for (const group of reportsByRole.values()) {
   // a key and no two share one.
   const keys = group.map(r => r.urlKey);
   if (keys.every(Boolean) && new Set(keys).size === keys.length) continue;
-  warn(`Duplicate reports for same company+role: ${group.map(r => r.name).join(', ')}`, 'duplicate_reports_same_role', `duplicate-reports:${group.map(r => r.name).sort().join(':')}`, {
+  warn(`Duplicate reports for same company+role: ${group.map(r => r.name).join(', ')}`, "open both reports and delete or archive the stale one if it is a concurrent-worker duplicate; keep both if the JD changed (re-evaluation) or the openings differ (add the posting URL)", 'duplicate_reports_same_role', `duplicate-reports:${group.map(r => r.name).sort().join(':')}`, {
     files: group.map(r => `reports/${r.name}`),
     posting_identities: [...group].sort((a, b) => a.name.localeCompare(b.name)).map(r => ({ file: `reports/${r.name}`, canonical_url: r.urlKey })),
   });
@@ -560,7 +591,9 @@ for (const group of reportsByRole.values()) {
   for (const [url, subset] of byUrl) {
     if (subset.length < 2 || subset.length === group.length) continue;
     const names = subset.map(report => report.name).sort();
-    warn(`Duplicate reports for the same posting: ${names.join(', ')}`, 'duplicate_reports_same_role', `duplicate-reports:${names.join(':')}`, {
+    warn(`Duplicate reports for the same posting: ${names.join(', ')}`,
+      'these reports evaluate the same posting URL: keep the newest complete evaluation and archive the others, or run node verify-runner.mjs to review and resolve them',
+      'duplicate_reports_same_role', `duplicate-reports:${names.join(':')}`, {
       files: names.map(name => `reports/${name}`), match_basis: 'canonical_url', canonical_url: url,
     });
     dupReports++;
@@ -595,7 +628,9 @@ let orphanReports = 0;
 for (const name of reportFiles) {
   const num = parseInt(name.match(REPORT_FILE_RE)[1], 10);
   if (!referencedReportFiles.has(name) && !fallbackReferencedNums.has(num)) {
-    warn(`Orphan report — no tracker row references #${num}: reports/${name}`, 'orphan_report', `orphan-report:${name}`, { report_num: num, file: `reports/${name}` });
+    warn(`Orphan report — no tracker row references #${num}: reports/${name}`,
+      "if the role was tracked, link the report in its row's Report cell; otherwise add it with a batch/tracker-additions TSV + node merge-tracker.mjs, or delete the report if it is a leftover duplicate",
+      'orphan_report', `orphan-report:${name}`, { report_num: num, file: `reports/${name}` });
     orphanReports++;
   }
 }
@@ -613,15 +648,15 @@ for (const e of entries) {
   const via = String(e.via || '').trim();
   if (company === '?') {
     if (COLMAP.via == null) {
-      warn(`#${e.num}: unknown employer (?) but the tracker has no Via column — add it with: node merge-tracker.mjs --migrate-via`, 'missing_via_column', `missing-via-column:${e.num}`, { tracker_num: e.num });
+      warn(`#${e.num}: unknown employer (?) but the tracker has no Via column — add it with: node merge-tracker.mjs --migrate-via`, "run node merge-tracker.mjs --migrate-via to add the Via column", 'missing_via_column', `missing-via-column:${e.num}`, { tracker_num: e.num });
       viaIssues++;
     } else if (!via || via === '—') {
-      error(`#${e.num}: unknown employer (?) with no Via channel — record the agency/recruiter firm`, 'missing_via_value', `missing-via-value:${e.num}`, { tracker_num: e.num });
+      error(`#${e.num}: unknown employer (?) with no Via channel — record the agency/recruiter firm`, "type the agency/recruiter firm into the row's Via cell in applications.md (use — only for direct applications)", 'missing_via_value', `missing-via-value:${e.num}`, { tracker_num: e.num });
       viaIssues++;
     }
   }
   if (CONFIDENTIAL_WORD_RE.test(company)) {
-    warn(`#${e.num}: company "${company}" looks like a confidentiality placeholder — use the structural marker ? (locale-invariant, can't collide with a real firm)`, 'confidential_company_placeholder', `confidential-company-placeholder:${e.num}`, { tracker_num: e.num, company });
+    warn(`#${e.num}: company "${company}" looks like a confidentiality placeholder — use the structural marker ? (locale-invariant, can't collide with a real firm)`, "replace the Company cell with ? and put the agency/recruiter firm in the Via cell", 'confidential_company_placeholder', `confidential-company-placeholder:${e.num}`, { tracker_num: e.num, company });
     viaIssues++;
   }
 }
@@ -669,6 +704,7 @@ for (const [key, vias] of channelsByRole) {
     const nums = list.map(v => v.num).sort((a, b) => a - b);
     warn(
       `Cross-channel duplicate — ${key.replace('::', ' / ')} reached via ${list.map(v => v.raw).join(' AND ')} (rows ${list.map(v => `#${v.num}`).join(', ')}) — double-submission risk, resolve by hand`,
+      "apply through one channel and mark the other row SKIP with node set-status.mjs <report#|company> SKIP (a SKIP row is not counted as a channel)",
       'cross_channel_duplicate_risk',
       `cross-channel-duplicate:${nums.join(':')}`,
       { tracker_nums: nums, channels: list.map(v => ({ tracker_num: v.num, via: v.raw })) },
@@ -695,7 +731,7 @@ for (const e of entries) {
 let dupeNums = 0;
 for (const [num, group] of numGroups) {
   if (group.length > 1) {
-    error(`Duplicate tracker number #${num} used by ${group.length} rows: ${group.map(e => `${e.company} — ${e.role}`).join(' | ')}`, 'duplicate_tracker_number', `duplicate-tracker-number:${num}`, { tracker_num: num, entries: group.map(e => ({ company: e.company, role: e.role })) });
+    error(`Duplicate tracker number #${num} used by ${group.length} rows: ${group.map(e => `${e.company} — ${e.role}`).join(' | ')}`, "no automated fix is safe (other files may cite the number): renumber the newer row to max(#)+1 by hand, then check references in data/follow-ups.md and data/active-interviews.md", 'duplicate_tracker_number', `duplicate-tracker-number:${num}`, { tracker_num: num, entries: group.map(e => ({ company: e.company, role: e.role })) });
     dupeNums++;
   }
 }
@@ -716,7 +752,7 @@ try {
   // reading the exit status (CI, a cron wrapper, a pre-push hook) that is indistinguishable from
   // the invariant holding. We do not know whether the tracker is in sync; we know we failed to
   // look. The honest report is failure.
-  error(`Sync check could not run — the tracker was NOT verified: ${err.message}`, 'sync_check_failed', 'sync-check-failed', { error: err.message });
+  error(`Sync check could not run — the tracker was NOT verified: ${err.message}`, "run node tracker-sync-check.mjs directly to see the underlying error; check data/active-interviews.md is a readable markdown table", 'sync_check_failed', 'sync-check-failed', { error: err.message });
 }
 
 if (syncResult) {
@@ -725,13 +761,17 @@ if (syncResult) {
   const unmatchedRows = syncResult.mismatches.filter(m => m.resolution === 'unmatched');
 
   for (const m of tier1Mismatches) {
-    warn(`Sync drift (auto-resolvable): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" vs active-interviews.md="${m.activeInterviewsStatus}" -> suggest "${m.suggestedStatus}" in ${m.staleIn} (run node tracker-sync-check.mjs for details)`, 'tracker_sync_drift', `sync-drift:${m.company}:${m.role}`, m);
+    warn(`Sync drift (auto-resolvable): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" vs active-interviews.md="${m.activeInterviewsStatus}" -> suggest "${m.suggestedStatus}" in ${m.staleIn} (run node tracker-sync-check.mjs for details)`,
+      m.staleIn === 'applications.md'
+        ? "applications.md is the stale file: apply the suggested status with node set-status.mjs <report#|company> <State>; node tracker-sync-check.mjs shows details"
+        : "active-interviews.md is the stale file: edit its status cell by hand (set-status.mjs does not write that file); node tracker-sync-check.mjs shows details",
+      'tracker_sync_drift', `sync-drift:${m.company}:${m.role}`, m);
   }
   for (const m of tier2Mismatches) {
-    warn(`Sync drift (needs human review): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" (${m.applicationsLastModified || 'no blame info'}) vs active-interviews.md="${m.activeInterviewsStatus}" (${m.activeInterviewsLastModified || 'no blame info'})`, 'tracker_sync_drift', `sync-drift:${m.company}:${m.role}`, m);
+    warn(`Sync drift (needs human review): ${m.company} — ${m.role}: applications.md="${m.applicationsStatus}" (${m.applicationsLastModified || 'no blame info'}) vs active-interviews.md="${m.activeInterviewsStatus}" (${m.activeInterviewsLastModified || 'no blame info'})`, "decide which file is current (run node tracker-sync-check.mjs for git-blame dates), then bring the other in line; use node set-status.mjs <report#|company> <State> for applications.md", 'tracker_sync_drift', `sync-drift:${m.company}:${m.role}`, m);
   }
   for (const m of unmatchedRows) {
-    warn(`Sync check: active-interviews.md row for "${m.company}" — "${m.role}" could not be matched to a tracker row (${m.note})`, 'tracker_sync_unmatched', `sync-unmatched:${m.company}:${m.role}`, m);
+    warn(`Sync check: active-interviews.md row for "${m.company}" — "${m.role}" could not be matched to a tracker row (${m.note})`, 'make the company/role in active-interviews.md match the tracker row, or add a "#N in tracker" reference in its Notes cell', 'tracker_sync_unmatched', `sync-unmatched:${m.company}:${m.role}`, m);
   }
   if (tier1Mismatches.length === 0 && tier2Mismatches.length === 0 && unmatchedRows.length === 0) {
     ok(syncResult.summary.total > 0
@@ -762,13 +802,13 @@ if (!existsSync(FOLLOWUPS_FILE)) {
   if (fups.pipeLines === 0) {
     ok('follow-ups.md has no table rows yet');
   } else if (!fups.sawSeparator) {
-    error(`follow-ups.md has table rows but no header delimiter row, so every row is skipped — expected ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`, 'followups_missing_header', 'followups:missing-header');
+    error(`follow-ups.md has table rows but no header delimiter row, so every row is skipped — expected ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`, "add the | --- | delimiter row directly under the header in data/follow-ups.md", 'followups_missing_header', 'followups:missing-header');
   } else if (fups.dataRows === 0) {
     ok('follow-ups.md has no logged follow-ups yet');
   } else if (fups.parsed === 0) {
-    error(`follow-ups.md: none of its ${fups.dataRows} row(s) parse, so stats.mjs and followup-cadence.mjs will both report zero follow-ups — expected column order ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`, 'followups_unparseable', 'followups:unparseable', { data_rows: fups.dataRows });
+    error(`follow-ups.md: none of its ${fups.dataRows} row(s) parse, so stats.mjs and followup-cadence.mjs will both report zero follow-ups — expected column order ${FOLLOWUPS_COLUMNS} (see modes/followup.md)`, "reorder the columns in data/follow-ups.md to the documented order and make num and appNum integers", 'followups_unparseable', 'followups:unparseable', { data_rows: fups.dataRows });
   } else if (fups.unparsedLines.length > 0) {
-    warn(`follow-ups.md: ${fups.unparsedLines.length} of ${fups.dataRows} rows will be skipped by stats.mjs and followup-cadence.mjs (line${fups.unparsedLines.length === 1 ? '' : 's'} ${fups.unparsedLines.join(', ')}) — expected ${FOLLOWUPS_COLUMNS}`, 'followups_unparsed_rows', 'followups:unparsed-rows', { lines: fups.unparsedLines });
+    warn(`follow-ups.md: ${fups.unparsedLines.length} of ${fups.dataRows} rows will be skipped by stats.mjs and followup-cadence.mjs (line${fups.unparsedLines.length === 1 ? '' : 's'} ${fups.unparsedLines.join(', ')}) — expected ${FOLLOWUPS_COLUMNS}`, "fix the listed lines in data/follow-ups.md so num and appNum are integers in the documented column order", 'followups_unparsed_rows', 'followups:unparsed-rows', { lines: fups.unparsedLines });
   } else {
     ok(`follow-ups.md schema valid (${fups.parsed} logged follow-up${fups.parsed === 1 ? '' : 's'})`);
   }
@@ -823,14 +863,14 @@ if (!existsSync(PORTALS_FILE)) {
     // "All N entries resolve" success line claims it as resolved anyway.
     const malformed = entries.filter(e => e && e.enabled !== false && (typeof e.name !== 'string' || !e.name.trim()));
     for (const e of malformed) {
-      warn(`portals.yml: an enabled entry has no name (careers_url: ${e.careers_url || 'none'}) — it cannot be provider-checked; give it a name`, 'portal_missing_name', `portal-missing-name:${e.careers_url || 'none'}`, { careers_url: e.careers_url || null });
+      warn(`portals.yml: an enabled entry has no name (careers_url: ${e.careers_url || 'none'}) — it cannot be provider-checked; give it a name`, "add a name: field to that portals.yml entry, or set enabled: false", 'portal_missing_name', `portal-missing-name:${e.careers_url || 'none'}`, { careers_url: e.careers_url || null });
     }
 
     for (const e of unknownProvider) {
-      error(`portals.yml: "${e.name}" sets an unknown provider — ${e.error}. The entry never scans (see providers/ for valid ids)`, 'portal_unknown_provider', `portal-unknown-provider:${e.name}`, e);
+      error(`portals.yml: "${e.name}" sets an unknown provider — ${e.error}. The entry never scans (see providers/ for valid ids)`, "correct the provider: value in portals.yml to an id from providers/, or remove the field to auto-detect", 'portal_unknown_provider', `portal-unknown-provider:${e.name}`, e);
     }
     for (const e of silent) {
-      warn(`portals.yml: "${e.name}" is enabled but no provider claims ${e.careers_url || 'its careers_url'} — scan.mjs skips it on every run without naming it (run node audit-portals.mjs)`, 'portal_unclaimed', `portal-unclaimed:${e.name}`, { name: e.name, careers_url: e.careers_url || null });
+      warn(`portals.yml: "${e.name}" is enabled but no provider claims ${e.careers_url || 'its careers_url'} — scan.mjs skips it on every run without naming it (run node audit-portals.mjs)`, "run node audit-portals.mjs for the per-entry diagnosis; fix the careers_url or set enabled: false", 'portal_unclaimed', `portal-unclaimed:${e.name}`, { name: e.name, careers_url: e.careers_url || null });
     }
     if (silent.length === 0 && unknownProvider.length === 0 && malformed.length === 0) {
       const enabled = entries.filter(e => e && e.enabled !== false).length;
@@ -839,7 +879,8 @@ if (!existsSync(PORTALS_FILE)) {
         : `All ${enabled} enabled portals.yml entries resolve to a provider`);
     }
   } catch (err) {
-    warn(`Portal coverage check could not run: ${err.message}`);
+    warn(`Portal coverage check could not run: ${err.message}`,
+         "check portals.yml parses as YAML and run node audit-portals.mjs for the underlying error");
   }
 }
 
@@ -867,7 +908,7 @@ for (let i = 0; i < lines.length; i++) {
   const found = lines[i].match(CONTROL_CHARS);
   if (!found) continue;
   const points = [...new Set(found.map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`))];
-  error(`applications.md line ${i + 1}: tracker row contains invisible control character(s) ${points.join(', ')} — delete them; they render as nothing in every view but shift the positional column parse`, 'tracker_control_characters', `control-characters:${i + 1}`, { line: i + 1, points });
+  error(`applications.md line ${i + 1}: tracker row contains invisible control character(s) ${points.join(', ')} — delete them; they render as nothing in every view but shift the positional column parse`, "delete the invisible bytes from that line (retype the affected cell); no tool strips them from existing rows", 'tracker_control_characters', `control-characters:${i + 1}`, { line: i + 1, points });
   controlByteRows++;
 }
 if (controlByteRows === 0) ok('No control characters in tracker cells');
@@ -885,11 +926,17 @@ if (controlByteRows === 0) ok('No control characters in tracker cells');
 const jdArchiveResult = checkJdArchive(REPORTS_DIR, JDS_DIR, { trackerPath: APPS_FILE, statesPath: STATES_FILE });
 const jdArchiveMissing = jdArchiveResult.findings.filter(f => f.type === 'missing-jd-archive');
 const jdArchiveReviewDue = jdArchiveResult.findings.filter(f => f.type === 'jd-archive-review-due');
-for (const f of jdArchiveMissing) error(`${f.file}: ${f.detail}`, 'missing_jd_archive', `missing-jd:${f.file}`, { file: `reports/${f.file}` });
-for (const f of jdArchiveReviewDue) warn(`${f.file}: ${f.detail}`, 'jd_archive_review_due', `jd-review:${f.file}`, {
-  file: `reports/${f.file}`, ...archiveReportEvidence(reportContent(f.file) || ''),
-});
-for (const w of jdArchiveResult.warnings) warn(`${w.file}: ${w.detail}`, 'jd_archive_inspection_warning', `jd-inspection:${w.file}`, w);
+for (const f of jdArchiveMissing) error(`${f.file}: ${f.detail}`,
+  'run node check-jd-archive.mjs for details; paste the JD into the report under ## Job Description (archived verbatim), or archive it with node archive-posting.mjs --report=N',
+  'missing_jd_archive', `missing-jd:${f.file}`, { file: `reports/${f.file}` });
+for (const f of jdArchiveReviewDue) warn(`${f.file}: ${f.detail}`,
+  'archive the JD now while the posting is live (same fix as the missing-archive errors: node check-jd-archive.mjs for details)',
+  'jd_archive_review_due', `jd-review:${f.file}`, {
+    file: `reports/${f.file}`, ...archiveReportEvidence(reportContent(f.file) || ''),
+  });
+for (const w of jdArchiveResult.warnings) warn(`${w.file}: ${w.detail}`,
+  'run node check-jd-archive.mjs for details on this report',
+  'jd_archive_inspection_warning', `jd-inspection:${w.file}`, w);
 if (jdArchiveMissing.length === 0 && jdArchiveReviewDue.length === 0 && jdArchiveResult.warnings.length === 0) {
   ok(jdArchiveResult.reportsScanned === 0
     ? 'No reports yet — nothing to check for JD archives'

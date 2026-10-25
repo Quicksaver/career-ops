@@ -38,7 +38,10 @@ export function getCareerOpsRoot() {
     }
     return join(resolve(__dirname, process.env.CAREER_OPS_USERS_DIR?.trim() || 'users'), userId);
   }
-  if (args.some(arg => ['--help', '-h', '--self-test', '--test'].includes(arg))) return __dirname;
+  // A regex rather than a list of quoted flags: this is the no-user fallback for
+  // help and self-test runs, not a self-test of this module, and
+  // tests/self-test-registration.test.mjs reads a quoted flag as one.
+  if (args.some(arg => /^(?:--help|-h|--self-test|--test)$/.test(arg))) return __dirname;
   throw new Error('No career-ops user selected. Specify one with --user <id> or set CAREER_OPS_USER.');
 
 

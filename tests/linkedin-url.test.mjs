@@ -111,6 +111,6 @@ check('the module has no imports', !/^\s*import\b|\bimport\s*\(|\brequire\s*\(/m
 
 // liveness-api.mjs is a SYSTEM_PATHS file: an upgraded install whose updater
 // had no entry for this module would check out a liveness-api that cannot load.
-const updaterSrc = readFileSync(join(ROOT, 'update-system.mjs'), 'utf-8');
+const manifestSrc = readFileSync(join(ROOT, 'lib', 'update-manifest.mjs'), 'utf-8');
 // This fork ships lib/ as one directory entry, which covers the module.
-check('update-system.mjs ships lib/linkedin-url.mjs', updaterSrc.includes("'lib/linkedin-url.mjs'") || updaterSrc.includes("'lib/'"));
+check('the updater ships lib/linkedin-url.mjs', manifestSrc.includes("'lib/linkedin-url.mjs'") || manifestSrc.includes("'lib/'"));

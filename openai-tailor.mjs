@@ -130,11 +130,15 @@ const reportText = readFileSync(reportPath, 'utf-8').trim();
 // Parse the report-linked artifact identity. The report number already
 // distinguishes multiple roles at one company, so the fork keeps the canonical
 // {REPORT_NUM}-{company}-{date} basename instead of adding a second role slug.
+// A report named outside the canonical shape still keeps its own number, and
+// its slug is rebuilt from the rest of the name, so two reports never share a CV.
 const reportFilename = basename(reportPath);
 const reportMatch = reportFilename.match(/^(\d+)-([a-z0-9-]+)-(\d{4}-\d{2}-\d{2})\.md$/);
-const reportNum = reportMatch ? reportMatch[1] : '001';
-const companySlug = reportMatch ? reportMatch[2] : 'unknown-company';
-const reportDate = reportMatch ? reportMatch[3] : new Date().toISOString().split('T')[0];
+const reportNum = reportMatch ? reportMatch[1] : (reportFilename.match(/^(\d+)-/)?.[1] ?? '001');
+const companySlug = reportMatch ? reportMatch[2] : (reportFilename
+  .replace(/\.md$/i, '').replace(/^\d+-/, '').replace(/-?\d{4}-\d{2}-\d{2}$/, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown-company');
+const reportDate = reportMatch ? reportMatch[3] : (reportFilename.match(/(\d{4}-\d{2}-\d{2})\.md$/i)?.[1] ?? new Date().toISOString().split('T')[0]);
 
 // ---------------------------------------------------------------------------
 // Endpoint + security guard.
@@ -349,7 +353,9 @@ try {
   // Print next steps
   const pdfPath = join(PATHS.output, `${artifactBase}.pdf`);
 
-  console.log(`\n📄  Next step (generate PDF):\n    node generate-pdf.mjs --user ${userContext.userId} ${JSON.stringify(htmlPath)} ${JSON.stringify(pdfPath)} --format=letter --report=${reportNum}\n`);
+  // Single-quoted for a POSIX shell, so a `$` or backtick in a path stays literal.
+  const shellQuote = (value) => /^[A-Za-z0-9._@+/:-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+  console.log(`\n📄  Next step (generate PDF):\n    node generate-pdf.mjs --user ${userContext.userId} ${shellQuote(htmlPath)} ${shellQuote(pdfPath)} --format=letter --report=${reportNum}\n`);
 
 } catch (err) {
   console.warn(`⚠️   Could not save HTML: ${err.message}`);

@@ -51,7 +51,7 @@ test('browser fallback supplies rendered JD bytes to the real worker launch afte
 test('the real batch forwards original source/notes and saved HN text before requesting any JD fetch', async () => {
   const f = fixture();
   try {
-    for (const name of ['lib/posting-context.mjs', 'lib/scan-history-columns.mjs', 'lib/tsv-formula-escape.mjs', 'providers/hackernews.mjs', 'providers/_html-entities.mjs', 'path-resolver.mjs', 'url-key.mjs', 'lib/linkedin-url.mjs']) {
+    for (const name of ['lib/posting-context.mjs', 'lib/scan-history-columns.mjs', 'lib/tsv-formula-escape.mjs', 'providers/hackernews.mjs', 'providers/_html-entities.mjs', 'ats-vendor.mjs', 'path-resolver.mjs', 'url-key.mjs', 'lib/linkedin-url.mjs']) {
       mkdirSync(join(f.root, name, '..'), { recursive: true });
       copyFileSync(join(ROOT, name), join(f.root, name));
     }
