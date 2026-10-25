@@ -1375,15 +1375,14 @@ build_contract_error() {
 }
 
 extract_score_from_artifacts() {
-  local final_file="$1" report_file="$2" tracker_file="$3" log_file="$4"
+  local final_file="$1" report_file="$2" tracker_file="$3"
   local score="-"
 
   if [[ -n "$final_file" && -f "$final_file" ]]; then
     score=$(worker_json_field "$final_file" score)
   fi
-  if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$log_file" && -f "$log_file" ]]; then
-    score=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
-  fi
+  # Never read the score from the worker log: it echoes the prompt, whose
+  # result-contract example ("score": 4.0) would win over the real report.
   if [[ -z "$score" || "$score" == "-" ]] && [[ -n "$report_file" && -f "$report_file" ]]; then
     score=$(sed -nE 's|^[*]*Score:[*]*[[:space:]]*([0-9.]+)/5.*|\1|p; s|^score:[[:space:]]*"?([0-9.]+)"?.*|\1|p' "$report_file" 2>/dev/null | head -1 || true)
   fi
@@ -1437,7 +1436,7 @@ recover_artifact_failures() {
       continue
     fi
 
-    score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file" "$LOGS_DIR/${report_num}-${id}.log")
+    score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file")
     if ! is_decimal_number "$score"; then
       unresolved=$((unresolved + 1))
       echo "    ⚠️  Not recoverable: #$id (report $report_num) has no validated score"
@@ -2274,7 +2273,7 @@ process_offer() {
   if [[ ( $exit_code -eq 0 && "$final_json_valid" == "true" && "$final_json_status" == "completed" && "$artifacts_valid" == "true" ) || ( "$timed_out" == "true" && "$artifacts_valid" == "true" && "$final_json_status" != "failed" ) ]]; then
     # Try to extract score from worker output
     local score="-"
-    score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file" "$log_file")
+    score=$(extract_score_from_artifacts "$final_file" "$report_file" "$tracker_file")
     if [[ "$score" == "-" && -n "$final_json_score" ]]; then
       score="$final_json_score"
     fi
