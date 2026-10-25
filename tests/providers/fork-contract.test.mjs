@@ -446,6 +446,27 @@ test('first-page parser failures differ from explicit no-results responses', asy
   }
 });
 
+test('itjobs reads "0 ofertas" as an empty list, not a redesign', async () => {
+  const html = '<html><title>Emprego remoto e híbrido em IT: 0 ofertas em Portugal - ITJobs</title></html>';
+  assert.deepEqual(await fetchCustomProvider('itjobs', { name: 'Fixture', api: 'https://www.itjobs.pt/emprego/remote' }, { fetchText: async () => html }), []);
+});
+
+test('itjobs refuses the query filters its robots.txt disallows, before any request', async () => {
+  const unexpected = { fetchText: async () => { throw new Error('requested a disallowed URL'); } };
+  for (const entry of [
+    { name: 'Fixture', api: 'https://www.itjobs.pt/emprego', api_params: { date: '24h', work_model: [1, 2] } },
+    { name: 'Fixture', api: 'https://www.itjobs.pt/emprego?location=porto' },
+  ]) {
+    await assert.rejects(fetchCustomProvider('itjobs', entry, unexpected), /robots\.txt disallows/);
+  }
+  // List paths and pagination stay allowed.
+  const listed = '<div class="list-title"><a href="/oferta/1/dev">Backend Developer</a></div><div class="list-name"><a>Fixture</a></div><div class="list-details">Porto</div>';
+  for (const api of ['https://www.itjobs.pt/emprego/remote', 'https://www.itjobs.pt/local/porto']) {
+    const jobs = await fetchCustomProvider('itjobs', { name: 'Fixture', api }, { fetchText: async () => listed });
+    assert.equal(jobs.length, 1);
+  }
+});
+
 test('optional browser resource HTTP errors retain the page, while source XHR and guards fail it', async () => {
   for (const [type, url, error, fatal] of [
     ['script', 'https://cdn.example/script.js', { status: 404, body: 'missing' }, false],

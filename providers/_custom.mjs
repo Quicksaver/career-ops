@@ -143,6 +143,8 @@ const EUREMOTEJOBS_DETAIL_CONCURRENCY = 5;
 const EUREMOTEJOBS_MAX_PAGES = 5;
 const EUREMOTEJOBS_CATEGORY_PATH_RE = /^\/job-category\/([^/]+)(?:\/(?:feed|page\/\d+)\/?|\/)?$/;
 const ITJOBS_MAX_PAGES = 5;
+// itjobs.pt robots.txt asks for one request per second (Crawl-delay: 1).
+const ITJOBS_CRAWL_DELAY_MS = 1000;
 const SAPO_MAX_PAGES = 5;
 const PORTALEMPREGO_MAX_PAGES = 5;
 const DICE_MAX_PAGES = 5;
@@ -245,6 +247,11 @@ function getPcsxConfig(company) {
     detailPath: company.api_detail_path || '/api/pcsx/position_details',
   };
 }
+
+// itjobs.pt's robots.txt disallows every list filter in the query string (they
+// are noindexed duplicates of the plain lists). Filter with a list path such as
+// /emprego/remote, /emprego/backend or /local/porto instead; `page` is allowed.
+const ITJOBS_DISALLOWED_PARAMS = new Set(['company', 'contract', 'location', 'type', 'work_model', 'remote', 'salary', 'sort', 'date', 'q', 'lang']);
 
 function getItjobsConfig(company) {
   const baseUrl = company.api || company.careers_url;
@@ -875,7 +882,7 @@ function detectApi(company) {
     return pcsx ? { type: 'pcsx', url: pcsx.searchUrl, pcsx } : null;
   }
 
-  if (company.api_provider === 'itjobs' || /https?:\/\/(?:www\.)?itjobs\.pt\/emprego/.test(company.api || company.careers_url || '')) {
+  if (company.api_provider === 'itjobs' || /https?:\/\/(?:www\.)?itjobs\.pt\/(?:emprego|local)\b/.test(company.api || company.careers_url || '')) {
     const itjobs = getItjobsConfig(company);
     return itjobs ? { type: 'itjobs', url: itjobs.listUrls[0], itjobs } : null;
   }
@@ -1289,7 +1296,7 @@ function parseItjobsPage(html, sourceUrl, seenUrls) {
 
 function parseFirstHtmlPage(parser, html, sourceUrl, seenUrls) {
   const parsed = parser(html, sourceUrl, new Set());
-  if (parsed.length === 0 && !/\b(?:no (?:jobs|vacancies|results|offers)(?: (?:found|available))?|(?:0|zero) (?:jobs|vacancies|results|offers|vagas)|nenhum(?:a)? (?:resultado|oferta|vaga)|sem (?:resultados|ofertas|vagas)|keine (?:stellen|ergebnisse|jobs)|ingen (?:job|resultater))\b/i.test(cleanHtmlText(html))) {
+  if (parsed.length === 0 && !/\b(?:no (?:jobs|vacancies|results|offers)(?: (?:found|available))?|(?:0|zero) (?:jobs|vacancies|results|offers|ofertas|vagas)|nenhum(?:a)? (?:resultado|oferta|vaga)|sem (?:resultados|ofertas|vagas)|keine (?:stellen|ergebnisse|jobs)|ingen (?:job|resultater))\b/i.test(cleanHtmlText(html))) {
     throw new Error(`Unsupported listing page at ${sourceUrl}: no job cards or explicit empty-results marker`);
   }
   return parsed.filter(job => {
@@ -2404,17 +2411,27 @@ async function enrichPcsxJobs(company, jobs) {
 }
 
 async function fetchItjobsJobs(url, company) {
+  const disallowed = [...new Set([url, ...(company._api?.itjobs?.listUrls || [])]
+    .flatMap(listUrl => [...new URL(listUrl).searchParams.keys()])
+    .filter(key => ITJOBS_DISALLOWED_PARAMS.has(key)))];
+  if (disallowed.length) {
+    throw new Error(`itjobs: robots.txt disallows the ${disallowed.join(', ')} filter(s); use a list path such as /emprego/remote or /local/porto`);
+  }
   const seenUrls = new Set();
   const jobs = [];
   const listUrls = company._api?.itjobs?.listUrls || [url];
 
+  let requests = 0;
   for (const listUrl of listUrls) {
+    if (requests++ > 0) await sleep(ITJOBS_CRAWL_DELAY_MS, currentContext());
     const firstPageHtml = await fetchText(listUrl);
     const pageCount = getItjobsPageCount(firstPageHtml);
     const maxPages = Math.min(pageLimit(company._api?.itjobs?.maxPages || ITJOBS_MAX_PAGES), pageCount);
     jobs.push(...parseFirstHtmlPage(parseItjobsPage, firstPageHtml, listUrl, seenUrls));
 
     for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
+      requests++;
+      await sleep(ITJOBS_CRAWL_DELAY_MS, currentContext());
       const html = await fetchText(buildItjobsPageUrl(listUrl, pageNumber));
       jobs.push(...parseItjobsPage(html, listUrl, seenUrls));
     }
