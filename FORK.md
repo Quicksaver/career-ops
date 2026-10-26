@@ -4,12 +4,27 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `ff1e8744388ed71b864b4b2f4d6139a6ca0fca10`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `86fcd14d7cf92d684648c7cd711c80a97ad5f71c`, the v1.38 upstream integration at `ff1e8744` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `283`.
-- Diff size against the incorporated base at that snapshot: `876 files changed, 38260 insertions(+), 9491 deletions(-)`.
+- Incorporated upstream base: `7d2588a0b0d30ef18f019bd78afd25195ef88ffb`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `ec446fc9be7f5411847ff9bd884ce80e028fcfe1`, the post-v1.38 upstream integration at `7d2588a0` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `288`.
+- Diff size against the incorporated base at that snapshot: `878 files changed, 38432 insertions(+), 9540 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
+
+## Upstream integration at 7d2588a0
+
+This update incorporates the 40 commits from `ff1e8744388ed71b864b4b2f4d6139a6ca0fca10` through `7d2588a0b0d30ef18f019bd78afd25195ef88ffb`, post-v1.38 main-branch work with no new release tag. Thirty-five files conflicted, 22 of them localized modes; upstream stays the baseline and the fork's per-user paths are re-applied around it. Nothing in the batch, liveness, reconciliation or verification lanes that `run` drives changed behavior, so the runner needed no adaptation.
+
+- **Localized modes.** Eleven evaluation modes move to the A–H report structure (#5844), the apply modes read Block H, Korean `pipeline.md` is re-synced (#5964) and the Turkish report header uses English labels (#5845). Every hunk takes upstream's text with `users/{USER}/` put back on user-layer paths. Tracker-row report links in these modes now read `[001](reports/...)`, relative to the user data root as the TSV contract says; the fork's earlier `users/{USER}/reports/` prefix there was wrong. `--user {USER}` stays where the fork had it and is not added to the remaining localized script mentions, a known gap recorded under 8f489289.
+- **CLI flags.** `discover-new-companies.mjs`, `company-funded.mjs` and `prepare-application.mjs` adopt upstream's `--flag=value` parsing (#5851). Each still resolves the user first and parses only the remaining arguments; `company-funded.mjs` hands `parseArgs` the argv shape it now slices.
+- **Liveness.** `check-liveness.mjs --close-expired` adopts upstream's closure-evidence rule (#5852): an unreadable page is listed and left alone. It still writes `Closed`, not `Discarded`.
+- **Templates.** Named templates are also looked up under the data root's `data/templates/` (#5952), which is `users/{USER}/data/templates/` here, and `DATA_CONTRACT.md` lists it. With no selected user, a caller that passes its own profile or template directory reads only the checkout's `templates/`, so `cv-templates.mjs` still imports and resolves without a user.
+- **Tracker.** A refused TSV stays in the additions folder for a re-run (#5862); the fork's withheld additions (batch job not finished, or a reserved identity mismatch) stay there too.
+- **Web.** An evaluated posting leaves the inbox (#5906). Its checkbox update loads `pipeline-lock.mjs` from the system checkout, because the fork's web `root` is the user's data root.
+- **Adopted unchanged.** Homerun and jobs.cz/prace.cz providers (#5785, #5631), cached join/getro/consider board ids (#5826), the generate-pdf fact gate reading the render's own `cv.md` (#5867, the selected user's here), unnamed-employer scan dedup by URL (#5866), unpinned Dayforce content/visa/country rows (#5869), the shared `test-all.mjs` queue lock in the OS temp directory (#5857), discover-ats portal writes under the pipeline lock (#5463), and the outcome, dedup, keyword-match, fact-gate and CV-structure fixes.
+- **Tests.** Upstream's browser-declaration check (#5762) requires every suite that launches Chromium to declare it, so the fork's LinkedIn scan-auth suites and two provider suites skip on `toolRequired('browser')` like upstream's. The image-PDF exclusivity suite writes inside a fixture user's root, since the fork refuses image PDFs outside the selected user. `tests/hn-scanner.test.mjs` keeps the fork's HN hand-off expectations.
+
+Validation: `node test-all.mjs --quick --jobs 8` passed 18,953 checks with 17 warnings on a heavily loaded host; its 11 failures are fixed or accounted for. The browser declarations, image-PDF suite and template import without a user are fixed above, and each suite passes. The run-flow suites were killed at 120 s under that load; run alone, queue flow passed 40/40 twice and once hung for 30 s in `merge-tracker` while other projects' test pools ran, and interactive flow 26/26, interactive 25/25 and the workflow suite pass. The HTTP body-cap marker check is the known upstream failure. The web suite passed 1,923 tests with 42 skipped, all dashboard Go packages pass, and raw `verify-pipeline.mjs --user fixture --json` returned clean against an isolated empty tracker. Paid evaluations and real providers were not exercised.
 
 ## Upstream integration at ff1e8744
 
@@ -754,6 +769,8 @@ What this customizes:
 - Makes `verify-pipeline.mjs --json` assign `process.exitCode` instead of terminating with `process.exit()`, allowing warning-heavy JSON larger than the pipe buffer to flush completely before Node exits.
 - Makes `run-workflow.mjs` wait for child-process `close` and log-stream completion, capture verifier exit code `1` as structured JSON, retain that payload in the run summary, and report the actual blocking findings instead of an arbitrary truncated warning tail.
 - Adds regression coverage for reservation-sentinel exclusion, ambiguous same-number report rejection, deterministic Via completion, cross-artifact Via mismatch rejection, untraceable confidential-employer rejection, merge-time blocking with pending-file preservation, verifier JSON above 64 KiB, and the coordinator's log-drain/structured-failure wiring.
+- Recovers a timed-out worker's score from its report, then its tracker row, never from the worker log. The log echoes the worker prompt, whose result-contract example carries `"score": 4.0`, so every recovered score used to read 4.0 (`tests/batch-score-recovery.test.mjs`).
+- Accepts a failed Windows `taskkill` of a worker tree once the root and every PID it reported have exited within the stop timeout. A member that is already exiting can refuse termination ("The operation attempted is not supported"), and the worker's Job Object stops it once the root is gone; treating that as fatal left the job `processing` until stale recovery failed it.
 
 Future merge notes:
 
