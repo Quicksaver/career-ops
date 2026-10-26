@@ -537,6 +537,15 @@ try {
   } else {
     fail(`finding review partition wrong: exact=${JSON.stringify(exact)} changed=${JSON.stringify(changed)}`);
   }
+  const cleanupNotice = reviewLib.partitionReviewedFindings({ errors: [], warnings: [{
+    id: 'stale-reservation-removed:9-RESERVED.md', code: 'stale_reservation_removed',
+    message: 'Removed stale reservation sentinel: 9-RESERVED.md', details: { file: 'reports/9-RESERVED.md', resolved: true },
+  }] }, []);
+  if (cleanupNotice.active.length === 0 && cleanupNotice.seen.length === 0) {
+    pass('a cleanup the verifier already finished is neither reviewed nor asked about');
+  } else {
+    fail(`resolved cleanup notice stayed active: ${JSON.stringify(cleanupNotice)}`);
+  }
 
   const orphanVerification = {
     errors: [],
