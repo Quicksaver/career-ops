@@ -21,10 +21,10 @@ import assert from 'node:assert/strict';
 import fs, { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, utimesSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
-import { tmpdir } from 'node:os';
+import { tmpdir, uptime } from 'node:os';
 import { join } from 'node:path';
 import {
-  acquireDirLock, tryAcquireDirLockSync, lockRecoveryVerdict, releaseOrWarn, DirLockTimeoutError, RECOVER_LIVE, RECOVER_STALE,
+  acquireDirLock, tryAcquireDirLockSync, lockRecoveryVerdict, releaseOrWarn, DirLockTimeoutError, RECOVER_LIVE, RECOVER_STALE, startedBeforeBoot,
 } from '../lib/dir-lock.mjs';
 import { acquirePortalHealthLock, LockTimeoutError as PortalLockTimeoutError } from '../portal-health-lock.mjs';
 import { acquirePipelineLock } from '../pipeline-lock.mjs';
@@ -399,4 +399,24 @@ test('a release releaseOrWarn gives up on does not pin the leftover lock live', 
     console.error = realError;
   }
   assert.equal(lockRecoveryVerdict(lockDir, 1), RECOVER_STALE, 'abandoned: the old leftover ages out');
+});
+
+// Windows reuses pids freely, so after a reboot a lock's recorded pid can name
+// an unrelated live process (seen: a batch runner's lock pid reused by
+// msrdc.exe). A lock taken before the last boot has no live holder.
+test('a lock taken before the last boot is stale even when its pid is alive again', async (t) => {
+  const dir = scratch(t, 'dir-lock-boot-');
+  const lockDir = join(dir, 'x.lock');
+  const stamp = (startedAt) => {
+    mkdirSync(lockDir, { recursive: true });
+    fs.writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({ pid: process.ppid, token: 'other', started_at: startedAt }));
+  };
+  stamp(new Date().toISOString());
+  assert.equal(lockRecoveryVerdict(lockDir, Infinity), RECOVER_LIVE, 'a live holder since boot keeps its lock');
+  stamp(new Date(Date.now() - (uptime() + 3600) * 1000).toISOString());
+  assert.equal(lockRecoveryVerdict(lockDir, Infinity), RECOVER_STALE);
+  const lock = await acquireDirLock(lockDir, { ...FAST, staleMs: Infinity });
+  assert.equal(lock.staleRecovered, true);
+  lock.release();
+  assert.equal(startedBeforeBoot(undefined), false, 'a stamp without a start time is judged by its pid alone');
 });

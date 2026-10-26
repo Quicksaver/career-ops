@@ -42,6 +42,7 @@
 import { mkdirSync, rmSync, statSync, existsSync, writeFileSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
+import { uptime } from 'os';
 
 // Env-overridable like the timing knobs each caller reads (staleMs, timeoutMs,
 // retryMs) for the same reason: a test that backdates a lock by a small,
@@ -210,6 +211,14 @@ export function rmLockArtifactSync(dir) {
   }
 }
 
+// A lock taken before the machine last booted has no live holder, whatever
+// process the OS has since given its pid to; Windows reuses pids freely. Boot
+// time comes from uptime, so the margin absorbs skew between the two clocks.
+const BOOT_MARGIN_MS = 60_000;
+export function startedBeforeBoot(startedAt, now = Date.now(), uptimeSeconds = uptime()) {
+  return Date.parse(startedAt) < now - uptimeSeconds * 1000 - BOOT_MARGIN_MS;
+}
+
 function processIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -276,7 +285,7 @@ export function lockRecoveryVerdict(lockDir, staleMs) {
   // #2984 applied to the stat below, one step earlier in the same function.
   if (!inspected) return RECOVER_LIVE;
   if (owner?.pid) {
-    if (!processIsAlive(owner.pid)) return RECOVER_STALE;
+    if (!processIsAlive(owner.pid) || startedBeforeBoot(owner.started_at)) return RECOVER_STALE;
     if (owner.pid !== process.pid || activeTokens.has(owner.token)) return RECOVER_LIVE;
     // Our pid, but no handle of ours: fall through to the age rule.
   }

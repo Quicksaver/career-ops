@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { acquirePipelineLock, sameLockDirectory } from '../pipeline-lock.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { processAlive } from '../lib/run-artifacts.mjs';
+import { startedBeforeBoot } from '../lib/dir-lock.mjs';
 
 export const ownershipPath = pidFile => `${pidFile}.owner.lock`;
 export function inspectOwnership(pidFile) {
@@ -12,6 +13,7 @@ export function inspectOwnership(pidFile) {
   try { owner = JSON.parse(readFileSync(join(dir, 'owner.json'), 'utf8')); }
   catch { return { status: 'ambiguous' }; }
   if (!Number.isSafeInteger(owner?.pid) || owner.pid <= 0 || typeof owner.token !== 'string' || !owner.token) return { status: 'ambiguous' };
+  if (startedBeforeBoot(owner.started_at)) return { status: 'dead', ...owner };
   try { return { status: processAlive(owner.pid) ? 'alive' : 'dead', ...owner }; }
   catch { return { status: 'ambiguous', ...owner }; }
 }
