@@ -1,10 +1,16 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { toolRequired } from './required-tools.mjs';
 import LinkedInScanner from '../scan-auth/linkedin.mjs';
 
 let browser;
-before(async () => { browser = await chromium.launch({ headless: true }); });
+// Chromium suites skip where no browser is installed, unless the run requires
+// one (test-all.mjs --needs browser; see tests/required-tools.mjs).
+const browserSkip = !toolRequired('browser') && !existsSync(chromium.executablePath()) && 'Chromium is not installed';
+const browserTest = (name, ...rest) => test(name, { skip: browserSkip }, ...rest);
+before(async () => { if (!browserSkip) browser = await chromium.launch({ headless: true }); });
 after(async () => { await browser?.close(); });
 
 const companySection = '<section><h2>About the company</h2><span data-testid="expandable-text-box">We are a relationship-driven recruitment partner. Company biography… more</span><button id="company-more"><span>more</span></button></section>';
@@ -59,106 +65,106 @@ async function extract({ initialText = '', text = 'The selected posting job desc
   } finally { await context.close(); }
 }
 
-test('a JD rendered after the old fixed sleep is captured automatically', async () => {
+browserTest('a JD rendered after the old fixed sleep is captured automatically', async () => {
   const result = await extract({ delay: 1800 });
   assert.equal(result.jdText, 'The selected posting job description.');
   assert.equal(result.applicationUrl, 'https://www.linkedin.com/jobs/view/102/');
 });
 
-test('switching cards waits for replacement of the preceding posting description', async () => {
+browserTest('switching cards waits for replacement of the preceding posting description', async () => {
   const result = await extract({ initialText: 'The preceding posting description.', delay: 1800 });
   assert.equal(result.jdText, 'The selected posting job description.');
 });
 
-test('an already loaded description on the same selected card remains readable', async () => {
+browserTest('an already loaded description on the same selected card remains readable', async () => {
   const result = await extract({ initialText: 'Already loaded description.', text: 'Already loaded description.', destination: '101' });
   assert.equal(result.jdText, 'Already loaded description.');
 });
 
-test('a permanently empty JD exhausts the allowance and remains unavailable', async () => {
+browserTest('a permanently empty JD exhausts the allowance and remains unavailable', async () => {
   const started = performance.now();
   const result = await extract({ text: '' });
   assert.equal(result.jdText, '');
   assert.ok(performance.now() - started >= 5000, 'do not declare unavailable before the loading allowance');
 });
 
-test('unchanged prior text never becomes the new posting JD', async () => {
+browserTest('unchanged prior text never becomes the new posting JD', async () => {
   const result = await extract({ initialText: 'Old description.', text: 'Old description.' });
   assert.equal(result.jdText, '');
 });
 
-test('a description appearing after selection changes is not attributed to the prior job', async () => {
+browserTest('a description appearing after selection changes is not attributed to the prior job', async () => {
   const result = await extract({ delay: 1800, switchAway: true });
   assert.equal(result.jdText, '');
 });
 
-test('a populated company biography cannot satisfy job-description readiness', async () => {
+browserTest('a populated company biography cannot satisfy job-description readiness', async () => {
   const result = await extract({ text: '' });
   assert.equal(result.jdText, '');
 });
 
-test('only a company biography or an unscoped expandable box remains unavailable', async () => {
+browserTest('only a company biography or an unscoped expandable box remains unavailable', async () => {
   for (const html of [companySection, '<span id="jd" data-testid="expandable-text-box"></span>']) {
     assert.equal((await extract({ html })).jdText, '');
   }
 });
 
-test('the job expansion waits for delayed full text and never saves the teaser', async () => {
+browserTest('the job expansion waits for delayed full text and never saves the teaser', async () => {
   const result = await extract({ expandDelay: 900 });
   assert.equal(result.jdText, 'The selected posting job description.');
 });
 
-test('LinkedIn visually rendered aria-hidden expansion buttons remain clickable', async () => {
+browserTest('LinkedIn visually rendered aria-hidden expansion buttons remain clickable', async () => {
   const html = companySection + jobSection.replace('id="jd-more"', 'id="jd-more" data-testid="expandable-text-button" aria-hidden="true"');
   assert.equal((await extract({ html, expandDelay: 200 })).jdText, 'The selected posting job description.');
 });
 
-test('an aria-hidden job panel cannot use the expansion-button exception', async () => {
+browserTest('an aria-hidden job panel cannot use the expansion-button exception', async () => {
   const html = companySection + jobSection.replace('<section>', '<section aria-hidden="true">')
     .replace('id="jd-more"', 'id="jd-more" data-testid="expandable-text-button" aria-hidden="true"');
   assert.equal((await extract({ html })).jdText, '');
 });
 
-test('an expanded button child span cannot request expansion again', async () => {
+browserTest('an expanded button child span cannot request expansion again', async () => {
   const html = companySection + jobSection.replace('id="jd-more" hidden', 'id="expanded" aria-expanded="true"');
   assert.equal((await extract({ html })).jdText, 'The selected posting job description.');
 });
 
-test('an expansion which never finishes leaves the JD unavailable', async () => {
+browserTest('an expansion which never finishes leaves the JD unavailable', async () => {
   const result = await extract({ expandDelay: 10000 });
   assert.equal(result.jdText, '');
 });
 
-test('a truncated JD without its own expansion control is not saved', async () => {
+browserTest('a truncated JD without its own expansion control is not saved', async () => {
   const result = await extract({ text: 'Partial job introduction… more' });
   assert.equal(result.jdText, '');
 });
 
-test('legacy job containers scope their sibling expansion control', async () => {
+browserTest('legacy job containers scope their sibling expansion control', async () => {
   const html = companySection + '<section class="jobs-description"><h2>Job description</h2><div id="job-details"><span id="jd" data-testid="expandable-text-box"></span></div><button id="jd-more" hidden>Show more</button></section>';
   assert.equal((await extract({ html, expandDelay: 500 })).jdText, 'The selected posting job description.');
 });
 
-test('a job heading in a separate wrapper cannot expand the preceding company section', async () => {
+browserTest('a job heading in a separate wrapper cannot expand the preceding company section', async () => {
   const html = `<div>${companySection}<header><h2>About the job</h2></header><div><span id="jd" data-testid="expandable-text-box"></span><button id="jd-more" hidden>more</button></div></div>`;
   assert.equal((await extract({ html, expandDelay: 500 })).jdText, 'The selected posting job description.');
 });
 
-test('a hidden legacy description cannot replace the visible modern job section', async () => {
+browserTest('a hidden legacy description cannot replace the visible modern job section', async () => {
   const html = '<section hidden><div id="job-details">Hidden previous description.</div></section>' + companySection + jobSection;
   assert.equal((await extract({ html })).jdText, 'The selected posting job description.');
 });
 
-test('multiple visible job sections remain ambiguous instead of choosing DOM order', async () => {
+browserTest('multiple visible job sections remain ambiguous instead of choosing DOM order', async () => {
   const html = companySection + jobSection + '<section><h2>About the job</h2><span data-testid="expandable-text-box">Another posting description.</span></section>';
   assert.equal((await extract({ html })).jdText, '');
 });
 
-test('a Portuguese job heading still separates the JD from company information', async () => {
+browserTest('a Portuguese job heading still separates the JD from company information', async () => {
   assert.equal((await extract({ html: companySection + jobSection.replace('About the job', 'Sobre a vaga') })).jdText, 'The selected posting job description.');
 });
 
-test('an ordinary more link in the job section is not an expansion control', async () => {
+browserTest('an ordinary more link in the job section is not an expansion control', async () => {
   const html = companySection + jobSection.replace('</section>', '<a href="https://employer.example.org/more"><span>more</span></a></section>');
   assert.equal((await extract({ html })).jdText, 'The selected posting job description.');
 });

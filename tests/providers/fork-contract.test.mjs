@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { toolRequired } from '../required-tools.mjs';
 import { detectCustomProvider, fetchCustomProvider, routeCustomBrowserRequests } from '../../providers/_custom.mjs';
 import { makeHttpCtx, BROWSER_LIKE_USER_AGENT } from '../../providers/_http.mjs';
 import { normalizeJob } from '../../providers/arbeitsagentur.mjs';
@@ -343,7 +344,7 @@ for (const [id, api, html] of [
   ['devjobsde','https://en.devjobs.de/jobs/search','<html><body>No jobs found</body></html>'],
   ['rustjobs','https://rustjobs.dev/','<html><body><article><a href="/jobs/fixture" aria-label="Engineer at Fixture">Engineer</a><a href="https://employer.example/job">Apply now</a><time datetime="2026-01-02">Jan 2</time></article></body></html>'],
 ]) {
-  test(`${id} uses guarded context transport in its real browser`, {skip: !existsSync(chromium.executablePath()) && 'Chromium is not installed'}, async()=>{
+  test(`${id} uses guarded context transport in its real browser`, {skip: !toolRequired('browser') && !existsSync(chromium.executablePath()) && 'Chromium is not installed'}, async()=>{
     const provider=(await import(`../../providers/${id}.mjs`)).default;
     let calls=0;
     const jobs=await provider.fetch({name:'Fixture',api},{maxPages:1,fetchResponse:async(url,opts)=>{
@@ -361,7 +362,7 @@ for (const [id, api, html] of [
   });
 }
 
-test('rustjobs reports a Vercel security checkpoint as unscannable instead of retrying it', {skip: !existsSync(chromium.executablePath()) && 'Chromium is not installed'}, async()=>{
+test('rustjobs reports a Vercel security checkpoint as unscannable instead of retrying it', {skip: !toolRequired('browser') && !existsSync(chromium.executablePath()) && 'Chromium is not installed'}, async()=>{
   const provider=(await import('../../providers/rustjobs.mjs')).default;
   const challenge='<!DOCTYPE html><html><head><title>Vercel Security Checkpoint</title></head><body></body></html>';
   for(const [body,expected] of [[challenge,/requires a Vercel browser security check.*disable this entry/],['busy',/^Error: HTTP 429$/]]) {

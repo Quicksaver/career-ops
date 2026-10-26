@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { loadYaml } from './lib/yaml-document.mjs';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
+import { flagValue } from './lib/cli-flags.mjs';
 
 /**
  * prepare-application.mjs — ATS auto-fill for Greenhouse, Ashby, and Lever.
@@ -46,7 +47,7 @@ try {
   printUserContextErrorAndExit(err);
 }
 const args = userContext.args;
-const get = (flag) => { const i = args.indexOf(flag); return i !== -1 ? args[i + 1] : null; };
+const get = (flag) => flagValue(args, flag);
 
 const applyUrl  = get('--url');
 const pdfPath   = get('--pdf');

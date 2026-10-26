@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { toolRequired } from '../required-tools.mjs';
 import { fetchCustomProvider } from '../../providers/_custom.mjs';
 
 const JOBSCH = 'https://www.jobs.ch/en/vacancies/';
@@ -71,7 +72,7 @@ test('Make it in Germany reports a Radware bot challenge instead of a markup cha
   );
 });
 
-test('DEVjobs.de names a Cloudflare challenge instead of a bare HTTP 403', {skip: !existsSync(chromium.executablePath()) && 'Chromium is not installed'}, async () => {
+test('DEVjobs.de names a Cloudflare challenge instead of a bare HTTP 403', {skip: !toolRequired('browser') && !existsSync(chromium.executablePath()) && 'Chromium is not installed'}, async () => {
   const challenge = Object.assign(new Error('HTTP 403 Forbidden'), {
     status: 403, body: '<html><script src="/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1"></script></html>',
   });

@@ -5,13 +5,18 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { toolRequired } from './required-tools.mjs';
 import { linkedinPostingId, publishRecovery, recoverPosting, recoveryTargets } from '../lib/linkedin-recovery.mjs';
 import { getSingleLinkedInPage } from '../scan-auth/linkedin.mjs';
 
 const url = 'https://www.linkedin.com/jobs/view/1234567890/';
 const jd = 'We need a fictional backend engineer to design reliable services, build APIs, review code, write tests, and work with customers. Requirements include practical programming experience, communication skills, and experience with relational databases.';
 let browser;
-before(async () => {browser = await chromium.launch({ headless: true });});
+// Chromium suites skip where no browser is installed, unless the run requires
+// one (test-all.mjs --needs browser; see tests/required-tools.mjs).
+const browserSkip = !toolRequired('browser') && !existsSync(chromium.executablePath()) && 'Chromium is not installed';
+const browserTest = (name, ...rest) => test(name, { skip: browserSkip }, ...rest);
+before(async () => {if (!browserSkip) browser = await chromium.launch({ headless: true });});
 after(async () => {await browser?.close();});
 
 function fixture(t) {
@@ -23,7 +28,7 @@ function fixture(t) {
   return { userRoot: root, pipelinePath, target: recoveryTargets(readFileSync(pipelinePath, 'utf8'))[0] };
 }
 
-test('recovery preserves original posting provenance, new queue additions and existing processed rows', async t => {
+browserTest('recovery preserves original posting provenance, new queue additions and existing processed rows', async t => {
   const f = fixture(t);
   writeFileSync(f.pipelinePath, readFileSync(f.pipelinePath, 'utf8').replace('## Processed', '- [ ] https://concurrent.example/job\n\n## Processed'));
   const result = await publishRecovery({ ...f, result: { status: 'recovered', jdText: jd, title: 'Backend Engineer', company: 'Fictional', applicationUrl: 'https://employer.example/job' } });
@@ -36,7 +41,7 @@ test('recovery preserves original posting provenance, new queue additions and ex
   assert.equal(recoveryTargets(pipeline).length, 0);
 });
 
-test('a concurrently edited hold and terminal batch state are protected', async t => {
+browserTest('a concurrently edited hold and terminal batch state are protected', async t => {
   const f = fixture(t);
   writeFileSync(join(f.userRoot, 'batch/batch-state.tsv'), `id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries\n1\t${url}\tclosed\t-\t-\t-\t-\tposting-closed\t0\n`);
   assert.equal((await publishRecovery({ ...f, result: { status: 'recovered', jdText: jd } })).status, 'protected');
@@ -45,7 +50,7 @@ test('a concurrently edited hold and terminal batch state are protected', async 
   assert.equal(existsSync(join(f.userRoot, 'jds')), false);
 });
 
-test('explicitly closed postings leave Pending as Closed without fabricated job artifacts', async t => {
+browserTest('explicitly closed postings leave Pending as Closed without fabricated job artifacts', async t => {
   const f = fixture(t);
   assert.equal((await publishRecovery({ ...f, result: { status: 'closed', evidence: 'No longer accepting applications' } })).status, 'closed');
   const text = readFileSync(f.pipelinePath, 'utf8');
@@ -53,14 +58,14 @@ test('explicitly closed postings leave Pending as Closed without fabricated job 
   assert.equal(recoveryTargets(text).length, 0); assert.equal(existsSync(join(f.userRoot, 'jds')), false);
 });
 
-test('capture directory symlinks cannot escape the selected user', async t => {
+browserTest('capture directory symlinks cannot escape the selected user', async t => {
   const f = fixture(t), outside = mkdtempSync(join(tmpdir(), 'linkedin-outside-'));
   t.after(() => rmSync(outside, { recursive: true, force: true }));
   try {symlinkSync(outside, join(f.userRoot, 'jds'), 'junction');} catch (error) {t.skip(error.message); return;}
   await assert.rejects(publishRecovery({ ...f, result: { status: 'recovered', jdText: jd } }), /escapes selected user/);
 });
 
-test('canonical posting recovery uses one page navigation and expands only its JD', async () => {
+browserTest('canonical posting recovery uses one page navigation and expands only its JD', async () => {
   const context = await browser.newContext();
   try {
     let requests = 0;
@@ -70,7 +75,7 @@ test('canonical posting recovery uses one page navigation and expands only its J
   } finally {await context.close();}
 });
 
-test('recovery never accepts a different posting identity or a login wall', async () => {
+browserTest('recovery never accepts a different posting identity or a login wall', async () => {
   for (const destination of ['/jobs/view/999/', '/login', '/authwall', '/checkpoint/challenge']) {
     const context = await browser.newContext();
     try {
@@ -82,7 +87,7 @@ test('recovery never accepts a different posting identity or a login wall', asyn
   assert.equal(linkedinPostingId(url+'?other=job'), null);
 });
 
-test('document replacement races reuse the same loading allowance without navigation retries', async () => {
+browserTest('document replacement races reuse the same loading allowance without navigation retries', async () => {
   for (const failAt of [1, 2]) {
     const context = await browser.newContext();
     try {
@@ -107,7 +112,7 @@ test('document replacement races reuse the same loading allowance without naviga
   }
 });
 
-test('tracking parameters and delayed selected IDs preserve exact posting identity', async () => {
+browserTest('tracking parameters and delayed selected IDs preserve exact posting identity', async () => {
   const context = await browser.newContext();
   try {
     let requests = 0;
@@ -122,7 +127,7 @@ test('tracking parameters and delayed selected IDs preserve exact posting identi
   } finally { await context.close(); }
 });
 
-test('HTTP closure evidence must retain the exact posting identity', async () => {
+browserTest('HTTP closure evidence must retain the exact posting identity', async () => {
   for (const status of [404, 410]) {
     for (const destination of ['/jobs/view/1234567890/', '/jobs/view/999/', '/authwall']) {
       const context = await browser.newContext();
@@ -135,7 +140,7 @@ test('HTTP closure evidence must retain the exact posting identity', async () =>
   }
 });
 
-test('successive posting recovery reuses the startup tab with at most one request active', async () => {
+browserTest('successive posting recovery reuses the startup tab with at most one request active', async () => {
   const context = await browser.newContext();
   try {
     const startup = await context.newPage();

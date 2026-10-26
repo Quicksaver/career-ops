@@ -1,12 +1,18 @@
 import './user-fixture.mjs';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { toolRequired } from './required-tools.mjs';
 import LinkedInScanner from '../scan-auth/linkedin.mjs';
 import { printSummary } from '../scan-auth.mjs';
 
 let browser;
-before(async () => { browser = await chromium.launch({ headless: true }); });
+// Chromium suites skip where no browser is installed, unless the run requires
+// one (test-all.mjs --needs browser; see tests/required-tools.mjs).
+const browserSkip = !toolRequired('browser') && !existsSync(chromium.executablePath()) && 'Chromium is not installed';
+const browserTest = (name, ...rest) => test(name, { skip: browserSkip }, ...rest);
+before(async () => { if (!browserSkip) browser = await chromium.launch({ headless: true }); });
 after(async () => { await browser?.close(); });
 
 // Real scan loop and card readers, fictional local DOM. Only JD extraction is
@@ -33,7 +39,7 @@ async function scan({ limit = 25, searches = 3, readable = () => false } = {}) {
   } finally { await context.close(); }
 }
 
-test('unreadable postings consume the per-search admission limit', async () => {
+browserTest('unreadable postings consume the per-search admission limit', async () => {
   const result = await scan({ limit: 2, searches: 2 });
   assert.equal(result.holds.length, 4);
   assert.equal(result.attempts, 4);
@@ -42,7 +48,7 @@ test('unreadable postings consume the per-search admission limit', async () => {
   assert.equal(result.stats.errors, 4);
 });
 
-test('systematic capture failure stops the entire source after fifteen attempts', async () => {
+browserTest('systematic capture failure stops the entire source after fifteen attempts', async () => {
   const result = await scan();
   assert.equal(result.holds.length, 15);
   assert.equal(result.attempts, 15);
@@ -51,13 +57,13 @@ test('systematic capture failure stops the entire source after fifteen attempts'
   assert.match(result.errors[0].error, /stopping LinkedIn scan/);
 });
 
-test('search boundaries do not reset the source failure circuit breaker', async () => {
+browserTest('search boundaries do not reset the source failure circuit breaker', async () => {
   const result = await scan({ limit: 3, searches: 10 });
   assert.equal(result.holds.length, 15);
   assert.equal(result.navigations, 5);
 });
 
-test('successful captures reset consecutive failures while sharing the search limit with holds', async () => {
+browserTest('successful captures reset consecutive failures while sharing the search limit with holds', async () => {
   const result = await scan({ limit: 4, searches: 2, readable: i => i % 2 === 0 });
   assert.equal(result.listings.length, 4);
   assert.equal(result.holds.length, 4);

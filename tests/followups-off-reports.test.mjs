@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pass, fail, NODE, ROOT, rmSync } from './helpers.mjs';
+import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 console.log('\nstats and funnel-velocity summaries while follow-ups are off');
 
@@ -32,7 +33,7 @@ function summary(script, dir) {
     encoding: 'utf-8',
     env: { ...process.env, CAREER_OPS_ROOT: dir, CAREER_OPS_PROFILE: '' },
   });
-  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.status, 0, describeSpawn(run));
   return run.stdout;
 }
 

@@ -171,7 +171,7 @@ test('scan-hn refuses a portals.yml that does not parse instead of scanning with
     const refused = writeFetchFixture(dir, { serveHn: false });
     writeFileSync(portals, `${keywords}title_filter:\n  positive: ["unclosed\n`);
     const broken = runScanHn(dir, refused.preload, [], { GEMINI_API_KEY: '' });
-    assert.equal(broken.status, 1, `expected a parse error to exit 1, got ${broken.status}\n${broken.stdout}`);
+    assert.equal(broken.status, 1, describeSpawn(broken, `expected a parse error to exit 1, got ${broken.status}\n`));
     assert.match(broken.stderr, /Error: failed to parse .*portals\.yml: /);
     assert.doesNotMatch(broken.stdout, /Match:/);
     assert.equal(existsSync(refused.unexpected), false, 'a run with an unparseable portals.yml reached the network');
