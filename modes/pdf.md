@@ -315,6 +315,7 @@ Write a JSON file with this structure, then run `node build-cv-html.mjs --user {
 - **Missing or blank required field → hard error, non-zero exit, no HTML written.** Required: `company` + `role` for experience, `name` for projects, `title` for education, certifications and awards, `items` for skills (a non-blank string or a non-empty array of them; `category` stays optional).
 - **A key no builder reads → warning on stderr and in the report's `warnings[]`;** the build proceeds and the key is ignored.
 - **A top-level section name the builder does not read → warning**, naming the nearest known key. A payload with `educations` instead of `education` used to validate clean and drop the section silently; it now says so.
+- **A populated section the chosen template has no slot for → warning**, naming the template. Of the shipped templates only `cv-template.html` renders `interests`, and the ATS and `zh-minimal` templates have no `consent` footer; pick a template that has the section, or leave it out.
 
 Do **not** substitute the LaTeX builder's vocabulary — `institution`/`degree`/`dates`/`coursework` is the `modes/latex.md` education schema, **not** this one — nor `employer` for a company or `name` for a certification. Such an entry used to render as an empty block while the report still said `"valid": true`, and CVs went out with no education section at all. It is now rejected by name. When in doubt, check `counts.educationEntries` (and its siblings) in the JSON report: a zero there means the section is empty in the PDF.
 
@@ -345,7 +346,7 @@ The `{{PHOTO}}` slot is **off by default** and intentionally market-specific:
 
 When set, the photo floats into the top corner (mirrored for RTL/Arabic) and the header/summary text wraps beside it; `.cv-photo` in `cv-template.html` controls its size and framing.
 
-Local photo paths may be absolute or relative to the career-ops project root. The builder reads a local path only when the payload's `candidate.photo` equals the value in `config/profile.yml`; any other local path is refused, because the payload is written from an untrusted posting. `data:` and `http(s)` values are unaffected.
+Local photo paths may be absolute or relative to the data root, where the user-layer files live: the career-ops project root, unless `CAREER_OPS_ROOT`, `CAREER_OPS_DATA_DIR` or a `.career-ops-data` marker moves them. A relative path not found there is also tried against the checkout. The builder reads a local path only when the payload's `candidate.photo` equals the value in `config/profile.yml`; any other local path is refused, because the payload is written from an untrusted posting. `data:` and `http(s)` values are unaffected.
 The builder validates PNG, JPEG, WebP, and GIF inputs and inlines them as data
 URLs so the saved HTML remains portable. To inspect the result before PDF
 generation, run:

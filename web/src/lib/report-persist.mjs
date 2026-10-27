@@ -166,6 +166,8 @@ export function trackerTsvLine({ num, today, company, role, score, reportFile, n
 
 function spawnScript({ spawnFn, execPath, root, systemRoot = root, env = process.env, script, args = [], input = null }) {
   return new Promise((resolve) => {
+    // windowsHide: see api/doctor/route.ts — a stale inherited console kills
+    // every child with 0xC0000142 on Windows; never inherit one.
     const child = spawnFn(execPath, [path.join(systemRoot, script), ...args], { cwd: root, env, windowsHide: true });
     let stdout = "";
     let stderr = "";

@@ -87,6 +87,9 @@ process.stdin.on("end", async () => {
     const child = spawn(process.execPath, ["--input-type=module", "-e", code], {
       cwd: careerOpsSystemRoot(),
       env: careerOpsCoreEnv(),
+      // windowsHide: see api/doctor/route.ts — a stale inherited console kills
+      // every child with 0xC0000142 on Windows; never inherit one.
+      windowsHide: true,
     });
     let out = "";
     let err = "";

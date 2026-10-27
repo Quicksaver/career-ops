@@ -39,6 +39,7 @@ import { localToday } from './lib/local-today.mjs';
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
@@ -204,7 +205,21 @@ async function main() {
   const throttleArg = args.find((a) => a === '--throttle' || a.startsWith('--throttle='));
   const throttleBaseMs = throttleArg ? (Number(throttleArg.split('=')[1]) || 5000) : 0;
   const record = recordingEnabled(args);
-  const statusArg = args.find((a) => a.startsWith('--status='));
+  // `--status Rejected` as well as `--status=Rejected`. Only the `=` form was
+  // read, so the space form, and any `--status` with no value, fell back to
+  // the default statuses without a word, and `--discard-expired --apply`
+  // then rewrote Evaluated and Applied rows the user never asked about.
+  // A --status with no value is a usage error (the hasFlag + flagValue
+  // pairing lib/cli-flags.mjs documents for this).
+  const statusGiven = hasFlag(args, '--status');
+  const statusValue = statusGiven ? flagValue(args, '--status') : undefined;
+  if (statusGiven && (typeof statusValue !== 'string' || !statusValue.trim() || statusValue.startsWith('--'))) {
+    console.error('--status needs a value, e.g. --status=Evaluated,Applied');
+    process.exitCode = 1;
+    return;
+  }
+  // The space form's value is an argv token of its own; it is not a URL.
+  const statusTokens = new Set(args.filter((a, i) => a.startsWith('--status=') || a === '--status' || (args[i - 1] === '--status' && a === statusValue)));
   const fromTracker = args.includes('--tracker');
   const closeExpired = args.includes('--close-expired') || args.includes('--discard-expired');
   const applyClosures = args.includes('--apply');
@@ -213,7 +228,7 @@ async function main() {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (['--json', '--no-fallback', '--no-record', '--tracker', '--close-expired', '--discard-expired', '--apply'].includes(arg)
-      || arg === throttleArg || arg === statusArg) continue;
+      || arg === throttleArg || statusTokens.has(arg)) continue;
     if (arg === '--file') {
       if (file || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('--file requires one filename');
       file = args[++i];
@@ -222,7 +237,7 @@ async function main() {
     } else positional.push(arg);
   }
 
-  if (statusArg && !fromTracker) throw new Error('--status requires --tracker');
+  if (statusGiven && !fromTracker) throw new Error('--status requires --tracker');
   if (closeExpired && !fromTracker) throw new Error('--close-expired requires --tracker');
   if (applyClosures && !closeExpired) throw new Error('--apply requires --close-expired');
   if (fromTracker && (file || positional.length)) throw new Error('Use --tracker, posting URLs or --file, not a combination');
@@ -248,7 +263,7 @@ async function main() {
       throw new Error(`No tracker at ${trackerPath}. Evaluate a role first.`);
     }
     trackerText = readFileSync(trackerPath, 'utf-8');
-    const statuses = statusArg ? statusArg.slice('--status='.length).split(',') : DEFAULT_TRACKER_STATUSES;
+    const statuses = statusGiven ? statusValue.split(',').map((s) => s.trim()).filter(Boolean) : DEFAULT_TRACKER_STATUSES;
     const { targets, noUrl } = trackerLivenessTargets(trackerText, { statuses, reportsRoot });
     log(`Tracker rows with status ${statuses.join(' or ')}: ${targets.length} with a posting URL${noUrl.length ? `, ${noUrl.length} without (${noUrl.map((n) => `#${n}`).join(' ')})` : ''}`);
     for (const t of targets) labels.set(t.url, `#${t.num} ${t.company} · ${t.role} (${t.status})`);
@@ -359,9 +374,10 @@ async function main() {
   // pipeline-liveness.mjs and never reaches this branch.
   let trackerClosures;
   if (closeExpired) {
-    // Only closure EVIDENCE closes a row. An `insufficient_content` verdict is
-    // `expired` too, but it means the page could not be read, and this path
-    // writes Closed to the tracker — see isClosureEvidence().
+    // Only closure EVIDENCE closes a row. An `insufficient_content` verdict
+    // means the page could not be read, whether it arrives as `uncertain` or,
+    // from an older verdict, as `expired`, and this path writes Closed to the
+    // tracker — see isClosureEvidence().
     const { closed: expiredUrls, unreadable } = discardableExpiredUrls(verdicts);
     if (unreadable.length > 0) {
       log(`\nClose expired: ${unreadable.length} page(s) could not be read and were left as they are `

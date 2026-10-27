@@ -102,7 +102,9 @@ export function spawnGeneratePdf({ spawnFn, execPath, root, systemRoot = root, e
       // hard-fail every web-triggered render — same bypass a human already
       // applies manually via the CLI when this diverges.
       [path.join(systemRoot, "generate-pdf.mjs"), html, finalPdf, `--format=${format}`, `--report=${reportNum}`, "--allow-reorder", ...(env.CAREER_OPS_USER ? ["--user", env.CAREER_OPS_USER.trim()] : [])],
-      { cwd: systemRoot, env: { ...env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root } },
+      // windowsHide: see api/doctor/route.ts — a stale inherited console
+      // kills every child with 0xC0000142 on Windows; never inherit one.
+      { cwd: systemRoot, env: { ...env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root }, windowsHide: true },
     );
     let stderr = "";
     child.stderr.on("data", (d) => { stderr += d.toString(); });
@@ -122,7 +124,7 @@ export function spawnGeneratePdf({ spawnFn, execPath, root, systemRoot = root, e
  */
 export function markTrackerReady({ spawnFn, execPath, root, systemRoot = root, env = process.env, reportNum }) {
   return new Promise((resolve) => {
-    const child = spawnFn(execPath, [path.join(systemRoot, "mark-pdf-ready.mjs"), reportNum, "--json", ...(env.CAREER_OPS_USER ? ["--user", env.CAREER_OPS_USER.trim()] : [])], { cwd: systemRoot, env: { ...env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root } });
+    const child = spawnFn(execPath, [path.join(systemRoot, "mark-pdf-ready.mjs"), reportNum, "--json", ...(env.CAREER_OPS_USER ? ["--user", env.CAREER_OPS_USER.trim()] : [])], { cwd: systemRoot, env: { ...env, CAREER_OPS_ROOT: root, CAREER_OPS_DATA_DIR: root }, windowsHide: true });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => { stdout += d.toString(); });

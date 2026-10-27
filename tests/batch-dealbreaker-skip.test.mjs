@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { ROOT, getBash, toBashPath } from './helpers.mjs';
 import { listTree } from '../lib/walk-tree.mjs';
+import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 const read = (path) => readFileSync(join(ROOT, path), 'utf8').replace(/\r\n/g, '\n');
 const runner = read('batch/batch-runner.sh');
@@ -333,7 +334,7 @@ test('the SKIP row the prompt shows merges into the selected user tracker with t
     const env = { ...process.env, CAREER_OPS_USERS_DIR: dir, CAREER_OPS_USER: USER };
     for (const k of ['CAREER_OPS_ROOT', 'CAREER_OPS_DATA_DIR', 'CAREER_OPS_PROFILE', 'CAREER_OPS_TRACKER']) delete env[k];
     const res = spawnSync(process.execPath, [join(ROOT, 'merge-tracker.mjs'), '--user', USER], { cwd: dir, encoding: 'utf8', env });
-    assert.equal(res.status, 0, res.stderr + res.stdout);
+    assert.equal(res.status, 0, describeSpawn(res));
     const merged = readFileSync(join(root, 'data', 'applications.md'), 'utf8').trim().split('\n').at(-1);
     assert.match(merged, /\| Fabrikam \| Product Designer \| N\/A \| SKIP \|/);
     assert.ok(merged.includes(`"${RULE}"`) && merged.includes(`"${JD_LINE}"`), merged);
@@ -358,7 +359,7 @@ test('pipeline reconcile moves a dealbreaker skip to Processed without a report 
     const env = { ...process.env, CAREER_OPS_USERS_DIR: dir, CAREER_OPS_USER: USER };
     for (const k of ['CAREER_OPS_ROOT', 'CAREER_OPS_DATA_DIR', 'CAREER_OPS_PIPELINE']) delete env[k];
     const res = spawnSync(process.execPath, [join(ROOT, 'reconcile-pipeline.mjs'), '--user', USER], { cwd: dir, encoding: 'utf8', env });
-    assert.equal(res.status, 0, res.stderr + res.stdout);
+    assert.equal(res.status, 0, describeSpawn(res));
     const text = readFileSync(join(root, 'data', 'pipeline.md'), 'utf8');
     const [pending, processed] = text.split('## Processed');
     const pendingLines = pending.split('\n');

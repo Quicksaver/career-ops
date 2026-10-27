@@ -20,6 +20,9 @@ export function runEmployerWorker(
       cwd: codeRoot,
       env,
       stdio: ["pipe", "pipe", "pipe"],
+      // windowsHide: see api/doctor/route.ts — a stale inherited console kills
+      // every child with 0xC0000142 on Windows; never inherit one.
+      windowsHide: true,
     });
     let output = "";
     let warnings = "";

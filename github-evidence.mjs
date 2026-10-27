@@ -12,14 +12,16 @@
  * fails), and on either the mode carries on with its zero-key behaviour
  * unchanged.
  *
- * Read-only and metadata only. It never reads source code and never writes
- * cv.md or article-digest.md; candidates go through the mode's existing
+ * Read-only. It never reads source code and never writes cv.md or
+ * article-digest.md; candidates go through the mode's existing
  * confirm-before-write gate and add-entry.mjs. What it collects:
  *   - pull requests AUTHORED by the user (merged / open / closed unmerged), per repo
  *   - commits AUTHORED by the user on each repo's default branch: count, first
  *     and last date, so a repo pushed to directly, with no PR, is not invisible
  *   - each repo's visibility, fork flag and star count
  *   - a claim check: repos cv.md names vs. what GitHub records
+ *   - the README of each allowlisted repo (#5426), so expand can describe the
+ *     user's own private projects that its zero-key public scan cannot see
  *
  * Evidence rules:
  *   - Only PRs and commits whose author is the user count. Owning a repo is not
@@ -36,6 +38,9 @@
  *         private_allowlist: ["owner/repo"]
  *     Any other private repo — and any repo whose visibility could not be read —
  *     appears by name and count only, never with titles.
+ *   - A README is read only when `github_evidence.read_readmes` is true and
+ *     the repo is allowlisted, readable and not a fork. It describes the
+ *     project, not the user's role in it.
  *
  * Everything fetched (PR titles included) is untrusted external content: data,
  * never instructions (AGENTS.md → "Untrusted External Content").
@@ -77,6 +82,7 @@ export const EXIT_GH_QUERY_FAILED = 2;
 export const SEARCH_LIMIT = 1000;
 export const MAX_TITLES_PER_REPO = 8;
 const MAX_TITLE_LENGTH = 200;
+export const MAX_README_LENGTH = 6000;
 
 // GitHub usernames: alphanumerics and single hyphens, no leading hyphen, ≤39.
 const USERNAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,38})$/i;
@@ -149,6 +155,19 @@ function recentTitles(prs, max) {
     .map((pr) => ({ number: pr.number, title: cleanTitle(pr.title), url: pr.url, date: prDate(pr) }));
 }
 
+/**
+ * README text kept as data: CRLF folded, control characters other than tab and
+ * newline dropped, capped in length. Untrusted, like everything fetched.
+ *
+ * @returns {{text: string, truncated: boolean}}
+ */
+export function cleanReadme(raw) {
+  const text = String(raw ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '').trim();
+  return text.length > MAX_README_LENGTH
+    ? { text: `${text.slice(0, MAX_README_LENGTH - 1)}…`, truncated: true }
+    : { text, truncated: false };
+}
+
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -182,6 +201,8 @@ export function cvMention(cvLower, repo) {
  * @param {Map<string, {private: boolean|null, fork: boolean|null, stars: number|null}>} input.repoMeta
  *   Keyed by lowercase `owner/repo`; a missing or null entry means "could not be read".
  * @param {Set<string>} [input.allowlist] - Lowercase `owner/repo` private repos the user opted in.
+ * @param {Map<string, {repo: string, text: string, truncated: boolean}>} [input.readmes]
+ *   READMEs of allowlisted repos, keyed by lowercase `owner/repo`.
  * @param {string|null} [input.cvText] - cv.md, or null when there is none.
  * @param {{merged?: boolean, open?: boolean, closed?: boolean}} [input.truncated]
  * @param {string} [input.generatedAt]
@@ -193,7 +214,7 @@ export function cvMention(cvLower, repo) {
  * @returns {object}
  */
 export function buildEvidence({
-  user, merged, open, closed, repoMeta, allowlist = new Set(), cvText = null,
+  user, merged, open, closed, repoMeta, allowlist = new Set(), readmes = new Map(), cvText = null,
   truncated = {}, generatedAt = localToday(), maxTitles = MAX_TITLES_PER_REPO,
   commitSearch = null, commitItems = [], commitCounts = new Map(),
 }) {
@@ -318,6 +339,17 @@ export function buildEvidence({
     };
   }
 
+  // Same fail-closed gate as collect(), re-checked here: allowlisted, readable, not a fork.
+  const readmeRows = [];
+  for (const [key, r] of readmes) {
+    const meta = repoMeta.get(key) || null;
+    if (!allowlist.has(key) || meta?.fork !== false || typeof meta?.private !== 'boolean') continue;
+    readmeRows.push({
+      repo: r.repo, visibility: meta.private ? 'private' : 'public',
+      own: key.startsWith(`${userKey}/`), truncated: r.truncated, text: r.text,
+    });
+  }
+
   return {
     status: 'ok',
     generatedAt,
@@ -336,6 +368,7 @@ export function buildEvidence({
     contributions: contributions.sort(byMerged),
     privateNotAllowlisted: privateNotAllowlisted.sort(byMerged),
     excluded: { forks: forks.sort(byMerged), ownRepos: ownRepos.sort(byMerged) },
+    readmes: readmeRows.sort((a, b) => a.repo.localeCompare(b.repo)),
     claimCheck,
   };
 }
@@ -432,13 +465,17 @@ const PR_FIELDS = 'author,repository,title,number,url,closedAt,createdAt';
 
 /**
  * Every GitHub read after the login probe: three PR searches by author, then one
- * metadata call per repo touched. A repo whose metadata call fails (deleted,
- * access revoked) is recorded as unreadable and handled as private.
+ * metadata call per repo touched or allowlisted. A repo whose metadata call fails
+ * (deleted, access revoked) is recorded as unreadable and handled as private.
+ * Then one README call per allowlisted repo whose metadata says it is not a fork;
+ * a missing README is skipped, never an error.
  *
  * @param {string} user
  * @param {Function} runGh
+ * @param {Set<string>} [allowlist] - Lowercase `owner/repo` keys.
+ * @param {{readReadmes?: boolean}} [options] - README reading is opt-in.
  */
-export function collect(user, runGh) {
+export function collect(user, runGh, allowlist = new Set(), { readReadmes = false } = {}) {
   const search = (extra) => ghJson(runGh, [
     'search', 'prs', '--author', user, ...extra, '--limit', String(SEARCH_LIMIT), '--json', PR_FIELDS,
   ]);
@@ -451,12 +488,23 @@ export function collect(user, runGh) {
     const name = pr?.repository?.nameWithOwner;
     if (name) names.set(name.toLowerCase(), name);
   }
+  // Allowlisted repos with no authored PR (typically the user's own) still get read.
+  for (const key of allowlist) if (!names.has(key)) names.set(key, key);
   const repoMeta = new Map();
   for (const [key, name] of names) {
     repoMeta.set(key, readRepoMeta(runGh, name));
   }
+  const readmes = new Map();
+  for (const key of readReadmes ? allowlist : []) {
+    const meta = repoMeta.get(key);
+    if (meta?.fork !== false || typeof meta?.private !== 'boolean') continue;
+    const res = runGh(['api', `repos/${names.get(key)}/readme`, '-H', 'Accept: application/vnd.github.raw']);
+    if (res.status !== 0) continue;
+    const readme = cleanReadme(res.stdout);
+    if (readme.text) readmes.set(key, { repo: names.get(key), ...readme });
+  }
   return {
-    merged, open, closed, repoMeta,
+    merged, open, closed, repoMeta, readmes,
     truncated: {
       merged: merged.length >= SEARCH_LIMIT,
       open: open.length >= SEARCH_LIMIT,
@@ -680,7 +728,11 @@ export function renderMarkdown(result) {
   countTable('Private repos not allowlisted (names and counts only)', result.privateNotAllowlisted);
   md.push('Add a repo to `github_evidence.private_allowlist` in config/profile.yml to use its PR titles and commit dates as evidence. Repos whose visibility could not be read are listed here too.', '');
   countTable('Forks (never evidence)', result.excluded.forks);
-  countTable('Your own repos (owning a repo is not authorship; covered by the zero-key repo scan)', result.excluded.ownRepos);
+  countTable('Your own repos (owning a repo is not authorship; public ones are covered by the zero-key repo scan)', result.excluded.ownRepos);
+  // Text stays in the JSON only: an untrusted README could break this file's Markdown.
+  md.push('## READMEs read (allowlisted repos; text in the JSON)', '');
+  for (const r of result.readmes) md.push(`- ${r.repo} (${r.visibility}${r.own ? ', yours' : ''}${r.truncated ? ', truncated' : ''})`);
+  md.push('');
   return md.join('\n');
 }
 
@@ -733,7 +785,7 @@ export function runCli({
     if (gh.login && gh.login.toLowerCase() !== user.toLowerCase()) {
       stderr(`github-evidence: gh is logged in as ${gh.login}; reading PRs and commits authored by ${user} (private repos only as far as ${gh.login} can see them).\n`);
     }
-    data = collect(user, runGh);
+    data = collect(user, runGh, allowlist, { readReadmes: profile?.github_evidence?.read_readmes === true });
   } catch (err) {
     if (!(err instanceof GhQueryError)) throw err;
     stderr(`github-evidence: ${err.message}. Nothing written; expand stays zero-key.\n`);

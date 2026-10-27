@@ -33,10 +33,15 @@ export function hnScanConfig(config) {
   const hnBoards = boards.filter(board => board?.provider === 'hackernews');
   const board = hnBoards.find(board => board.enabled !== false) || hnBoards[0]
     || { name: 'HN Hiring', provider: 'hackernews' };
+  // One keyword written without list brackets is a YAML scalar, which the title
+  // filter would drop, letting every post through (upstream #5890).
+  const keywords = config.hn_hiring?.keywords;
   return {
     ...config,
     // Legacy keywords supply a default only when no canonical title policy exists.
-    title_filter: config.title_filter ?? { positive: config.hn_hiring?.keywords ?? ['Software Engineer'] },
+    title_filter: config.title_filter ?? {
+      positive: typeof keywords === 'string' && keywords.trim() ? [keywords] : keywords ?? ['Software Engineer'],
+    },
     tracked_companies: [],
     job_boards: [{ ...board, enabled: true }],
   };
