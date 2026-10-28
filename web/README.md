@@ -242,8 +242,8 @@ only `web/tests/lib/` and a suite outside it would never run in the required che
 needs **no registration** — just add the file. Glob discovery needs Node ≥ 22:
 earlier versions don't expand CLI globs for `node --test`, so `npm test` prints
 `Could not find '…'`, runs nothing and exits 1. `engines.node` in
-`web/package.json` sits higher still, at the project floor (22.13, from
-`lib/node-floor.mjs`), and well above what `next` itself asks for.
+`web/package.json` sits higher still, at the project range (`^22.13.0 || >=23.4.0`,
+`NODE_ENGINES` in `lib/node-floor.mjs`), and well above what `next` itself asks for.
 
 Three constraints follow from all this:
 

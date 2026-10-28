@@ -37,9 +37,44 @@ Before deriving public facts, follow **Local job-facts cache (#1025)** below whe
 
 Execute the canonical A-G evaluation from `oferta`, including source evidence, the single two-pass requirement table, legitimacy, risk summary, verdict, extracted keywords, Keyword Coverage, and YAML Machine Summary. Apply user score caps and hard stops. Save the report at `{{USER_ROOT}}/reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. The coordinator reserves the tracker number `{{REPORT_NUM}}`; use it exactly and never calculate max+1. Include Date, Decision, URL, Batch ID and Legitimacy headers, and follow `oferta`'s **Decision line** rule: `**Decision:**` is the Machine Summary `final_decision`, and the line under the header fields is the `## Verdict (lead)` sentence copied word for word. Keep the label `Decision`, never `Verdict:`.
 
-Run `node keyword-match.mjs --user {{USER}} {report-path}` after saving the report and paste its `## Keyword Coverage` block after the keyword list, as the loaded `oferta` mode requires. Apply its new recruiter-identity Signal 18 when outreach is recorded in the input notes.
+Run the `keyword-match.mjs` command under **Command arguments** below after saving the report and paste its `## Keyword Coverage` block after the keyword list, as the loaded `oferta` mode requires. Apply its new recruiter-identity Signal 18 when outreach is recorded in the input notes.
 
-The report MUST contain `## Job Description (archived verbatim)` with substantive full JD text and `## Machine Summary` with canonical YAML keys. Keep these two headings in English for parsers. Paste the JD text unchanged; never paraphrase or restate it under that heading, because `check-jd-archive.mjs` does not credit a section that calls itself a paraphrase. If the full text cannot be reproduced, fail the worker rather than archive a summary. Archive a secondary JD under `{{USER_ROOT}}/jds/` keyed to the same report when the selected output mode requires it; preserve visible posting date or `Posted: not visible in source`, and source URL/provenance. Reports and JD archives must remain available after temporary prefetch files are removed.
+The report MUST contain `## Job Description (archived verbatim)` (#2789) with substantive full JD text and `## Machine Summary` with canonical YAML keys. Keep these two headings in English for parsers. Paste the JD text unchanged; never paraphrase or restate it under that heading, because `check-jd-archive.mjs` does not credit a section that calls itself a paraphrase. If the full text cannot be reproduced, capture it with the `archive-posting.mjs` command under **Command arguments** below and use the pointer sentence from `modes/oferta.md`; if no capture is possible either, fail the worker rather than archive a summary. Archive a secondary JD under `{{USER_ROOT}}/jds/` keyed to the same report when the selected output mode requires it; preserve visible posting date or `Posted: not visible in source`, and source URL/provenance. Reports and JD archives must remain available after temporary prefetch files are removed.
+
+**Command arguments (#5853):** never type the posting URL, the company slug or the report path into a command line, not even inside quotes: a URL's `&`, `'`, `$` or spaces are shell syntax. Write the values to a JSON file with your file tool and run the fixed command for it, which checks each value and passes each one to the script as its own argument, with no shell (same rule as `modes/oferta.md`). A value that fails its check stops the run: fix the value, never the check. For the archive capture the file is `{"url": "…", "company": "{company-slug}", "report": "{{REPORT_NUM}}", "user": "{{USER}}"}`:
+
+```bash
+node --input-type=module -e '
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const p = JSON.parse(readFileSync(process.argv[1] ?? 0, "utf8"));
+const fail = msg => { console.error("archive-posting: " + msg); process.exit(1); };
+if (p === null || typeof p !== "object" || Array.isArray(p)) fail("the JSON file must hold one object");
+if (typeof p.url !== "string" || !/^https?:\/\//i.test(p.url)) fail("url must be an http(s) URL");
+const args = ["archive-posting.mjs", p.url];
+if (p.company != null) { if (typeof p.company !== "string" || !/^[a-z0-9-]+$/.test(p.company)) fail("company must match ^[a-z0-9-]+$"); args.push("--company=" + p.company); }
+if (p.report != null) { if (!/^[0-9]+$/.test(String(p.report))) fail("report must be a report number"); args.push("--report=" + p.report); }
+if (p.user != null) { if (typeof p.user !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(p.user)) fail("user must be a career-ops user ID"); args.push("--user=" + p.user); }
+process.exit(spawnSync(process.execPath, args, { stdio: "inherit" }).status ?? 1);
+' {json-file}
+```
+
+For keyword coverage it is `{"report": "reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md", "user": "{{USER}}"}`, relative to `{{USER_ROOT}}`:
+
+```bash
+node --input-type=module -e '
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const p = JSON.parse(readFileSync(process.argv[1] ?? 0, "utf8"));
+const fail = msg => { console.error("keyword-match: " + msg); process.exit(1); };
+if (p === null || typeof p !== "object" || Array.isArray(p)) fail("the JSON file must hold one object");
+if (typeof p.report !== "string" || !/^reports\/[0-9]{3,}-[a-z0-9-]+-[0-9]{4}-[0-9]{2}-[0-9]{2}\.md$/.test(p.report)) fail("report must be reports/{###}-{company-slug}-{YYYY-MM-DD}.md");
+const args = ["keyword-match.mjs", p.report];
+if (p.cv != null) { if (typeof p.cv !== "string" || p.cv === "" || p.cv.startsWith("-")) fail("cv must be a file path"); args.push("--cv", p.cv); }
+if (p.user != null) { if (typeof p.user !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(p.user)) fail("user must be a career-ops user ID"); args.push("--user=" + p.user); }
+process.exit(spawnSync(process.execPath, args, { stdio: "inherit" }).status ?? 1);
+' {json-file}
+```
 
 Resolve `cv.output_format` before the PDF threshold. Load and execute `modes/text.md` for `text`, `modes/latex.md` for `latex`, otherwise `modes/pdf.md`. Text/LaTeX output never produces HTML/PDF. All routes obey `final_decision: Skip` and hard-stop gates before CV generation. For the default PDF route, require score >= `auto_pdf_score_threshold` (default 3.0), no Skip, and no hard stop; `--skip-pdf` in the job message disables PDF rendering. PDF ❌ and final `pdf: null` remain correct for text/LaTeX and blocked default routes.
 
@@ -166,6 +201,7 @@ num	date	company	role	status	score	pdf	report	notes	url	via
 ```
 
 Use reserved num, date, canonical company/role, `SKIP` for Skip/hard stops or `Evaluated` otherwise, score `X.X/5`, PDF ✅ only for the existing primary PDF, report link `[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)`, concise notes, exact posting URL, and confirmed Via. An unknown employer is `?` and requires a confirmed Via plus a distinguishing Notes descriptor. Direct Via is an empty field, never the literal strings `null` or `undefined`. Preserve empty TSV fields. Use real tabs, no tabs/newlines inside values. Do not merge the tracker yourself; the runner/parent owns merging.
+`{company-slug}` is lowercase, hyphenated, and filesystem-safe: built as `modes/oferta.md` step 1 describes, it must match `^[a-z0-9-]+$`.
 
 ## Final result contract
 

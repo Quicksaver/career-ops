@@ -231,9 +231,9 @@ That is what `update-system.mjs apply` does with every system file this install 
 Every workflow requires an explicit active user. By default, User Layer files reside in `users/{USER}/` inside the system checkout. You can select a separate directory for that user's personal data.
 
 ### Resolution Precedence:
-1. **Environment variables:** `CAREER_OPS_ROOT`, then `CAREER_OPS_DATA_DIR`, select the active user's data root. Relative paths anchor to the system checkout.
+1. **Environment variables:** `CAREER_OPS_ROOT`, then `CAREER_OPS_DATA_DIR`, select the active user's data root. Relative paths anchor to the system checkout. A directory inside a Claude Code plugin install copy is refused, here and in the marker file, because Claude Code replaces that copy on every plugin update.
 2. **Marker file:** When neither data-root alias nor `CAREER_OPS_USERS_DIR` is configured, `.career-ops-data` in the checkout selects the active user's data root. Its path may be absolute or relative to the checkout.
-3. **Selected user default:** Use `{CAREER_OPS_USERS_DIR}/{USER}` when configured, otherwise `{SYSTEM_ROOT}/users/{USER}`. Never fall back to the system checkout as user data.
+3. **Selected user default:** Use `{CAREER_OPS_USERS_DIR}/{USER}` when configured, otherwise `{SYSTEM_ROOT}/users/{USER}`, or `~/career-ops-data/users/{USER}` when the code runs from a Claude Code plugin install copy (see [docs/CLAUDE_PLUGIN.md](docs/CLAUDE_PLUGIN.md)). Never fall back to the system checkout as user data.
 
 The selected root already identifies the user: resolve `cv.md`, `config/profile.yml`, `modes/_profile.md`, `modes/_custom.md`, `data/`, `reports/`, `output/`, `portals.yml`, and `batch/` (including `batch/tracker-additions/`) directly beneath it. Do not append `users/{USER}/` again. System modes, scripts, templates, and bundled plugins remain in the system checkout. The web app uses `CAREER_OPS_CODE_ROOT` for that checkout and `CAREER_OPS_DATA_DIR` for an explicit data root; its legacy `CAREER_OPS_ROOT` alias denotes the system checkout.
 

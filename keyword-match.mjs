@@ -516,11 +516,12 @@ function runSelfTest() {
 
 // --- CLI (guarded so importing this module never runs it) ---
 if (isMainModule(import.meta.url)) {
-  const args = process.argv.slice(2);
-
-  if (args.includes('--self-test')) {
+  if (process.argv.includes('--self-test')) {
     runSelfTest();
   } else {
+    // Takes --user out of argv, so the loop below never sees it.
+    const dataRoot = getCareerOpsRoot();
+    const args = process.argv.slice(2);
     let jsonMode = false;
     let cvArg = null;
     let reportArg = null;
@@ -559,7 +560,11 @@ if (isMainModule(import.meta.url)) {
       process.exit(1);
     }
 
-    const reportPath = isAbsolute(reportArg) ? reportArg : join(process.cwd(), reportArg);
+    // A relative report path is read from the user's data root, where reports/
+    // lives, and falls back to the working directory.
+    const reportPath = isAbsolute(reportArg)
+      ? reportArg
+      : [join(dataRoot, reportArg), join(process.cwd(), reportArg)].find(p => existsSync(p)) ?? join(process.cwd(), reportArg);
 
     if (!existsSync(reportPath) || !statSync(reportPath).isFile()) {
       console.error(`Report not found: ${reportArg}`);
@@ -579,7 +584,7 @@ if (isMainModule(import.meta.url)) {
     let keywordNote = null;
 
     if (keywords.length === 0) {
-      keywords = [...extractSkills(archivedJdText(reportText, getCareerOpsRoot()))].sort();
+      keywords = [...extractSkills(archivedJdText(reportText, dataRoot))].sort();
       if (keywords.length === 0) {
         console.error(
           'No "## Keywords extracted" block found (or it is empty), and no known skills were found under ' +
@@ -597,7 +602,7 @@ if (isMainModule(import.meta.url)) {
 
     const cvPath = cvArg
       ? (isAbsolute(cvArg) ? cvArg : join(process.cwd(), cvArg))
-      : join(getCareerOpsRoot(), 'cv.md');
+      : join(dataRoot, 'cv.md');
 
     if (!existsSync(cvPath) || !statSync(cvPath).isFile()) {
       console.error(`CV not found: ${cvPath}. Pass --cv <path> to point at your CV.`);

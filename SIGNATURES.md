@@ -210,3 +210,4 @@ public commit with a stated reason.
 - @Priya-G-Prasad | 2026-10-25 | "Its helping me with my Job Search. Thanks" | id:174127723 | src:https://github.com/career-ops-hq/career-ops/discussions/5846 | n:162
 - @cluster2600 | Maxime Grenu | 2026-10-26 | id:69890511 | src:https://github.com/career-ops-hq/career-ops/pull/5802 | n:163
 - @ClintGallon | Clint Gallon | 2026-10-26 | "Quality over quantity" | id:12228649 | src:https://github.com/career-ops-hq/career-ops/discussions/5994 | n:164
+- @lucaci32u4 | Alexandru Iercosan-Lucaci | 2026-10-28 | "Operational excellence for the job search" | id:43639458 | src:https://github.com/career-ops-hq/career-ops/discussions/6147 | n:165
