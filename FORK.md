@@ -4,10 +4,10 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `ecca12b7bb78b74e87caae412a690bac8608a0e2`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `ac815a371db044d262b68aed645edad12e3102a3`, the upstream integration at `ecca12b7` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `294`.
-- Diff size against the incorporated base at that snapshot: `894 files changed, 38771 insertions(+), 9671 deletions(-)`.
+- Incorporated upstream base: `a94768663b94b1f1dd314b45e7a49c356bd393b7`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `ad5c8411bd6838f1790f1be17f3d4dff7e256982`, the upstream integration at `a9476866` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `296`.
+- Diff size against the incorporated base at that snapshot: `900 files changed, 38848 insertions(+), 9722 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
@@ -22,6 +22,9 @@ This update incorporates the 28 commits from `ecca12b7bb78b74e87caae412a690bac86
 - **Skill without career-ops (#6172).** The router's missing-checkout sentence points at upstream's new install guidance instead of stopping.
 - **Docs.** The `docs/SCRIPTS.md` doctor section names the four `users/{USER}/` setup files, which `tests/doctor-ready-clis.test.mjs` requires. `batch/README.md` keeps the fork's text; `lib/update-manifest.mjs` keeps shipping all of `lib/`, which covers the new `lib/pdf-server.mjs`.
 - **Adopted unchanged.** Same-source repost counting (#6165), the set-status missing-tracker path (#6045), canonical Greenhouse hosts in `prepare-application.mjs` (#6025), anonymous rows from different agencies in `verify-pipeline.mjs` (#6070), bare tracker numbers in history (#6040), lazy Playwright in `check-liveness.mjs` (#6056), fenced Machine Summary in `debrief-sync.mjs` (#6023), doctor CLI names without the legacy Gemini CLI (#6051), the SuccessFactors trailing comma (#6139), MiniMax Flash in text evaluation (#5531), the plugin template's `skill.md.template` (#6171), web accessibility and lazy-loading work, and docs and signatures.
+- **Tests.** `tests/minimax-requests.test.mjs` selects a fixture user for its `openai-eval.mjs` children.
+
+Validation: `node test-all.mjs --quick` passed 20,131 checks with 14 failures on a loaded host. The nine MiniMax checks are fixed above. The other five were batch and `run` flow suites killed at 120 s; run alone they pass: ownership retries 9/9, workflow parity 15/15, parity prefetch 12/12, interactive flow 26/26 and queue flow 40/40, through the real Git Bash runner. The web suite passed 1,956 tests with 48 skipped, raw `verify-pipeline.mjs --user fx --json` was clean on an empty fixture user, and the dashboard did not change. Paid evaluations and real providers were not exercised.
 
 ## Upstream integration at ecca12b7
 
