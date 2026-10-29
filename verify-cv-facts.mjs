@@ -691,9 +691,14 @@ export function normalizeClaim(claim) {
     .trim();
 }
 
-/** Normalize a non-metric fact and remove terminal punctuation. */
+/**
+ * Normalize a non-metric fact and remove terminal punctuation. Typographic
+ * quotes and dashes fold to ASCII on both sides, because generate-pdf.mjs
+ * normalizes the HTML for ATS before gating it while cv.md keeps `’` and `–`.
+ */
 function normalizeFact(value) {
-  return normalizeClaim(value).replace(/[.;:,]+$/g, '').trim();
+  return normalizeClaim(String(value).replace(/[‘’‛′]/g, "'").replace(/[“”‟″]/g, '"').replace(/[‐-―−]/g, '-'))
+    .replace(/[.;:,]+$/g, '').trim();
 }
 
 /** Whether a raw (unnormalized) tool fragment looks like a real product name: Title Case, or carries a digit/version token (e.g. "n8n", "Python 3.11", "GPT-4"). */
