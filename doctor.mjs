@@ -885,7 +885,7 @@ const USER_LAYER_PREREQS = [
   },
 ];
 
-const CLI_NAMES = 'claude, codex, gemini, opencode, qwen, agy or grok';
+const CLI_NAMES = 'claude, codex, opencode, qwen, agy or grok';
 
 // The lane variables (CAREER_OPS_PORTALS, CAREER_OPS_PIPELINE) move one file
 // out of the data root, and the scanner reads them (path-resolver.mjs), so

@@ -317,13 +317,15 @@ if ! is_decimal_number "$MIN_SCORE"; then
 fi
 
 # Lock file to prevent double execution
+# noclobber makes the create atomic, so two runners started together cannot
+# both own the lock (and both stop the shared PDF painter on exit).
 acquire_lock() {
   node "$SCRIPT_DIR/worker-process.mjs" guard "$BATCH_DIR" || exit 125
   # Legacy locks use the Bash PID namespace. Never unlink an incumbent here.
   if [[ -f "$LOCK_FILE" && ! -d "$LOCK_FILE.owner.lock" ]]; then
     local old_pid
-    old_pid=$(cat "$LOCK_FILE")
-    if kill -0 "$old_pid" 2>/dev/null; then
+    old_pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
+    if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
       echo "ERROR: Another batch-runner is already running (PID $old_pid)"
       exit 1
     elif [[ ! "$old_pid" =~ ^[1-9][0-9]*$ ]]; then
@@ -351,6 +353,16 @@ release_lock() {
   fi
   if [[ -n "$OWNER_TOKEN" ]]; then
     stop_owned_workers || return 1
+    # Stop the painter this run started once its workers are gone, and before
+    # releasing ownership. The painter is shared by the checkout, so another
+    # user's batch in flight falls back to painting locally. A copied runner in
+    # a fixture has no lib/pdf-server.mjs, and a run that never painted has no
+    # pid file. Either miss must not fail the batch.
+    if [[ "${PDF_SERVER_OWNER:-}" == "1" ]]; then
+      PDF_SERVER_MODULE="$PROJECT_DIR/lib/pdf-server.mjs" PDF_SERVER_ROOT="$PROJECT_DIR" \
+        node --input-type=module -e 'import { pathToFileURL } from "node:url"; const m = await import(pathToFileURL(process.env.PDF_SERVER_MODULE).href); await m.stopSharedPdfServer(process.env.PDF_SERVER_ROOT);' \
+        >/dev/null 2>&1 || true
+    fi
     node "$SCRIPT_DIR/runner-ownership.mjs" release "$LOCK_FILE" "$OWNER_TOKEN" || true
   fi
 }
@@ -2838,6 +2850,14 @@ main() {
     echo ""
     echo "Would process $pending_count offers"
     exit 0
+  fi
+
+  # --skip-pdf must not start a painter, even when the parent shell already opted in.
+  if [[ "$SKIP_PDF" == "true" ]]; then
+    unset CAREER_OPS_PDF_SHARED
+  else
+    export CAREER_OPS_PDF_SHARED=1
+    PDF_SERVER_OWNER=1
   fi
 
   # Process offers
