@@ -26,9 +26,10 @@
  * JD in its application/ld+json JobPosting. Nothing needs to be re-fetched and
  * no browser needs to run — the data just has to be read out of the right place.
  *
- * Strategies run in order, cheapest first. 1 and 3 are pure offline parsing of
- * bytes already on disk; only 2 makes a network request, a single
- * unauthenticated JSON GET to the ATS's public API. All three are zero-LLM-token.
+ * Strategies run in order, cheapest first: 1, then the fork's 4, then 2 and 3.
+ * 1, 3 and 4 are pure offline parsing of bytes already on disk; only 2 makes a
+ * network request, a single unauthenticated JSON GET to the ATS's public API.
+ * All four are zero-LLM-token.
  *
  * WHEN A RESCUE IS ACCEPTED
  *
@@ -203,6 +204,42 @@ function fromEmbeddedDescription(html) {
   return { text: best, method: 'embedded-description' };
 }
 
+/* ---------------------------------------------------------------- strategy 4
+ * The DevITJobs family's server-rendered job (fork).
+ *
+ * swissdevjobs.ch, germantechjobs.de, devitjobs.uk and devitjobs.nl render the
+ * posting client-side, but the HTML already carries it as
+ * `window.__detailedJob = {...}`: the description, responsibilities and
+ * requirements as separate fields. Read only on those hosts, since the global
+ * name is the board's own.
+ */
+const DEVITJOBS_HOST_RE = /^(?:www\.)?(?:swissdevjobs\.ch|germantechjobs\.de|devitjobs\.uk|devitjobs\.nl)$/i;
+
+function fromDevItJobsDetailedJob(html, url) {
+  try { if (!DEVITJOBS_HOST_RE.test(new URL(url).hostname)) return null; } catch { return null; }
+  const m = /window\.__detailedJob\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script/i.exec(html);
+  if (!m) return null;
+  let job;
+  try { job = JSON.parse(m[1]); } catch { return null; }
+  if (!job || typeof job !== 'object' || typeof job.description !== 'string') return null;
+  const section = (heading, value) => typeof value === 'string' && value.trim() ? `## ${heading}\n\n${htmlToText(value)}` : '';
+  const head = composeJd({
+    title: job.name,
+    company: job.company,
+    location: [job.actualCity, job.workplace].filter(Boolean).join(', ') || undefined,
+    description: job.description,
+    employmentType: job.jobType,
+  });
+  const text = [
+    job.isDisabledOrOutdated ? '**Board status:** disabled or outdated' : '',
+    head,
+    section('Responsibilities', job.responsibilitiesTextArea),
+    section('Requirements', job.requirementsMustTextArea),
+    section('Nice to have', job.requirementsNiceTextArea),
+  ].filter(Boolean).join('\n\n');
+  return { text, method: 'devitjobs-detailed-job' };
+}
+
 async function main() {
   const [url, rawFile, outFile, strippedArg] = process.argv.slice(2);
   const minWords = Number(process.env.JD_RESCUE_MIN_WORDS || 80);
@@ -228,6 +265,7 @@ async function main() {
   let notBetter = null;
   for (const run of [
     () => fromLdJson(html),
+    () => fromDevItJobsDetailedJob(html, url),
     () => fromKnownApi(url),
     () => fromEmbeddedDescription(html),
   ]) {

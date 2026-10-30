@@ -439,6 +439,15 @@ test('generic employer careers links preserve separate board posting identities'
   assert.equal(jobs[0].applyUrl, 'https://employer.example/careers');
 });
 
+test('DevITJobs partner listings keep the board page, not the syndicating board redirect', async () => {
+  const jobs = await fetchCustomProvider('devitjobs', { name: 'Fixture', api: boards.devitjobs }, ctx(async () => [
+    { name: 'Engineer', jobUrl: 'partner', company: 'Fixture', isPartner: true, partnerName: 'adzuna', redirectJobUrl: 'https://www.adzuna.co.uk/jobs/land/ad/1?r=2&ccd=3' },
+    { name: 'Engineer Two', jobUrl: 'direct', company: 'Fixture', isPartner: false, redirectJobUrl: 'https://employer.example/jobs/2' },
+  ]));
+  assert.deepEqual(jobs.map(job => job.url), ['https://devitjobs.uk/jobs/partner', 'https://employer.example/jobs/2']);
+  assert.equal(jobs[0].applyUrl, '');
+});
+
 test('first-page parser failures differ from explicit no-results responses', async () => {
   for (const id of ['itjobs', 'portalemprego', 'remoteineurope', 'jobsinenglish', 'makeitingermany']) {
     const entry = { name: 'Fixture', api: boards[id] };

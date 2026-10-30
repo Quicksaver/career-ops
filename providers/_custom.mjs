@@ -1197,7 +1197,12 @@ function parseDevITJobsFamilyJobs(json, company) {
         ...devITJobsAnnualSalary(job, currency.symbol),
         ...(typeof (job.description ?? job.jobDescription) === 'string' ? { description: job.description ?? job.jobDescription } : {}),
         publishedAt: String(job.activeFrom || ''),
-        applyUrl: normalizeWhitespace(String(job.redirectJobUrl || '')),
+        // A partner listing is syndicated from another job board (Adzuna,
+        // CV-Library, Indeed, ...): its redirect is that board's tracking link,
+        // re-signed on every API call and often behind a bot wall, while the
+        // board page carries the full JD. Only a direct listing redirects to
+        // the employer.
+        applyUrl: job.isPartner ? '' : normalizeWhitespace(String(job.redirectJobUrl || '')),
         candidateContactWay: normalizeWhitespace(String(job.candidateContactWay || '')),
       };
     })
