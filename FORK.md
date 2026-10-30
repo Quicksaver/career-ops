@@ -4,10 +4,10 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `a94768663b94b1f1dd314b45e7a49c356bd393b7`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `ad5c8411bd6838f1790f1be17f3d4dff7e256982`, the upstream integration at `a9476866` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `296`.
-- Diff size against the incorporated base at that snapshot: `900 files changed, 38848 insertions(+), 9722 deletions(-)`.
+- Incorporated upstream base: `1bbc30b9cac03b0a76e321f98aa2a1c5de66c261`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `3ca82b60c031abc01e964136e1f6415eab293529`, the upstream integration at `1bbc30b9` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `300`.
+- Diff size against the incorporated base at that snapshot: `907 files changed, 39216 insertions(+), 9842 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
