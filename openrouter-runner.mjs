@@ -5,6 +5,7 @@ import { TSV_ADDITION_HEADER } from './tracker-parse.mjs';
 import { normalizedTrackerScore } from './lib/tracker-addition.mjs';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 import { TokenAccumulator, formatBreakdown, normalizeOpenAIUsage } from './utils/token-tracker.mjs';
+import { anonymizeContext } from './utils/privacy-filter.mjs';
 import { DEFAULT_USER_AGENT } from './user-agent.mjs';
 import { buildTitleFilter } from './title-keywords.mjs';
 import { localToday } from './lib/local-today.mjs';
@@ -452,12 +453,14 @@ export { callOpenRouter, rateLimitCounts, blacklistedModels, MODEL_TIMEOUT_MS };
 // Context loading
 // ---------------------------------------------------------------------------
 function loadContext() {
-  return {
+  // Opt-in (privacy.redact_contact_info in config/profile.yml): keep name and
+  // contact details out of the prompt sent to the model.
+  return anonymizeContext({
     cv:          readFile('cv.md')               ?? 'CV not found.',
     profile:     readProfile()                   ?? '',
     shared:      readSystemFile('modes/_shared.md') ?? '',
     profileMode: readFile('modes/_profile.md')   ?? '',
-  };
+  });
 }
 
 // The mode files are written for Claude Code, which has Playwright, WebFetch,

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
-import { careerOpsRoot, rootScript, careerOpsCoreEnv } from "@/lib/career-ops";
+import { careerOpsRoot, careerOpsSystemRoot, rootScript, careerOpsCoreEnv } from "@/lib/career-ops";
 import { writeTempPortals, cleanupTempPortals } from "./portals";
 import { profileTargetKeywords } from "@/lib/profile-keywords.mjs";
 import { getProfilePath } from "@/lib/core/profile-path.mjs";
@@ -203,7 +203,7 @@ function runScanner(
     ];
 
     const child = spawn(process.execPath, args, {
-      cwd: careerOpsRoot(),
+      cwd: careerOpsSystemRoot(),
       env: { ...careerOpsCoreEnv(), CAREER_OPS_PORTALS: tempPortals },
       // windowsHide: see api/doctor/route.ts — a stale inherited console kills
       // every child with 0xC0000142 on Windows; never inherit one.

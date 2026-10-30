@@ -20,7 +20,7 @@ import { BASE_CV_TEMPLATE } from "../run-prompts.mjs";
  * Reimplementing the lookup in the web app would be a second source of truth that
  * drifts.
  *
- * `root` is an ARGUMENT, not a value this module reaches for, for the reason
+ * `coreRoot` is an ARGUMENT, not a value this module reaches for, for the reason
  * data-root.mjs spells out at length: `process.cwd()` is `<core>/web` here and
  * `<core>` on the CLI, so anything resolved against the cwd points one directory
  * too deep on exactly one of the two. Passing the root in also makes this testable
@@ -31,7 +31,7 @@ import { BASE_CV_TEMPLATE } from "../run-prompts.mjs";
  * RELATIVE value against the cwd, so `CAREER_OPS_PROFILE=config/profile.yml` means
  * `<core>/config/profile.yml` to the CLI and `<core>/web/config/profile.yml` here
  * — the dashboard finds no profile, falls back to the base template, and the two
- * disagree with nothing reporting it. Resolving it against `root` first is the same
+ * disagree with nothing reporting it. Resolving it against `coreRoot` first is the same
  * fix, and the same reasoning, as resolveDataRoot()'s `resolve(coreRoot, fromEnv)`.
  * An absolute override is returned unchanged by path.resolve, so it is unaffected.
  *
@@ -40,18 +40,18 @@ import { BASE_CV_TEMPLATE } from "../run-prompts.mjs";
  * not exist; the catch is for a checkout too old to export resolveTemplate, and
  * for a template whose placeholders fail validation.
  *
- * @param {string} root Absolute path to the career-ops checkout (careerOpsRoot()).
+ * @param {string} coreRoot Absolute path to the career-ops code checkout (resolveCodeRoot()), not the data root.
  * @returns {Promise<string>} Repo-relative template path, forward-slashed.
  */
-export async function resolveCvTemplate(root, { userRoot } = {}) {
-  const file = path.join(root, "cv-templates.mjs");
+export async function resolveCvTemplate(coreRoot, { userRoot } = {}) {
+  const file = path.join(coreRoot, "cv-templates.mjs");
   try {
     const mod = await import(/* webpackIgnore: true */ pathToFileURL(file).href);
     if (typeof mod?.resolveTemplate !== "function") return BASE_CV_TEMPLATE;
     const profile = process.env.CAREER_OPS_PROFILE?.trim();
-    const marker = path.join(root, '.career-ops-data');
-    const profilePath = profile ? path.resolve(root, profile) : path.join(userRoot || resolveDataRoot(
-      root, () => existsSync(marker) ? readFileSync(marker, 'utf8') : null,
+    const marker = path.join(coreRoot, '.career-ops-data');
+    const profilePath = profile ? path.resolve(coreRoot, profile) : path.join(userRoot || resolveDataRoot(
+      coreRoot, () => existsSync(marker) ? readFileSync(marker, 'utf8') : null,
       process.env, path.resolve, path.join,
     ), 'config/profile.yml');
     const abs = mod.resolveTemplate("cv", null, {
@@ -63,7 +63,7 @@ export async function resolveCvTemplate(root, { userRoot } = {}) {
     // The prompt names a repo-relative path, and always with forward slashes:
     // path.relative gives backslashes on Windows, which is not how any of the
     // agent-facing paths in this prompt are written.
-    const rel = path.relative(root, abs).split(path.sep).join("/");
+    const rel = path.relative(coreRoot, abs).split(path.sep).join("/");
     return rel || BASE_CV_TEMPLATE;
   } catch {
     return BASE_CV_TEMPLATE;

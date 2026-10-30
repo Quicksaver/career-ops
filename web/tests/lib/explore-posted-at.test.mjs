@@ -64,19 +64,19 @@ test('Explore add preserves a valid posting date in pipeline and scan history', 
   // This fork's scan.mjs and web writer both require a selected user.
   process.env.CAREER_OPS_USER = 'explore-fixture';
 
-  // pipeline.ts currently imports localToday from careerOpsRoot()/lib. Stage
-  // that system module inside the throwaway root (independent of PR #4430).
+  // pipeline.ts imports localToday from <code root>/lib. The shim below points
+  // the code root at the throwaway root, so stage that system module there.
   fs.mkdirSync(path.join(tmp, 'lib'), { recursive: true });
   fs.copyFileSync(todayPath, path.join(tmp, 'lib', 'local-today.mjs'));
 
   const original = fs.readFileSync(sourcePath, 'utf8');
   // The fork's writer runs scan.mjs from the system checkout with the selected
-  // user's core environment, rather than upstream's careerOpsRoot().
+  // user's core environment, rather than upstream's resolveCodeRoot().
   const alias = 'import { careerOpsCoreEnv, careerOpsSystemRoot, rootScript } from "@/lib/career-ops";';
   assert.equal(original.split(alias).length - 1, 1,
     'The web writer import changed; update this test rather than testing a mock');
   assert.match(original, /export function addOffersToPipeline\(/);
-  const shim = `const careerOpsSystemRoot = () => ${JSON.stringify(repo)};\n`
+  const shim = `const careerOpsSystemRoot = () => ${JSON.stringify(tmp)};\n`
     + `const careerOpsCoreEnv = () => ({ ...process.env });\n`
     + `const rootScript = (name) => {\n`
     + `  if (name !== "scan") throw new Error("Unexpected script name: " + name);\n`

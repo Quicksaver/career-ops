@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   if (!report) {
     return NextResponse.json({ error: "report must be a report number" }, { status: 400 });
   }
-  const mark = await markTrackerReady({ spawnFn: spawn, execPath: process.execPath, root: careerOpsRoot(), systemRoot: careerOpsSystemRoot(), env: careerOpsCoreEnv(), reportNum: report });
+  const mark = await markTrackerReady({ spawnFn: spawn, execPath: process.execPath, coreRoot: careerOpsSystemRoot(), root: careerOpsRoot(), env: careerOpsCoreEnv(), reportNum: report });
   if (!mark.ok && !mark.data) console.error(`/api/pdf-ready: ${mark.stderr}`);
   if (mark.code === null) return NextResponse.json({ error: FALLBACK }, { status: 500 });
   const mapped = coreScriptHttp({ code: mark.code, parsed: mark.data, fallback: FALLBACK });

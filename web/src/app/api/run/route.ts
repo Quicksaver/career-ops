@@ -67,15 +67,18 @@ export async function POST(req: Request) {
   const lang = readLanguageConfig();
   const needsScript: Record<string, string> = { evaluate: lang.evalModeFile, "fix-portal": "verify-portals.mjs", pdf: "generate-pdf.mjs", cover: "modes/cover.md" };
   const required = needsScript[kind];
+  // Scripts and system modes live in the code checkout, which on a split-layout
+  // install is not the data root (cv.md, reports/ and output stay under that).
+  const codeRoot = careerOpsSystemRoot();
   // CAREER_OPS_ROOT is runtime user data, not a build input. Tracing this
   // dynamic path would copy the whole web project into every server bundle.
   const requiredPath = required
-    ? path.join(/* turbopackIgnore: true */ careerOpsSystemRoot(), required)
+    ? path.join(/* turbopackIgnore: true */ codeRoot, required)
     : "";
   if (required && !fs.existsSync(/* turbopackIgnore: true */ requiredPath)) {
     return new Response(
       JSON.stringify({
-        error: `This needs a complete career-ops checkout (${required}). Set CAREER_OPS_CODE_ROOT to the system checkout.`,
+        error: `This needs a complete career-ops checkout (${required}). The career-ops code checkout is incomplete — point CAREER_OPS_CODE_ROOT at a full checkout.`,
       }),
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
@@ -86,8 +89,8 @@ export async function POST(req: Request) {
   let evaluationInstructions: string | null = null;
   if (evaluation?.ok && !evaluation.full) {
     try {
-      // Modes and the batch prompt are system files: read them from the checkout, not the user's data root.
-      const root = careerOpsSystemRoot();
+      // modes/ and batch/ are system files: they live in the code checkout.
+      const root = codeRoot;
       evaluationInstructions = selectedEvaluationInstructions({
         mode: fs.readFileSync(/* turbopackIgnore: true */ requiredPath, "utf8"),
         canonicalMode: fs.readFileSync(/* turbopackIgnore: true */ path.join(root, "modes/oferta.md"), "utf8"),
@@ -164,7 +167,7 @@ export async function POST(req: Request) {
   // (#4034). Only pdf fills a template, so nothing else pays for the lookup.
   // The root is passed, not re-derived: a relative CAREER_OPS_PROFILE resolves
   // against it, and `process.cwd()` here is `<core>/web` (see cv-template.mjs).
-  const cvTemplate = kind === "pdf" ? await resolveCvTemplate(careerOpsSystemRoot(), { userRoot: careerOpsRoot() }) : undefined;
+  const cvTemplate = kind === "pdf" ? await resolveCvTemplate(codeRoot, { userRoot: careerOpsRoot() }) : undefined;
   const prompt = buildPrompt({
     kind,
     input,
@@ -173,9 +176,10 @@ export async function POST(req: Request) {
     postedAt,
     lang,
     cvTemplate,
+    // The worker's cwd is the checkout; candidate files are named under the user's data root.
+    codeRoot,
     reportFile: pdfPaths?.reportFile ?? (coverRequest?.ok ? coverRequest.reportFile : undefined),
     coverBrief: coverRequest?.ok ? coverRequest.brief : undefined,
-    systemRoot: careerOpsSystemRoot(),
     userRoot: careerOpsRoot(),
     userId: careerOpsUserId(),
     profile: profileRef(careerOpsRoot()),
@@ -460,10 +464,11 @@ export async function POST(req: Request) {
         send({ type: "status", label: "Saving report…" });
         try {
           const result = await persistEvaluation({
-            systemRoot: careerOpsSystemRoot(), env: careerOpsCoreEnv(),
             spawnFn: spawn,
             execPath: process.execPath,
             root: careerOpsRoot(),
+            coreRoot: codeRoot,
+            env: careerOpsCoreEnv(),
             markdown,
             url: input,
             today,
@@ -498,8 +503,8 @@ export async function POST(req: Request) {
           const result = await renderAndMarkPdf({
             spawnFn: spawn,
             execPath: process.execPath,
+            coreRoot: codeRoot,
             root: careerOpsRoot(),
-            systemRoot: careerOpsSystemRoot(),
             env: careerOpsCoreEnv(),
             pdfPaths: paths,
             format,

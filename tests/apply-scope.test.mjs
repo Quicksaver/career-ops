@@ -111,9 +111,11 @@ test('allowed roots are this checkout and the configured data root only', async 
   const previousData = process.env.CAREER_OPS_DATA_DIR;
   const data = scratch();
   try {
+    // Cleared: the suite's users-directory override keeps a .career-ops-data
+    // marker in the checkout from naming a data root, so the selected user's
+    // root is the second root on every machine.
     process.env.CAREER_OPS_ROOT = '';
     process.env.CAREER_OPS_DATA_DIR = '';
-    // The fork always has a selected user, so its data root is the second root.
     assert.deepEqual(allowedRoots(), [ROOT, join(TEST_USERS_DIR, 'test')]);
 
     process.env.CAREER_OPS_DATA_DIR = data;
@@ -273,6 +275,7 @@ test('apply instructions name the scope guard and stop telling agents to attach 
 test('check-path and launch-options stay inside the project browser', () => {
   const rootRun = spawnSync(NODE, [join(ROOT, 'apply-scope.mjs'), 'root'], {
     cwd: ROOT,
+    // Cleared for the same reason as in the allowedRoots test above.
     env: { ...process.env, CAREER_OPS_ROOT: '', CAREER_OPS_DATA_DIR: '' },
     encoding: 'utf8',
   });

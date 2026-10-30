@@ -47,6 +47,8 @@ function setup(file, { fail }) {
   const keys = ["CAREER_OPS_USER", "CAREER_OPS_DATA_DIR", "CAREER_OPS_CODE_ROOT", "CAREER_OPS_ROOT"];
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   Object.assign(process.env, { CAREER_OPS_USER: "fixture", CAREER_OPS_DATA_DIR: root, CAREER_OPS_CODE_ROOT: root });
+  // The stub scripts stand in for the code checkout, which is where the render
+  // looks for them; the temp dir is both roots here.
   process.env.CAREER_OPS_ROOT = root;
   const out = (name) => path.join(root, "output", name);
   const cleanup = () => {

@@ -165,11 +165,15 @@ export function trackerTsvLine({ num, today, company, role, score, reportFile, n
   return `${labels.join("\t")}\n${fields.join("\t")}\n`;
 }
 
-function spawnScript({ spawnFn, execPath, root, systemRoot = root, env = process.env, script, args = [], input = null }) {
+// Scripts live in the checkout (`root` here is where the script is) but run
+// with the data root as cwd: persist-evaluation-report.mjs writes under its
+// cwd, and a relative override such as CAREER_OPS_ADDITIONS resolves against
+// it in every step, so the writer and merge-tracker.mjs agree on one folder.
+function spawnScript({ spawnFn, execPath, root, cwd = root, env = process.env, script, args = [], input = null }) {
   return new Promise((resolve) => {
     // windowsHide: see api/doctor/route.ts — a stale inherited console kills
     // every child with 0xC0000142 on Windows; never inherit one.
-    const child = spawnFn(execPath, [path.join(systemRoot, script), ...args], { cwd: root, env, windowsHide: true });
+    const child = spawnFn(execPath, [path.join(root, script), ...args], { cwd, env, windowsHide: true });
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (d) => { stdout += d.toString(); });
@@ -188,10 +192,10 @@ function spawnScript({ spawnFn, execPath, root, systemRoot = root, env = process
  * the sentinel. Never throws: the caller routes `{ok:false}` through the same
  * honesty gate as every other evaluate failure.
  *
- * @param {{spawnFn: Function, execPath: string, root: string, systemRoot?: string, env?: NodeJS.ProcessEnv, markdown: string, url: string, today: string, postedAt?: string, evaluationSections?: string[]}} args
+ * @param {{spawnFn: Function, execPath: string, root: string, coreRoot?: string, env?: NodeJS.ProcessEnv, markdown: string, url: string, today: string, postedAt?: string, evaluationSections?: string[]}} args
  * @returns {Promise<{ok: true, num: string, reportFile: string, warnings: string[]} | {ok: false, error: string}>}
  */
-export async function persistEvaluation({ spawnFn, execPath, root, systemRoot = root, env = process.env, markdown, url, today, postedAt, evaluationSections = undefined }) {
+export async function persistEvaluation({ spawnFn, execPath, root, coreRoot = root, env = process.env, markdown, url, today, postedAt, evaluationSections = undefined }) {
   const evaluation = parseEvaluationOptions(evaluationSections);
   if (!evaluation.ok) return { ok: false, error: evaluation.error };
   if (!evaluation.full) {
@@ -212,7 +216,7 @@ export async function persistEvaluation({ spawnFn, execPath, root, systemRoot = 
   if (!meta.ok) return meta;
 
   const reserved = await spawnScript({
-    spawnFn, execPath, root, systemRoot, env, script: "reserve-report-num.mjs",
+    spawnFn, execPath, root: coreRoot, cwd: root, env, script: "reserve-report-num.mjs",
   });
   if (!reserved.ok) {
     return { ok: false, error: `Could not reserve a report number: ${reserved.stderr || "reserve-report-num.mjs failed"}.` };
@@ -223,7 +227,7 @@ export async function persistEvaluation({ spawnFn, execPath, root, systemRoot = 
   }
 
   const release = () => spawnScript({
-    spawnFn, execPath, root, systemRoot, env, script: "reserve-report-num.mjs", args: ["--release", num],
+    spawnFn, execPath, root: coreRoot, cwd: root, env, script: "reserve-report-num.mjs", args: ["--release", num],
   });
 
   // One release. A failed --release is not success: the sentinel would stay
@@ -273,7 +277,7 @@ export async function persistEvaluation({ spawnFn, execPath, root, systemRoot = 
     + (!evaluation.full ? `; Focused evaluation: ${evaluation.sections.join(", ") || "fit score only"}` : "");
 
   const written = await spawnScript({
-    spawnFn, execPath, root, systemRoot, env,
+    spawnFn, execPath, root: coreRoot, cwd: root, env,
     script: "persist-evaluation-report.mjs",
     input: JSON.stringify({
       markdown,
@@ -293,7 +297,7 @@ export async function persistEvaluation({ spawnFn, execPath, root, systemRoot = 
   }
 
   const merged = await spawnScript({
-    spawnFn, execPath, root, systemRoot, env, script: "merge-tracker.mjs",
+    spawnFn, execPath, root: coreRoot, cwd: root, env, script: "merge-tracker.mjs",
   });
   if (!merged.ok) {
     return finish(`The report was saved but merge-tracker.mjs failed: ${merged.stderr || "non-zero exit"}.`);
@@ -310,7 +314,7 @@ export async function persistEvaluation({ spawnFn, execPath, root, systemRoot = 
   if (postingUrl && fs.existsSync(pipelinePath)) {
     try {
       const completed = await setInboxSkip(pipelinePath, postingUrl, true, {
-        lockModule: path.join(systemRoot, "pipeline-lock.mjs"),
+        lockModule: path.join(coreRoot, "pipeline-lock.mjs"),
       });
       if (!completed.ok && !["unmatched", "not-found"].includes(completed.error)) {
         warnings.push("Evaluation saved, but the inbox checkbox could not be updated.");

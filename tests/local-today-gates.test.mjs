@@ -414,10 +414,11 @@ test('the scanner resolves every call the four known writers contain', () => {
   // would catch masking that is correct in miniature and wrong at scale.
   // scan.mjs went 5 → 7 when the location and posting-age cuts started
   // recording what they drop (`skipped_location`, `skipped_age`), the fork's
-  // reopened closed-duplicate audit row made it 8, and the title cut made it 9
-  // (`skipped_title`, #2695). The fork's scan-hn.mjs delegates to scan.mjs, so
+  // reopened closed-duplicate audit row made it 8, the title cut made it 9
+  // (`skipped_title`, #2695), and the experience filter made it 10
+  // (`skipped_experience`). The fork's scan-hn.mjs delegates to scan.mjs, so
   // it has no call site of its own.
-  for (const [file, expected] of [['scan.mjs', 9], ['scan-ats-full.mjs', 1], ['scan-hn.mjs', 0], ['scan-interamt.mjs', 5]]) {
+  for (const [file, expected] of [['scan.mjs', 10], ['scan-ats-full.mjs', 1], ['scan-hn.mjs', 0], ['scan-interamt.mjs', 5]]) {
     const src = readFileSync(join(ROOT, file), 'utf-8');
     const naive = [...src.matchAll(/(?<!function )\bappendToScanHistory\s*\(/g)].length;
     assert.equal(naive, expected, `${file}: expected ${expected} call sites, source has ${naive} — update this expectation deliberately`);

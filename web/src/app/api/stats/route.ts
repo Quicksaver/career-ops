@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
-import { careerOpsRoot, rootScript, careerOpsCoreEnv } from "@/lib/career-ops";
+import { careerOpsSystemRoot, rootScript, careerOpsCoreEnv } from "@/lib/career-ops";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function GET() {
   const stdout = await new Promise<string>((resolve) => {
     // process.execPath + windowsHide: see api/doctor/route.ts — a stale inherited
     // console kills every child with 0xC0000142 on Windows; never inherit one.
-    execFile(process.execPath, [script, "--json"], { cwd: careerOpsRoot(), env: careerOpsCoreEnv(), timeout: 20_000, maxBuffer: 8 << 20, windowsHide: true }, (err, out) =>
+    execFile(process.execPath, [script, "--json"], { cwd: careerOpsSystemRoot(), env: careerOpsCoreEnv(), timeout: 20_000, maxBuffer: 8 << 20, windowsHide: true }, (err, out) =>
       resolve(err ? "" : out || ""),
     );
   });

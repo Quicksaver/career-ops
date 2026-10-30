@@ -46,6 +46,7 @@ import {
 import {
   looksLikeScoreCell, isSeparatorRow, isHeaderRow, resolveColumns,
   normalizeTextKey, normalizeVia, extractCellUrl, parseMarkdownLinks, unwrapReportUrlToken,
+  extractReqNumber,
 } from './tracker-parse.mjs';
 import { CONTROL_CHARS, findDeadReportLink, trackerLinkDirsFor } from './tracker-utils.mjs';
 import { normalizeUrl } from './url-key.mjs';
@@ -348,9 +349,22 @@ function emitTrackerDuplicate(group, extraDetails = {}) {
   );
   dupes++;
 }
+// Distinct known requisition IDs mean distinct openings (#6242); a missing ID
+// on either side is not enough to rule a duplicate out.
+function hasPossibleDuplicate(group) {
+  for (let i = 0; i < group.length; i++) {
+    for (let j = i + 1; j < group.length; j++) {
+      const reqA = extractReqNumber(group[i].notes);
+      const reqB = extractReqNumber(group[j].notes);
+      if (!reqA || !reqB || reqA === reqB) return true;
+    }
+  }
+  return false;
+}
 for (const group of companyRoleMap.values()) {
   if (group.length < 2) continue;
-  emitTrackerDuplicate(group);
+  const broad = hasPossibleDuplicate(group);
+  if (broad) emitTrackerDuplicate(group);
 
   // Preserve the broad company/title warning, but also expose exact canonical
   // URL subgroups. The reviewer can safely resolve a proven subset while
@@ -363,7 +377,7 @@ for (const group of companyRoleMap.values()) {
     byUrl.get(url).push(entry);
   }
   for (const [url, urlGroup] of byUrl) {
-    if (urlGroup.length < 2 || urlGroup.length === group.length) continue;
+    if (urlGroup.length < 2 || (broad && urlGroup.length === group.length)) continue;
     emitTrackerDuplicate(urlGroup, { match_basis: 'canonical_url', canonical_url: url });
   }
 }

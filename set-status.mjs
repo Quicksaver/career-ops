@@ -123,7 +123,7 @@ import {
 import {
   rebuildRow, resolveTrackerPath, writeFileAtomic, loadCanonicalStates, resolveCanonicalState,
   normalizeCompany, cell, CLI_EXIT, makeCliFailWith, makeCliFailUsage, acquireTrackerLockForCli,
-  appendLedgerRows,
+  appendLedgerRows, companiesMatchIgnoringCorporateForm,
 } from './tracker-utils.mjs';
 import { getCareerOpsRoot, resolveTrackerPathForWrite } from './path-resolver.mjs';
 import {
@@ -517,8 +517,15 @@ function resolveRow(rows) {
 
   const key = normalizeCompany(selector);
   if (!key) failUsage(`Selector "${selector}" is empty after normalization`);
+  // Exact key first. A legal suffix (Inc, LLC) is a different key, so fall
+  // back to the same corporate-form rule outcome and dedup already use.
+  // Only when nothing matched exactly. Two hits stay ambiguous.
+  let matches = rows.filter(r => normalizeCompany(r.company) === key);
+  if (matches.length === 0) {
+    matches = rows.filter(r => companiesMatchIgnoringCorporateForm(selector, r.company));
+  }
   return resolveCandidates(
-    rows.filter(r => normalizeCompany(r.company) === key),
+    matches,
     {
       notFound: `No tracker row with company matching "${selector}"`,
       ambiguous: (count, listing) =>

@@ -106,16 +106,59 @@ function safeCvTemplate(value) {
     : BASE_CV_TEMPLATE;
 }
 
-export function buildPrompt({ kind, input, memory, today, postedAt, lang, cvTemplate, reportFile, coverBrief, systemRoot = "", userRoot = "", userId = "", profile = DEFAULT_PROFILE_REF, evaluationInstructions = /** @type {string | null} */ (null) }) {
-  const systemFile = file => path.join(systemRoot, file).replaceAll("\\", "/");
+/**
+ * Where the worker is told to find a file the CODE CHECKOUT owns (modes/, templates/,
+ * core scripts). With `codeRoot` the path is anchored to the checkout; without it
+ * (single-root layout) the relative path is already right. User-layer files (cv.md,
+ * modes/_profile.md, reports/) are deliberately NOT routed through here: they live
+ * under the selected user's data root (`userRoot`).
+ *
+ * The path is kept whatever characters the checkout lives under (`é`, `(`, `$`,
+ * spaces): dropping to the relative form would send the worker to the data root,
+ * which is exactly the failure this exists to prevent. It is quoted as instruction
+ * DATA with JSON.stringify; the one place it also reaches a shell command
+ * (verify-portals.mjs) is escaped separately by shellFromCheckout(). Only a root
+ * holding control characters or a ".." segment falls back, since no real checkout
+ * path has either.
+ */
+function checkoutPath(rel, codeRoot) {
+  if (typeof codeRoot !== "string" || !codeRoot) return null;
+  if (/[\u0000-\u001f\u007f]/.test(codeRoot) || codeRoot.split(/[\\/]/).includes("..")) return null;
+  return `${codeRoot.replaceAll("\\", "/").replace(/\/+$/, "")}/${rel}`;
+}
+
+function fromCheckout(rel, codeRoot) {
+  const abs = checkoutPath(rel, codeRoot);
+  return abs === null ? rel : JSON.stringify(abs);
+}
+
+/**
+ * Same path, single-quoted for a shell command so nothing inside expands. The only
+ * character a single-quoted string cannot hold is the quote itself, and the two
+ * shells escape it differently: POSIX closes, escapes and reopens (`'\\''`),
+ * PowerShell doubles it (`''`). Windows agent CLIs (copilot -p) run PowerShell, so
+ * win32 gets the doubled form; everything else is POSIX.
+ */
+function shellFromCheckout(rel, codeRoot) {
+  const abs = checkoutPath(rel, codeRoot);
+  if (abs === null) return rel;
+  const escaped = process.platform === "win32" ? abs.replace(/'/g, "''") : abs.replace(/'/g, `'\\''`);
+  return `'${escaped}'`;
+}
+
+const templateFile = (value, codeRoot) => fromCheckout(safeCvTemplate(value), codeRoot);
+
+export function buildPrompt({ kind, input, memory, today, postedAt, lang, cvTemplate, codeRoot, reportFile, coverBrief, userRoot = "", userId = "", profile = DEFAULT_PROFILE_REF, evaluationInstructions = /** @type {string | null} */ (null) }) {
+  // The fork's worker runs from the system checkout, so candidate files are named under USER_ROOT.
+  const systemFile = file => fromCheckout(file, codeRoot);
   const userFile = file => path.join(userRoot, file).replaceAll("\\", "/");
-  // Report paths arrive relative to the data root; the agent runs from the system checkout.
+  // Report paths arrive relative to the data root.
   const reportPath = reportFile && !path.isAbsolute(reportFile) ? userFile(reportFile) : reportFile;
-  const command = file => `node ${systemRoot ? JSON.stringify(systemFile(file)) : file}${userId ? ` --user ${JSON.stringify(userId)}` : ""}`;
+  const command = file => `node ${shellFromCheckout(file, codeRoot)}${userId ? ` --user ${JSON.stringify(userId)}` : ""}`;
   const profileFile = profile === DEFAULT_PROFILE_REF ? userFile(DEFAULT_PROFILE_REF) : profile;
   const pdfMode = systemFile("modes/pdf.md");
-  const runtimePaths = profileNote(profile) + (systemRoot && userRoot && userId
-    ? `Read ${JSON.stringify(systemFile("AGENTS.md"))}. Active user: ${JSON.stringify(userId)}. USER_ROOT: ${JSON.stringify(userRoot)}. System modes, templates and scripts live under ${JSON.stringify(systemRoot)}; candidate files and generated artifacts live under USER_ROOT. Keep tracker TSV report links user-root-relative as reports/....\n\n`
+  const runtimePaths = profileNote(profile) + (codeRoot && userRoot && userId
+    ? `Read ${systemFile("AGENTS.md")}. Active user: ${JSON.stringify(userId)}. USER_ROOT: ${JSON.stringify(userRoot)}. System modes, templates and scripts live under ${JSON.stringify(codeRoot)}; candidate files and generated artifacts live under USER_ROOT. Keep tracker TSV report links user-root-relative as reports/....\n\n`
     : "");
   // AGENTS.md's "Output Language vs Market Modes" composition rule. The CLI
   // picks this up by reading AGENTS.md interactively; a one-shot headless
@@ -176,7 +219,7 @@ Target: ${input}`;
     return `${runtimePaths}You are tailoring the user's ATS-optimized CV for application #${input}, headless, on their machine. Run the REAL career-ops "pdf" mode's CONTENT step: follow ${pdfMode}'s TAILORING rules exactly (do not improvise your own scoring or format). Apply its CONTENT rules — keyword injection, ordering, the competency grid, project selection, and its never-invent-a-skill rule. Its steps that shell out (the jd-skill-gap.mjs check) and its build/save/render steps are NOT performed on web runs; the platform handles output itself.
 1. Read ${pdfMode}, ${userFile("cv.md")}, ${profileFile}, and the evaluation report at ${JSON.stringify(reportPath ?? userFile(`reports/${input}-*.md`))} (for the JD keywords + analysis).
 2. Tailor the CV per ${pdfMode}: inject the JD's keywords into the summary + first bullets, reorder experience by relevance, build the competency grid, pick the top 3–4 projects. NEVER invent skills — only reword REAL experience using the JD's vocabulary.
-3. Fill ${systemFile(safeCvTemplate(cvTemplate))}'s {{...}} placeholders with the tailored content. Use that exact file: the platform already resolved it from cv.template through cv-templates.mjs, so do NOT run modes/pdf.md's own template-resolution step. ${CV_ENVELOPE_INSTRUCTION}
+3. Fill ${templateFile(cvTemplate, codeRoot)}'s {{...}} placeholders with the tailored content. Use that exact file: the platform already resolved it from cv.template through cv-templates.mjs, so do NOT run modes/pdf.md's own template-resolution step. ${CV_ENVELOPE_INSTRUCTION}
 4. Emit the envelope EXACTLY ONCE. The platform writes the HTML, renders the PDF, and updates the tracker's PDF column itself, only after a confirmed successful render. Do not submit anything anywhere.
 
 After the envelope, end with EXACTLY one final line: VERDICT: {5 if the complete HTML envelope was emitted, else 1}/5 — {a one-line summary, ≤12 words}`;

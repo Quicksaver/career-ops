@@ -354,8 +354,10 @@ release_lock() {
   if [[ -n "$OWNER_TOKEN" ]]; then
     stop_owned_workers || return 1
     # Stop the painter this run started once its workers are gone, and before
-    # releasing ownership. The painter is shared by the checkout, so another
-    # user's batch in flight falls back to painting locally. A copied runner in
+    # releasing ownership. The painter is keyed by the checkout and the selected
+    # user's data root, tracker and profile, so another user's batch has its own
+    # painter. This process exports the same user as its workers, so the
+    # socket matches theirs. A copied runner in
     # a fixture has no lib/pdf-server.mjs, and a run that never painted has no
     # pid file. Either miss must not fail the batch.
     if [[ "${PDF_SERVER_OWNER:-}" == "1" ]]; then
