@@ -15,6 +15,7 @@ import { copyGraph } from './fixtures/run-workflow.mjs';
 import { queueActions, actionableQueue } from '../lib/run-queue.mjs';
 import { nextLiveInput } from '../lib/run-live-inputs.mjs';
 import { stateHeader, posting, stateRow, delay, fixture } from './fixtures/batch-recovery-ownership.mjs';
+import { exitedNonZero } from './helpers/describe-spawn.mjs';
 
 test('required sequential preparation and quarantine errors prevent dispatch or merge', () => {
   for(const failure of ['preparation','quarantine']) {
@@ -24,7 +25,7 @@ test('required sequential preparation and quarantine errors prevent dispatch or 
       if(failure==='preparation')writeFileSync(join(f.batch,'tmp'),'not a directory');
       else {mkdirSync(join(f.batch,'logs'));writeFileSync(join(f.batch,'logs/quarantine'),'not a directory');}
       const result=f.run(['--limit','2'],'wrong999');
-      assert.notEqual(result.status,0,result.stdout+result.stderr);
+      assert.ok(exitedNonZero(result), result.stdout+result.stderr);
       assert.equal(existsSync(join(f.root,'merged')),false);
       const calls=existsSync(join(f.root,'calls'))?readFileSync(join(f.root,'calls'),'utf8').trim().split('\n').length:0;
       assert.equal(calls,failure==='preparation'?0:1);

@@ -23,7 +23,7 @@ test('web evaluation persists through real system scripts into the selected exte
       calls.push({ args, options });
       return spawn(command, args, options);
     },
-    execPath: process.execPath, root, systemRoot, env,
+    execPath: process.execPath, root, coreRoot: systemRoot, env,
     url: 'https://example.org/jobs/fictional', today: '2026-10-15',
     markdown: '# Evaluation: Fictional Company -- Engineer\n\n## Machine Summary\n```yaml\ncompany: Fictional Company\nrole: Engineer\nscore: 4.2\nvia: null\n```\n\n## Job Description (archived verbatim)\nBuild fictional applications for this offline test.\n',
   });

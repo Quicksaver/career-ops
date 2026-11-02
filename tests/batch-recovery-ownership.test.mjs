@@ -15,6 +15,7 @@ import { copyGraph } from './fixtures/run-workflow.mjs';
 import { queueActions, actionableQueue } from '../lib/run-queue.mjs';
 import { nextLiveInput } from '../lib/run-live-inputs.mjs';
 import { stateHeader, posting, stateRow, delay, fixture } from './fixtures/batch-recovery-ownership.mjs';
+import { exitedNonZero } from './helpers/describe-spawn.mjs';
 
 test('confirmed closure is terminal on first attempt, quarantines partial artifacts and reconciles as Closed', () => {
   const f = fixture();
@@ -91,7 +92,7 @@ test('native Git Bash ownership survives rejected concurrent runner and token mi
       const mapped = spawnSync(getBash(), ['-c', 'cat "/proc/$1/winpid"', 'native-owner', compat.trim()], {encoding:'utf8'});
       assert.equal(Number(mapped.stdout), owner.pid);
     }
-    const rejected = f.run(['--limit', '1']); assert.notEqual(rejected.status, 0, rejected.stdout + rejected.stderr);
+    const rejected = f.run(['--limit', '1']); assert.ok(exitedNonZero(rejected), rejected.stdout + rejected.stderr);
     assert.equal(inspectOwnership(f.pid).token, owner.token);
     assert.equal(readFileSync(f.pid, 'utf8'), compat);
     assert.equal(releaseOwnership(f.pid, 'wrong-token'), false);

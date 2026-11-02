@@ -10,6 +10,7 @@ import { loadAnswers, loadQueue, validLocal, validateHold, canResume, writeHold,
 import { validateWorkerArtifacts, parseTrackerAddition } from '../batch/validate-worker-artifacts.mjs';
 import { savePostingContext } from '../lib/posting-context.mjs';
 import { url, hold, fixture } from './fixtures/batch-workflow-parity.mjs';
+import { exitedNonZero } from './helpers/describe-spawn.mjs';
 
 for (const cli of ['claude', 'codex']) test(`${cli} closes a local capture using exact internal identity without producing a hold`, () => {
   const f=fixture({workerResult:{status:'closed',reason:'posting_closed',question:null}});
@@ -322,7 +323,7 @@ test('worker timeout is validated before state mutation and retains zero and dec
     const before='sentinel state\n'; writeFileSync(state,before);
     for (const value of ['NaN','Infinity','-1','invalid','']) {
       const result=f.run(['--worker-timeout',value]);
-      assert.notEqual(result.status,0,result.stdout+result.stderr);
+      assert.ok(exitedNonZero(result), result.stdout+result.stderr);
       assert.equal(readFileSync(state,'utf8'),before);
       assert.equal(existsSync(`${f.calls}.worker`),false);
       assert.equal(existsSync(join(f.batch,'batch-runner.pid.owner.lock')),false);

@@ -86,6 +86,7 @@ jobs:
                 'batch/README.md',
                 'batch/aggregate-tokens.mjs',
                 'batch/batch-prompt.md',
+                'batch/batch-prompt-match.md',
                 'batch/batch-runner.sh',
                 'batch/batch-output-schema.json',
                 'batch/validate-worker-artifacts.mjs',

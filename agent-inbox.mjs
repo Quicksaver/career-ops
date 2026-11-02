@@ -43,6 +43,7 @@ try { context = getUserContext(process.argv.slice(2)); } catch (err) { printUser
 const cliArgs = context.args;
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { writeFileAtomic } from './tracker-utils.mjs';
+import { localToday } from './lib/local-today.mjs';
 
 const PATH = process.env.CAREER_OPS_INBOX ? resolvePath(context.projectRoot, process.env.CAREER_OPS_INBOX) : userPath(context, 'data/agent-inbox.md');
 
@@ -59,8 +60,12 @@ const HEADER = [
   '',
 ].join('\n');
 
-function stamp() {
-  return new Date().toISOString().slice(0, 16).replace('T', ' ');
+// Local date and time, the clock the person queuing the item is looking at.
+// toISOString() is UTC, and this stamp carries no zone marker, so a request
+// queued at 10:30 on the 18th east of Greenwich read "2026-08-17 20:30".
+function stamp(now = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${localToday(now)} ${p(now.getHours())}:${p(now.getMinutes())}`;
 }
 
 function ensureGitignored() {

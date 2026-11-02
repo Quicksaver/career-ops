@@ -8,6 +8,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractWithAI, hnScanConfig } from '../scan-hn.mjs';
 import { describeSpawn } from './helpers/describe-spawn.mjs';
+import { exitedNonZero } from './helpers/describe-spawn.mjs';
 
 test('Hacker News AI Extraction Logic', async (t) => {
   const mockModel = {
@@ -417,7 +418,7 @@ for (const stop of ['concurrent', 'child', 'wrapper']) {
       `);
       const result = runScanHn(dir, intercept, ['--json'], { CAREER_OPS_SCAN_HANDOFF: inheritedOverride });
       assert.equal(result.error, undefined, result.error?.message);
-      if (stop === 'wrapper') assert.notEqual(result.status, 0, result.stderr);
+      if (stop === 'wrapper') assert.ok(exitedNonZero(result), result.stderr);
       else assert.equal(result.status, stop === 'child' ? 1 : 0, result.stderr);
       const observation = JSON.parse(readFileSync(observed, 'utf8'));
       assert.notEqual(observation.path, shared);

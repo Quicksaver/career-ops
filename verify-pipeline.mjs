@@ -32,6 +32,7 @@
  */
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, unlinkSync, statSync } from 'fs';
+import { validateFlags } from './lib/cli-flags.mjs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -56,6 +57,20 @@ import { normalizeStatus } from './followup-cadence.mjs';
 import { checkFollowupsSchema } from './stats.mjs';
 import { loadCanonicalStates } from './tracker-utils.mjs';
 import { archiveReportEvidence, checkJdArchive } from './check-jd-archive.mjs';
+import { machineSummarySection } from './lib/machine-summary-section.mjs';
+
+const USAGE = `Usage: node verify-pipeline.mjs --user <username> [--json] [--no-hints]
+
+Checks the tracker, reports and pipeline for integrity problems, and removes
+stale report-number reservations as it goes.
+
+  --json       Print the findings as JSON.
+  --no-hints   Leave out the one-line fix hint under each finding.
+  --help, -h   Show this help and exit without checking anything.`;
+
+// Before anything else: this script deletes stale sentinels as it checks, so
+// a run asked only for help, or started with a mistyped flag, must not reach it.
+validateFlags(process.argv.slice(2), ['--json', '--no-hints', '--help', '-h'], USAGE);
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const CODE_ROOT = CAREER_OPS;
@@ -513,7 +528,7 @@ const normalizeKey = normalizeTextKey;
 // on two different roles at the same company.
 function extractRole(reportContent) {
   if (!reportContent) return null;
-  const fence = reportContent.match(/##\s*Machine Summary\s*\n+```(?:yaml|yml|json)?\s*\n([\s\S]*?)\n```/i);
+  const fence = machineSummarySection(reportContent).match(/^##\s*Machine Summary\s*\n+```(?:yaml|yml|json)?\s*\n([\s\S]*?)\n```/i);
   if (fence) {
     const m = fence[1].match(/^role:\s*["']?(.+?)["']?\s*$/m);
     if (m && m[1].trim()) return m[1].trim();

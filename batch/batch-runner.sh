@@ -201,6 +201,11 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: --worker-timeout requires an argument"; exit 1; }
       WORKER_TIMEOUT_SECONDS="$2"; shift 2 ;;
     --skip-pdf) SKIP_PDF=true; shift ;;
+    --mode|--single-pass)
+      # Upstream's single-pass match mode (#5297) writes a condensed report without
+      # the canonical sections this runner validates; see FORK.md.
+      echo "ERROR: $1 is not supported by this fork's batch runner; batch evaluations always run the full A-G workflow."
+      exit 1 ;;
     --rate-limit-sleep)
       [[ $# -ge 2 ]] || { echo "ERROR: --rate-limit-sleep requires an argument"; exit 1; }
       RATE_LIMIT_SLEEP="$2"

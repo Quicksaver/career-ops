@@ -111,7 +111,7 @@ export function spawnGeneratePdf({ spawnFn, execPath, coreRoot, root, env = proc
       [path.join(coreRoot, "generate-pdf.mjs"), html, finalPdf, `--format=${format}`, `--report=${reportNum}`, "--allow-reorder", ...userArgs(env)],
       // windowsHide: see api/doctor/route.ts — a stale inherited console
       // kills every child with 0xC0000142 on Windows; never inherit one.
-      { cwd: coreRoot, env: dataEnv(env, root), windowsHide: true },
+      { cwd: coreRoot, env: { ...dataEnv(env, root), CAREER_OPS_PDF_SHARED: "1" }, windowsHide: true },
     );
     let stderr = "";
     child.stderr.on("data", (d) => { stderr += d.toString(); });

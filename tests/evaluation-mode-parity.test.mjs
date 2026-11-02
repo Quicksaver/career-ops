@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { ROOT, rmSync } from './helpers.mjs';
-import { FROZEN_EVALUATION_MODES, KNOWN_EVALUATION_MODES, discoverEvaluationModes, keywordCoverageGaps, readModeText, structuralGaps } from './evaluation-mode-parity-helpers.mjs';
+import { FROZEN_EVALUATION_MODES, KNOWN_EVALUATION_MODES, discoverEvaluationModes, keywordCoverageGaps, readModeText, reportSectionTitles, structuralGaps } from './evaluation-mode-parity-helpers.mjs';
 
 const REPORT = `# 評価: {Company} — {Role}
 
@@ -15,8 +15,6 @@ const REPORT = `# 評価: {Company} — {Role}
 **Legitimacy:** {tier}
 **PDF:** {pdf}
 
-## Machine Summary
-{machine fields}
 ## A) Role Summary
 {role}
 ## B) Match
@@ -35,6 +33,8 @@ const REPORT = `# 評価: {Company} — {Role}
 {risks}
 ## H) Answers
 {answers}
+## Machine Summary
+{machine fields}
 `;
 const mode = (body = REPORT, fence = '```') => `# Mode instructions\n\n${fence}markdown\n${body}${fence}\n`;
 
@@ -95,6 +95,40 @@ test('keyword coverage: the template placeholder, prose and comments cannot stan
   assert.deepEqual(keywordCoverageGaps(mode(REPORT + block + block) + step), ['duplicate ## Keyword Coverage']);
   assert.deepEqual(keywordCoverageGaps(mode(`${REPORT}<!-- ${block} -->\n`) + `<!-- ${step} -->`),
     ['## Keyword Coverage', 'keyword-match.mjs step']);
+});
+
+test('a Machine Summary ahead of any other report section is reported', () => {
+  const machine = '## Machine Summary\n{machine fields}\n';
+  const atTop = REPORT.replace(machine, '').replace('## A) Role Summary', `${machine}## A) Role Summary`);
+  assert.ok(structuralGaps(mode(atTop)).includes('## Machine Summary is not the last report section'));
+  const beforeKeywords = `${REPORT}## Keyword Coverage\n{coverage}\n`;
+  assert.ok(structuralGaps(mode(beforeKeywords)).includes('## Machine Summary is not the last report section'));
+});
+
+test('a template with no Machine Summary, or two, is reported', () => {
+  const machine = '## Machine Summary\n{machine fields}\n';
+  assert.deepEqual(structuralGaps(mode(REPORT.replace(machine, ''))), ['## Machine Summary']);
+  // A heading outside the template, or a comment, is not a section the report carries.
+  const prose = `${mode(REPORT.replace(machine, ''))}\n${machine}`;
+  assert.deepEqual(structuralGaps(prose), ['## Machine Summary']);
+  assert.deepEqual(structuralGaps(mode(REPORT.replace(machine, `<!-- ${machine} -->\n`))), ['## Machine Summary']);
+  assert.deepEqual(structuralGaps(mode(REPORT + machine)), ['duplicate ## Machine Summary']);
+});
+
+// Fork: the batch worker has no report template of its own. batch/batch-prompt.md
+// sends it to the loaded oferta mode for headings and their order, so the batch
+// report ends the way modes/oferta.md does: Keyword Coverage, the archived JD,
+// then the Machine Summary (#6156, #6159).
+test('batch/batch-prompt.md takes report headings and order from oferta', () => {
+  const prompt = readModeText(ROOT, 'batch/batch-prompt.md');
+  assert.match(prompt, /Use the report headings and their order from the loaded `oferta` mode/);
+  assert.doesNotMatch(prompt, /^Report header:/m, 'a second report template would drift from oferta');
+});
+
+test('modes/oferta.md ends with Keyword Coverage, the archived JD, then the Machine Summary', () => {
+  const JD = 'Job Description (archived verbatim)';
+  const oferta = reportSectionTitles(readModeText(ROOT, 'modes/oferta.md'));
+  assert.deepEqual(oferta.slice(oferta.indexOf('Keyword Coverage')), ['Keyword Coverage', JD, 'Machine Summary']);
 });
 
 test('a missing H answers section is reported', () => {

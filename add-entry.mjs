@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, realpathSync } from 'fs';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { normalizeTextKey } from './tracker-parse.mjs';
-import { replaceUserFile } from './tracker-utils.mjs';
+import { replaceUserFile, userFileWriteTarget } from './tracker-utils.mjs';
+import { acquireDirLock, releaseOrWarn } from './lib/dir-lock.mjs';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
-import { join, dirname } from 'path';
+import { join, dirname, basename } from 'path';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
@@ -356,35 +357,61 @@ async function main() {
   const articleDigestFile = process.env.CAREER_OPS_ARTICLE_DIGEST
     || (userContext.userRoot ? userPath(userContext, 'article-digest.md') : '');
 
-  const cvText = cvFile && existsSync(cvFile) ? readFileSync(cvFile, 'utf-8') : null;
-  const articleText = articleDigestFile && existsSync(articleDigestFile) ? readFileSync(articleDigestFile, 'utf-8') : null;
-
+  const locks = [];
   let out;
   try {
-    out = applyAdd(payload, { cvText, articleText });
+    // Lock the actual files before reading: an atomic rename alone still loses
+    // another process's confirmed addition. Sort and dedupe to avoid deadlocks.
+    const targets = dryRun ? [] : [
+      ...(payload?.cv ? [cvFile] : []),
+      ...((payload?.articleDigest || payload?.articleDigestUpdate) ? [articleDigestFile] : []),
+    ].map(file => {
+      const target = userFileWriteTarget(file);
+      return join(realpathSync(dirname(target)), basename(target));
+    });
+    for (const target of [...new Set(targets)].sort()) {
+      locks.push(await acquireDirLock(`${target}.add-entry.lock`, {
+        timeoutMs: 60_000, retryMs: 50, staleMs: 600_000,
+        owner: { tool: 'add-entry' },
+      }));
+    }
+    const cvText = cvFile && existsSync(cvFile) ? readFileSync(cvFile, 'utf-8') : null;
+    const articleText = articleDigestFile && existsSync(articleDigestFile) ? readFileSync(articleDigestFile, 'utf-8') : null;
+
+    try {
+      out = applyAdd(payload, { cvText, articleText });
+    } catch (e) {
+      console.error(`add-entry: ${e.message}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!dryRun) {
+      // Track what actually landed so a failure on the second write reports which
+      // file was already mutated (the two writes aren't transactional).
+      const written = [];
+      try {
+        if (payload.cv && out.result.cv?.status === 'added') {
+          replaceUserFile(cvFile, out.cv);
+          written.push('cv.md');
+        }
+        if ((payload.articleDigest && (out.result.articleDigest?.status === 'added' || out.result.articleDigest?.status === 'created'))
+          || out.result.articleDigestUpdate?.status === 'appended') {
+          replaceUserFile(articleDigestFile, out.articleDigest);
+          written.push('article-digest.md');
+        }
+      } catch (e) {
+        console.error(`add-entry: write failed after writing [${written.join(', ') || 'nothing'}]: ${e.message}`);
+        process.exitCode = 1;
+        return;
+      }
+    }
   } catch (e) {
     console.error(`add-entry: ${e.message}`);
-    process.exit(1);
-  }
-
-  if (!dryRun) {
-    // Track what actually landed so a failure on the second write reports which
-    // file was already mutated (the two writes aren't transactional).
-    const written = [];
-    try {
-      if (payload.cv && out.result.cv?.status === 'added') {
-        replaceUserFile(cvFile, out.cv);
-        written.push('cv.md');
-      }
-      if ((payload.articleDigest && (out.result.articleDigest?.status === 'added' || out.result.articleDigest?.status === 'created'))
-        || out.result.articleDigestUpdate?.status === 'appended') {
-        replaceUserFile(articleDigestFile, out.articleDigest);
-        written.push('article-digest.md');
-      }
-    } catch (e) {
-      console.error(`add-entry: write failed after writing [${written.join(', ') || 'nothing'}]: ${e.message}`);
-      process.exit(1);
-    }
+    process.exitCode = 1;
+    return;
+  } finally {
+    for (const lock of locks.reverse()) releaseOrWarn(lock);
   }
 
   const result = { dryRun, ...out.result };

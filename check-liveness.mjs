@@ -38,7 +38,7 @@ import { localToday } from './lib/local-today.mjs';
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { flagValue, hasFlag } from './lib/cli-flags.mjs';
+import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
@@ -54,6 +54,31 @@ const USAGE = `Usage:
   node check-liveness.mjs --no-record             # check only; write nothing to scan-history
   node check-liveness.mjs --help                  # print this usage block and exit
   node check-liveness.mjs -h                      # alias for --help`;
+
+const KNOWN_FLAGS = [
+  '--no-fallback', '--throttle', '--no-record', '--file', '--tracker', '--status',
+  '--discard-expired', '--close-expired', '--apply', '--json', '--help', '-h',
+];
+
+/**
+ * `--throttle` alone means the 5000ms default. `--throttle 1000` and
+ * `--throttle=1000` both mean 1000. A non-numeric equals value stays on the
+ * default rather than becoming a URL to check.
+ *
+ * @param {string[]} args
+ * @returns {number}
+ */
+function throttleBaseMsFrom(args) {
+  if (!hasFlag(args, '--throttle')) return 0;
+  const eq = args.find((a) => typeof a === 'string' && a.startsWith('--throttle='));
+  const raw = eq !== undefined ? eq.slice('--throttle='.length) : (() => {
+    const idx = args.indexOf('--throttle');
+    const next = idx === -1 ? undefined : args[idx + 1];
+    return typeof next === 'string' && /^\d+$/.test(next) ? next : undefined;
+  })();
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 5000;
+}
 
 /**
  * Is this run allowed to record its verdicts?
@@ -186,9 +211,23 @@ function trackerStatuses(trackerText) {
 async function main() {
   const args = process.argv.slice(2);
 
-  if (args.includes('--help') || args.includes('-h')) {
-    console.log(USAGE);
-    return;
+  // Unknown flags used to survive into the URL list: `--dry-run --file urls.txt`
+  // checked three strings and never opened the file, and `--help` ran before
+  // that filter so `--help --bogus` exited 0. validateFlags rejects the unknown
+  // flag first, then prints help. --throttle's operand is optional (bare
+  // `--throttle` is the 5000ms default), and --status keeps the message the
+  // status-flag test locks, so the missing-operand check stays here rather
+  // than in requireOperand. See tests/validate-flags-value-operand.test.mjs.
+  validateFlags(args, KNOWN_FLAGS, USAGE, {
+    valueFlags: ['--file', '--status', '--throttle'],
+  });
+
+  if (hasFlag(args, '--file')) {
+    const filePath = flagValue(args, '--file');
+    if (typeof filePath !== 'string' || !filePath.trim() || filePath.startsWith('--')) {
+      console.error('Error: --file requires a value');
+      process.exit(1);
+    }
   }
 
   // Portals like pracuj.pl serve a Cloudflare anti-bot wall to headless Chromium.
@@ -197,12 +236,13 @@ async function main() {
   const noFallback = args.includes('--no-fallback');
   const jsonOutput = args.includes('--json');
   const log = (...values) => { if (!jsonOutput) console.log(...values); };
-  // --throttle or --throttle=<ms>: wait base..2*base ms (jittered) between browser
-  // checks of the same host (createHostSpacer in liveness-browser.mjs)
-  // to stay under rate-based WAF limits. pracuj.pl's Cloudflare flags the session
-  // after ~2 rapid hits, so a bulk run needs spacing. Default base 5000ms.
-  const throttleArg = args.find((a) => a === '--throttle' || a.startsWith('--throttle='));
-  const throttleBaseMs = throttleArg ? (Number(throttleArg.split('=')[1]) || 5000) : 0;
+  // --throttle, --throttle <ms>, or --throttle=<ms>: wait base..2*base ms
+  // (jittered) between browser checks of the same host (createHostSpacer in
+  // liveness-browser.mjs) to stay under rate-based WAF limits. pracuj.pl's
+  // Cloudflare flags the session after ~2 rapid hits, so a bulk run needs
+  // spacing. Bare --throttle uses a 5000ms base. The space form used to be
+  // ignored (the number was checked as a URL) and the base stayed 5000.
+  const throttleBaseMs = throttleBaseMsFrom(args);
   const record = recordingEnabled(args);
   // `--status Rejected` as well as `--status=Rejected`. Only the `=` form was
   // read, so the space form, and any `--status` with no value, fell back to
@@ -217,7 +257,6 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  // The space form's value is an argv token of its own; it is not a URL.
   const statusTokens = new Set(args.filter((a, i) => a.startsWith('--status=') || a === '--status' || (args[i - 1] === '--status' && a === statusValue)));
   const fromTracker = args.includes('--tracker');
   const closeExpired = args.includes('--close-expired') || args.includes('--discard-expired');
@@ -227,10 +266,15 @@ async function main() {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (['--json', '--no-fallback', '--no-record', '--tracker', '--close-expired', '--discard-expired', '--apply'].includes(arg)
-      || arg === throttleArg || statusTokens.has(arg)) continue;
-    if (arg === '--file') {
-      if (file || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('--file requires one filename');
-      file = args[++i];
+      || statusTokens.has(arg)) continue;
+    if (arg === '--throttle' || arg.startsWith('--throttle=')) {
+      if (arg === '--throttle' && /^\d+$/.test(args[i + 1] ?? '')) i++;
+      continue;
+    }
+    if (arg === '--file' || arg.startsWith('--file=')) {
+      const value = arg === '--file' ? args[++i] : arg.slice('--file='.length);
+      if (file || !value || value.startsWith('--')) throw new Error('--file requires one filename');
+      file = value;
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown option: ${arg}`);
     } else positional.push(arg);

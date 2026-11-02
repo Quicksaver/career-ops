@@ -101,7 +101,7 @@ test('check-liveness fetches a shared Ashby board once per run', () => {
       `https://jobs.ashbyhq.com/acme/${OTHER}`,
     ], {
       encoding: 'utf-8',
-      env: { ...process.env, CAREER_OPS_ROOT: dir, MOCK_ASHBY_BOARD: JSON.stringify(BOARD), MOCK_FETCH_LOG: countFile },
+      env: { ...process.env, CAREER_OPS_USER: 'fixture', CAREER_OPS_ROOT: dir, MOCK_ASHBY_BOARD: JSON.stringify(BOARD), MOCK_FETCH_LOG: countFile },
       stdio: ['ignore', 'pipe', 'pipe'],
     }).toString();
     const calls = JSON.parse(readFileSync(countFile, 'utf-8'));

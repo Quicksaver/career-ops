@@ -74,6 +74,7 @@ test("spawnGeneratePdf: clean exit -> ok:true, invokes generate-pdf.mjs with --a
   assert.equal(calls[0].opts.cwd, "/root");
   // No console to inherit: a stale one kills the child on Windows (#3809)
   assert.equal(calls[0].opts.windowsHide, true);
+  assert.equal(calls[0].opts.env.CAREER_OPS_PDF_SHARED, "1");
 });
 
 test("renderer and tracker marker launch system scripts with the selected user data environment", async () => {

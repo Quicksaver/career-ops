@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { machineSummarySection } from './lib/machine-summary-section.mjs';
 import {
   copyFileSync,
   existsSync,
@@ -147,7 +148,7 @@ function cleanScalar(value) {
 
 function reportMetadata(reportPath) {
   const content = readFileSync(reportPath, 'utf-8');
-  const summaryMatch = content.match(/##\s*Machine Summary\s*\n+```(?:yaml|yml|json)?\s*\n([\s\S]*?)\n```/i);
+  const summaryMatch = machineSummarySection(content).match(/^##\s*Machine Summary\s*\n+```(?:yaml|yml|json)?\s*\n([\s\S]*?)\n```/i);
   let summary = {};
   if (summaryMatch) {
     try {

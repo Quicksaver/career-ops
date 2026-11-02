@@ -1,5 +1,5 @@
 import { getUserContext, printUserContextErrorAndExit, userPath } from '../lib/user-context.mjs';
-import { estimateCost } from '../utils/token-tracker.mjs';
+import { estimateCost, formatK } from '../utils/token-tracker.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 /**
  * batch/aggregate-tokens.mjs — Aggregate and display token usage for batch runs
@@ -17,9 +17,6 @@ export function parseTokenVal(str) {
   return parseInt(str, 10) || 0;
 }
 
-function formatK(tokens) {
-  return (tokens / 1000).toFixed(1) + 'k';
-}
 
 function main(userContext) {
   const stateFile = userPath(userContext, 'batch/batch-state.tsv');

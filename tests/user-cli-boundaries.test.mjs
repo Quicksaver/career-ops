@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { userFixtureEnv } from './user-fixture.mjs';
+import { exitedNonZero } from './helpers/describe-spawn.mjs';
 
 const code = resolve(import.meta.dirname, '..');
 function fixture(t) {
@@ -46,13 +47,13 @@ test('answer read modes require a user and contain both relative and repository-
   writeFileSync(report, '# Report\n');
   for (const mode of ['--read', '--read-draft']) {
     const missing = f.cli('application-answers.mjs', [mode, '--report', report]);
-    assert.notEqual(missing.status, 0); assert.match(missing.stderr, /No career-ops user selected/);
+    assert.ok(exitedNonZero(missing)); assert.match(missing.stderr, /No career-ops user selected/);
     const valid = f.cli('application-answers.mjs', ['--user', 'alice', mode, '--report', 'reports/001.md']);
     assert.equal(valid.status, 0, valid.stderr); assert.equal(JSON.parse(valid.stdout), null);
     const prefixed = f.cli('application-answers.mjs', ['--user', 'alice', mode, '--report', 'users/alice/reports/001.md']);
     assert.equal(prefixed.status, 0, prefixed.stderr);
     const outside = f.cli('application-answers.mjs', ['--user', 'alice', mode, '--report', join(code, 'AGENTS.md')]);
-    assert.notEqual(outside.status, 0); assert.match(outside.stderr, /outside the active user/);
+    assert.ok(exitedNonZero(outside)); assert.match(outside.stderr, /outside the active user/);
   }
 });
 
@@ -76,7 +77,7 @@ syncBuiltinESMExports();globalThis.fetch=async()=>{fs.writeFileSync(${JSON.strin
     assert.equal(existsSync(calls),false,args.join(' '));
   }
   const operand=spawnSync(process.execPath,['--import',pathToFileURL(preload).href,join(code,'openrouter-runner.mjs'),'evaluate','help'],{cwd:code,env:f.env,encoding:'utf8',timeout:10000});
-  assert.notEqual(operand.status,0); assert.match(operand.stderr,/No career-ops user selected/);
+  assert.ok(exitedNonZero(operand)); assert.match(operand.stderr,/No career-ops user selected/);
   assert.doesNotMatch(operand.stdout,/COMMANDS:/); assert.equal(existsSync(calls),false);
 });
 
@@ -85,7 +86,7 @@ test('plugin removal rejects path-like IDs before changing plugins, config or lo
   const sentinel=join(f.root,'plugins','keep','sentinel'); writeFileSync(sentinel,'keep');
   for(const id of ['..','../keep','../../data','/tmp','C:/tmp','a/b','a\\b']) {
     const result=f.cli('plugins.mjs',['--user','alice','remove',id]);
-    assert.notEqual(result.status,0); assert.match(result.stderr,/Invalid plugin id/i);
+    assert.ok(exitedNonZero(result)); assert.match(result.stderr,/Invalid plugin id/i);
     assert.equal(readFileSync(sentinel,'utf8'),'keep');
   }
 });
@@ -121,7 +122,7 @@ test('tracker sync CLI retains legacy interviews fallback and prefers a canonica
 test('LaTeX positional arguments are parsed after the explicit user', t => {
   const f = fixture(t); const input = join(f.root, 'missing.json');
   const result = f.cli('build-cv-latex.mjs', ['--user', 'alice', input, join(f.root, 'output', 'cv.tex')]);
-  assert.notEqual(result.status, 0); assert.match(result.stderr, /Input file not found/); assert.ok(result.stderr.includes(input));
+  assert.ok(exitedNonZero(result)); assert.match(result.stderr, /Input file not found/); assert.ok(result.stderr.includes(input));
 });
 
 test('preparing an application reads an in-root cover letter on either platform', t => {
@@ -140,7 +141,7 @@ test('CV outputs reject a symlinked ancestor before rendering', t => {
   const input = join(f.root, 'input.json'); writeFileSync(input, '{}');
   for (const name of ['build-cv-html.mjs', 'img-to-pdf.mjs', 'build-cv-latex.mjs']) {
     const result = f.cli(name, ['--user', 'alice', input, join(f.root, 'output', 'escape', 'cv.pdf')]);
-    assert.notEqual(result.status, 0); assert.match(result.stderr, /outside the active user root/);
+    assert.ok(exitedNonZero(result)); assert.match(result.stderr, /outside the active user root/);
     assert.equal(existsSync(join(outside, 'cv.pdf')), false);
   }
 });

@@ -233,6 +233,9 @@ func parseApplications(careerOpsPath string, enrichReports bool) ([]model.Career
 		if len(fields) < 8 {
 			continue
 		}
+		for i, field := range fields {
+			fields[i] = SanitizeTerminalText(field)
+		}
 
 		at := func(name string) string {
 			if idx, ok := cols[name]; ok && idx >= 0 && idx < len(fields) {
@@ -803,6 +806,11 @@ func LoadReportDetails(careerOpsPath, reportPath string, includeURL bool) Report
 		details.Comp = cleanTableCell(m[1])
 	}
 
+	details.Archetype = SanitizeTerminalText(details.Archetype)
+	details.TlDr = SanitizeTerminalText(details.TlDr)
+	details.Remote = SanitizeTerminalText(details.Remote)
+	details.Comp = SanitizeTerminalText(details.Comp)
+
 	// Truncate long fields
 	if len(details.TlDr) > 120 {
 		details.TlDr = details.TlDr[:117] + "..."
@@ -1172,6 +1180,11 @@ func normalizeDashboardDate(raw string) string {
 // StatusPriority returns the sort priority for a status (lower = higher priority).
 func StatusPriority(status string) int {
 	switch NormalizeStatus(status) {
+	// Hired sorts first, as in statusGroupOrder (screens/pipeline.go), the
+	// order the group headers and the metrics strip use. -1 keeps the other
+	// values as they are.
+	case "hired":
+		return -1
 	case "interview":
 		return 0
 	case "offer":

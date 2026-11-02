@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { machineSummarySection } from '../lib/machine-summary-section.mjs';
 import { basename, resolve, dirname } from 'path';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { loadYaml } from '../lib/yaml-document.mjs';
@@ -25,7 +26,7 @@ function option(args, name) {
 }
 
 export function parseMachineSummary(reportContent) {
-  const match = reportContent.match(/##\s*Machine Summary\s*\n+```(?:yaml|yml)\s*\n([\s\S]*?)\n```/i);
+  const match = machineSummarySection(reportContent).match(/^##\s*Machine Summary\s*\n+```(?:yaml|yml)\s*\n([\s\S]*?)\n```/i);
   if (!match) throw new Error('report is missing a YAML Machine Summary');
   const parsed = loadYaml(match[1]);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

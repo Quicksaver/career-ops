@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { NODE, ROOT } from './helpers.mjs';
+import { exitedNonZero } from './helpers/describe-spawn.mjs';
 
 const TRACKER = '# Applications Tracker\n\n'
   + '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n'
@@ -63,7 +64,7 @@ for (const [label, ledger] of ledgers) {
   for (const requested of [1, 2]) {
     test(`${label}: request #${requested} cannot assign historical #2 to a new application`, t => {
       const out = fixture(t, requested, ledger);
-      assert.notEqual(out.status, 0, out.output);
+      assert.ok(exitedNonZero(out), out.output);
       assert.equal(out.num, null, out.output);
       assert.equal(out.pending, true, 'the blocked TSV stays pending');
       assert.match(out.output, new RegExp(`tracker #${requested} belongs to another entry`));
