@@ -19,6 +19,7 @@
  *      node keyword-match.mjs --url <posting-url> [--cv path] [--json]
  *      node keyword-match.mjs --jd-text <file> [--cv path] [--json]
  *      node keyword-match.mjs --self-test                 (built-in assertions)
+ *      node keyword-match.mjs --help                      (this list, exit 0)
  *
  * Exactly one JD source per run: a report path, --url, or --jd-text. URL fetch
  * uses fetchJdViaKnownApi only (no browser). Thin / unreachable / zero-skill
@@ -30,6 +31,14 @@ import { join, isAbsolute, basename } from 'path';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { extractSkills } from './skill-extract.mjs';
+
+// A normal path stays readable. A space or other shell syntax is quoted so the
+// example stays one argument.
+function shellExampleArg(value) {
+  const text = String(value);
+  if (!/[\s'"$`!*?;&|()<>#{}]/.test(text)) return text;
+  return `'${text.replace(/'/g, "'\\''")}'`;
+}
 
 /**
  * Small, deliberately conservative map of interchangeable ATS surface forms.
@@ -485,7 +494,7 @@ const TEXT_CAP = 20_000;
 const TIMEOUT_MS = 15_000;
 
 const USAGE =
-  'Usage: node keyword-match.mjs <report-file> | --url <posting-url> | --jd-text <file> [--cv <path>] [--json]';
+  'Usage: node keyword-match.mjs <report-file> | --url <posting-url> | --jd-text <file> [--cv <path>] [--json] --user <id>';
 
 const MIXED_SOURCES =
   'use exactly one of <report>, --url, --jd-text';
@@ -762,6 +771,8 @@ export async function resolveKeywords(input, root) {
     : [join(root, reportArg), join(process.cwd(), reportArg)].find(p => existsSync(p)) ?? join(process.cwd(), reportArg);
   if (!existsSync(reportPath) || !statSync(reportPath).isFile()) {
     console.error(`Report not found: ${reportArg}`);
+    // The fork needs --user on every run, so the example carries it.
+    console.error(`Example: node keyword-match.mjs --user ${process.env.CAREER_OPS_USER} ${shellExampleArg(join(root, 'reports', '001-role.md'))}`);
     process.exit(1);
   }
 
@@ -915,12 +926,17 @@ async function runKeywordMatch(args) {
 }
 
 if (isMainModule(import.meta.url)) {
+  if (process.argv.slice(2).some(a => a === '--help' || a === '-h')) {
+    console.log(USAGE);
+    process.exit(0);
+  }
   // Takes --user out of argv before the flag parser sees it. The self-test
   // reads no user data.
   if (!process.argv.includes("--self-test")) getCareerOpsRoot();
+  const argv = process.argv.slice(2);
   let args;
   try {
-    args = parseMatchArgs(process.argv.slice(2));
+    args = parseMatchArgs(argv);
   } catch (err) {
     console.error(err?.message || err);
     process.exit(1);
