@@ -4,12 +4,21 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `a149e44e91cdae0c197e4e9c82e44216d272db09`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `6b4f9e0a967154c573fc30a54cef710ae5e37ec9`, the upstream integration at `a149e44e` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `303`.
-- Diff size against the incorporated base at that snapshot: `924 files changed, 39787 insertions(+), 10506 deletions(-)`.
+- Incorporated upstream base: `20b9fd3a9c86d28c847e021f4dbbe93ce9a39a00`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `468dda1fd79acbf6f79d9cc16337ce784d6a5d39`, the upstream integration at `20b9fd3a` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `305`.
+- Diff size against the incorporated base at that snapshot: `925 files changed, 39796 insertions(+), 10514 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
+
+## Upstream integration at 20b9fd3a
+
+This update incorporates the 2 commits from `a149e44e91cdae0c197e4e9c82e44216d272db09` through `20b9fd3a9c86d28c847e021f4dbbe93ce9a39a00`. Neither touches the `run` lanes, batch workers, providers or tracker writes.
+
+- **keyword-match help (#6123).** `keyword-match.mjs` conflicted with the fork's user resolution. `--help` and `-h` now exit before `getCareerOpsRoot()`, so help needs no user. The missing-report example carries `--user {USER}` and the data-root path, because a fork run without a user throws, and the usage line names `--user <id>`. Upstream's `tests/keyword-match-help.test.mjs` sets `CAREER_OPS_USER: 'fixture'` beside its `CAREER_OPS_ROOT` and expects `--user fixture` in the example.
+- **CV preview page count (#6180).** Adopted unchanged in the web CV studio; no fork code reads it.
+
+Validation: the keyword-match, help-flag and page-estimate suites pass, the web typecheck is clean, and `node test-all.mjs --quick` reported 21,962 passed and 18 failed on a loaded machine. Seventeen failures were batch, `run` and updater suites cut off at their time limit; run one at a time with `node --test --test-concurrency=1`, those 159 tests pass, including the `run` lanes through the real Git Bash runner. The remaining failure is upstream's Windows EPERM in the web painter test, unchanged from `a149e44e`. `verify-pipeline.mjs` reports 0 errors for both users.
 
 ## Upstream integration at a149e44e
 
