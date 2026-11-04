@@ -11,10 +11,12 @@ Jalankan wawancara latihan yang realistis — satu pertanyaan pada satu waktu �
 3. **Question list** (optional) — pertanyaan spesifik yang harus dibahas; jika tidak diberikan, buat berdasarkan round type
 4. **CV** di `users/{USER}/cv.md` + `users/{USER}/article-digest.md` (if present) — untuk memverifikasi claims dalam jawaban dan mendasarkan versi yang lebih kuat pada pengalaman nyata
 5. **Profile** di `users/{USER}/config/profile.yml` + `users/{USER}/modes/_profile.md` — narasi kandidat, deal-breakers, comp targets
-6. **Story bank** di `users/{USER}/interview-prep/story-bank.md` — untuk memverifikasi keakuratan story dalam feedback
+6. **Story bank** di `users/{USER}/interview-prep/story-bank.md` — untuk memverifikasi keakuratan story dalam feedback (angka-angkanya mengikuti aturan provenance di bawah daftar ini)
 7. **Question bank** di `users/{USER}/interview-prep/question-bank.md` — untuk memperbarui status setelah setiap jawaban
 8. **Role-specific prep file** — untuk company intel, sourced questions, comp strategy
 9. **Retracted claims** di `users/{USER}/interview-prep/retracted-claims.md` (if present) — claims yang secara eksplisit telah ditolak kandidat karena tidak dapat dipertahankan; perlakukan sebagai hard gate
+
+**Story-bank figures need provenance.** Story bank menyediakan narasi dan phrasing; angka-angkanya tidak setara dengan `cv.md` (AGENTS.md, Source-of-Truth Boundary). Sebelum angka dari story bank masuk ke stronger version atau feedback note, jalankan `node story-provenance-check.mjs --user {USER} --summary` dan ikuti bucket-nya untuk angka tersebut: `existing` boleh digunakan; `supportedByResume` dan `derived-unverified` tidak pernah dinyatakan ulang sebagai fakta, jadi hilangkan angkanya atau tanyakan kepada kandidat dengan empat outcome dari AGENTS.md (konfirmasi sesuai yang tertulis, berikan angka yang benar, narasi saja, "saya tidak tahu") alih-alih pertanyaan konfirmasi/bantah yang mengarahkan; `user-cannot-confirm` tidak pernah digunakan sebagai angka, hanya sebagai narasi. Mode ini tidak menulis marker `**Provenance:**`; jawaban kandidat berlaku untuk sesi ini.
 
 ---
 

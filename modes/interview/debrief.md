@@ -258,7 +258,7 @@ For each named person, ask `Save this contact to users/{USER}/data/contacts.tsv?
 
 If the next step names one clear calendar day, pass `--next YYYY-MM-DD` with no second question. Resolve a weekday from the local calendar day, and today counts. If the phrase has no day, omit `--next`. If it is ambiguous (`next week`, two days), ask for one date and then pass it.
 
-Run `node debrief-sync.mjs --user {USER}` with those flags. Then, when a contact was saved, run `node contacts.mjs --user {USER} --summary`. When a day was pinned, run `node followup-cadence.mjs --user {USER} --summary`.
+Run `node debrief-sync.mjs --user {USER} --app <tracker#>` with those flags, where `<tracker#>` is the application's `#` in the tracker (not its report number). If there is no dealbreaker, contact or `--next` day to pass, skip the command: the script refuses a call with nothing to record. Then, when a contact was saved, run `node contacts.mjs --user {USER} --summary`. When a day was pinned, run `node followup-cadence.mjs --user {USER} --summary`.
 
 Do not change status unless the user names a new status. That is a separate `set-status.mjs` call, before this command.
 

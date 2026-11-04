@@ -129,8 +129,10 @@ func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 	if tabs[0].label != "OPEN" {
 		t.Fatalf("expected first tab label to be Open, got %+v", tabs[0])
 	}
-	if tabs[len(tabs)-1].filter != filterSkip {
-		t.Fatalf("expected last tab to be Skip, got %+v", tabs[len(tabs)-1])
+	// Other is last and hidden while empty, so Skip is the last tab a clean
+	// tracker shows.
+	if tabs[len(tabs)-1].filter != filterOther || tabs[len(tabs)-2].filter != filterSkip {
+		t.Fatalf("expected the last tabs to be Skip then Other, got %+v", tabs[len(tabs)-2:])
 	}
 	if tabIndexForFilter(t, filterClosed) >= tabIndexForFilter(t, filterDiscarded) {
 		t.Fatal("expected Closed tab to appear before Discarded")
@@ -1026,6 +1028,57 @@ func previewModelWith(t *testing.T, app model.CareerApplication) PipelineModel {
 	pm.applyFilterAndSort()
 	pm.cursor = 0
 	return pm
+}
+
+// TestPreviewTruncatesTldrToTerminalCells verifies visible truncation across terminal widths and wide runes.
+// @param t The Go test context.
+// @returns No value.
+func TestPreviewTruncatesTldrToTerminalCells(t *testing.T) {
+	tests := []struct {
+		name       string
+		width      int
+		tldr       string
+		wantSuffix string
+	}{
+		{name: "latin at 80 columns", width: 80, tldr: strings.Repeat("a", 120), wantSuffix: "..."},
+		{name: "latin at 120 columns", width: 120, tldr: strings.Repeat("a", 120), wantSuffix: "..."},
+		{name: "latin at 160 columns", width: 160, tldr: strings.Repeat("a", 120), wantSuffix: strings.Repeat("a", 120)},
+		{name: "wide runes at 80 columns", width: 80, tldr: strings.Repeat("界", 117) + "...", wantSuffix: "..."},
+		{name: "wide runes at 120 columns", width: 120, tldr: strings.Repeat("界", 117) + "...", wantSuffix: "..."},
+		{name: "wide runes at 160 columns", width: 160, tldr: strings.Repeat("界", 117) + "...", wantSuffix: "..."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A status puts the row on the fork's OPEN tab; the fork has no ALL tab.
+			app := model.CareerApplication{
+				Company:    "Acme",
+				Role:       "Agent Engineer",
+				Status:     "Evaluated",
+				ReportPath: "reports/001-acme.md",
+			}
+			pm := previewModelWith(t, app)
+			pm.width = tt.width
+			pm.reportCache[app.ReportPath] = reportSummary{tldr: tt.tldr}
+
+			var tldrLine string
+			for _, line := range strings.Split(ansi.Strip(pm.renderPreview()), "\n") {
+				if strings.Contains(line, "TL;DR: ") {
+					tldrLine = line
+					break
+				}
+			}
+			if tldrLine == "" {
+				t.Fatal("expected preview to include the cached TL;DR")
+			}
+			if got := ansi.StringWidth(tldrLine); got > tt.width {
+				t.Fatalf("TL;DR line is %d cells, wider than terminal width %d: %q", got, tt.width, tldrLine)
+			}
+			if !strings.HasSuffix(strings.TrimRight(tldrLine, " "), tt.wantSuffix) {
+				t.Fatalf("TL;DR line should end with %q, got %q", tt.wantSuffix, tldrLine)
+			}
+		})
+	}
 }
 
 func TestPreviewKeepsDiscardReasonWhenTlDrIsCached(t *testing.T) {

@@ -40,10 +40,21 @@ import { BASE_CV_TEMPLATE } from "../run-prompts.mjs";
  * not exist; the catch is for a checkout too old to export resolveTemplate, and
  * for a template whose placeholders fail validation.
  *
+ * A template from the core's user layer (#5777) lives under the DATA root, which is
+ * the worker's cwd and, on a split-layout install, not inside the checkout at all.
+ * Such a path is returned relative to `dataRoot` instead, so the worker reads it
+ * where it is; the prompt checks it against resolveUserTemplatesDir(). Without
+ * `dataRoot` the user layer is not recognized and the path is checkout-relative,
+ * as before.
+ *
  * @param {string} coreRoot Absolute path to the career-ops code checkout (resolveCodeRoot()), not the data root.
- * @returns {Promise<string>} Repo-relative template path, forward-slashed.
+ * @param {{ userRoot?: string }} [options] The selected user's data root (careerOpsRoot()). The fork's
+ *   worker runs from the checkout, so the prompt makes a user-layer path absolute under it.
+ * @returns {Promise<string>} Template path, forward-slashed: checkout-relative for a
+ *   system template, data-root-relative for one in the user layer.
  */
 export async function resolveCvTemplate(coreRoot, { userRoot } = {}) {
+  const dataRoot = userRoot || null;
   const file = path.join(coreRoot, "cv-templates.mjs");
   try {
     const mod = await import(/* webpackIgnore: true */ pathToFileURL(file).href);
@@ -54,18 +65,69 @@ export async function resolveCvTemplate(coreRoot, { userRoot } = {}) {
       coreRoot, () => existsSync(marker) ? readFileSync(marker, 'utf8') : null,
       process.env, path.resolve, path.join,
     ), 'config/profile.yml');
+    const userDir = dataRoot ? forkUserTemplatesDir(mod, dataRoot) : null;
     const abs = mod.resolveTemplate("cv", null, {
       fallback: true,
       // Core ROOT and the selected user's data root differ in the web process.
       profilePath,
+      ...(userDir ? { userDir } : {}),
     });
     if (typeof abs !== "string" || !abs) return BASE_CV_TEMPLATE;
-    // The prompt names a repo-relative path, and always with forward slashes:
+    const base = userDir && isInside(userDir, abs) ? dataRoot : coreRoot;
+    // The prompt names a relative path, and always with forward slashes:
     // path.relative gives backslashes on Windows, which is not how any of the
     // agent-facing paths in this prompt are written.
-    const rel = path.relative(coreRoot, abs).split(path.sep).join("/");
+    const rel = posixRelative(base, abs);
     return rel || BASE_CV_TEMPLATE;
   } catch {
     return BASE_CV_TEMPLATE;
   }
+}
+
+/**
+ * The core's user-template directory, relative to the data root, as the prompt's
+ * guard needs it to accept a path resolveCvTemplate() returned from that layer.
+ * Null when the core does not report one (a checkout older than #5777) or reports
+ * one outside the data root: either way no user-layer path is accepted, and the run
+ * fills the base template exactly as it did before.
+ *
+ * @param {string} coreRoot Absolute path to the career-ops code checkout.
+ * @param {string} dataRoot Absolute path to the data root, the worker's cwd.
+ * @returns {Promise<string | null>}
+ */
+export async function resolveUserTemplatesDir(coreRoot, dataRoot) {
+  if (!dataRoot) return null;
+  try {
+    const mod = await import(/* webpackIgnore: true */ pathToFileURL(path.join(coreRoot, "cv-templates.mjs")).href);
+    const userDir = forkUserTemplatesDir(mod, dataRoot);
+    if (!userDir || !isInside(dataRoot, userDir)) return null;
+    return posixRelative(dataRoot, userDir) || null;
+  } catch {
+    return null;
+  }
+}
+
+// Fork: the web process selects its user per request and sets no CAREER_OPS_USER,
+// so the core's DEFAULT_USER_TEMPLATES_DIR() would report no user layer. The
+// selected user's directory follows the same rule the core uses for its own data
+// root: data/templates under it. A core with no user layer (older than #5777)
+// still gets none.
+function forkUserTemplatesDir(mod, dataRoot) {
+  if (typeof mod?.DEFAULT_USER_TEMPLATES_DIR !== "function") return null;
+  return path.join(dataRoot, "data", "templates");
+}
+
+function coreUserTemplatesDir(mod) {
+  if (typeof mod?.DEFAULT_USER_TEMPLATES_DIR !== "function") return null;
+  const dir = mod.DEFAULT_USER_TEMPLATES_DIR();
+  return typeof dir === "string" && dir ? dir : null;
+}
+
+function isInside(dir, file) {
+  const rel = path.relative(dir, file);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+function posixRelative(from, to) {
+  return path.relative(from, to).split(path.sep).join("/");
 }

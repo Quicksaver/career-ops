@@ -31,6 +31,7 @@ type Catalog struct {
 	TabRejected   string
 	TabDiscarded  string
 	TabAssessment string
+	TabOther      string
 
 	// Table column headers
 	ColFit      string
@@ -118,6 +119,7 @@ type Catalog struct {
 	StatusHired      string
 	StatusClosed     string
 	StatusAssessment string
+	StatusOther      string
 
 	// Additional UI strings
 	NoData        string
@@ -250,6 +252,8 @@ func (c *Catalog) StatusLabel(norm string) string {
 		return c.StatusClosed
 	case "discarded":
 		return c.StatusDiscarded
+	case "other":
+		return c.StatusOther
 	default:
 		return norm
 	}
@@ -344,6 +348,7 @@ var En = Catalog{
 	TabRejected:   "REJECTED",
 	TabDiscarded:  "DISCARDED",
 	TabAssessment: "ASSESSMENT",
+	TabOther:      "OTHER",
 
 	// Table column headers
 	ColFit:      "FIT",
@@ -431,6 +436,7 @@ var En = Catalog{
 	StatusHired:      "Hired",
 	StatusClosed:     "Closed",
 	StatusAssessment: "Assessment",
+	StatusOther:      "Other",
 
 	// Additional UI strings
 	NoData:        "No data",
@@ -521,6 +527,7 @@ var Tr = Catalog{
 	TabRejected:   "REDDEDİLDİ",
 	TabDiscarded:  "İPTAL",
 	TabAssessment: "DEĞERLENDİRME",
+	TabOther:      "DİĞER",
 
 	// Table column headers
 	ColFit:      "UYUM",
@@ -608,6 +615,7 @@ var Tr = Catalog{
 	StatusHired:      "İşe Alındı",
 	StatusClosed:     "Kapandı",
 	StatusAssessment: "Değerlendirme",
+	StatusOther:      "Diğer",
 
 	// Additional UI strings
 	NoData:        "Veri yok",
@@ -698,6 +706,7 @@ var Es = Catalog{
 	TabRejected:   "RECHAZADAS",
 	TabDiscarded:  "DESCARTADAS",
 	TabAssessment: "PRUEBA",
+	TabOther:      "OTRAS",
 
 	// Table column headers
 	ColFit:      "AJUSTE",
@@ -785,6 +794,7 @@ var Es = Catalog{
 	StatusHired:      "Contratada",
 	StatusClosed:     "Cerrada",
 	StatusAssessment: "Prueba",
+	StatusOther:      "Otras",
 
 	// Additional UI strings
 	NoData:        "Sin datos",

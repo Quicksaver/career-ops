@@ -55,7 +55,7 @@ import { findingFingerprint } from './lib/verification-review.mjs';
 import { checkTrackerSync } from './tracker-sync-check.mjs';
 import { normalizeStatus } from './followup-cadence.mjs';
 import { checkFollowupsSchema } from './stats.mjs';
-import { loadCanonicalStates } from './tracker-utils.mjs';
+import { loadCanonicalStates, stripStatusDecoration } from './tracker-utils.mjs';
 import { archiveReportEvidence, checkJdArchive } from './check-jd-archive.mjs';
 import { machineSummarySection } from './lib/machine-summary-section.mjs';
 
@@ -298,9 +298,9 @@ if (!JSON_OUTPUT) {
 // --- Check 1: Canonical statuses ---
 let badStatuses = 0;
 for (const e of entries) {
-  const clean = e.status.replace(/\*\*/g, '').trim().toLowerCase();
-  // Strip trailing dates
-  const statusOnly = clean.replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
+  // The bold and the date have checks of their own below. This one asks whether
+  // the state under them is known, as every reader resolves it.
+  const statusOnly = stripStatusDecoration(e.status).toLowerCase();
 
   if (!CANONICAL_STATUSES.has(statusOnly) && !ALIASES[statusOnly]) {
     error(`#${e.num}: Non-canonical status "${e.status}"`, "run node normalize-statuses.mjs (maps known aliases); for an unknown word set a state from templates/states.yml with node set-status.mjs <report#|company> <State>", 'noncanonical_status', `noncanonical-status:${e.num}`, { tracker_num: e.num, status: e.status });

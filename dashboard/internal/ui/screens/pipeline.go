@@ -193,6 +193,7 @@ const (
 	filterDiscarded  = "discarded"
 	filterAssessment = "assessment"
 	filterTop        = "top"
+	filterOther      = "other"
 )
 
 type pipelineTab struct {
@@ -213,6 +214,7 @@ func getPipelineTabs() []pipelineTab {
 		{filterClosed, i18n.Current.TabClosed},
 		{filterDiscarded, i18n.Current.TabDiscarded},
 		{filterSkip, i18n.Current.TabSkip},
+		{filterOther, i18n.Current.TabOther},
 	}
 }
 
@@ -727,20 +729,14 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		return m, m.LoadVisibleReports()
 
 	case "f", "right", "l":
-		m.activeTab++
-		if m.activeTab >= len(getPipelineTabs()) {
-			m.activeTab = 0
-		}
+		m.stepTab(1)
 		m.applyFilterAndSort()
 		m.cursor = 0
 		m.scrollOffset = 0
 		return m, m.LoadVisibleReports()
 
 	case "left", "h":
-		m.activeTab--
-		if m.activeTab < 0 {
-			m.activeTab = len(getPipelineTabs()) - 1
-		}
+		m.stepTab(-1)
 		m.applyFilterAndSort()
 		m.cursor = 0
 		m.scrollOffset = 0
@@ -1426,8 +1422,48 @@ func matchesSearch(app model.CareerApplication, query string) bool {
 	return false
 }
 
+// stepTab moves the active tab by delta, wrapping, and skips Other when that
+// bucket is empty so a clean tracker never lands on a blank tab.
+func (m *PipelineModel) stepTab(delta int) {
+	tabs := getPipelineTabs()
+	n := len(tabs)
+	if n == 0 || delta == 0 {
+		return
+	}
+	next := m.activeTab
+	for range n {
+		next += delta
+		if next >= n {
+			next = 0
+		} else if next < 0 {
+			next = n - 1
+		}
+		if tabs[next].filter == filterOther && m.countForFilter(filterOther) == 0 {
+			continue
+		}
+		m.activeTab = next
+		return
+	}
+}
+
+// clampActiveTab keeps the selection on a tab the tracker can show.
+func (m *PipelineModel) clampActiveTab() {
+	tabs := getPipelineTabs()
+	if len(tabs) == 0 {
+		m.activeTab = 0
+		return
+	}
+	if m.activeTab < 0 || m.activeTab >= len(tabs) {
+		m.activeTab = 0
+	}
+	if tabs[m.activeTab].filter == filterOther && m.countForFilter(filterOther) == 0 {
+		m.activeTab = 0
+	}
+}
+
 // applyFilterAndSort rebuilds the filtered list from apps.
 func (m *PipelineModel) applyFilterAndSort() {
+	m.clampActiveTab()
 	var filtered []model.CareerApplication
 
 	currentFilter := getPipelineTabs()[m.activeTab].filter
@@ -1439,6 +1475,10 @@ func (m *PipelineModel) applyFilterAndSort() {
 		switch currentFilter {
 		case filterAll:
 			filtered = append(filtered, app)
+		case filterOther:
+			if !data.IsCanonicalStatusName(norm) {
+				filtered = append(filtered, app)
+			}
 		default:
 			if norm == currentFilter {
 				filtered = append(filtered, app)
@@ -1777,10 +1817,15 @@ func (m PipelineModel) renderHeaderTabs(maxWidth int) string {
 func (m PipelineModel) renderPlainHeaderTabs(maxWidth int) string {
 	tabs := getPipelineTabs()
 	labels := make([]string, 0, len(tabs))
+	active := ""
 	for i, tab := range tabs {
+		if m.tabHidden(i) {
+			continue
+		}
 		label := tab.label
 		if i == m.activeTab {
 			label = "[" + label + "]"
+			active = label
 		}
 		labels = append(labels, label)
 	}
@@ -1788,13 +1833,22 @@ func (m PipelineModel) renderPlainHeaderTabs(maxWidth int) string {
 	if lipgloss.Width(joined) <= maxWidth {
 		return joined
 	}
-	return truncateCells(labels[m.activeTab], maxWidth)
+	return truncateCells(active, maxWidth)
+}
+
+// tabHidden reports whether tab i stays off the header: an empty Other tab is
+// not a place to land, so it shows only while it has rows or is selected.
+func (m PipelineModel) tabHidden(i int) bool {
+	return getPipelineTabs()[i].filter == filterOther && i != m.activeTab && m.countForFilter(filterOther) == 0
 }
 
 func (m PipelineModel) renderHeaderTabsWithCounts(showCounts bool) string {
 	var tabs []string
 
 	for i, tab := range getPipelineTabs() {
+		if m.tabHidden(i) {
+			continue
+		}
 		label := tab.label
 		if showCounts {
 			label = fmt.Sprintf("%s:%d", tab.label, m.countForFilter(tab.filter))
@@ -1824,6 +1878,10 @@ func (m PipelineModel) countForFilter(filter string) int {
 		switch filter {
 		case filterAll:
 			count++
+		case filterOther:
+			if !data.IsCanonicalStatusName(norm) {
+				count++
+			}
 		default:
 			if norm == filter {
 				count++
@@ -2296,6 +2354,9 @@ func dashboardDate(app model.CareerApplication) string {
 	return app.Date
 }
 
+// renderPreview renders the selected application's details within the current terminal width.
+// @param None.
+// @returns The newline-separated preview.
 func (m PipelineModel) renderPreview() string {
 	app, ok := m.CurrentApp()
 	if !ok {
@@ -2354,8 +2415,18 @@ func (m PipelineModel) renderPreview() string {
 				labelStyle.Render("Archetype: ")+valueStyle.Render(summary.archetype)))
 		}
 		if summary.tldr != "" {
+			label := "TL;DR: "
+			value := summary.tldr
+			valueWidth := max(0, m.width-4-ansi.StringWidth(label))
+			if ansi.StringWidth(value) > valueWidth {
+				if valueWidth <= ansi.StringWidth("...") {
+					value = ansi.Truncate(value, valueWidth, "")
+				} else {
+					value = ansi.Truncate(value, valueWidth, "...")
+				}
+			}
 			lines = append(lines, padStyle.Render(
-				labelStyle.Render("TL;DR: ")+valueStyle.Render(summary.tldr)))
+				labelStyle.Render(label)+valueStyle.Render(value)))
 		}
 		if summary.comp != "" {
 			lines = append(lines, padStyle.Render(

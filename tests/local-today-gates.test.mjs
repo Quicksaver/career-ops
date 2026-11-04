@@ -317,15 +317,20 @@ test('rejection-latency still flags once the local window HAS elapsed', () => {
 
 /**
  * The argument list of every `appendToScanHistory(...)` CALL in `src`,
- * paren-matched over CODE positions only.
+ * paren-matched over CODE positions only. `appendUnrecordedToScanHistory` is
+ * the same writer for a scanner's skip buckets (date second, as here), so its
+ * calls count too: otherwise moving a scanner's skip rows onto it would take
+ * them out of this census.
  *
- * `(?<!function )` skips the definition in scan.mjs — its own `date` parameter
- * is not stamped by anything and would read as an offender.
+ * `(?<!function )` skips the definitions in scan.mjs — their own `date`
+ * parameter is not stamped by anything and would read as an offender.
  */
+const SCAN_HISTORY_WRITER = /(?<!function )\b(?:appendToScanHistory|appendUnrecordedToScanHistory)\s*\(/g;
+
 function scanHistoryCallArgs(src) {
   const isCode = codeMask(src);
   const calls = [];
-  for (const m of src.matchAll(/(?<!function )\bappendToScanHistory\s*\(/g)) {
+  for (const m of src.matchAll(SCAN_HISTORY_WRITER)) {
     const open = m.index + m[0].length - 1;
     if (!isCode[m.index]) continue;            // the name itself is in a string or comment
     let depth = 0;
@@ -415,12 +420,15 @@ test('the scanner resolves every call the four known writers contain', () => {
   // scan.mjs went 5 → 7 when the location and posting-age cuts started
   // recording what they drop (`skipped_location`, `skipped_age`), the fork's
   // reopened closed-duplicate audit row made it 8, the title cut made it 9
-  // (`skipped_title`, #2695), and the experience filter made it 10
-  // (`skipped_experience`). The fork's scan-hn.mjs delegates to scan.mjs, so
-  // it has no call site of its own.
-  for (const [file, expected] of [['scan.mjs', 10], ['scan-ats-full.mjs', 1], ['scan-hn.mjs', 0], ['scan-interamt.mjs', 5]]) {
+  // (`skipped_title`, #2695), the experience filter made it 10
+  // (`skipped_experience`), and appendUnrecordedToScanHistory, whose body is
+  // one more call, made it 11 when it took over the sibling scanners' skip
+  // buckets. scan-interamt.mjs stayed at 5: its four skip writes moved onto that
+  // helper, which this counts as the same writer. The fork's scan-hn.mjs
+  // delegates to scan.mjs, so it has no call site of its own.
+  for (const [file, expected] of [['scan.mjs', 11], ['scan-ats-full.mjs', 1], ['scan-hn.mjs', 0], ['scan-interamt.mjs', 5]]) {
     const src = readFileSync(join(ROOT, file), 'utf-8');
-    const naive = [...src.matchAll(/(?<!function )\bappendToScanHistory\s*\(/g)].length;
+    const naive = [...src.matchAll(SCAN_HISTORY_WRITER)].length;
     assert.equal(naive, expected, `${file}: expected ${expected} call sites, source has ${naive} — update this expectation deliberately`);
     assert.equal(scanHistoryCallArgs(src).length, expected, `${file}: the mask hid ${expected - scanHistoryCallArgs(src).length} call(s)`);
   }

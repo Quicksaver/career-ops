@@ -31,4 +31,5 @@ Diese Fähigkeiten setzen voraus, dass die folgenden Dateien vorhanden sind (car
 | `users/{USER}/interview-prep/question-bank.md` | Fragendatenbank mit Lückenverfolgung (wird bei der ersten Nutzung angelegt) |
 | `users/{USER}/interview-prep/interview-prep-guide.md` | Allgemeine Interviewprinzipien (optional) |
 | `users/{USER}/interview-prep/{company}-{role}.md` | rollenspezifische Vorbereitungsdatei |
+| `users/{USER}/interview-prep/sessions/*.md` | Transkripte pro Runde; optionales `stated_priorities`-Front-Matter (vom Interviewer genannte Prioritäten der Rolle), geschrieben von der Nachbesprechung, gelesen vom Vorbereitungsplaner und vom Übungsinterview |
 | `users/{USER}/interview-prep/retracted-claims.md` | Aussagen, die der Kandidat als nicht vertretbar verworfen hat. Feste Sperre bei Übungsinterviews und Nachbesprechungen (Format: `**"[claim]"** ([context]). Grund: [one-line reason + correct framing if applicable].`) |
