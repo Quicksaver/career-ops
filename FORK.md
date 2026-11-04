@@ -4,12 +4,28 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `20b9fd3a9c86d28c847e021f4dbbe93ce9a39a00`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `468dda1fd79acbf6f79d9cc16337ce784d6a5d39`, the upstream integration at `20b9fd3a` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `305`.
-- Diff size against the incorporated base at that snapshot: `925 files changed, 39796 insertions(+), 10514 deletions(-)`.
+- Incorporated upstream base: `c45f766915bfd677df987feb4a651203bcab38df`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `094e3992eaaf1241b7f020cf0563a94e3f289512`, the upstream integration at `c45f7669` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `307`.
+- Diff size against the incorporated base at that snapshot: `933 files changed, 40177 insertions(+), 10873 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
+
+## Upstream integration at c45f7669
+
+This update incorporates the 71 commits from `20b9fd3a9c86d28c847e021f4dbbe93ce9a39a00` through `c45f766915bfd677df987feb4a651203bcab38df`, main-branch work with no new release tag. Seventy-six files conflicted, 53 of them localized modes. The `run` lanes needed no queue, answer or recovery change.
+
+- **GermanTechJobs (#6346).** Both sides added `providers/germantechjobs.mjs`. Upstream reads the board-wide RSS feed, which carries no location; the fork reads the jobsLight JSON catalog through `providers/_custom.mjs`, with city, workplace, salary bounds and tech tags. The merged module routes an entry that names the catalog (`api: https://germantechjobs.de/api/jobsLight` or `api_provider: germantechjobs`) to the fork's parser and every other `provider: germantechjobs` entry to upstream's feed, so upstream's `tests/providers/germantechjobs.test.mjs` and the fork contract suite both pass. Both users' entries name the catalog.
+- **Working Nomads dates (#6274).** `providers/workingnomads.mjs` keeps the fork's version, which already emits `postedAt` from `pub_date`.
+- **Board cache (#6105).** `scan.mjs` keeps upstream's 15-minute board-response cache under `activeDataRoot`, the selected user's root, rather than the import-time `DATA_ROOT`. `DATA_CONTRACT.md` lists `users/{USER}/data/cache/http/`. Upstream's `appendUnrecordedToScanHistory` sits beside the fork's scan-handoff writer; the fork's blacklist path stays per user, and `tests/local-today-gates.test.mjs` counts 11 scan-history call sites in `scan.mjs`.
+- **Misspelled portals keys (#6107).** Both users' top-level keys pass `portalTopLevelTypos()`. Upstream's `tests/portals-top-level-typo.test.mjs`, `tests/eval-score-summary.test.mjs` and `tests/openai-eval-stream-usage.test.mjs` clear the inherited environment, so they set `CAREER_OPS_USER: 'fixture'` beside `CAREER_OPS_ROOT`.
+- **User-layer CV templates in the web prompt (#5777).** Upstream names a data-root template relative to the worker's cwd. The fork's web worker runs from the checkout and the web process sets no `CAREER_OPS_USER`, so `resolveCvTemplate(coreRoot, { userRoot })` keeps its options object, passes the selected user's `data/templates` to `resolveTemplate()` as `userDir` (`forkUserTemplatesDir()` in `web/src/lib/core/cv-template.mjs`), and `templateFile()` in `web/src/lib/run-prompts.mjs` makes the path absolute under `userRoot`. `web/tests/lib/cv-template.test.mjs` keeps upstream's user-layer case with those expectations.
+- **Stock-wording gate (#6178) and page budget from the profile (#6325).** Both live in `generate-pdf.mjs` and `generate-latex.mjs`, so batch, interactive and web renders reach them. `cv-voice.mjs` reads `voice-dna.md` and `config/cv-facts.json` from the render's per-user workspace. `cv-voice.mjs` and `linkedin-import.mjs` are registered in `lib/update-manifest.mjs`, which otherwise keeps the fork's version.
+- **Modes.** The interview, apply and `_shared.md` re-syncs take upstream's content with `users/{USER}/` paths and `--user {USER}` on script calls; `tests/debrief-sync.test.mjs` expects `node debrief-sync.mjs --user {USER} --app <tracker#>`. The English Sources of Truth table names `users/{USER}/cv.md` in its File column, because `tests/localized-guardrails.test.mjs` requires every localized exclusivity rule to contain each File-column name.
+- **Dashboard (#6142, #6367, #6470, #5873).** Upstream's OTHER tab for unknown statuses is the last tab in `dashboard/internal/ui/screens/pipeline.go`, after the fork's CLOSED, DISCARDED and SKIP tabs. The fork's inline header tabs hide it while it is empty and not selected, and `Closed` and `Assessment` count as canonical (`IsCanonicalStatusName` in `internal/data/career.go`), so they never land there. A row with an empty status, previously on no tab, now shows there. Upstream's separate tab row, metrics strip and sort bar are not taken, and `pipeline_other_status_test.go` checks the header renderers instead. The TL;DR is cut by characters on the fork's sanitized `details.TlDr`.
+- **keyword-match, docs.** `README.md` takes upstream's command tables by stage, names the user in the mode-asking table, and adds the fork's `run`, `scan-handoff`, `scan-auth` and `verify` rows that `tests/readme-usage-commands.test.mjs` requires. New `docs/SCRIPTS.md` entries carry `--user {USER}`, and `tests/scan-runs-doc.test.mjs` reads the fork's `## users/{USER}/data/scan-runs.tsv` heading.
+
+Validation: Go build, vet and tests pass in `dashboard/`. `node test-all.mjs --quick --jobs 6` reported 22,656 passed and 4 failed. Three were batch suites cut off at 120s; run one at a time with `node --test --test-concurrency=1`, the batch, `run` and split-root suites pass all 134 tests, including the `run` lanes through the real Git Bash runner. The fourth is upstream's Windows EPERM in the web painter test, unchanged. `verify-pipeline.mjs` reports 0 errors for both users.
 
 ## Upstream integration at 20b9fd3a
 
