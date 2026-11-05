@@ -4,16 +4,16 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `c45f766915bfd677df987feb4a651203bcab38df`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `094e3992eaaf1241b7f020cf0563a94e3f289512`, the upstream integration at `c45f7669` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `307`.
-- Diff size against the incorporated base at that snapshot: `933 files changed, 40177 insertions(+), 10873 deletions(-)`.
+- Incorporated upstream base: `d3fc7d1b2766ca0cc46ca87f2ac92561f00c550d`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `9e9144b2a994b62f26ea16aeb9d7fcdc499aa451`, the upstream integration at `d3fc7d1b` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `309`.
+- Diff size against the incorporated base at that snapshot: `936 files changed, 40254 insertions(+), 10924 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
 ## Upstream integration at d3fc7d1b
 
-This update incorporates the 45 commits from `c45f766915bfd677df987feb4a651203bcab38df` through `d3fc7d1b`, released as career-ops v1.39.0 and web v0.17.0. Seventeen files conflicted. The `run` lanes needed no queue, answer or recovery change.
+This update incorporates the 45 commits from `c45f766915bfd677df987feb4a651203bcab38df` through `d3fc7d1b2766ca0cc46ca87f2ac92561f00c550d`, released as career-ops v1.39.0 and web v0.17.0. Seventeen files conflicted. The `run` lanes needed no queue, answer or recovery change.
 
 - **Browser override (#6415).** Upstream's `lib/browser-launch.mjs` resolves `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` and `CAREER_OPS_BROWSER_AUTODETECT` from the shell, then from the data root's `.env`. Its default data root comes from `getCareerOpsRoot()`, which throws in this fork when no user is selected, and `check-liveness.mjs <url>` and the batch workers' liveness fallback launch a browser without one. `defaultProjectRoot()` returns `null` for that one error, and the resolver then reads the shell settings alone. The fork's stateless scrapers in `providers/_custom.mjs` (devjobs.de, rustjobs) use the same override. `scan-auth.mjs` and `recover-linkedin-holds.mjs` keep the bundled Chromium on purpose, because the saved session profile belongs to the binary that created it.
 - **Lane inbox (#6379).** `scan.mjs` resolves a relative `CAREER_OPS_PIPELINE` or `CAREER_OPS_SCAN_HISTORY` against the selected user's data root instead of the cwd, so the scanner and the pipeline mode name the same file. `pipelineRunHint(lane, userId)` keeps the user in the closing hint. `modes/pipeline.md` runs the inbox query as `CAREER_OPS_USER={USER} node --input-type=module -e …`, and `tests/pipeline-lane-inbox.test.mjs` expects that prefix and the data-root path.
@@ -22,6 +22,9 @@ This update incorporates the 45 commits from `c45f766915bfd677df987feb4a651203bc
 - **Factorial ATS (#6394).** `providers/factorial.mjs` reads tenant boards directly. Both users' Factorial entries moved off web search to the provider and stay disabled (see the report for the probe).
 - **Translated READMEs.** The re-synced Usage sections (ta, cn, ko-KR, pt-BR, zh-TW, de, fr, da, pl, tr, ar) take upstream's text without per-user adaptation; only `README.md` carries the fork's `<username>` usage.
 - **Localized interview modes.** The fr and ua provenance re-syncs take upstream's text with `users/{USER}/` paths and `--user {USER}` on `story-provenance-check.mjs` and `invite-match.mjs`.
+- **Source-text and ratchet tests.** `tests/browser-launch.test.mjs` also accepts the fork's dynamic `scan.mjs` import in `openrouter-runner.mjs`, which keeps `--help` user-free and still destructures the pre-dotenv `BROWSER_PROCESS_ENV`. `match-star.mjs` and `openrouter-runner.mjs` both handle `--help`, so they left `KNOWN_WITHOUT_HELP` in `tests/help-flag-handled.test.mjs`.
+
+Validation: `node test-all.mjs --quick --jobs 6` reported 23,724 passed and 8 failed. Five were the batch and `run` suites killed at 120s under parallel load, which pass alone (102/102 with `--test-concurrency=1`, through Git Bash); one is upstream's Windows EPERM in the web painter test; the OpenRouter source check and the help ratchet were fixed as above. `verify-pipeline` reports 0 errors for both users and every enabled portal entry resolves to a provider.
 
 ## Upstream integration at c45f7669
 
