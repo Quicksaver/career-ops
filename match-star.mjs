@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { getUserContext, printUserContextErrorAndExit, userPath } from './lib/user-context.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
+import { flagValue, safeIntFlag, validateFlags } from './lib/cli-flags.mjs';
 import { parseStories, splitStoryBlocks, isValidStory } from './lib/story-bank.mjs';
 
 /**
@@ -46,6 +47,19 @@ function resolveUserInputPath(inputPath, activeUserContext) {
 }
 
 const UNCONFIRMED = '[unconfirmed figure]';
+
+const USAGE = `Usage: node match-star.mjs --user <username> "<behavioural question>" [--jd <file>] [--top <n>]
+       node match-star.mjs --user <username> --list
+
+  --user <id>   The career-ops user whose story bank to read
+  --jd <file>   Also score the stories against this JD
+  --top <n>     Print the n best matches (default 1)
+  --list        List the stories in the bank with their tags
+  --help, -h    Show this help`;
+// --user is taken out of argv by getUserContext before validateFlags runs; it
+// is listed so the documented flags and the accepted ones agree.
+const KNOWN_FLAGS = ['--user', '--jd', '--top', '--list', '--help', '-h'];
+const VALUE_FLAGS = ['--user', '--jd', '--top'];
 
 // ── Parser ───────────────────────────────────────────────────────────
 // parseStories lives in lib/story-bank.mjs so every story-bank reader shares
@@ -217,25 +231,25 @@ try {
   printUserContextErrorAndExit(err);
 }
 
+// flagValue() reads `--jd=jds/acme.md` as well as `--jd jds/acme.md`. The
+// indexOf() lookup this replaces saw only the second, so the first ran without
+// the JD, and `--top=2` printed one match.
 const args       = initialContext.args;
 const LIST_MODE  = args.includes('--list');
-const jdFlag     = args.indexOf('--jd');
-const jdPath     = jdFlag !== -1 ? args[jdFlag + 1] : null;
-const topFlag    = args.indexOf('--top');
-const topRaw     = topFlag !== -1 ? parseInt(args[topFlag + 1], 10) : NaN;
-const TOP_N      = Number.isInteger(topRaw) && topRaw > 0 ? topRaw : 1;
+const jdPath     = flagValue(args, '--jd') ?? null;
+const TOP_N      = safeIntFlag(flagValue(args, '--top'), 1) || 1;
 // Exclude flag operands by index position, not by value, to preserve repeated text in the question
-const excludeIdx = new Set([
-  ...(jdFlag  !== -1 ? [jdFlag + 1]  : []),
-  ...(topFlag !== -1 ? [topFlag + 1] : []),
-]);
+const excludeIdx = new Set(args.flatMap((a, i) => (VALUE_FLAGS.includes(a) ? [i + 1] : [])));
 const question = args
   .filter((a, i) => !a.startsWith('--') && !excludeIdx.has(i))
   .join(' ').trim();
 
+// Before the story bank is read: a mistyped flag was dropped and its value
+// joined the question, and --help without a bank printed the missing-bank error.
+validateFlags(args, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS, requireOperand: true });
+
 if (!LIST_MODE && !question) {
-  console.error('Usage: node match-star.mjs --user <username> "<behavioural question>" [--jd <file>] [--top <n>]');
-  console.error('       node match-star.mjs --user <username> --list');
+  console.error(USAGE);
   process.exit(1);
 }
 

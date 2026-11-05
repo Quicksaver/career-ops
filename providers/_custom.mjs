@@ -10,6 +10,7 @@ import { safeEncodeURIComponent } from './_safe-url.mjs';
 import { fetchJsonWithRetry, fetchResponseWithRetry, fetchTextWithRetry, makeHttpCtx, sleep, BROWSER_LIKE_USER_AGENT } from './_http.mjs';
 import { decodeEntities as decodeHtmlEntities } from './_html-entities.mjs';
 import { htmlToText } from './_html-to-text.mjs';
+import { browserLaunchOptions } from '../lib/browser-launch.mjs';
 
 // Keep the context scoped to one async provider call, including parallel detail
 // work. Concurrent users and probes never share transport or request budgets.
@@ -2556,7 +2557,7 @@ async function fetchDevJobsDeJobs(url, company) {
   const listUrls = company._api?.devjobsde?.listUrls || [url];
   const maxPages = pageLimit(company._api?.devjobsde?.maxPages || DEVJOBSDE_MAX_PAGES);
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch(browserLaunchOptions({ headless: true }));
 
   try {
     const context = await browser.newContext({
@@ -2795,7 +2796,7 @@ async function fetchRustJobsPages(url, company) {
   const listUrls = company._api?.rustjobs?.listUrls || [url];
   const maxPages = pageLimit(company._api?.rustjobs?.maxPages || RUSTJOBS_MAX_PAGES);
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch(browserLaunchOptions({ headless: true }));
 
   try {
     const context = await browser.newContext({

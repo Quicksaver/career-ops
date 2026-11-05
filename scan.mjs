@@ -147,7 +147,14 @@ import { checkLivenessViaApi } from './liveness-api.mjs';
 import { resolveExperienceFilter, applyExperienceFilter } from './jd-years.mjs';
 
 const CODE_ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DATA_ROOT = getCareerOpsRoot();
+export const DATA_ROOT = getCareerOpsRoot();
+// Preserve the actual shell environment before dotenv adds data-root values to
+// process.env. The browser resolver uses this snapshot to distinguish an
+// explicit shell path (which keeps cwd-relative behavior) from a path read from
+// DATA_ROOT/.env (which must resolve relative to that file's directory). The
+// helper also retains Windows' case-insensitive environment lookup when the
+// result becomes an ordinary object.
+export const BROWSER_PROCESS_ENV = snapshotBrowserProcessEnv();
 
 try {
   const { config } = await import('dotenv');
@@ -164,14 +171,30 @@ const parseYaml = loadYaml;
 
 // ── Config ──────────────────────────────────────────────────────────
 import { resolveTrackerPath, resolveTrackerPathForWrite } from './path-resolver.mjs';
+import { browserLaunchOptions, snapshotBrowserProcessEnv } from './lib/browser-launch.mjs';
 
 export let PORTALS_PATH = process.env.CAREER_OPS_PORTALS ? path.resolve(process.env.CAREER_OPS_PORTALS) : path.join(DATA_ROOT, 'portals.yml');
 let activeDataRoot = DATA_ROOT;
 // An explicit override wins; otherwise the root fixed above, since the .env just
 // loaded may name another CAREER_OPS_ROOT that getProfilePath() would follow.
 let PROFILE_PATH = hasProfileOverride() ? getProfilePath() : getProfilePath(DATA_ROOT);
-export let SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY ? path.resolve(process.env.CAREER_OPS_SCAN_HISTORY) : path.join(DATA_ROOT, 'data/scan-history.tsv');
-export let PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE ? path.resolve(process.env.CAREER_OPS_PIPELINE) : path.join(DATA_ROOT, 'data/pipeline.md');
+// A lane path is user data, so a relative one names a file in the data root,
+// the folder the pipeline mode resolves the same name in (#6379).
+export let SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY ? path.resolve(DATA_ROOT, process.env.CAREER_OPS_SCAN_HISTORY) : path.join(DATA_ROOT, 'data/scan-history.tsv');
+export let PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE ? path.resolve(DATA_ROOT, process.env.CAREER_OPS_PIPELINE) : path.join(DATA_ROOT, 'data/pipeline.md');
+
+// The closing hint names the lane's inbox when CAREER_OPS_PIPELINE is set.
+// `/career-ops pipeline` alone reads data/pipeline.md unless the agent's own
+// environment carries the same variable, so a lane run that only says "run
+// pipeline" sends the user to the other lane's inbox (#6379). Fork: the hint
+// also names the user the scan ran for.
+export function pipelineRunHint(lane = process.env.CAREER_OPS_PIPELINE, userId = '') {
+  const file = lane?.trim();
+  const command = ['/career-ops pipeline', userId, file].filter(Boolean).join(' ');
+  return file
+    ? `→ Run ${command} to evaluate new offers (this lane's inbox, not data/pipeline.md).`
+    : `→ Run ${command} to evaluate new offers.`;
+}
 export let APPLICATIONS_PATH = resolveTrackerPath(DATA_ROOT);
 let SCAN_HANDOFF_PATH = process.env.CAREER_OPS_SCAN_HANDOFF ? path.resolve(CODE_ROOT, process.env.CAREER_OPS_SCAN_HANDOFF) : path.join(DATA_ROOT, 'data/scan-handoff.json');
 let BLACKLIST_PATH = path.join(DATA_ROOT, 'data/blacklist.md');
@@ -193,10 +216,10 @@ function configureUserPaths(ctx) {
   // Keep the normal active-user defaults, while allowing explicit lane paths
   // to move those files without reintroducing root-level candidate data.
   SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY
-    ? path.resolve(process.env.CAREER_OPS_SCAN_HISTORY)
+    ? path.resolve(ctx.userRoot, process.env.CAREER_OPS_SCAN_HISTORY)
     : userPath(ctx, 'data/scan-history.tsv');
   PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE
-    ? path.resolve(process.env.CAREER_OPS_PIPELINE)
+    ? path.resolve(ctx.userRoot, process.env.CAREER_OPS_PIPELINE)
     : userPath(ctx, 'data/pipeline.md');
   APPLICATIONS_PATH = resolveTrackerPath(ctx.userRoot);
   SCAN_HANDOFF_PATH = process.env.CAREER_OPS_SCAN_HANDOFF
@@ -4132,7 +4155,12 @@ export async function verifyOffers(offers, { headedFallback = false, throttleBas
         );
       }
       try {
-        browser = await chromium.launch({ headless: true });
+        browser = await chromium.launch(
+          browserLaunchOptions(
+            { headless: true },
+            { projectRoot: DATA_ROOT, processEnv: BROWSER_PROCESS_ENV },
+          ),
+        );
       } catch (err) {
         throw new Error(
           `--verify could not launch Chromium (run "npx playwright install chromium" or re-run without --verify): ${err.message}`,
@@ -4141,7 +4169,10 @@ export async function verifyOffers(offers, { headedFallback = false, throttleBas
       }
       page = await newLivenessPage(browser);
       await installLivenessRouteGuard(page);
-      headed = headedFallback ? createHeadedPageProvider(chromium) : null;
+      headed = headedFallback ? createHeadedPageProvider(chromium, {
+        projectRoot: DATA_ROOT,
+        processEnv: BROWSER_PROCESS_ENV,
+      }) : null;
     }
     // Space only browser work, including a search after an API 404 and the
     // offer after a successful migration. API-only verdicts need no WAF delay.
@@ -5541,7 +5572,7 @@ async function main() {
   if (agentHandoff.length > 0 && !dryRun) {
     console.log(`\n→ Run /career-ops scan-handoff ${userContext.userId} to process unsupported companies.`);
   }
-  console.log(`\n→ Run /career-ops pipeline ${userContext.userId} to evaluate new offers.`);
+  console.log(`\n${pipelineRunHint(undefined, userContext.userId)}`);
   console.log('→ Share results and get help: https://discord.gg/8pRpHETxa4');
 
   if (jsonMode) {

@@ -83,6 +83,7 @@ USER_ROOT="$PWD/users/${USER}"
 REPORTS_DIR="$USER_ROOT/reports"
 TRACKER_DIR="$USER_ROOT/batch/tracker-additions"
 LOGS_DIR="$USER_ROOT/batch/logs"
+DISCARD_LOG="$LOGS_DIR/discard.log"
 ANSWERS_FILE=""
 CLI="$1"
 MAX_RETRIES=2
@@ -96,6 +97,7 @@ ${functionCode('validate_worker_json')}
 ${functionCode('worker_json_field')}
 ${functionCode('build_contract_error')}
 ${functionCode('extract_score_from_artifacts')}
+${functionCode('log_discard')}
 handle_result() {
   local id=1 url=${URL} original_url=${URL} started_at=start report_num=042 retries=0
   local exit_code=0 timed_out=false explicit_failed_retry=false terminal_failure_recorded=false
@@ -158,6 +160,8 @@ for (const cli of ['codex', 'claude']) {
     assert.equal(fields[7], `dealbreaker: ${NOTE}`);
     assert.equal(fields[8], '0');
     assert.deepEqual(released, [], 'the SKIP row holds its number until the merge');
+    const discard = readFileSync(join(logs(), 'discard.log'), 'utf8').trimEnd().split('\t');
+    assert.deepEqual(discard.slice(1), ['1', URL, `dealbreaker: ${NOTE}`], 'the skip is in the discard log (#6440)');
     assert.equal(readFileSync(join(additions(), '1.tsv'), 'utf8'), skipRow(), 'the SKIP row stays for the merge');
     assert.deepEqual(quarantined(), []);
     assert.match(output, /Skipped \(dealbreaker\)/);

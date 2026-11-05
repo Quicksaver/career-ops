@@ -11,6 +11,18 @@ Generated from:
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
+## Upstream integration at d3fc7d1b
+
+This update incorporates the 45 commits from `c45f766915bfd677df987feb4a651203bcab38df` through `d3fc7d1b`, released as career-ops v1.39.0 and web v0.17.0. Seventeen files conflicted. The `run` lanes needed no queue, answer or recovery change.
+
+- **Browser override (#6415).** Upstream's `lib/browser-launch.mjs` resolves `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` and `CAREER_OPS_BROWSER_AUTODETECT` from the shell, then from the data root's `.env`. Its default data root comes from `getCareerOpsRoot()`, which throws in this fork when no user is selected, and `check-liveness.mjs <url>` and the batch workers' liveness fallback launch a browser without one. `defaultProjectRoot()` returns `null` for that one error, and the resolver then reads the shell settings alone. The fork's stateless scrapers in `providers/_custom.mjs` (devjobs.de, rustjobs) use the same override. `scan-auth.mjs` and `recover-linkedin-holds.mjs` keep the bundled Chromium on purpose, because the saved session profile belongs to the binary that created it.
+- **Lane inbox (#6379).** `scan.mjs` resolves a relative `CAREER_OPS_PIPELINE` or `CAREER_OPS_SCAN_HISTORY` against the selected user's data root instead of the cwd, so the scanner and the pipeline mode name the same file. `pipelineRunHint(lane, userId)` keeps the user in the closing hint. `modes/pipeline.md` runs the inbox query as `CAREER_OPS_USER={USER} node --input-type=module -e …`, and `tests/pipeline-lane-inbox.test.mjs` expects that prefix and the data-root path.
+- **Discard log for every skip (#6440).** `log_discard` in `batch/batch-runner.sh` keeps the fork's `LOGS_DIR`/`DISCARD_LOG` fallbacks and takes upstream's non-fatal append. The fork's dealbreaker validation is kept and now logs the accepted skip; `tests/batch-dealbreaker-skip.test.mjs` asserts the discard line.
+- **`match-star.mjs` flags (#6451).** Upstream's `validateFlags`/`flagValue` parsing runs on the args left after `--user`, before the story bank is read, and the usage names `--user`.
+- **Factorial ATS (#6394).** `providers/factorial.mjs` reads tenant boards directly. Both users' Factorial entries moved off web search to the provider and stay disabled (see the report for the probe).
+- **Translated READMEs.** The re-synced Usage sections (ta, cn, ko-KR, pt-BR, zh-TW, de, fr, da, pl, tr, ar) take upstream's text without per-user adaptation; only `README.md` carries the fork's `<username>` usage.
+- **Localized interview modes.** The fr and ua provenance re-syncs take upstream's text with `users/{USER}/` paths and `--user {USER}` on `story-provenance-check.mjs` and `invite-match.mjs`.
+
 ## Upstream integration at c45f7669
 
 This update incorporates the 71 commits from `20b9fd3a9c86d28c847e021f4dbbe93ce9a39a00` through `c45f766915bfd677df987feb4a651203bcab38df`, main-branch work with no new release tag. Seventy-six files conflicted, 53 of them localized modes. The `run` lanes needed no queue, answer or recovery change.

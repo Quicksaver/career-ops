@@ -886,14 +886,20 @@ resolve_worker_model() {
 # Append a one-line, auditable record of a pre-screen-gate discard to
 # batch/logs/discard.log (see modes/batch.md — Pre-screen gate). Format:
 # {ISO8601 timestamp}\t{job id}\t{url}\t{reason}
+#
+# Callers write the "skipped" state first and call this only when that state
+# (or its recovery record) was written, so the same id, url and reason are on
+# disk. A failed append is therefore reported, not fatal: the record can be
+# rebuilt from state instead of aborting the run.
 log_discard() {
   local id="$1" url="$2" reason="$3"
   local logs_dir="${LOGS_DIR:-$SCRIPT_DIR/logs}"
   local discard_log="${DISCARD_LOG:-$logs_dir/discard.log}"
-  mkdir -p "$logs_dir"
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '%s\t%s\t%s\t%s\n' "$ts" "$id" "$url" "$reason" >> "$discard_log"
+  if ! { mkdir -p "$logs_dir" && printf '%s\t%s\t%s\t%s\n' "$ts" "$id" "$url" "$reason" >> "$discard_log"; } 2>/dev/null; then
+    echo "    ⚠️  Could not append to $discard_log for #$id; its skipped state record keeps the reason" >&2
+  fi
 }
 
 
@@ -2250,6 +2256,7 @@ process_offer() {
       # holds it, so releasing now would hand it to the next job before the
       # merge. merge_tracker releases it once the row is in the tracker.
       update_state_retrying "$id" "$original_url" skipped "$started_at" "$completed_at" "$report_num" "-" "dealbreaker: $skip_note" "$retries" || return 2
+      log_discard "$id" "$original_url" "dealbreaker: $skip_note"
       echo "    ⏭️  Skipped (dealbreaker): $original_url — $skip_note"
       return 0
     fi
@@ -2302,7 +2309,11 @@ process_offer() {
       # LC_ALL=C: under a non-English locale awk parses "4.5" as 4, so the
       # MIN_SCORE comparison would silently run on truncated integers.
       if LC_ALL=C awk -v score="$score" -v min="$MIN_SCORE" 'BEGIN{exit !(score < min)}'; then
-        update_state_retrying "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$score" "below-min-score" "$retries" || true
+        local score_state_rc=0
+        update_state_retrying "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$score" "below-min-score" "$retries" || score_state_rc=$?
+        if (( score_state_rc != 2 )); then
+          log_discard "$id" "$url" "below-min-score"
+        fi
         release_report_num "$report_num"
         echo "    ⏭️  Skipped (score: $score < min-score: $MIN_SCORE)"
         return 0

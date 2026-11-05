@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
 import { pathIsInsideCanonical } from './tracker-utils.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
+import { browserLaunchOptions } from './lib/browser-launch.mjs';
 
 /**
  * img-to-pdf.mjs — Screenshot/image -> single-page PDF via Playwright
@@ -130,7 +131,7 @@ export async function convertImageToPdf(inputPath, outputPath, { force = false }
 
   await mkdir(dirname(outputPath), { recursive: true });
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch(browserLaunchOptions({ headless: true }));
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'load' });

@@ -43,6 +43,7 @@ import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { browserLaunchOptions } from './lib/browser-launch.mjs';
 
 const USAGE = `Usage:
   node check-liveness.mjs [--json] [--no-fallback] [--throttle[=ms]] [--no-record] <url1> [url2] ...
@@ -332,7 +333,7 @@ async function main() {
   async function ensureBrowser() {
     if (browser) return;
     const { chromium } = await import('playwright');
-    const launched = await chromium.launch({ headless: true });
+    const launched = await chromium.launch(browserLaunchOptions({ headless: true }));
     try {
       page = await newLivenessPage(launched);
       headed = noFallback ? null : createHeadedPageProvider(chromium);
