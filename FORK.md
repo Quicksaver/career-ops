@@ -4,16 +4,16 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `d3fc7d1b2766ca0cc46ca87f2ac92561f00c550d`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `9e9144b2a994b62f26ea16aeb9d7fcdc499aa451`, the upstream integration at `d3fc7d1b` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `309`.
-- Diff size against the incorporated base at that snapshot: `936 files changed, 40254 insertions(+), 10924 deletions(-)`.
+- Incorporated upstream base: `8ce89bdc492bd17698c72c6245d0638d7af78d39`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `fd57d3c4d084036e0fef8ed41a85ad995e22e0a0`, the upstream integration at `8ce89bdc` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `311`.
+- Diff size against the incorporated base at that snapshot: `960 files changed, 40470 insertions(+), 11286 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
 ## Upstream integration at 8ce89bdc
 
-This update incorporates the 142 commits from `d3fc7d1b2766ca0cc46ca87f2ac92561f00c550d` through `8ce89bdc`, main-branch work with no new release tag (still career-ops v1.39.0, web v0.17.0). Fifty-three files conflicted, 23 of them modes. The `run` lanes needed no queue, answer or recovery change beyond the batch-state and reconcile keys below.
+This update incorporates the 142 commits from `d3fc7d1b2766ca0cc46ca87f2ac92561f00c550d` through `8ce89bdc492bd17698c72c6245d0638d7af78d39`, main-branch work with no new release tag (still career-ops v1.39.0, web v0.17.0). Fifty-three files conflicted, 23 of them modes. The `run` lanes needed no queue, answer or recovery change beyond the batch-state and reconcile keys below.
 
 - **Batch state stays per user (#6449, #6545).** Upstream's `resolveBatchStatePaths()` reads the checkout's `batch/batch-state.tsv` as well as the data root's. In this fork the runner writes only `users/{USER}/batch/batch-state.tsv`, and a stray checkout copy belongs to no user, so `path-resolver.mjs` returns the data root's file alone; `merge-tracker.mjs` (failed report numbers and the completed-job gate, `loadBatchJobs` now taking the path list) and `reserve-report-num.mjs` read it through that function. Upstream's flock state lock in `batch/batch-runner.sh` is kept, with `STATE_LOCK_FLOCK_FILE` set in `configure_user_paths` beside the user's mkdir lock.
 - **`sync-batch-input.mjs` (#5512).** Upstream's allocation lock (`batchInputLockTarget`, `canonicalInputPath`) serializes its own checkout-level CLI, which the fork replaced with a forward to `sync-pipeline-batch.mjs` under the pipeline lock. The helpers were dropped with the CLI, and `tests/sync-batch-input-alias.test.mjs` and `tests/sync-batch-input-release.test.mjs`, which drive that CLI with `--input`, were removed.
