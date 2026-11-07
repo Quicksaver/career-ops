@@ -1,6 +1,8 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
 
+import { htmlToText } from './_html-to-text.mjs';
+
 // Working Nomads provider — board-wide aggregator feed
 // (https://www.workingnomads.com/api/exposed_jobs/). Returns a JSON array of
 // postings; scan.mjs applies the configured title_filter / location_filter.
@@ -117,7 +119,7 @@ export default {
    * Fetches and normalizes postings from the Working Nomads public feed.
    * @param {{ name?: string, api?: string, careers_url?: string, api_provider?: string, api_params?: Record<string, unknown> }} entry - The job_boards entry being processed.
    * @param {{ fetchJson: (url: string, opts?: { redirect?: 'error'|'follow'|'manual' }) => Promise<any> }} ctx - HTTP context.
-   * @returns {Promise<Array<{title: string, url: string, company: string, location: string}>>}
+   * @returns {Promise<Array<{title: string, url: string, company: string, location: string, description?: string, postedAt?: number}>>}
    */
   async fetch(entry, ctx) {
     // redirect:'error' prevents SSRF via server-side redirects
@@ -139,7 +141,7 @@ export default {
         category: normalizeWhitespace(j.category_name),
         tags: splitTags(j.tags),
         publishedAt: String(j.pub_date || ''),
-        description: normalizeWhitespace(String(j.description || '').replace(/<[^>]+>/g, ' ')),
+        description: typeof j.description === 'string' ? normalizeWhitespace(htmlToText(j.description)) : '',
       }))
       .filter(job => (
         matchesQuery(filters.q, job)

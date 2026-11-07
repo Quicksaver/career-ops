@@ -34,7 +34,7 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const FIXED = [
   'calibrate.mjs', 'salary-gap.mjs', 'tracker-sync-check.mjs',
   'story-provenance-check.mjs', 'negotiation-roi.mjs', 'jd-skill-gap.mjs',
-  'fetch-jd.mjs', 'seed-fixture.mjs', 'match-star.mjs',
+  'fetch-jd.mjs', 'seed-fixture.mjs', 'batch-evaluate-gemini.mjs', 'match-star.mjs',
 ];
 
 // ── Isolation ───────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ test('-h is accepted wherever --help is, and suppresses the same work', () => {
 // Each of these has the same defect the six fixed here had: an unrecognised
 // flag is discarded, so `--help` falls through and the script runs.
 const KNOWN_WITHOUT_HELP = new Set([
-  'batch-evaluate-gemini.mjs', 'cv-templates.mjs',
+  'cv-templates.mjs',
   'generate-cover-letter.mjs', 'generate-pdf.mjs',
   'validate-plugin-registry.mjs', 'validate-untrusted-content-coverage.mjs',
   // generate-latex.mjs and verify-portals.mjs were here and have since been

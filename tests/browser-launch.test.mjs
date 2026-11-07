@@ -38,8 +38,8 @@ if (/import\s*\{[^}]*\bbrowserLaunchOptions\b[^}]*\}\s*from\s*['"]\.\/lib\/brows
 const scanSource = readFileSync(new URL('../scan.mjs', import.meta.url), 'utf8');
 if (/export\s+const\s+DATA_ROOT\s*=\s*getCareerOpsRoot\(\)/.test(scanSource)
     && /export\s+const\s+BROWSER_PROCESS_ENV\s*=\s*snapshotBrowserProcessEnv\(\)/.test(scanSource)
-    && /browserLaunchOptions\([\s\S]*?\{\s*projectRoot:\s*DATA_ROOT,\s*processEnv:\s*BROWSER_PROCESS_ENV\s*\}/.test(scanSource)
-    && /createHeadedPageProvider\(chromium,\s*\{\s*projectRoot:\s*DATA_ROOT,\s*processEnv:\s*BROWSER_PROCESS_ENV,?\s*\}/.test(scanSource)) {
+    && /browserLaunchOptions\([\s\S]*?\{\s*projectRoot:\s*(?:DATA_ROOT|activeDataRoot),\s*processEnv:\s*BROWSER_PROCESS_ENV\s*\}/.test(scanSource)
+    && /createHeadedPageProvider\(chromium,\s*\{\s*projectRoot:\s*(?:DATA_ROOT|activeDataRoot),\s*processEnv:\s*BROWSER_PROCESS_ENV,?\s*\}/.test(scanSource)) {
   pass('scan verification preserves browser setting origin for headless and headed launches');
 } else {
   fail('scan verification does not preserve browser setting origin for every launch');

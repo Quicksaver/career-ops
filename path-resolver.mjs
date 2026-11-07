@@ -321,3 +321,17 @@ export function resolveTrackerPathForWrite(root) {
   return join(root, 'data/applications.md');
 }
 
+
+/**
+ * Every batch/batch-state.tsv to take report numbers from. In this fork the batch
+ * runner keeps its state under the selected user's data root
+ * (users/{USER}/batch/batch-state.tsv), and the checkout's batch/ holds only the
+ * shared scripts and prompts. A stray checkout copy is not any user's state, so
+ * it is never read: its failed rows would block another user's report numbers.
+ *
+ * @param {string} rootDir The career-ops data root directory
+ * @returns {string[]} The data root's batch-state.tsv; a reader skips it when it does not exist
+ */
+export function resolveBatchStatePaths(rootDir) {
+  return [resolve(rootDir, 'batch', 'batch-state.tsv')];
+}

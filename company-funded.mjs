@@ -10,6 +10,7 @@ import { BROWSER_LIKE_USER_AGENT } from './user-agent.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
+import { localToday } from './lib/local-today.mjs';
 
 /**
  * company-funded.mjs - discover recently funded companies for manual review.
@@ -18,8 +19,6 @@ import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
  * report/JSON candidate list, and never probes arbitrary company websites or
  * edits portals.yml.
  */
-
-
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = getCareerOpsRoot();
@@ -629,11 +628,13 @@ function inferredDateFromText(text, now = new Date()) {
   const raw = String(text || '');
   const year = raw.match(/\b(20\d{2})\b/)?.[1];
   if (year) {
-    const currentYear = now.getUTCFullYear();
+    // The year where the user is: the UTC year turns over hours apart from it,
+    // and a year read as the next one dates the item in the future.
+    const currentYear = now.getFullYear();
     const date = Number(year) === currentYear ? new Date(now.getTime()) : new Date(`${year}-01-01T00:00:00Z`);
     return { value: String(year), precision: 'year', date };
   }
-  return { value: now.toISOString().slice(0, 10), precision: 'observed', date: now };
+  return { value: localToday(now), precision: 'observed', date: now };
 }
 
 function bestObservedDate(item, now) {
@@ -960,7 +961,7 @@ export async function discoverFundedCompanies(opts = {}) {
   });
 
   return {
-    generated_at: isoDate(now),
+    generated_at: localToday(now),
     window_months: months,
     sort: opts.sort || DEFAULT_SORT,
     dry_run: Boolean(opts.dryRun),
@@ -968,10 +969,6 @@ export async function discoverFundedCompanies(opts = {}) {
     diagnostics,
     companies,
   };
-}
-
-function isoDate(now = new Date()) {
-  return now.toISOString().slice(0, 10);
 }
 
 async function selfTest() {

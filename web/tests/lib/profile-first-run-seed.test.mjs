@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import * as yaml from "js-yaml";
 
 import "../helpers/web-ts-alias-loader.mjs";
+// This fork resolves every data root through a selected user.
+process.env.CAREER_OPS_USER ||= "fixture";
 
 // The first profile the web writes is seeded from config/profile.example.yml, by
 // whichever of two routes saves first. config/profile.yml is the ground truth for
@@ -42,10 +44,12 @@ async function withRoot(fn) {
   mkdirSync(path.join(root, "config"));
   const previous = { root: process.env.CAREER_OPS_ROOT, code: process.env.CAREER_OPS_CODE_ROOT };
   process.env.CAREER_OPS_ROOT = root;
+  process.env.CAREER_OPS_DATA_DIR = root; // this fork reads the data root from CAREER_OPS_DATA_DIR
   process.env.CAREER_OPS_CODE_ROOT = CODE_ROOT;
   try {
     await fn(path.join(root, "config", "profile.yml"));
   } finally {
+    delete process.env.CAREER_OPS_DATA_DIR;
     if (previous.root === undefined) delete process.env.CAREER_OPS_ROOT;
     else process.env.CAREER_OPS_ROOT = previous.root;
     if (previous.code === undefined) delete process.env.CAREER_OPS_CODE_ROOT;

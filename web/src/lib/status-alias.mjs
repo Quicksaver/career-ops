@@ -69,6 +69,7 @@ export const STATUS_ALIAS = {
   iptal_edildi: "CLOSED",
   "ıptal edildi": "CLOSED",
   "ıptal_edildi": "CLOSED",
+  lapsed: "DISCARDED",
   duplicado: "DISCARDED", // web-only: not in states.yml
   repost: "DISCARDED", // web-only: not in states.yml
   // SKIP — states.yml `skip`

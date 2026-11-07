@@ -11,6 +11,40 @@ Generated from:
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
+## Upstream integration at 8ce89bdc
+
+This update incorporates the 142 commits from `d3fc7d1b2766ca0cc46ca87f2ac92561f00c550d` through `8ce89bdc`, main-branch work with no new release tag (still career-ops v1.39.0, web v0.17.0). Fifty-three files conflicted, 23 of them modes. The `run` lanes needed no queue, answer or recovery change beyond the batch-state and reconcile keys below.
+
+- **Batch state stays per user (#6449, #6545).** Upstream's `resolveBatchStatePaths()` reads the checkout's `batch/batch-state.tsv` as well as the data root's. In this fork the runner writes only `users/{USER}/batch/batch-state.tsv`, and a stray checkout copy belongs to no user, so `path-resolver.mjs` returns the data root's file alone; `merge-tracker.mjs` (failed report numbers and the completed-job gate, `loadBatchJobs` now taking the path list) and `reserve-report-num.mjs` read it through that function. Upstream's flock state lock in `batch/batch-runner.sh` is kept, with `STATE_LOCK_FLOCK_FILE` set in `configure_user_paths` beside the user's mkdir lock.
+- **`sync-batch-input.mjs` (#5512).** Upstream's allocation lock (`batchInputLockTarget`, `canonicalInputPath`) serializes its own checkout-level CLI, which the fork replaced with a forward to `sync-pipeline-batch.mjs` under the pipeline lock. The helpers were dropped with the CLI, and `tests/sync-batch-input-alias.test.mjs` and `tests/sync-batch-input-release.test.mjs`, which drive that CLI with `--input`, were removed.
+- **Reconcile URL keys (#6602 range).** `reconcile-pipeline.mjs` keys completed batch rows by `normalizeUrl()`, as upstream now does, and the fork's skip, closed and dealbreaker branches, its blocked-row pass and the Processed duplicate guard all compare those keys.
+- **Scanner.** `scan.mjs` takes upstream's configurable company and per-host concurrency, the deferred board pass that honors an employer's location decision (#6485), `--throttle=<ms>` validation, `seenJobKey` dedup and the relocated `collectPostingAttributes`. The fork keeps its per-entry `location_filter` (`targetLocationFilter`, now also given the job), the Closed-row reopen buckets, the per-user `activeDataRoot` (provider-id cache, HTTP cache, and the browser override's `.env` for `--verify`), and the `CAREER_OPS_PROGRESS` lines; a job board's completion line now waits for its deferred filter pass. `CAREER_OPS_SCAN_CONCURRENCY` and `CAREER_OPS_SCAN_HOST_CONCURRENCY` are read at import, so they work from the shell, not from a user's `.env`.
+- **Working Nomads.** The fork's filtered provider stays; its description now goes through upstream's `htmlToText`, so entities decode as in the other feed providers.
+- **Statuses (#6598).** `lapsed` is a Discarded alias in `templates/states.yml`, `web/src/lib/status-alias.mjs` and the dashboard. `cerrada`, `cancelada` and the Turkish cancellation words stay Closed, as the fork's Closed state already defined them; upstream maps them to Discarded.
+- **Session titles (#6586).** The router takes upstream's progress titles. `scan` and Playwright-assisted `apply` run in the root agent here, so the root renames them; a direct pipeline fan-out returns each posting's outcome, role and employer to the root, which keeps the `found`/`remaining` counter. `tests/session-title-rule.test.mjs` checks that ownership instead of upstream's delegated-worker hand-back.
+- **Web.** `readApplications()` uses upstream's parsed-tracker cache with the selected user's root and `careerOpsSystemRoot()` for the alias table. PDF renders keep the fork's `root`/`env` arguments and take upstream's `delivered` check (#6377), in `pdf-render.mjs` and the CV Studio. The CV prompt keeps per-user paths and takes the reverse-chronology rule (#6483); the evaluation prompt takes the evaluation gate line.
+- **Smaller merges.** `agent-inbox.mjs` keeps `cliArgs` after `--user` and names `--user` in upstream's usage; `audit-portals.mjs` applies the entry response cap and timeout to the fork's profile-aware context; `img-to-pdf.mjs` loads Playwright only when rendering; `lib/update-manifest.mjs` stays the fork's version. Docs and the five router copies take upstream's text with `users/{USER}/` paths; translated debrief, plan, practice and zh modes take upstream's text adapted the same way.
+
+- **Runtime fixes the suite surfaced.**
+  - `collectSeenUrls()` now returns `seenJobKey()` identities, so a LinkedIn posting comes back as `linkedin.com:{jobId}`. `loadScanHistory()` in `scan-auth.mjs` reads that form, which keeps authenticated LinkedIn dedup working (`tests/scan-recovery-safety.test.mjs`).
+  - `openrouter-runner.mjs` now imports `browser-extract.mjs` dynamically: it resolves the data root at import, and `--help` stays user-free.
+  - The web template gallery renders its fictional preview with a preview-only user whose data root is the temporary folder, because the fork's `build-cv-html.mjs` writes only inside the selected user's root.
+- **Literal strings.** The zh `oferta` archive pointer stays `See jds/{filename} …` and the `pdf` page-budget messages stay `config/profile.yml`, since scripts match those strings. Every translated debrief Step 10 passes `--user {USER}` to `debrief-sync.mjs`, `contacts.mjs` and `followup-cadence.mjs`.
+- **Upstream tests adapted.**
+  - New tests that spawn a user-scoped script set `CAREER_OPS_USER: 'fixture'`, or load `tests/user-fixture.mjs` before importing one.
+  - New web tests also set `CAREER_OPS_DATA_DIR`, which is how the web resolves a data root here.
+  - `tests/user-layer-scripts-data-root.test.mjs` asserts that a code-root `batch-state.tsv` is ignored.
+  - `tests/check-jd-archive-batch-placeholder.test.mjs` checks the fork's prose archive rule instead of upstream's template placeholder.
+  - `tests/plugins-run-failure-exit.test.mjs` installs its fixture plugin under the data root.
+  - `tests/browser-launch.test.mjs` accepts `activeDataRoot`.
+  - `tests/sync-batch-input-concurrent.test.mjs` was removed with the other upstream CLI lock tests.
+
+Validation:
+
+- **Quick suite.** `node test-all.mjs --quick --jobs 6` reported 24,736 passed and 4 failed. Afterwards the debrief Step 10 check was fixed, and the web unit tests rerun alone pass except upstream's Windows EPERM in the painter test.
+- **Batch and run suites.** The two that were killed at 120s under parallel load pass alone: the batch-runner, recovery and workflow-parity suites ran 83/83 with `--test-concurrency=1` through Git Bash.
+- **Other checks.** Dashboard Go tests pass. `verify-pipeline` reports 0 errors for both users, and every enabled portal entry resolves to a provider.
+
 ## Upstream integration at d3fc7d1b
 
 This update incorporates the 45 commits from `c45f766915bfd677df987feb4a651203bcab38df` through `d3fc7d1b2766ca0cc46ca87f2ac92561f00c550d`, released as career-ops v1.39.0 and web v0.17.0. Seventeen files conflicted. The `run` lanes needed no queue, answer or recovery change.

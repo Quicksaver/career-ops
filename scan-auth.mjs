@@ -144,7 +144,13 @@ export function loadScanHistory({ historyPath = SCAN_HISTORY_PATH, policy = {} }
   const text = readFileSync(historyPath, 'utf-8');
   const { seen } = collectSeenUrls({ scanHistoryText: text, pipelineText: '', applicationsText: '' }, policy);
   for (const url of seen) {
-
+    // collectSeenUrls returns seenJobKey() identities, and a LinkedIn posting's
+    // identity is `linkedin.com:{jobId}` rather than its URL.
+    const identity = /^(?:[\w-]+\.)*linkedin\.com:(\d+)$/.exec(url);
+    if (identity) {
+      keys.add(identity[1]);
+      continue;
+    }
     try {
       if (new URL(url).hostname.includes('linkedin')) {
         const jobId = extractJobIdFromUrl(url);

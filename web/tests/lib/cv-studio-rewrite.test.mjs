@@ -13,6 +13,8 @@ import { voiceIssues } from "../../../cv-voice.mjs";
 import { fencingReport } from "../../src/lib/cli-fencing.mjs";
 import { CAPS } from "../../src/lib/worker-capabilities.mjs";
 import { auditClaims, verifyFacts } from "../../../verify-cv-facts.mjs";
+// This fork resolves every data root through a selected user.
+process.env.CAREER_OPS_USER ||= "fixture";
 
 const SOURCE = { base: "Cut deploy time from 2 weeks to 4 hours with CI/CD", tailored: "Reduced model deployment time from 2 weeks to 4 hours with CI/CD" };
 
@@ -88,7 +90,7 @@ test("a stock phrase from another CV bullet is allowed and a metric from that bu
   };
   process.env.CAREER_OPS_ROOT = dir;
   process.env.CAREER_OPS_CODE_ROOT = repo;
-  delete process.env.CAREER_OPS_DATA_DIR;
+  process.env.CAREER_OPS_DATA_DIR = dir; // this fork reads the data root from CAREER_OPS_DATA_DIR
   const restore = () => {
     for (const [key, value] of Object.entries({
       CAREER_OPS_ROOT: previous.root,
