@@ -69,6 +69,7 @@ function summaryDigest(path) {
     discovered: { scan: summary.scan?.added_pending || 0, handoff: summary.handoff?.observed_added_pending || 0, linkedin: summary.linkedin?.added_pending || 0 },
     batch_counts: summary.batch_counts,
     processed: summary.pipeline?.processed || 0,
+    tracker_liveness: summary.tracker_liveness ? { status: summary.tracker_liveness.status, checked: summary.tracker_liveness.checked, closed: summary.tracker_liveness.closed, uncertain: summary.tracker_liveness.uncertain, closed_rows: summary.tracker_liveness.closed_rows, error: summary.tracker_liveness.error } : null,
     verification: review ? {
       status: review.status,
       reviewed: review.reviews?.length || 0,

@@ -413,3 +413,21 @@ test('a dealbreaker skip is terminal, counted, and never redispatched', async t 
   assert.deepEqual(f.dispatched().sort(), [A, B]);
   assert.equal(second.result.batch_counts.dealbreaker, 0);
 });
+
+test('the workflow closes open tracker rows whose posting closed, after the batch and before verification', async t => {
+  const { fixture } = await import('./fixtures/run-workflow.mjs');
+  const f = fixture(t, { rows: [], trackerClosures: [{ num: 7, company: 'Fictional', role: 'Engineer', url: 'https://jobs.example.org/closed' }] });
+  const { code, result } = await f.run(['--skip-scan']);
+  assert.equal(code, 0, JSON.stringify(result).slice(0, 2000));
+  assert.equal(result.tracker_liveness.status, 'completed');
+  assert.equal(result.tracker_liveness.closed, 1);
+  assert.deepEqual(result.tracker_liveness.closed_rows, [{ num: 7, company: 'Fictional', role: 'Engineer' }]);
+  const phases = f.calls().map(call => call.phase);
+  const sweep = f.calls().findIndex(call => call.phase === 'check-liveness' && call.args.includes('--tracker'));
+  assert.ok(sweep >= 0, 'the tracker sweep ran');
+  assert.ok(f.calls()[sweep].args.includes('--close-expired') && f.calls()[sweep].args.includes('--apply') && f.calls()[sweep].args.includes('--status=Evaluated'));
+  assert.ok(sweep < phases.lastIndexOf('verify-runner'), 'it runs before reviewed verification');
+
+  const skipped = await f.run(['--skip-scan', '--skip-tracker-liveness']);
+  assert.equal(skipped.result.tracker_liveness.status, 'skipped');
+});

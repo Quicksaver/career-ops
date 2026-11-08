@@ -159,6 +159,13 @@ else if (phase === 'codex-mock') {
     writeFileSync(join(root, 'added-once'), '1');
     writeFileSync(pipeline, read(pipeline).replace('## Pending', `## Pending\n- [ ] ${config.concurrent}`));
   }
+} else if (phase === 'check-liveness' && args.includes('--tracker')) {
+  // The workflow's tracker sweep: config.trackerClosures lists rows it closed.
+  const closures = config.trackerClosures || [];
+  emit({ status: 'completed', active: 0, expired: closures.length, uncertain: 0,
+    results: closures.map(item => ({ url: item.url, result: 'expired' })),
+    tracker_closures: closures.map(item => ({ ...item, changed: true, dryRun: false })) });
+  process.exitCode = closures.length ? 1 : 0;
 } else if (phase === 'check-liveness') {
   const urls = read(value('--file')).trim().split(/\r?\n/);
   writeFileSync(join(root, 'checked.json'), JSON.stringify(urls));

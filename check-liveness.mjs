@@ -32,7 +32,7 @@ import {
 import { checkLivenessViaApi } from './liveness-api.mjs';
 import { robotsAllows } from './robots-check.mjs';
 import { planExpiredHistoryRows, trackerLivenessTargets, DEFAULT_TRACKER_STATUSES, planExpiredDiscards, postingClosedNote, DEFAULT_DISCARD_STATUSES, discardableExpiredUrls } from './liveness-core.mjs';
-import { appendToScanHistory, seenJobKey, SCAN_HISTORY_PATH } from './scan.mjs';
+import { appendToScanHistory, seenJobKey, SCAN_HISTORY_PATH, parallelFetch, HOST_CONCURRENCY, VERIFY_CONCURRENCY } from './scan.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { localToday } from './lib/local-today.mjs';
@@ -51,6 +51,7 @@ const USAGE = `Usage:
   node check-liveness.mjs [--json] [--no-fallback] [--throttle[=ms]] [--no-record] --file urls.txt
   node check-liveness.mjs [--json] --tracker [--status=Evaluated,Applied]   # postings of tracker rows in these statuses
   node check-liveness.mjs [--json] --tracker --close-expired [--apply]      # dry-run move expired Evaluated rows to Closed; --apply writes
+  node check-liveness.mjs --concurrency N ...       # run up to N API checks at once (default 1, or 10 with --tracker); browser checks stay sequential
                                                   # (--discard-expired is accepted as an alias)
 
   node check-liveness.mjs --no-record             # check only; write nothing to scan-history
@@ -59,7 +60,7 @@ const USAGE = `Usage:
 
 const KNOWN_FLAGS = [
   '--no-fallback', '--throttle', '--no-record', '--file', '--tracker', '--status',
-  '--discard-expired', '--close-expired', '--apply', '--json', '--help', '-h',
+  '--discard-expired', '--close-expired', '--apply', '--json', '--help', '-h', '--concurrency',
 ];
 
 /**
@@ -223,7 +224,7 @@ async function main() {
   // status-flag test locks, so the missing-operand check stays here rather
   // than in requireOperand. See tests/validate-flags-value-operand.test.mjs.
   validateFlags(args, KNOWN_FLAGS, USAGE, {
-    valueFlags: ['--file', '--status', '--throttle'],
+    valueFlags: ['--file', '--status', '--throttle', '--concurrency'],
   });
 
   if (hasFlag(args, '--file')) {
@@ -248,6 +249,20 @@ async function main() {
   // ignored (the number was checked as a URL) and the base stayed 5000.
   const throttleBaseMs = throttleBaseMsFrom(args);
   const record = recordingEnabled(args);
+  // --concurrency N runs up to N API-rung checks at once, never more than the
+  // scanner's per-host cap against one host. A provider's own spacing (LinkedIn's
+  // guest endpoint: 3.5 s) is reserved before each request, so it holds however
+  // many checks run at once. Browser checks stay sequential.
+  // A tracker sweep covers every open row, so it defaults to scan --verify's
+  // bulk-liveness cap; an explicit URL list keeps the sequential default.
+  const concurrencyValue = hasFlag(args, '--concurrency') ? flagValue(args, '--concurrency')
+    : String(args.includes('--tracker') ? VERIFY_CONCURRENCY : 1);
+  const concurrency = Number(concurrencyValue);
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    console.error('--concurrency needs a positive integer, e.g. --concurrency 10');
+    process.exitCode = 1;
+    return;
+  }
   // `--status Rejected` as well as `--status=Rejected`. Only the `=` form was
   // read, so the space form, and any `--status` with no value, fell back to
   // the default statuses without a word, and `--discard-expired --apply`
@@ -275,6 +290,8 @@ async function main() {
       if (arg === '--throttle' && /^\d+$/.test(args[i + 1] ?? '')) i++;
       continue;
     }
+    if (arg === '--concurrency') { i++; continue; }
+    if (arg.startsWith('--concurrency=')) continue;
     if (arg === '--file' || arg.startsWith('--file=')) {
       const value = arg === '--file' ? args[++i] : arg.slice('--file='.length);
       if (file || !value || value.startsWith('--')) throw new Error('--file requires one filename');
@@ -357,13 +374,21 @@ async function main() {
   // once per run, not once per posting.
   const boardCache = new Map();
 
-  // Sequential — project rule: never Playwright in parallel
+  // Rung 1 for every URL first: the zero-token ATS API check, `concurrency` at a
+  // time under the scanner's per-host cap. A conclusive active/expired wins;
+  // the rest fall through to the browser below.
+  const apiVerdicts = new Array(urls.length).fill(null);
+  const hostOf = (_task, index) => { try { return new URL(urls[index]).hostname.toLowerCase(); } catch { return ''; } };
+  await parallelFetch(urls.map((url, index) => async () => {
+    apiVerdicts[index] = await checkLivenessViaApi(url, { boardCache });
+  }), concurrency, () => {}, { hostOf, hostLimit: Math.min(concurrency, HOST_CONCURRENCY) });
+
+  // Rung 2 sequential — project rule: never Playwright in parallel
   for (let i = 0; i < urls.length; i++) {
     const url = urls[i];
     let result, reason, code;
 
-    // Rung 1: zero-token ATS API check. A conclusive active/expired wins; otherwise fall through.
-    const api = await checkLivenessViaApi(url, { boardCache });
+    const api = apiVerdicts[i];
     if (api) {
       ({ result, reason, code } = api);
       viaApi++;

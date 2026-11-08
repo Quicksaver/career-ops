@@ -12,7 +12,7 @@ The same coordinator as `run` (read `modes/run.md` for what it does), with you i
    - `error`: a channel or retry error. Read it, act if it names a fix, wait again.
    - `not_started`: the coordinator never published state. Read the background command's output.
    - `exited`: the run ended; `summary` carries its digest. Go to step 4.
-4. **Finish.** When `summary.status` is `partial` only because of answers you supplied after a job's last dispatch, or because work you fixed needs another pass, rerun with `--skip-scan` from step 1. Otherwise report: discovered, completed, skipped (dealbreaker), closed, failed, verification repairs and unresolved findings, remaining pending/blocked, and every escalated item with its outcome. The run is done when `wait` has returned `exited` and every question was either answered or escalated to the user.
+4. **Finish.** When `summary.status` is `partial` only because of answers you supplied after a job's last dispatch, or because work you fixed needs another pass, rerun with `--skip-scan` from step 1. Otherwise report: discovered, completed, skipped (dealbreaker), closed, failed, open tracker rows closed by the liveness sweep (`summary.tracker_liveness`), verification repairs and unresolved findings, remaining pending/blocked, and every escalated item with its outcome. The run is done when `wait` has returned `exited` and every question was either answered or escalated to the user.
 
 Keep the coordinator supervised until it exits. To end it early, `node run-agent.mjs finish --user {USER}` drains active work and exits; `stop` interrupts like Ctrl+C. Either way, wait for `exited`. A coordinator whose questions go unread for an hour finishes without input by itself and keeps every saved answer for the rerun.
 

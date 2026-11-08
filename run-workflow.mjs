@@ -59,6 +59,8 @@ Options:
   --no-fallback         Disable headed liveness fallback
   --skip-linkedin       Skip authenticated LinkedIn scan explicitly
   --skip-scan           Process the inbox without starting discovery
+  --skip-tracker-liveness
+                        Skip closing open tracker rows whose posting has closed
   --scan-full           Include the broad full-ATS sweep (opt-in)
   --scan-hn             Include the deterministic Hacker News scanner
   --scan-dayforce       Include configured Dayforce boards
@@ -128,6 +130,7 @@ const throttle = rawArgs.find((arg) => arg === '--throttle' || arg.startsWith('-
 const noFallback = rawArgs.includes('--no-fallback');
 const skipLinkedIn = rawArgs.includes('--skip-linkedin');
 const skipScan = rawArgs.includes('--skip-scan');
+const skipTrackerLiveness = rawArgs.includes('--skip-tracker-liveness');
 const answersFile = optionValue('--answers-file');
 const batchLimit = optionValue('--limit');
 const maxQueuePasses = Number(optionValue('--max-queue-passes', '3'));
@@ -141,7 +144,7 @@ const valueOptions = new Set([
   '--answers-file', '--limit', '--max-queue-passes', '--resume-verify',
 ]);
 const flagOptions = new Set(['--json', '--no-fallback', '--skip-linkedin', '--skip-scan', '--quiet', '--throttle',
-  '--scan-full', '--scan-hn', '--scan-dayforce', '--scan-interamt', '--retry-failed', '--resume-paused', '--interactive', '--no-interactive', '--agent']);
+  '--scan-full', '--scan-hn', '--scan-dayforce', '--scan-interamt', '--retry-failed', '--resume-paused', '--interactive', '--no-interactive', '--agent', '--skip-tracker-liveness']);
 const unknown = [];
 for (let i = 0; i < rawArgs.length; i++) {
   const arg = rawArgs[i];
@@ -250,6 +253,35 @@ function releaseLock() {
   } finally {
     lockOwned = false;
     while (runnerLocks.length) runnerLocks.pop().release();
+  }
+}
+
+async function runTrackerLiveness(summary) {
+  if (skipTrackerLiveness) {
+    summary.tracker_liveness = { status: 'skipped', reason: 'explicit --skip-tracker-liveness' };
+    return;
+  }
+  const args = [systemPath('check-liveness.mjs'), '--user', context.userId, '--tracker', '--status=Evaluated', '--close-expired', '--apply', '--json'];
+  if (throttle) args.push(throttle);
+  if (noFallback) args.push('--no-fallback');
+  try {
+    const result = parseJsonOutput(await runCommand('tracker-liveness', process.execPath, args, {
+      accept: [0, 1], maxStdout: 32 * 1024 * 1024,
+    }), 'tracker-liveness');
+    if (result.status !== 'completed') throw new Error(result.error || 'tracker liveness did not complete');
+    const closures = result.tracker_closures || [];
+    summary.tracker_liveness = {
+      status: 'completed', checked: result.results.length, active: result.active, expired: result.expired, uncertain: result.uncertain,
+      closed: closures.filter(item => item.changed).length,
+      closed_rows: closures.filter(item => item.changed).map(item => ({ num: item.num, company: item.company, role: item.role })),
+      left_open: closures.filter(item => item.skipped || item.error).map(item => ({ num: item.num, company: item.company, role: item.role, reason: item.skipped || item.error })),
+    };
+    log(`tracker liveness: checked ${summary.tracker_liveness.checked}, closed ${summary.tracker_liveness.closed}, uncertain ${result.uncertain}`);
+  } catch (error) {
+    if (interruptedSignal) throw error;
+    // A failed sweep closes nothing; the next run checks again.
+    summary.tracker_liveness = { status: 'partial', error: error.message };
+    addPhaseIssue(summary, 'tracker-liveness', error);
   }
 }
 
@@ -517,7 +549,7 @@ async function main() {
   const summary = {
     status: 'running', user: context.userId, run_id: runId, started_at: startedAt,
     finished_at: null, baseline_pending: 0, final_pending: null,
-    scan: null, handoff: null, linkedin: null, liveness: null, batch_sync: null,
+    scan: null, handoff: null, linkedin: null, liveness: null, tracker_liveness: null, batch_sync: null,
     pipeline: null, verification: null, verification_review: null,
     warning_triage: null, duplicate_resolution: null,
     needs_human_review: false, phases, logs: runDir, error: null, user_action: null,
@@ -949,6 +981,11 @@ async function main() {
       summary.pipeline = { status: finalQueue.pending.length || finalQueue.blocked.length ? 'partial' : 'completed',
         processed: Math.max(0, discoveredPending - finalQueue.pending.length), limit: batchLimit ? Number(batchLimit) : null };
 
+      // Open tracker rows whose posting closed since evaluation become Closed.
+      // After the batch, never beside it: batch workers check LinkedIn from their
+      // own processes, and the guest endpoint's spacing holds only within one.
+      if (!summary.tracker_liveness) await runTrackerLiveness(summary);
+
       const verifyArgs = [systemPath('verify-runner.mjs'), '--user', context.userId, '--agent-cli', agentCli, '--json'];
       verifyArgs.push('--parallel', String(parallelSettings.parallel));
       if (codexSettings.model) verifyArgs.push('--codex-model', codexSettings.model);
@@ -1098,6 +1135,9 @@ function compactRunSummary(summary) {
     liveness: compactSection(summary.liveness, [
       'status', 'checked', 'active', 'expired', 'uncertain', 'local', 'unsupported', 'moved',
     ]),
+    tracker_liveness: compactSection(summary.tracker_liveness, [
+      'status', 'reason', 'checked', 'active', 'expired', 'uncertain', 'closed', 'closed_rows', 'left_open', 'error',
+    ]),
     batch_sync: compactSection(summary.batch_sync, ['status', 'pending', 'existing', 'added', 'dry_run']),
     pipeline: compactSection(summary.pipeline, ['status', 'processed', 'reason']),
     verification: summary.verification_review ? {
@@ -1137,6 +1177,8 @@ function printHumanSummary(summary) {
   print(`[run] discovered: scan ${summary.scan?.added_pending || 0}, handoff ${summary.handoff?.observed_added_pending || 0}, LinkedIn ${summary.linkedin?.added_pending || 0}`);
   const counts = summary.batch_counts;
   if (counts) print(`[run] batch: completed ${counts.completed}, skipped ${counts.skipped} (dealbreaker ${counts.dealbreaker || 0}), closed ${counts.closed}, failed ${counts.failed}, held ${counts.needs_confirmation}, paused ${counts.paused_rate_limit}`);
+  const tracked = summary.tracker_liveness;
+  if (tracked?.status === 'completed') print(`[run] tracker liveness: checked ${tracked.checked}, closed ${tracked.closed}, uncertain ${tracked.uncertain}`);
   if (summary.verification_review) {
     const unresolvedFindings = summary.verification_review.unresolved_findings || [];
     print(`[run] verification: reviewed ${reviewedCount(summary.verification_review)}, repaired ${repairedCount(summary.verification_review)}, unresolved ${unresolvedFindings.length}`);
