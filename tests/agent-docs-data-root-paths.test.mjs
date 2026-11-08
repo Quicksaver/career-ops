@@ -106,6 +106,7 @@ test('a TSV written where AGENTS.md says merges under a configured data root', (
       cwd: ROOT, encoding: 'utf-8', timeout: 60_000,
       env: {
         ...process.env,
+        CAREER_OPS_USER: 'fixture',
         CAREER_OPS_ROOT: dataRoot,
         CAREER_OPS_DATA_DIR: '',
         CAREER_OPS_TRACKER: '',
