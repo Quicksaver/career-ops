@@ -52,7 +52,7 @@ Run the per-user binary without `--path`; it infers the user folder from its own
 
 ## Long-Running Command Quiet Mode
 
-When the user asks you to run `run`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
+When the user asks you to run `run`, `run-agent`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, or `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
 
 - Keep the current agent turn active until the workflow completes and final reconciliation and verification succeed, or until user action, an explicit stop, a confirmed destructive risk, or exhausted safe recovery provides the terminal outcome.
 - Treat background and detached processes as actively supervised work owned by the current turn. Send the final response after the terminal outcome.
@@ -530,6 +530,7 @@ A single-string `modes_dir` (today's default, ~90% of users) behaves exactly as 
 | Asks about application status | `tracker` |
 | Fills out application form | `apply` |
 | Wants the full sourcing loop | `run` |
+| Wants the agent to run the sourcing loop and answer its questions, escalating only what needs the user | `run-agent` |
 | Wants pipeline integrity reviewed, fixed, or acknowledged | `verify` |
 | Searches for new offers | `scan` |
 | Processes unsupported-source scan handoffs | `scan-handoff` |

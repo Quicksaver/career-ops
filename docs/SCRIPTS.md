@@ -11,6 +11,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | Command | Script | Purpose |
 |---------|--------|---------|
 | `npm run run -- --user {USER}` | `run-workflow.mjs` | Deterministic end-to-end sourcing coordinator with streamed human output (`--json` for machines) |
+| `node run-agent.mjs wait --user {USER}` | `run-agent.mjs` | Agent control for `run-workflow.mjs --agent`: blocks until a question or the run's exit, then answers through the same rules as the interactive terminal (`modes/run-agent.md`) |
 | `npm run cleanup:runs -- --user {USER}` | `cleanup-runs.mjs` | Delete timestamped workflow and verification directories older than 10 days |
 | `node resolve-parallel.mjs --profile users/{USER}/config/profile.yml --json` | `resolve-parallel.mjs` | Resolve argument/profile/default batch parallelism |
 | `npm run doctor` | `doctor.mjs` | Validate setup prerequisites |

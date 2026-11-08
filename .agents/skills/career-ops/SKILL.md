@@ -86,7 +86,7 @@ After resolution:
 
 ## Long-Running Command Quiet Mode
 
-For `run`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
+For `run`, `run-agent`, `verify`, `scan`, `scan-handoff`, `scan-auth`, `pipeline`, and `batch`, supervise the workflow through completion while keeping routine monitoring quiet:
 
 - Keep the current agent turn active until the workflow completes and final reconciliation and verification succeed, or until user action, an explicit stop, a confirmed destructive risk, or exhausted safe recovery provides the terminal outcome.
 - Treat background and detached processes as actively supervised work owned by the current turn. Send the final response after the terminal outcome.
@@ -133,6 +133,7 @@ Determine the mode from `$mode`:
 | `pipeline` | `pipeline` |
 | `apply` | `apply` |
 | `run` | `run` |
+| `run-agent` | `run-agent` |
 | `verify` | `verify` |
 | `scan` | `scan` |
 | `scan-handoff` | `scan-handoff` |
@@ -204,6 +205,7 @@ Concrete equivalents for Codex prompt-driven sessions:
 ```text
 /career-ops {JD}           ↔ "Evaluate this JD with career-ops auto-pipeline: {JD or URL}"
 /career-ops run             ↔ "Run the career-ops run mode for <username>."
+/career-ops run-agent       ↔ "Run the career-ops run-agent mode for <username>."
 /career-ops verify         ↔ "Run reviewed career-ops verification for <username>."
 /career-ops scan           ↔ "Run the career-ops scan mode and summarize new matches."
 /career-ops pipeline       ↔ "Run the career-ops pipeline mode for <username>."
@@ -249,6 +251,7 @@ Available commands:
   /career-ops agent-inbox → Queue/drain requests for the next session (users/{ACTIVE_USER}/data/agent-inbox.md)
   /career-ops apply     → Live application assistant (Playwright from this checkout, does not submit)
   /career-ops run        → Scan configured sources, drain the inbox, and surface manual actions
+  /career-ops run-agent  → Same run, supervised by the agent: it answers what it can and asks only what needs you
   /career-ops verify    → Review every integrity finding, apply safe fixes, remember verified exceptions, and reverify
   /career-ops scan      → Scan portals and discover new offers
   /career-ops scan-handoff → Process saved Agent/WebSearch handoff from the latest scan
@@ -302,7 +305,7 @@ Applies to: `triage`
 
 ### Execution ownership for long-running modes
 
-Run `run`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serially in the root agent. Keep the current root turn active through completion, including browser interaction, monitoring, recovery, reconciliation, and verification.
+Run `run`, `run-agent`, `scan`, `scan-handoff`, `scan-auth`, Playwright-assisted `apply`, and direct pipelines with one or two pending URLs serially in the root agent. Keep the current root turn active through completion, including browser interaction, monitoring, recovery, reconciliation, and verification.
 
 For a direct pipeline with three or more pending URLs, launch one subagent per URL and coordinate the fan-out from the root agent. Give each worker `ACTIVE_USER`, the absolute `PROJECT_ROOT`, the already-resolved absolute `USER_ROOT` from user selection, one URL, and the loaded shared/profile/custom/mode instructions. State that every script runs from `PROJECT_ROOT`, all user-layer relative paths resolve inside `USER_ROOT`, and every other path resolves against `PROJECT_ROOT`. Each worker completes its assigned URL directly, keeps research inline and bounded, and returns its terminal result to the root coordinator.
 

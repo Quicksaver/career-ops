@@ -22,6 +22,7 @@ table in `AGENTS.md` (mirrored in `CLAUDE.md`).
 | `scan-handoff.md` | `scan-handoff` | Process the latest scan's unsupported-source handoff (`users/{USER}/data/scan-handoff.json`) |
 | `scan-auth.md` | `scan-auth` | Scan a portal through the selected user's authenticated browser profile |
 | `run.md` | `run` | Full sourcing loop: scans, handoff, authenticated sources, inbox, batch evaluation, reviewed verification |
+| `run-agent.md` | `run-agent` | The same loop supervised by the agent through `run-agent.mjs`: it resolves questions and escalates only what needs the user |
 | `verify.md` | `verify` | Reviewed pipeline-integrity verification with bounded repairs |
 | `discover.md` | `discover` | Resolve company names to scannable ATS boards for `users/{USER}/portals.yml` |
 | `triage.md` | `triage` | Fast first-pass quick score before full evaluation |

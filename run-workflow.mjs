@@ -37,6 +37,7 @@ import {
 import { runUnresolvedFindingLines } from './lib/run-summary.mjs';
 import { inspectOwnership } from './batch/runner-ownership.mjs';
 import { RunTerminal } from './lib/run-terminal.mjs';
+import { AgentTerminal } from './lib/run-agent-channel.mjs';
 import { RunInteractive } from './lib/run-interactive.mjs';
 import { synchronizeBatch } from './lib/run-batch-sync.mjs';
 import { answerFingerprint, DEFAULT_MAX_RETRIES } from './lib/run-live-inputs.mjs';
@@ -64,6 +65,7 @@ Options:
   --scan-interamt       Include configured Interamt searches
   --interactive         Require a terminal and answer questions during processing
   --no-interactive      Finish with pending actions instead of waiting for input
+  --agent               Answer questions through run-agent.mjs instead of a terminal
   --answers-file PATH   Optional automation input for per-posting answers
   --limit N            Process at most N jobs; omit to drain the inbox
   --retry-failed        Retry jobs at their previous retry ceiling once
@@ -139,7 +141,7 @@ const valueOptions = new Set([
   '--answers-file', '--limit', '--max-queue-passes', '--resume-verify',
 ]);
 const flagOptions = new Set(['--json', '--no-fallback', '--skip-linkedin', '--skip-scan', '--quiet', '--throttle',
-  '--scan-full', '--scan-hn', '--scan-dayforce', '--scan-interamt', '--retry-failed', '--resume-paused', '--interactive', '--no-interactive']);
+  '--scan-full', '--scan-hn', '--scan-dayforce', '--scan-interamt', '--retry-failed', '--resume-paused', '--interactive', '--no-interactive', '--agent']);
 const unknown = [];
 for (let i = 0; i < rawArgs.length; i++) {
   const arg = rawArgs[i];
@@ -176,7 +178,12 @@ if (interactiveRequested && (rawArgs.includes('--no-interactive') || jsonOutput 
   console.error('--interactive requires an input/output terminal and cannot be combined with --no-interactive, --json or --quiet');
   process.exit(1);
 }
-const interactiveEnabled = !rawArgs.includes('--no-interactive') && !jsonOutput && !quiet && Boolean(process.stdin.isTTY && process.stdout.isTTY);
+const agentMode = rawArgs.includes('--agent');
+if (agentMode && (interactiveRequested || rawArgs.includes('--no-interactive'))) {
+  console.error('--agent cannot be combined with --interactive or --no-interactive');
+  process.exit(1);
+}
+const interactiveEnabled = !agentMode && !rawArgs.includes('--no-interactive') && !jsonOutput && !quiet && Boolean(process.stdin.isTTY && process.stdout.isTTY);
 let terminal = null;
 let interactive = null;
 let commandSequence = 0;
@@ -525,6 +532,11 @@ async function main() {
     if (interactiveEnabled) {
       terminal = new RunTerminal();
       terminal.on('interrupt', () => process.emit('SIGINT'));
+    } else if (agentMode) {
+      // Same question engine as the terminal; run-agent.mjs is the input.
+      terminal = new AgentTerminal({ userRoot: context.userRoot, user: context.userId, runId, runDir,
+        write: line => { if (!quiet) writeHuman(line); } });
+      terminal.on('interrupt', () => process.emit('SIGINT'));
     }
     summary.cleanup = cleanupExpiredRuns({
       userRoot: context.userRoot,
@@ -613,6 +625,7 @@ async function main() {
           requested = true;
         },
       });
+      terminal.attach?.(interactive);
       answerPath = interactive.path;
       answers = interactive.answers;
     }
