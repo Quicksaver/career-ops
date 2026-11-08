@@ -11,6 +11,7 @@
 //
 // Run:  node --test tests/liveness-short-page-uncertain.test.mjs
 
+import './user-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyLiveness, isUnreadableVerdict, planExpiredHistoryRows } from '../liveness-core.mjs';

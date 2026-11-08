@@ -13,6 +13,7 @@
 //
 // The same answer carries the posting text, so fetch-jd needs no browser.
 // Company names, titles and ids are fictional.
+import './user-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveAtsApi, checkLivenessViaApi, isAtsPosting, JD_TEXT_API_ATS } from '../liveness-api.mjs';

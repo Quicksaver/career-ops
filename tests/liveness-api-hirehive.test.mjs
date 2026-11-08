@@ -7,6 +7,7 @@
 //
 // Run:  node --test tests/liveness-api-hirehive.test.mjs
 
+import './user-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveAtsApi, checkLivenessViaApi, classifyHireHivePosting, isAtsPosting, JD_TEXT_API_ATS } from '../liveness-api.mjs';
