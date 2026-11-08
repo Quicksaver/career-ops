@@ -425,9 +425,9 @@ for (const group of [...roleMap.values()].flatMap(buckets => [...buckets.values(
       const reqA = extractReqNumber(a.notes);
       const reqB = extractReqNumber(b.notes);
       if (reqA && reqB && reqA !== reqB) continue;
-      warn(`Possible duplicates: #${a.num}, #${b.num} (${a.company} — ${a.role})`,
-        "run node dedup-tracker.mjs --dry-run to preview a merge; if they are genuinely different openings, put each req/job ID in the notes column so they stay distinct");
-      dupes++;
+      // Same structured finding as an exact group, so reviewed verification can
+      // resolve a proven corporate-form twin instead of leaving it to a human.
+      emitTrackerDuplicate([a, b], { match_basis: 'corporate_form' });
     }
   }
 }

@@ -51,6 +51,27 @@ try {
   check('non-Latin employers stay separate', [row('東京商事'), row('大阪商事')], []);
   check('punctuation-normalized exact group keeps its output', [row('Foo-Bar'), row('FooBar'), row('Foo Bar')], [[1, 2, 3]]);
   check('corporate matches never form a transitive group', [row('Acme'), row('Acme Solutions'), row('Acme Technologies')], [[1, 2], [1, 3]]);
+
+  // Reviewed verification resolves only typed duplicate findings, so a
+  // corporate-form twin must carry the same code and tracker numbers.
+  {
+    writeFileSync(tracker, header
+      + '| 1 | 2026-09-01 | Acme Widgets | | Fullstack Engineer | 3.0/5 | SKIP | ❌ | — | |\n'
+      + '| 2 | 2026-09-01 | Acme Widgets, APC | | Fullstack Engineer | 3.0/5 | SKIP | ❌ | — | |\n');
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CAREER_OPS_')));
+    const child = spawnSync(NODE, [join(ROOT, 'verify-pipeline.mjs'), '--json'], {
+      cwd: ROOT, env: { ...env, CAREER_OPS_USER: 'fixture', CAREER_OPS_ROOT: tmp },
+      encoding: 'utf8', windowsHide: true, timeout: 60_000,
+    });
+    let finding;
+    try { finding = JSON.parse(child.stdout).warnings.find(w => /Possible duplicates/.test(w.message)); } catch { /* reported below */ }
+    if (finding?.code === 'possible_duplicate_tracker' && finding.id === 'possible-duplicate-tracker:1:2'
+        && JSON.stringify(finding.details?.tracker_nums) === '[1,2]' && finding.details?.match_basis === 'corporate_form') {
+      pass('corporate-form twin is a typed tracker duplicate finding');
+    } else {
+      fail(`corporate-form twin finding is not typed: ${JSON.stringify(finding) || child.stderr || child.stdout.slice(0, 500)}`);
+    }
+  }
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }
