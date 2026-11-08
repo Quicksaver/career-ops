@@ -431,6 +431,28 @@ for (const group of [...roleMap.values()].flatMap(buckets => [...buckets.values(
     }
   }
 }
+// One employer's posting URL is one posting, whatever each row calls the role. A
+// re-evaluation that picks up a renamed title, or a title written with a suffix,
+// lands in another company/title group above and was never compared. Rows that
+// already share a company/title key are covered by the subgroups above. The
+// company must match too: a report sometimes names a generic careers or agency
+// page, which many unrelated rows share.
+{
+  const byPostingUrl = new Map();
+  for (const entry of entries) {
+    const url = postingUrlForEntry(entry);
+    const company = normalizeTextKey(entry.company);
+    if (!url || !company || String(entry.company || '').trim() === '?') continue;
+    const key = `${company}::${url}`;
+    if (!byPostingUrl.has(key)) byPostingUrl.set(key, []);
+    byPostingUrl.get(key).push(entry);
+  }
+  const titleKey = e => normalizeTextKey(e.company) + '::' + normalizeTextKey(e.role);
+  for (const group of byPostingUrl.values()) {
+    if (group.length < 2 || new Set(group.map(titleKey)).size < 2 || !hasPossibleDuplicate(group)) continue;
+    emitTrackerDuplicate(group, { match_basis: 'canonical_url_across_titles', canonical_url: postingUrlForEntry(group[0]) });
+  }
+}
 if (dupes === 0) ok('No exact duplicates found');
 
 // --- Check 3: Report links ---
