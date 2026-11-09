@@ -12,7 +12,7 @@
  * leading pipe, so the first real column ("#"/num) is index 1.
  */
 
-import { existsSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'node:crypto';
 
@@ -842,6 +842,31 @@ export function unwrapReportUrlToken(token) {
   return url.replace(/^<|>$/g, '');
 }
 
+// One directory listing per reports folder, reused until the folder changes.
+// A tracker-wide pass looks up a report for every row; listing ~18k files and
+// testing a fresh regex against each name on every lookup made one pass over
+// a large tracker take minutes.
+const reportIndexCache = new Map();
+
+function reportFilesByNumber(reportsRoot) {
+  let mtimeMs;
+  try { mtimeMs = statSync(reportsRoot).mtimeMs; } catch { return null; }
+  const cached = reportIndexCache.get(reportsRoot);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.byNumber;
+  let filenames;
+  try { filenames = readdirSync(reportsRoot); } catch { return null; }
+  const byNumber = new Map();
+  for (const name of filenames) {
+    const match = /^(\d+)-.*\.md$/i.exec(name);
+    if (!match) continue;
+    const num = parseInt(match[1], 10);
+    // The first name in listing order wins, as the per-number search did.
+    if (!byNumber.has(num)) byNumber.set(num, name);
+  }
+  reportIndexCache.set(reportsRoot, { mtimeMs, byNumber });
+  return byNumber;
+}
+
 /**
  * The posting URL recorded in the first of `reportNumbers` whose report file in
  * `reportsRoot` has a `**URL:**` line that `accept` takes. Lives here, not in
@@ -851,17 +876,30 @@ export function unwrapReportUrlToken(token) {
  */
 export function reportUrlForNumbers(reportNumbers, reportsRoot, accept) {
   if (!reportsRoot || !existsSync(reportsRoot) || reportNumbers.length === 0) return null;
-  let filenames;
-  try { filenames = readdirSync(reportsRoot); } catch { return null; }
+  const byNumber = reportFilesByNumber(reportsRoot);
+  if (!byNumber) return null;
   for (const reportNum of reportNumbers) {
-    const reportName = filenames.find((name) => new RegExp(`^0*${reportNum}-.*\\.md$`, 'i').test(name));
+    const reportName = byNumber.get(Number(reportNum));
     if (!reportName) continue;
-    let report;
-    try { report = readFileSync(join(reportsRoot, reportName), 'utf-8'); } catch { continue; }
-    const match = report.match(/\*\*URL:\*\*[ \t]*(\S+)/);
-    if (!match) continue;
-    const url = unwrapReportUrlToken(match[1]);
-    if (accept(url)) return url;
+    const url = reportUrlOf(join(reportsRoot, reportName));
+    if (url != null && accept(url)) return url;
   }
   return null;
+}
+
+// A report's **URL:** value, reread only when the file changes. A closure
+// sweep plans every row again before each write, which reread every report.
+const reportUrlCache = new Map();
+
+function reportUrlOf(path) {
+  let mtimeMs;
+  try { mtimeMs = statSync(path).mtimeMs; } catch { return null; }
+  const cached = reportUrlCache.get(path);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.url;
+  let report;
+  try { report = readFileSync(path, 'utf-8'); } catch { return null; }
+  const match = report.match(/\*\*URL:\*\*[ \t]*(\S+)/);
+  const url = match ? unwrapReportUrlToken(match[1]) : null;
+  reportUrlCache.set(path, { mtimeMs, url });
+  return url;
 }
