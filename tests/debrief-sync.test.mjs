@@ -434,7 +434,8 @@ check('Step 10 shows one debrief-sync command per confirmed dealbreaker', () => 
   for (const [i, line] of commands.entries()) {
     const words = shellWords(line);
     assert.deepEqual(words.slice(0, 2), ['node', 'debrief-sync.mjs']);
-    const flags = words.filter((w) => w.startsWith('--'));
+    // Fork: every documented call selects the user with --user {USER}.
+    const flags = words.filter((w) => w.startsWith('--') && w !== '--user');
     assert.equal(flags.filter((f) => f === '--dealbreaker').length, 1, `line ${i + 1} must pass exactly one --dealbreaker`);
     if (i > 0) assert.deepEqual(flags, ['--app', '--dealbreaker'], `line ${i + 1} must pass only --app and --dealbreaker`);
   }
@@ -465,6 +466,7 @@ function exerciseExample(shell, { quote, spawnLine, second, name }) {
   const FIRST = SENTENCE;
   const DECLINED = 'No travel above 25 percent';
   const lines = englishBlock.trim().split('\n').map((line) => line
+    .replaceAll('{USER}', 'fixture')
     .replaceAll('<tracker#>', '7')
     .replaceAll('<sentence 1>', quote(FIRST))
     .replaceAll('<sentence 2>', quote(second))

@@ -33,11 +33,11 @@ const interactive = {
 terminal.on('leave', () => {
   interactive.active = false;
   process.stdout.write('LEAVE\\n');
+  clearInterval(statusTimer);
   terminal.close();
-  process.exit(0);
 });
 terminal.attach(interactive);
-setInterval(() => terminal.setStatus('1 pending | 0 working | ' + interactive.questions.length + ' questions'), 50);
+const statusTimer = setInterval(() => terminal.setStatus('1 pending | 0 working | ' + interactive.questions.length + ' questions'), 50);
 `;
 
 function cli(userRoot, ...args) {

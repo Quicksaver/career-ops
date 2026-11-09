@@ -64,7 +64,7 @@ It tailors your CV and drafts your&nbsp;answers. <strong>You&nbsp;press&nbsp;Sub
 
 <br>
 
-<p align="center"><a href="HIRED.md"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcareer-ops-hq%2Fcareer-ops%2Fmain%2Fdocs%2Fhired-count.json&query=%24.count&label=%F0%9F%8E%89%20HIRED%20WITH%20CAREER-OPS&suffix=%20on%20the%20record&color=2ea44f&style=for-the-badge&labelColor=2b3137" alt="Hired with career-ops: public stories on the record"></a></p>
+<p align="center"><a href="HIRED.md"><img src="docs/hired-badge.svg" alt="Hired with career-ops: public stories on the record"></a></p>
 
 <p align="center">The people who came after me wrote down how they got hired.</p>
 
@@ -131,7 +131,7 @@ Hiring will not fix itself. The people going through it can, and they are alread
 
 [This is where the fix gets written](CONTRIBUTING.md). A room, not a club. **Let's build together.**
 
-<p align="center"><a href="https://discord.gg/8pRpHETxa4"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2F8pRpHETxa4%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&label=Discord&suffix=%20members&color=5865F2&style=for-the-badge&labelColor=2b3137&logo=discord&logoColor=white" alt="Discord: live member count of the career-ops server"></a></p>
+<p align="center"><a href="https://discord.gg/8pRpHETxa4"><img src="docs/discord-badge.svg" alt="Discord: live member count of the career-ops server"></a></p>
 
 ## Sponsors
 
@@ -328,6 +328,7 @@ All of them share one router, `.agents/skills/career-ops/SKILL.md`, and the same
 | [`batch`](modes/batch.md) | Evaluate many postings with headless workers (parallel with Claude, one at a time with other CLIs) |
 | [`titles`](modes/titles.md) | Suggest adjacent job titles from your CV to broaden the search |
 | [`run`](modes/run.md) | Full sourcing cycle for one user: scan, handoffs, liveness, batch evaluation, reconciliation and reviewed verification, stopping only for questions you must answer |
+| [`run-agent`](modes/run-agent.md) | The same cycle supervised by the agent: it waits on the run, answers what it can and asks you only what it cannot resolve |
 | [`scan-handoff`](modes/scan-handoff.md) | Work through the sources a scan could not read itself (browser or web search) and add what it finds to the inbox |
 | [`scan-auth`](modes/scan-auth.md) | Scan a portal through your own signed-in browser profile, kept per user outside the checkout |
 | [`verify`](modes/verify.md) | Review every pipeline integrity finding, apply bounded fixes, remember accepted exceptions, then verify again |
@@ -552,7 +553,7 @@ The Go dashboard TUI, Node.js scripts, and AI agent modes all automatically resp
 - **Data**: Markdown tables + YAML config + TSV batch files
 
 <p align="center">
-  <a href="https://github.com/career-ops-hq/career-ops/releases/latest"><img src="https://img.shields.io/npm/v/%40santifer%2Fcareer-ops?style=for-the-badge&labelColor=2b3137&color=2ea44f&label=release" alt="Latest release"></a>
+  <a href="https://github.com/career-ops-hq/career-ops/releases/latest"><img src="docs/npm-badge.svg" alt="Latest release"></a>
 </p>
 
 <p align="center">

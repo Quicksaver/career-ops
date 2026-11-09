@@ -112,3 +112,5 @@ If the final score is >= 4.5, generate a draft of responses for the application 
 Record it via a TSV in `users/{USER}/batch/tracker-additions/` with all columns including Report and PDF as ✅, then run `node merge-tracker.mjs --user {USER}`.
 
 **If an artifact-generation step fails after the JD and gates are resolved**, continue with the next ones and mark the failed step as pending in the tracker. An unavailable JD or unresolved liveness/confirmation gate stops the pipeline before evaluation and all artifact/tracker writes.
+
+**Last step: the community ask (interactive runs only).** When `auto-pipeline` runs on its own, not inside `pipeline` (which asks once, at the end of its run), and this run saved its evaluation report, finish with `node community-asks.mjs --user {USER} next` and follow AGENTS.md → "Community asks".

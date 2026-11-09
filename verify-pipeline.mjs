@@ -613,6 +613,37 @@ function extractReportUrlKey(reportContent) {
   return normalizeUrl(raw) ? canonicalPostingUrl(raw) : '';
 }
 
+// Report numbers a tracker row's Report cell links: the [NNN] link text(s) and
+// the NNN- prefix of the linked filename(s). Shared with Check 10.
+function linkedReportNums(cell) {
+  const nums = [];
+  for (const link of parseMarkdownLinks(cell)) {
+    if (/^\d+$/.test(link.label)) nums.push(parseInt(link.label, 10));
+    const m = link.target.split(/[\\/]/).pop().match(/^(\d+)-/);
+    if (m) nums.push(parseInt(m[1], 10));
+  }
+  return nums;
+}
+
+// A re-evaluation keeps the earlier report on the same row (#5780): both links
+// in the Report cell, or merge-tracker's `Superseded report [N]` marker in
+// Notes. The fork's merge keeps the original report in the Report cell and links
+// the new one in Notes (`Re-eval report [N](reports/...)`), so a report file
+// linked from Notes counts too. Map each report number to the rows that keep it
+// on record.
+const SUPERSEDED_RE = /Superseded report \[(\d+)\]/gi;
+const rowsByReport = new Map();
+entries.forEach((e, row) => {
+  const superseded = [...e.notes.matchAll(SUPERSEDED_RE)].map(m => parseInt(m[1], 10));
+  const notesReports = parseMarkdownLinks(e.notes)
+    .map(link => link.target.split(/[\\/]/).pop().match(REPORT_FILE_RE))
+    .filter(Boolean).map(m => parseInt(m[1], 10));
+  for (const n of [...linkedReportNums(e.report), ...superseded, ...notesReports]) {
+    if (!rowsByReport.has(n)) rowsByReport.set(n, new Set());
+    rowsByReport.get(n).add(row);
+  }
+});
+
 const reportFiles = existsSync(REPORTS_DIR)
   ? readdirSync(REPORTS_DIR).filter(f => REPORT_FILE_RE.test(f))
   : [];
@@ -644,7 +675,7 @@ if (reportNumberCollisions === 0) ok('No duplicate report numbers');
 let dupReports = 0;
 const reportsByRole = new Map();
 for (const name of reportFiles) {
-  const companySlug = name.match(REPORT_FILE_RE)[2];
+  const [, num, companySlug] = name.match(REPORT_FILE_RE);
   let role = null;
   let urlKey = '';
   try {
@@ -657,7 +688,7 @@ for (const name of reportFiles) {
   if (!role) continue;
   const key = normalizeKey(companySlug) + '::' + normalizeKey(role);
   if (!reportsByRole.has(key)) reportsByRole.set(key, []);
-  reportsByRole.get(key).push({ name, urlKey });
+  reportsByRole.get(key).push({ name, urlKey, num: parseInt(num, 10) });
 }
 for (const group of reportsByRole.values()) {
   if (group.length < 2) continue;
@@ -668,7 +699,13 @@ for (const group of reportsByRole.values()) {
   // a key and no two share one.
   const keys = group.map(r => r.urlKey);
   if (keys.every(Boolean) && new Set(keys).size === keys.length) continue;
-  warn(`Duplicate reports for same company+role: ${group.map(r => r.name).join(', ')}`, "open both reports and delete or archive the stale one if it is a concurrent-worker duplicate; keep both if the JD changed (re-evaluation) or the openings differ (add the posting URL)", 'duplicate_reports_same_role', `duplicate-reports:${group.map(r => r.name).sort().join(':')}`, {
+  // One tracker row keeping every report on record is a re-evaluation, not a
+  // concurrent-worker race. An unreferenced report, reports split across rows,
+  // or two files sharing one number still warn.
+  const nums = group.map(r => r.num);
+  const rows = new Set(nums.flatMap(n => [...(rowsByReport.get(n) ?? [])]));
+  if (new Set(nums).size === nums.length && nums.every(n => rowsByReport.has(n)) && rows.size === 1) continue;
+  warn(`Duplicate reports for same company+role: ${group.map(r => r.name).join(', ')}`, "open both reports and delete or archive the stale one if it is a concurrent-worker duplicate; for a re-evaluation, keep both on one row (link both in its Report cell); if the openings differ, add each posting URL", 'duplicate_reports_same_role', `duplicate-reports:${group.map(r => r.name).sort().join(':')}`, {
     files: group.map(r => `reports/${r.name}`),
     posting_identities: [...group].sort((a, b) => a.name.localeCompare(b.name)).map(r => ({ file: `reports/${r.name}`, canonical_url: r.urlKey })),
   });
