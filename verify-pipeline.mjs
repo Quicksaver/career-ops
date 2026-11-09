@@ -718,6 +718,11 @@ for (const group of reportsByRole.values()) {
   }
   for (const [url, subset] of byUrl) {
     if (subset.length < 2 || subset.length === group.length) continue;
+    // The same re-evaluation exemption as the whole group: one row keeping
+    // every report of this posting on record is not a duplicate.
+    const subsetNums = subset.map(r => r.num);
+    const subsetRows = new Set(subsetNums.flatMap(n => [...(rowsByReport.get(n) ?? [])]));
+    if (new Set(subsetNums).size === subsetNums.length && subsetNums.every(n => rowsByReport.has(n)) && subsetRows.size === 1) continue;
     const names = subset.map(report => report.name).sort();
     warn(`Duplicate reports for the same posting: ${names.join(', ')}`,
       'these reports evaluate the same posting URL: keep the newest complete evaluation and archive the others, or run node verify-runner.mjs to review and resolve them',

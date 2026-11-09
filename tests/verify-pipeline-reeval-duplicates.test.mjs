@@ -109,3 +109,47 @@ try {
 } finally {
   rmSync(vpTmp, { recursive: true, force: true });
 }
+
+// The same-posting subcheck: within a company+role group that still warns,
+// two reports sharing one posting URL are flagged on their own, unless one
+// row keeps both on record as a re-evaluation (fork).
+const urlTmp = mkdtempSync(join(tmpdir(), 'co-vp-reeval-url-'));
+try {
+  const reports = join(urlTmp, 'reports');
+  mkdirSync(reports, { recursive: true });
+  const tracker = join(urlTmp, 'applications.md');
+  const env = { ...process.env, CAREER_OPS_TRACKER: tracker, CAREER_OPS_REPORTS: reports };
+  const report = (url) =>
+    `# Evaluation: Acme — Staff AI Engineer\n\n**URL:** ${url}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "Acme"\nrole: "Staff AI Engineer"\nscore: 4.2\n\`\`\`\n`;
+  const SAME = 'https://jobs.ashbyhq.com/acme/11111111-1111-1111-1111-111111111111';
+  writeFileSync(join(reports, '001-acme-2026-01-04.md'), report(SAME));
+  writeFileSync(join(reports, '003-acme-2026-01-05.md'), report(SAME));
+  // No URL, so the whole group keeps warning and the subcheck runs.
+  writeFileSync(join(reports, '005-acme-2026-01-06.md'), report('—'));
+  const HEADER =
+    '# Applications Tracker\n\n' +
+    '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
+    '|---|------|---------|------|-------|--------|-----|--------|-------|\n';
+  const row = (num, reportCell, notes) =>
+    `| ${num} | 2026-01-05 | Acme | Staff AI Engineer | 4.2/5 | Evaluated | ❌ | ${reportCell} | ${notes} |\n`;
+  const samePostingFlagged = (rows) => {
+    writeFileSync(tracker, HEADER + rows.join(''));
+    const o = run(NODE, ['verify-pipeline.mjs'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    return o === null ? null : /Duplicate reports for the same posting: 001-acme[^\n]*003-acme/.test(o);
+  };
+  const L1 = '[1](reports/001-acme-2026-01-04.md)';
+  const L3 = '[3](reports/003-acme-2026-01-05.md)';
+  const L5 = '[5](reports/005-acme-2026-01-06.md)';
+
+  if (samePostingFlagged([row(1, L1, `Re-eval report ${L3} (4.0/5)`), row(2, L5, 'ok')]) === false) {
+    pass('same-posting subcheck: a re-evaluation kept on one row is not flagged');
+  } else fail('same-posting subcheck flagged a re-evaluation kept on one row');
+
+  if (samePostingFlagged([row(1, L1, 'ok'), row(2, L3, 'ok'), row(3, L5, 'ok')]) === true) {
+    pass('same-posting subcheck: one posting on two rows is still flagged');
+  } else fail('same-posting subcheck exempted one posting split across two rows');
+} catch (e) {
+  fail(`verify-pipeline same-posting re-evaluation checks crashed: ${e.message}`);
+} finally {
+  rmSync(urlTmp, { recursive: true, force: true });
+}
