@@ -96,6 +96,7 @@ type ScoreBucket struct {
 // WeekActivity represents application activity for a given ISO week.
 type WeekActivity struct {
 	Week  string // e.g., "2026-W14", "2026-W13"
+	Start string // the week's Monday, YYYY-MM-DD
 	Count int
 	// ByStatus splits Count by each row's current normalized status. The week
 	// is the tracker date, so this says where that week's rows stand now, not

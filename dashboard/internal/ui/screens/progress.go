@@ -3,6 +3,7 @@ package screens
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -374,7 +375,7 @@ func (m ProgressModel) renderWeeklyActivity() string {
 		breakdownW = max(breakdownW, lipgloss.Width(breakdowns[i]))
 	}
 
-	labelW := 6
+	labelW := 13 // "28/07–03/08" plus a gap
 	countW := len(fmt.Sprint(maxCount)) + 2
 	// The bar keeps at least 10 cells; a breakdown that no longer fits is
 	// clipped at the terminal edge rather than wrapped.
@@ -401,17 +402,24 @@ func (m ProgressModel) renderWeeklyActivity() string {
 		barText := bar.String()
 		barText += strings.Repeat(" ", max(0, barMaxW-lipgloss.Width(barText)))
 
-		// Show short week label (e.g., "W14" from "2026-W14")
-		shortWeek := week.Week
-		if idx := strings.Index(shortWeek, "-"); idx >= 0 {
-			shortWeek = shortWeek[idx+1:]
-		}
-
-		lines = append(lines, lineStyle.Render(labelStyle.Render(shortWeek)+barText+
+		lines = append(lines, lineStyle.Render(labelStyle.Render(weekRange(week))+barText+
 			countStyle.Render(fmt.Sprint(week.Count))+"  "+breakdowns[i]))
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// weekRange labels a week by its Monday-to-Sunday day/month range, e.g.
+// "28/07–03/08", falling back to the ISO week ("W31") without a start date.
+func weekRange(week model.WeekActivity) string {
+	start, err := time.Parse("2006-01-02", week.Start)
+	if err != nil {
+		if idx := strings.Index(week.Week, "-"); idx >= 0 {
+			return week.Week[idx+1:]
+		}
+		return week.Week
+	}
+	return start.Format("02/01") + "–" + start.AddDate(0, 0, 6).Format("02/01")
 }
 
 // weekColor is a status's colour in the weekly activity, with non-canonical

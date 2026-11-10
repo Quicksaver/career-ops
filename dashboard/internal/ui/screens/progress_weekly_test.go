@@ -45,7 +45,7 @@ func TestStackSegmentsKeepEveryStatusVisible(t *testing.T) {
 func TestWeeklyActivityShowsStatusBreakdown(t *testing.T) {
 	m := ProgressModel{width: 120, theme: theme.NewTheme("catppuccin-mocha"), metrics: model.ProgressMetrics{
 		WeeklyActivity: []model.WeekActivity{
-			{Week: "2026-W44", Count: 412, ByStatus: map[string]int{"skip": 380, "closed": 20, "evaluated": 10, "applied": 2}},
+			{Week: "2026-W44", Start: "2026-10-26", Count: 412, ByStatus: map[string]int{"skip": 380, "closed": 20, "evaluated": 10, "applied": 2}},
 			{Week: "2026-W45", Count: 9, ByStatus: map[string]int{"evaluated": 8, "paused": 1}},
 		},
 	}}
@@ -56,6 +56,12 @@ func TestWeeklyActivityShowsStatusBreakdown(t *testing.T) {
 	}
 	if !strings.Contains(lines[1], "412  10 open · 2 applied · 20 closed · 380 skip") {
 		t.Errorf("W44 breakdown missing or out of tab order: %q", lines[1])
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[1]), "26/10–01/11 ") {
+		t.Errorf("W44 not labelled by its day/month range: %q", lines[1])
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[2]), "W45 ") {
+		t.Errorf("week without a start date should fall back to its ISO label: %q", lines[2])
 	}
 	if !strings.Contains(lines[2], "8 open · 1 other") {
 		t.Errorf("non-canonical status not folded into other: %q", lines[2])
