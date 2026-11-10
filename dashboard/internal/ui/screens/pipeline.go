@@ -2894,18 +2894,24 @@ func (m PipelineModel) scoreStyle(score float64) lipgloss.Style {
 }
 
 func (m PipelineModel) statusColorMap() map[string]lipgloss.Color {
+	return statusColors(m.theme)
+}
+
+// statusColors maps each canonical status to its colour, shared by the
+// pipeline tabs and the progress screen's weekly activity.
+func statusColors(t theme.Theme) map[string]lipgloss.Color {
 	return map[string]lipgloss.Color{
-		"hired":      m.theme.Green, // terminal success — never uncoloured (default) like an unknown status
-		"interview":  m.theme.Green,
-		"offer":      m.theme.Green,
-		"applied":    m.theme.Sky,
-		"responded":  m.theme.Blue,
-		"evaluated":  m.theme.Text,
-		"skip":       m.theme.Red,
-		"rejected":   m.theme.Subtext,
-		"closed":     m.theme.Subtext,
-		"discarded":  m.theme.Subtext,
-		"assessment": m.theme.Mauve,
+		"hired":      t.Green, // terminal success — never uncoloured (default) like an unknown status
+		"interview":  t.Green,
+		"offer":      t.Green,
+		"applied":    t.Sky,
+		"responded":  t.Blue,
+		"evaluated":  t.Text,
+		"skip":       t.Red,
+		"rejected":   t.Subtext,
+		"closed":     t.Subtext,
+		"discarded":  t.Subtext,
+		"assessment": t.Mauve,
 	}
 }
 

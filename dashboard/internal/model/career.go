@@ -97,6 +97,10 @@ type ScoreBucket struct {
 type WeekActivity struct {
 	Week  string // e.g., "2026-W14", "2026-W13"
 	Count int
+	// ByStatus splits Count by each row's current normalized status. The week
+	// is the tracker date, so this says where that week's rows stand now, not
+	// which status changes happened during the week.
+	ByStatus map[string]int
 }
 
 // StatsMetrics holds cross-cutting breakdowns for the stats analytics screen,

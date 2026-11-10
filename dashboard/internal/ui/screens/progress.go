@@ -341,32 +341,65 @@ func (m ProgressModel) renderWeeklyActivity() string {
 		return strings.Join(lines, "\n")
 	}
 
-	// Find max count for bar scaling
-	maxCount := 0
-	for _, w := range m.metrics.WeeklyActivity {
-		if w.Count > maxCount {
-			maxCount = w.Count
+	// Each week's bar is stacked by the rows' current status, in pipeline tab
+	// order, and followed by the total and a "6 open \u00b7 2 applied" breakdown.
+	colors := statusColors(m.theme)
+	type part struct {
+		status string
+		count  int
+	}
+	weeks := make([][]part, len(m.metrics.WeeklyActivity))
+	breakdowns := make([]string, len(m.metrics.WeeklyActivity))
+	maxCount, breakdownW := 0, 0
+	for i, week := range m.metrics.WeeklyActivity {
+		maxCount = max(maxCount, week.Count)
+		byStatus := map[string]int{}
+		for status, n := range week.ByStatus {
+			if _, known := colors[status]; !known {
+				status = filterOther
+			}
+			byStatus[status] += n
 		}
+		var texts []string
+		for _, tab := range getPipelineTabs() {
+			n := byStatus[tab.filter]
+			if n == 0 {
+				continue
+			}
+			weeks[i] = append(weeks[i], part{tab.filter, n})
+			texts = append(texts, lipgloss.NewStyle().Foreground(m.weekColor(colors, tab.filter)).
+				Render(fmt.Sprintf("%d %s", n, strings.ToLower(tab.label))))
+		}
+		breakdowns[i] = strings.Join(texts, lipgloss.NewStyle().Foreground(m.theme.Overlay).Render(" \u00b7 "))
+		breakdownW = max(breakdownW, lipgloss.Width(breakdowns[i]))
 	}
 
-	labelW := 10
-	barMaxW := m.width - labelW - 12
-	if barMaxW < 10 {
-		barMaxW = 10
-	}
+	labelW := 6
+	countW := len(fmt.Sprint(maxCount)) + 2
+	// The bar keeps at least 10 cells; a breakdown that no longer fits is
+	// clipped at the terminal edge rather than wrapped.
+	barMaxW := max(10, m.width-4-labelW-countW-2-breakdownW)
+	lineStyle := padStyle.MaxWidth(max(1, m.width)).MaxHeight(1)
+	labelStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Width(labelW)
+	countStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Width(countW).Align(lipgloss.Right)
 
-	for _, week := range m.metrics.WeeklyActivity {
+	for i, week := range m.metrics.WeeklyActivity {
 		barW := 0
 		if maxCount > 0 {
 			barW = week.Count * barMaxW / maxCount
 		}
-		if barW < 1 && week.Count > 0 {
-			barW = 1
+		counts := make([]int, len(weeks[i]))
+		for j, p := range weeks[i] {
+			counts[j] = p.count
 		}
-
-		barStyle := lipgloss.NewStyle().Foreground(m.theme.Blue)
-		labelStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Width(labelW)
-		countStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext)
+		var bar strings.Builder
+		cells := stackSegments(counts, barW)
+		for j, p := range weeks[i] {
+			bar.WriteString(lipgloss.NewStyle().Foreground(m.weekColor(colors, p.status)).
+				Render(strings.Repeat("\u2588", cells[j])))
+		}
+		barText := bar.String()
+		barText += strings.Repeat(" ", max(0, barMaxW-lipgloss.Width(barText)))
 
 		// Show short week label (e.g., "W14" from "2026-W14")
 		shortWeek := week.Week
@@ -374,14 +407,52 @@ func (m ProgressModel) renderWeeklyActivity() string {
 			shortWeek = shortWeek[idx+1:]
 		}
 
-		bar := barStyle.Render(strings.Repeat("\u2588", barW))
-		label := labelStyle.Render(shortWeek)
-		count := countStyle.Render(fmt.Sprintf("  %d", week.Count))
-
-		lines = append(lines, padStyle.Render(label+bar+count))
+		lines = append(lines, lineStyle.Render(labelStyle.Render(shortWeek)+barText+
+			countStyle.Render(fmt.Sprint(week.Count))+"  "+breakdowns[i]))
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// weekColor is a status's colour in the weekly activity, with non-canonical
+// statuses muted.
+func (m ProgressModel) weekColor(colors map[string]lipgloss.Color, status string) lipgloss.Color {
+	if c, ok := colors[status]; ok {
+		return c
+	}
+	return m.theme.Subtext
+}
+
+// stackSegments splits cells across counts in proportion, giving every
+// non-zero count at least one cell so no status vanishes from its bar. The
+// result sums to cells, or to the number of non-zero counts when that is more.
+func stackSegments(counts []int, cells int) []int {
+	out := make([]int, len(counts))
+	total, nonZero, largest := 0, 0, -1
+	for i, n := range counts {
+		total += n
+		if n > 0 {
+			nonZero++
+			if largest < 0 || n > counts[largest] {
+				largest = i
+			}
+		}
+	}
+	if total == 0 {
+		return out
+	}
+	cells = max(cells, nonZero)
+	sum := 0
+	for i, n := range counts {
+		if n > 0 {
+			out[i] = max(1, (n*cells+total/2)/total)
+			sum += out[i]
+		}
+	}
+	// Rounding and the one-cell minimum can miss the target; the largest
+	// segment absorbs the difference while keeping its own cell.
+	out[largest] = max(1, out[largest]+cells-sum)
+	return out
 }
 
 func (m ProgressModel) renderHelp() string {

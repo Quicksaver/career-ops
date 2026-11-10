@@ -1055,6 +1055,7 @@ Files:
 - `test-all.mjs`
 - `dashboard/internal/data/career.go`
 - `dashboard/internal/data/career_test.go`
+- `dashboard/internal/data/progress_weekly_test.go`
 - `users/{USER}/data/applications.md`
 - `users/{USER}/data/scan-history.tsv`
 
@@ -1213,6 +1214,8 @@ Files:
 - `dashboard/internal/ui/screens/pipeline_fork_columns_test.go`
 - `dashboard/internal/ui/screens/pipeline_fit_test.go`
 - `dashboard/internal/ui/screens/pipeline_width_test.go`
+- `dashboard/internal/ui/screens/progress.go`
+- `dashboard/internal/ui/screens/progress_weekly_test.go`
 
 What this customizes:
 
@@ -1237,6 +1240,7 @@ What this customizes:
 - Customizes dashboard table defaults for scanning: the date column is labelled `DATE` instead of `APPLIED`, the last-contact column is labelled `CONTACT` instead of `LAST`, and the `PDF`, `CONTACT` and `POSTED` columns are visible by default while `DATE` and `RPT` are optional. `CONTACT` and `POSTED` already give the dates that matter at a glance. On a narrow terminal, columns drop in the order RPT, DATE, PAY, LOCATION, POSTED, CONTACT, PDF.
 - Removes the `STATUS` table column outside the `OTHER` tab. With no `ALL` tab, every other tab holds a single canonical status that the selected tab already names. `OTHER` collects non-canonical statuses, which differ per row, so it keeps the column (`showStatusCol()` in `pipeline.go`). The column is not in the column picker.
 - Colours the inline status tabs with the status colours the `STATUS` column used to carry (`statusColorMap`): Applied sky, Responded blue, Assessment mauve, Interview, Offer and Hired green, SKIP red. Statuses drawn in plain or muted text (Open, Rejected, Closed, Discarded, Other) keep the muted tab colour. The selected tab is bold and underlined, in its status colour or in blue for the uncoloured ones.
+- Splits each week of the progress screen's Weekly Activity by the rows' current status: the bar is stacked in pipeline tab order with the tab colours (`statusColors`), followed by the total and a `10 open · 2 applied · 380 skip` breakdown, so the muted statuses that share a colour stay distinct in text. The week is the tracker date, so the split says where that week's rows stand now, not which status changes happened that week; `status-log.tsv` only covers transitions since the ledger started, so it cannot give the latter for older rows. Non-canonical statuses count as `other`.
 - Treats dashboard status changes as job-ad interactions for the `CONTACT` column: status cells remain canonical, while the dashboard appends a dated `Status changed to ...` note and derives `CONTACT` from the latest note/status ISO date or the tracker date fallback.
 - Renders the selected dashboard row as one continuous highlight by applying the selection background to every cell, separator, and trailing fill area instead of wrapping the already-styled row after composition.
 - Removes passive dashboard/viewer background fills from the dashboard title, status summary, help row, job viewer title/footer, fenced code blocks, and inline code so background highlighting is reserved for actual interactive selections.
@@ -1266,6 +1270,7 @@ Future merge notes:
 - Preserve `Closed` as distinct from `Discarded`: closed/expired postings map to `Closed`, candidate-discarded rows map to `Discarded`, and actionable metrics keep `Closed` out of actionable views.
 - Preserve the fork's lean dashboard chrome unless upstream adds equivalent configurability: no secondary status-count row, no separate sort/view/shown row, no grouped view toggle, and current sort shown only in the bottom help row.
 - Preserve the fork's dashboard table defaults unless upstream adds user-configurable column presets: flat-only rows, `DATE`/`CONTACT` labels, visible `PDF`, `CONTACT` and `POSTED` columns, hidden `DATE`, no `STATUS` column outside `OTHER`, and status-coloured tabs.
+- Preserve the status split in the progress screen's Weekly Activity (`WeekActivity.ByStatus`) if upstream reworks that section.
 - Preserve the `CONTACT` interaction semantics: manual dashboard status changes should update the tracker notes with a dated interaction, and parser changes should continue reading the latest ISO date from notes plus legacy dated status cells before falling back to the tracker date.
 - Preserve atomic discard updates together with `CONTACT` semantics: selecting a discard/skip reason must write status, dated interaction, and the `DISCARD:`/`SKIP:` tag in one tracker update without replacing existing notes.
 - Preserve the selected-row highlight behavior when table rendering changes: the highlight should cover the full row across all visible columns, separators, and trailing whitespace.

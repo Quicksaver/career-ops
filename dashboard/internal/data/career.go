@@ -1386,6 +1386,7 @@ func ComputeProgressMetrics(apps []model.CareerApplication, history ...map[int]i
 
 	// Weekly activity: group by ISO week from Date field, show last 8 weeks.
 	weekCounts := make(map[string]int)
+	weekStatuses := make(map[string]map[string]int)
 	for _, app := range apps {
 		if app.Date == "" {
 			continue
@@ -1397,6 +1398,10 @@ func ComputeProgressMetrics(apps []model.CareerApplication, history ...map[int]i
 		year, week := t.ISOWeek()
 		key := fmt.Sprintf("%d-W%02d", year, week)
 		weekCounts[key]++
+		if weekStatuses[key] == nil {
+			weekStatuses[key] = make(map[string]int)
+		}
+		weekStatuses[key][NormalizeStatus(app.Status)]++
 	}
 
 	// Sort weeks and take last 8
@@ -1411,8 +1416,9 @@ func ComputeProgressMetrics(apps []model.CareerApplication, history ...map[int]i
 
 	for _, w := range weeks {
 		pm.WeeklyActivity = append(pm.WeeklyActivity, model.WeekActivity{
-			Week:  w,
-			Count: weekCounts[w],
+			Week:     w,
+			Count:    weekCounts[w],
+			ByStatus: weekStatuses[w],
 		})
 	}
 
