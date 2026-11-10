@@ -5,7 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+
 	"github.com/santifer/career-ops/dashboard/internal/i18n"
 	"github.com/santifer/career-ops/dashboard/internal/model"
 	"github.com/santifer/career-ops/dashboard/internal/theme"
@@ -25,7 +28,7 @@ func TestPostedCellCountsLocalCalendarDays(t *testing.T) {
 
 	m := NewPipelineModel(theme.NewTheme(""), nil, model.PipelineMetrics{}, t.TempDir(), 120, 30)
 	cell := func(postedOn string) string {
-		return strings.TrimSpace(ansi.Strip(m.renderPostedCell(model.CareerApplication{PostedOn: postedOn}, 14)))
+		return strings.TrimSpace(ansi.Strip(m.renderPostedCell(model.CareerApplication{PostedOn: postedOn}, 14, false)))
 	}
 
 	if got := cell("2026-12-01"); got != i18n.Current.TimeToday {
@@ -36,5 +39,24 @@ func TestPostedCellCountsLocalCalendarDays(t *testing.T) {
 	}
 	if got := cell("2026-12-02"); got != "—" {
 		t.Errorf("posting dated tomorrow must still get the dash, rendered %q", got)
+	}
+}
+
+// The selected row's highlight runs through the POSTED cell like every other
+// cell, both for a dated posting and for the dash.
+func TestPostedCellCarriesSelectionBackground(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previousProfile) })
+
+	m := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), nil, model.PipelineMetrics{}, t.TempDir(), 120, 30)
+	for _, postedOn := range []string{"2026-01-05", ""} {
+		app := model.CareerApplication{PostedOn: postedOn}
+		if got := m.renderPostedCell(app, 10, true); !strings.Contains(got, "48;2;") {
+			t.Errorf("selected POSTED cell %q has no background: %q", postedOn, got)
+		}
+		if got := m.renderPostedCell(app, 10, false); strings.Contains(got, "48;2;") {
+			t.Errorf("unselected POSTED cell %q has a background: %q", postedOn, got)
+		}
 	}
 }

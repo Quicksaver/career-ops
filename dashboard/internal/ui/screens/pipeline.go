@@ -2157,9 +2157,10 @@ const (
 // renderPostedCell shows how long a requisition has been open, colour-coded by
 // age: green within a week, yellow within a month, peach within a quarter, red
 // beyond. Rows whose notes carry no "posted <date>" render a subtle dash.
-func (m PipelineModel) renderPostedCell(app model.CareerApplication, width int) string {
+func (m PipelineModel) renderPostedCell(app model.CareerApplication, width int, selected bool) string {
+	dash := m.rowCellStyle(width, m.theme.Subtext, selected).Render("—")
 	if app.PostedOn == "" {
-		return lipgloss.NewStyle().Foreground(m.theme.Subtext).Width(width).Render("—")
+		return dash
 	}
 	// Local calendar days against the dashboard's own clock, the way
 	// FormatTimeAgo counts them for the label in this same cell. time.Parse
@@ -2169,7 +2170,7 @@ func (m PipelineModel) renderPostedCell(app model.CareerApplication, width int) 
 	// would have said "today".
 	posted, err := time.ParseInLocation("2006-01-02", app.PostedOn, time.Local)
 	if err != nil {
-		return lipgloss.NewStyle().Foreground(m.theme.Subtext).Width(width).Render("—")
+		return dash
 	}
 	now := i18n.NowFunc()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
@@ -2179,7 +2180,7 @@ func (m PipelineModel) renderPostedCell(app model.CareerApplication, width int) 
 	// the first case below and paints it green — the one colour that says "act
 	// on this now".
 	if posted.After(today) {
-		return lipgloss.NewStyle().Foreground(m.theme.Subtext).Width(width).Render("—")
+		return dash
 	}
 	days := int(math.Round(today.Sub(posted).Hours() / 24))
 	color := m.theme.Red
@@ -2191,7 +2192,7 @@ func (m PipelineModel) renderPostedCell(app model.CareerApplication, width int) 
 	case days <= postedStaleDays:
 		color = m.theme.Peach
 	}
-	return lipgloss.NewStyle().Foreground(color).Width(width).
+	return m.rowCellStyle(width, color, selected).
 		Render(truncateRunes(formatTimeAgo(app.PostedOn), width-1))
 }
 
@@ -2356,7 +2357,7 @@ func (m PipelineModel) renderAppLine(app model.CareerApplication, selected bool)
 		segments = append(segments, lastStyle.Render(truncateRunes(lastText, cw.last)))
 	}
 	if cw.posted > 0 {
-		segments = append(segments, m.renderPostedCell(app, cw.posted))
+		segments = append(segments, m.renderPostedCell(app, cw.posted, selected))
 	}
 
 	// MaxWidth/MaxHeight keep the row on one line if a cell ever outgrows the
