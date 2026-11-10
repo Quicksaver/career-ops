@@ -22,6 +22,7 @@ import {
   canonicalizeTrackerPath,
   cell,
   rebuildRow,
+  resolvePdfIndexPath,
   trackerLockDirFor,
   writeFileAtomic,
 } from './tracker-utils.mjs';
@@ -29,6 +30,7 @@ import { normalizeReportLink } from './tracker-links.mjs';
 import { mostAdvancedDuplicateRow } from './lib/duplicate-lifecycle.mjs';
 import { assertVerificationContext } from './lib/verification-review.mjs';
 import { resolveTrackerPath } from './path-resolver.mjs';
+import { promoteNewerCv } from './lib/promote-duplicate-cv.mjs';
 
 // Large trackers can take over a minute to scan before any repair is safe.
 const DUPLICATE_REVALIDATION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -192,7 +194,9 @@ async function main() {
   const reportArchiveRoot = userPath(context, `reports/duplicates/${stamp}`);
   const outputArchiveRoot = userPath(context, `output/duplicates/${stamp}`);
   const moved = [];
+  const restores = [];
   let trackerRowsRemoved = 0;
+  let cvsPromoted = 0;
   let reportsArchived = 0;
   let artifactsArchived = 0;
 
@@ -404,6 +408,31 @@ async function main() {
         reportsArchived++;
 
         const stem = duplicateFile.slice(0, -extname(duplicateFile).length);
+        // A newer CV stays live under the keeper instead of being archived with
+        // its report, so the job keeps linking its most recent CV.
+        const promotion = await promoteNewerCv({
+          userRoot: context.userRoot,
+          indexPath: resolvePdfIndexPath(appsPath),
+          keeperReport: join(reportsRoot, keeperFile),
+          candidatePdf: join(outputRoot, `${stem}.pdf`),
+          backupDir: join(backupRoot, 'output'),
+        });
+        moved.push(...promotion.moves);
+        restores.push(...promotion.restores);
+        if (promotion.promoted) {
+          cvsPromoted++;
+          (plan.promotedCvs ||= []).push(promotion.pdf);
+          if (colmap.pdf != null) {
+            for (let index = 0; index < lines.length; index++) {
+              if (removeIndices.has(index)) continue;
+              const row = parseTrackerRow(lines[index], colmap);
+              if (!row || reportTarget(row.report) !== keeperFile) continue;
+              const parts = lines[index].split('|').map(value => value.trim());
+              parts[colmap.pdf] = '✅';
+              lines[index] = rebuildRow(parts);
+            }
+          }
+        }
         for (const extension of ['.html', '.pdf', '.tex']) {
           const sourceArtifact = join(outputRoot, `${stem}${extension}`);
           if (!existsSync(sourceArtifact)) continue;
@@ -451,6 +480,7 @@ async function main() {
         reviewer_keeper_report_file: plan.reviewerKeeperReportFile || plan.resolution.keeper_report_file,
         keeper_report_file: plan.resolution.keeper_report_file,
         duplicate_report_files: plan.resolution.duplicate_report_files,
+        ...(plan.promotedCvs ? { promoted_cvs: plan.promotedCvs } : {}),
         rationale: plan.decision.rationale,
         evidence: plan.decision.evidence,
         backup_root: backupRoot,
@@ -465,11 +495,18 @@ async function main() {
       tracker_rows_removed: trackerRowsRemoved,
       reports_archived: reportsArchived,
       artifacts_archived: artifactsArchived,
+      cvs_promoted: cvsPromoted,
       ledger: ledgerPath,
       backup: backupRoot,
     };
   } catch (error) {
     if (trackerWritten && originalTracker !== null) writeFileAtomic(appsPath, originalTracker);
+    for (const item of restores.reverse()) {
+      try {
+        if (item.content === null) rmSync(item.path, { force: true });
+        else writeFileAtomic(item.path, item.content);
+      } catch {}
+    }
     for (const item of moved.reverse()) {
       try {
         if (existsSync(item.to)) {
