@@ -1210,6 +1210,9 @@ Files:
 - `dashboard/internal/model/career.go`
 - `dashboard/internal/ui/screens/pipeline.go`
 - `dashboard/internal/ui/screens/pipeline_test.go`
+- `dashboard/internal/ui/screens/pipeline_fork_columns_test.go`
+- `dashboard/internal/ui/screens/pipeline_fit_test.go`
+- `dashboard/internal/ui/screens/pipeline_width_test.go`
 
 What this customizes:
 
@@ -1231,7 +1234,9 @@ What this customizes:
 - Adds a canonical `Closed` tracker status for postings that closed before application; `Closed` has its own dashboard tab, is excluded from actionable/active metrics, and takes over closed/expired aliases that previously collapsed into `Discarded`.
 - Simplifies the dashboard chrome by removing the secondary status-count row (`Applied:x`, `Evaluated:x`, `Skip:x`, etc.) and the separate `Sort`/`View`/shown-count row; the current sort label now lives in the bottom help row beside the keyboard shortcuts.
 - Makes the dashboard flat-only: grouped view mode and the `v` view toggle are removed because the compact inline tabs and table layout make grouped rendering redundant.
-- Customizes dashboard table defaults for scanning: the date column is labelled `DATE` instead of `APPLIED`, the last-contact column is labelled `CONTACT` instead of `LAST`, and the `PDF` plus `CONTACT` columns are visible by default while `RPT` remains optional.
+- Customizes dashboard table defaults for scanning: the date column is labelled `DATE` instead of `APPLIED`, the last-contact column is labelled `CONTACT` instead of `LAST`, and the `PDF`, `CONTACT` and `POSTED` columns are visible by default while `DATE` and `RPT` are optional. `CONTACT` and `POSTED` already give the dates that matter at a glance. On a narrow terminal, columns drop in the order RPT, DATE, PAY, LOCATION, POSTED, CONTACT, PDF.
+- Removes the `STATUS` table column outside the `OTHER` tab. With no `ALL` tab, every other tab holds a single canonical status that the selected tab already names. `OTHER` collects non-canonical statuses, which differ per row, so it keeps the column (`showStatusCol()` in `pipeline.go`). The column is not in the column picker.
+- Colours the inline status tabs with the status colours the `STATUS` column used to carry (`statusColorMap`): Applied sky, Responded blue, Assessment mauve, Interview, Offer and Hired green, SKIP red. Statuses drawn in plain or muted text (Open, Rejected, Closed, Discarded, Other) keep the muted tab colour. The selected tab is bold and underlined, in its status colour or in blue for the uncoloured ones.
 - Treats dashboard status changes as job-ad interactions for the `CONTACT` column: status cells remain canonical, while the dashboard appends a dated `Status changed to ...` note and derives `CONTACT` from the latest note/status ISO date or the tracker date fallback.
 - Renders the selected dashboard row as one continuous highlight by applying the selection background to every cell, separator, and trailing fill area instead of wrapping the already-styled row after composition.
 - Removes passive dashboard/viewer background fills from the dashboard title, status summary, help row, job viewer title/footer, fenced code blocks, and inline code so background highlighting is reserved for actual interactive selections.
@@ -1260,7 +1265,7 @@ Future merge notes:
 - Preserve the fork's triage-oriented tab layout unless upstream adds equivalent configurability: dashboard label `OPEN` for canonical `Evaluated` first/default, `OFFER` visible between `INTERVIEW` and `REJECTED`, no visible `ALL` or `TOP ≥4`, and tabs rendered inline in the first TUI row between the title and summary.
 - Preserve `Closed` as distinct from `Discarded`: closed/expired postings map to `Closed`, candidate-discarded rows map to `Discarded`, and actionable metrics keep `Closed` out of actionable views.
 - Preserve the fork's lean dashboard chrome unless upstream adds equivalent configurability: no secondary status-count row, no separate sort/view/shown row, no grouped view toggle, and current sort shown only in the bottom help row.
-- Preserve the fork's dashboard table defaults unless upstream adds user-configurable column presets: flat-only rows, `DATE`/`CONTACT` labels, and visible `PDF` plus `CONTACT` columns.
+- Preserve the fork's dashboard table defaults unless upstream adds user-configurable column presets: flat-only rows, `DATE`/`CONTACT` labels, visible `PDF`, `CONTACT` and `POSTED` columns, hidden `DATE`, no `STATUS` column outside `OTHER`, and status-coloured tabs.
 - Preserve the `CONTACT` interaction semantics: manual dashboard status changes should update the tracker notes with a dated interaction, and parser changes should continue reading the latest ISO date from notes plus legacy dated status cells before falling back to the tracker date.
 - Preserve atomic discard updates together with `CONTACT` semantics: selecting a discard/skip reason must write status, dated interaction, and the `DISCARD:`/`SKIP:` tag in one tracker update without replacing existing notes.
 - Preserve the selected-row highlight behavior when table rendering changes: the highlight should cover the full row across all visible columns, separators, and trailing whitespace.

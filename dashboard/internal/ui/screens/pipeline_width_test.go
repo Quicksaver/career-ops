@@ -59,37 +59,42 @@ func TestRowWidthMatchesTerminalWidthForEveryColumnCombination(t *testing.T) {
 		ReportPath:  "reports/042-acme.md",
 	}
 
-	for _, width := range []int{120, 160, 200, 240} {
-		for mask := 0; mask < 1<<7; mask++ {
-			visible := map[ColumnID]bool{}
-			for i, col := range optional {
-				visible[col.id] = mask&(1<<i) != 0
-			}
-
-			m := PipelineModel{
-				width:       width,
-				theme:       theme.NewTheme(""),
-				visibleCols: visible,
-			}
-
-			// Below the point where even the shrunk columns fit, the row can no
-			// longer land on the terminal width. Those widths are covered by
-			// TestNarrowTerminalFallsBackToTheRoleFloor. Everywhere the fitter
-			// still has room, the row is exactly the width it was given.
-			if m.columnWidths().role <= 6 {
-				continue
-			}
-
-			got := lipgloss.Width(m.renderAppLine(app, false))
-			if got != width {
-				on := 0
-				for _, v := range visible {
-					if v {
-						on++
-					}
+	// Tab 0 (OPEN) renders no STATUS column; the last tab (OTHER) renders it.
+	otherTab := len(getPipelineTabs()) - 1
+	for _, tab := range []int{0, otherTab} {
+		for _, width := range []int{120, 160, 200, 240} {
+			for mask := 0; mask < 1<<7; mask++ {
+				visible := map[ColumnID]bool{}
+				for i, col := range optional {
+					visible[col.id] = mask&(1<<i) != 0
 				}
-				t.Errorf("width %d with %d optional column(s) (mask %07b): row measured %d, want %d",
-					width, on, mask, got, width)
+
+				m := PipelineModel{
+					width:       width,
+					theme:       theme.NewTheme(""),
+					visibleCols: visible,
+					activeTab:   tab,
+				}
+
+				// Below the point where even the shrunk columns fit, the row can no
+				// longer land on the terminal width. Those widths are covered by
+				// TestNarrowTerminalFallsBackToTheRoleFloor. Everywhere the fitter
+				// still has room, the row is exactly the width it was given.
+				if m.columnWidths().role <= 6 {
+					continue
+				}
+
+				got := lipgloss.Width(m.renderAppLine(app, false))
+				if got != width {
+					on := 0
+					for _, v := range visible {
+						if v {
+							on++
+						}
+					}
+					t.Errorf("tab %d, width %d with %d optional column(s) (mask %07b): row measured %d, want %d",
+						tab, width, on, mask, got, width)
+				}
 			}
 		}
 	}

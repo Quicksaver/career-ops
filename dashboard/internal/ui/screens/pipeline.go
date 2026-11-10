@@ -245,13 +245,13 @@ type colDef struct {
 
 func getOptionalCols() []colDef {
 	return []colDef{
-		{ColDate, i18n.Current.ColDate, "", 10, true},
+		{ColDate, i18n.Current.ColDate, "", 10, false},
 		{ColLocation, i18n.Current.ColLocation, "", 20, true},
 		{ColPay, i18n.Current.ColPay, "", 16, true},
 		{ColHasReport, i18n.Current.ColReport, "✓/—", 4, false},
 		{ColHasPDF, i18n.Current.ColPDF, "✓/—", 4, true},
 		{ColLastContact, i18n.Current.ColContact, "", 10, true},
-		{ColPosted, i18n.Current.ColPosted, "", 10, false},
+		{ColPosted, i18n.Current.ColPosted, "", 10, true},
 	}
 }
 
@@ -1854,21 +1854,31 @@ func (m PipelineModel) renderHeaderTabsWithCounts(showCounts bool) string {
 			label = fmt.Sprintf("%s:%d", tab.label, m.countForFilter(tab.filter))
 		}
 
+		color, own := m.tabColor(tab.filter)
+		style := lipgloss.NewStyle().Foreground(color)
 		if i == m.activeTab {
-			style := lipgloss.NewStyle().
-				Bold(true).
-				Foreground(m.theme.Blue).
-				Padding(0, 0)
-			tabs = append(tabs, style.Render(label))
-		} else {
-			style := lipgloss.NewStyle().
-				Foreground(m.theme.Subtext).
-				Padding(0, 0)
-			tabs = append(tabs, style.Render(label))
+			if !own {
+				color = m.theme.Blue
+			}
+			style = style.Foreground(color).Bold(true).Underline(true)
 		}
+		tabs = append(tabs, style.Render(label))
 	}
 
 	return strings.Join(tabs, "  ")
+}
+
+// tabColor is the colour a status tab's label takes: the status's own colour
+// from statusColorMap when it has a distinct one (Applied, Interview, Skip...),
+// so the hue the removed STATUS column carried stays visible in the header.
+// Statuses drawn in plain text or the muted tone report own=false and keep the
+// muted tab colour.
+func (m PipelineModel) tabColor(filter string) (color lipgloss.Color, own bool) {
+	c, ok := m.statusColorMap()[filter]
+	if !ok || c == m.theme.Text || c == m.theme.Subtext {
+		return m.theme.Subtext, false
+	}
+	return c, true
 }
 
 func (m PipelineModel) countForFilter(filter string) int {
@@ -1959,8 +1969,19 @@ func (m PipelineModel) colVisible(id ColumnID) bool {
 	return m.visibleCols[id]
 }
 
+// showStatusCol reports whether the STATUS column is rendered. Every tab but
+// OTHER holds a single canonical status, which the selected tab already names,
+// so the column appears only on OTHER, where the raw statuses differ per row.
+func (m PipelineModel) showStatusCol() bool {
+	tabs := getPipelineTabs()
+	return m.activeTab >= 0 && m.activeTab < len(tabs) && tabs[m.activeTab].filter == filterOther
+}
+
 func (m PipelineModel) columnWidths() colWidths {
-	company, status, roleFloor := 16, 16, 15
+	company, status, roleFloor := 16, 0, 15
+	if m.showStatusCol() {
+		status = 16
+	}
 	show := map[ColumnID]bool{}
 	for _, col := range getOptionalCols() {
 		if m.colVisible(col.id) {
@@ -1976,11 +1997,12 @@ func (m PipelineModel) columnWidths() colWidths {
 		}
 		return c
 	}
-	// Drop the least identifying columns first (the fork keeps its default PDF
-	// and CONTACT columns ahead of PAY and LOCATION), then give company and status
-	// back to the role column, then lower the role floor. Stopping at a role
-	// that still meets the floor keeps the row on one line.
-	dropOrder := []ColumnID{ColPosted, ColHasReport, ColPay, ColLocation, ColLastContact, ColHasPDF, ColDate}
+	// Drop the least identifying columns first (the fork keeps its default
+	// POSTED, CONTACT and PDF columns ahead of PAY and LOCATION, and the
+	// optional DATE goes early), then give company and status back to the role
+	// column, then lower the role floor. Stopping at a role that still meets the
+	// floor keeps the row on one line.
+	dropOrder := []ColumnID{ColHasReport, ColDate, ColPay, ColLocation, ColPosted, ColLastContact, ColHasPDF}
 	for {
 		c := m.widthsFor(show, company, status)
 		if c.role >= roleFloor {
@@ -2052,8 +2074,8 @@ func (m PipelineModel) widthsFor(show map[ColumnID]bool, company, status int) co
 // Deriving it from the visible segments keeps the row the same width in every
 // combination, and keeps a future eighth column from silently taking it over.
 func (m PipelineModel) rowOverhead(c colWidths) int {
-	segments := 5 // #, score, company, role, status — always rendered
-	for _, w := range []int{c.date, c.loc, c.pay, c.rpt, c.pdf, c.last, c.posted} {
+	segments := 4 // #, score, company, role — always rendered
+	for _, w := range []int{c.status, c.date, c.loc, c.pay, c.rpt, c.pdf, c.last, c.posted} {
 		if w > 0 {
 			segments++
 		}
@@ -2210,7 +2232,9 @@ func (m PipelineModel) renderColumnHeader() string {
 	}
 	segments = append(segments, cell(i18n.Current.ColCompany, cw.company))
 	segments = append(segments, cell(i18n.Current.ColRole, cw.role))
-	segments = append(segments, cell(i18n.Current.ColStatus, cw.status))
+	if cw.status > 0 {
+		segments = append(segments, cell(i18n.Current.ColStatus, cw.status))
+	}
 	if cw.loc > 0 {
 		segments = append(segments, cell(i18n.Current.ColLocation, cw.loc))
 	}
@@ -2303,7 +2327,9 @@ func (m PipelineModel) renderAppLine(app model.CareerApplication, selected bool)
 	}
 	segments = append(segments, companyStyle.Render(company))
 	segments = append(segments, roleStyle.Render(role))
-	segments = append(segments, statusText)
+	if cw.status > 0 {
+		segments = append(segments, statusText)
+	}
 
 	if cw.loc > 0 {
 		segments = append(segments, m.renderLocCell(app, cw.loc, selected))

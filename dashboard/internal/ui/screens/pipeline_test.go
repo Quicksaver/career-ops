@@ -158,8 +158,11 @@ func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 func TestPipelineDefaultColumns(t *testing.T) {
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), nil, model.PipelineMetrics{}, "..", 120, 40)
 
-	if !pm.colVisible(ColDate) {
-		t.Fatal("expected Date column to be visible by default")
+	if pm.colVisible(ColDate) {
+		t.Fatal("expected Date column to be hidden by default")
+	}
+	if !pm.colVisible(ColPosted) {
+		t.Fatal("expected Posted column to be visible by default")
 	}
 	if !pm.colVisible(ColHasPDF) {
 		t.Fatal("expected PDF column to be visible by default")
@@ -172,8 +175,14 @@ func TestPipelineDefaultColumns(t *testing.T) {
 	}
 
 	header := pm.renderColumnHeader()
-	if !strings.Contains(header, "DATE") {
-		t.Fatalf("expected header to contain DATE, got %q", header)
+	if strings.Contains(header, "DATE") {
+		t.Fatalf("expected header to omit the hidden DATE column, got %q", header)
+	}
+	if !strings.Contains(header, "POSTED") {
+		t.Fatalf("expected header to contain POSTED, got %q", header)
+	}
+	if strings.Contains(header, "STATUS") {
+		t.Fatalf("expected header to omit STATUS outside the OTHER tab, got %q", header)
 	}
 	if strings.Contains(header, "APPLIED") {
 		t.Fatalf("expected header not to contain APPLIED, got %q", header)
@@ -344,6 +353,7 @@ func TestRenderAppLineIncludesDateColumn(t *testing.T) {
 		160,
 		40,
 	)
+	pm.visibleCols[ColDate] = true // optional, off by default in the fork
 
 	line := pm.renderAppLine(model.CareerApplication{
 		Number:   42,
@@ -380,7 +390,9 @@ func TestRenderAppLineIncludesDateColumn(t *testing.T) {
 }
 
 func TestColumnHeaderReadsDate(t *testing.T) {
-	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), nil, model.PipelineMetrics{}, "..", 120, 40)
+	// Wide enough to keep the optional DATE, which drops early on narrow terminals.
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), nil, model.PipelineMetrics{}, "..", 200, 40)
+	pm.visibleCols[ColDate] = true // optional, off by default in the fork
 	header := pm.renderColumnHeader()
 	if !strings.Contains(header, "DATE") || strings.Contains(header, "APPLIED") {
 		t.Fatalf("expected the date column header to read DATE, not APPLIED, got %q", header)

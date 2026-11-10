@@ -88,8 +88,8 @@ func TestPipelineFitsNarrowTerminal(t *testing.T) {
 			for _, line := range viewLines(view) {
 				if strings.Contains(line, "#1") {
 					sawRow = true
-					if !strings.Contains(line, "Eval") {
-						t.Errorf("status wrapped off the #1 row: %q", line)
+					if !strings.Contains(line, "Fernhollow") {
+						t.Errorf("company wrapped off the #1 row: %q", line)
 					}
 				}
 			}
@@ -124,7 +124,10 @@ func TestWideCompanyKeepsStatusOnOneRow(t *testing.T) {
 	// Seven ideographs are 14 cells. A rune cap of 12 would leave them whole.
 	apps[0].Company = "北風商事東京店"
 	apps[0].Role = "基盤設計担当主任"
+	// Only the OTHER tab renders a STATUS column in this fork.
+	apps[0].Status = "Paused"
 	m := NewPipelineModel(theme.NewTheme(""), apps, fitWidthMetrics(apps), t.TempDir(), 60, 24)
+	m.activeTab = tabIndexForFilter(t, filterOther)
 	line := m.renderAppLine(apps[0], true)
 	if strings.Contains(line, "\n") {
 		t.Fatalf("wide company wrapped the row:\n%s", line)
@@ -132,7 +135,7 @@ func TestWideCompanyKeepsStatusOnOneRow(t *testing.T) {
 	if w := lipgloss.Width(line); w > 60 {
 		t.Errorf("row is %d cells wide, terminal is 60", w)
 	}
-	if !strings.Contains(line, "Eval") {
+	if !strings.Contains(line, "paus") {
 		t.Errorf("status left the row: %q", line)
 	}
 }
