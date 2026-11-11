@@ -491,7 +491,11 @@ async function runCommand(name, command, args, options = {}) {
   const stderrTail = Buffer.concat(stderrOutput).toString('utf8');
   const tail = commandTail([Buffer.concat(stdoutOutput).toString('utf8'), stderrTail]);
   if (phase.status === 'failed') {
-    const detail = result.error?.message || (stderrTail.trim() || tail.trim()).slice(-1000) || `exit ${result.code ?? result.signal}`;
+    // A child the coordinator stopped did not fail on its own; its last log
+    // line (often an unrelated warning) is not the reason it ended.
+    const detail = interruptedSignal
+      ? `interrupted by ${interruptedSignal}`
+      : result.error?.message || (stderrTail.trim() || tail.trim()).slice(-1000) || `exit ${result.code ?? result.signal}`;
     throw Object.assign(new Error(`${name} failed: ${detail}`), {
       phase: name, result, logPath, output: Buffer.concat(stdoutOutput).toString('utf8'), tail,
     });

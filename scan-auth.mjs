@@ -348,54 +348,73 @@ export async function main(argv = process.argv.slice(2)) {
       return;
     }
 
+    // Results are saved after every search the scanner completes, so an
+    // interrupted scan keeps what it already found.
+    const persisted = { listings: 0, holds: 0, skipped: 0 };
+    const published = [];
+    let savedJds = 0;
+    const persist = async ({ listings = [], holds = [], skipped = [] }) => {
+      const pipelineEntries = [];
+      const historyEntries = [];
+      for (const detail of listings) {
+        const jdFile = saveJd(detail, cli.portalId);
+        if (jdFile) savedJds++;
+        const url = jdFile ? `local:${jdFile}` : detail.url;
+        pipelineEntries.push({
+          url,
+          title: detail.title,
+          company: detail.company,
+        });
+        historyEntries.push({
+          url: detail.url,
+          portal: cli.portalId,
+          title: detail.title,
+          company: detail.company,
+          status: 'added',
+        });
+      }
+
+      for (const entry of skipped) {
+        historyEntries.push({
+          url: entry.url,
+          portal: cli.portalId,
+          title: entry.title,
+          company: entry.company,
+          status: entry.status,
+        });
+      }
+
+      for (const hold of holds) {
+        pipelineEntries.push({ ...hold, blocked: true, note: hold.question });
+        historyEntries.push({ ...hold, portal: cli.portalId, status: 'needs_confirmation' });
+      }
+
+      persisted.listings += listings.length;
+      persisted.holds += holds.length;
+      persisted.skipped += skipped.length;
+      if (!pipelineEntries.length && !historyEntries.length) return;
+      // Admission history follows durable queue publication, never the reverse.
+      await appendCanonicalPipeline(pipelineEntries, { pipelinePath: PIPELINE_PATH });
+      const historyCount = await appendScanHistory(historyEntries);
+      published.push(...pipelineEntries);
+      log(`Added ${pipelineEntries.length} listings to ${PIPELINE_PATH}`);
+      log(`Wrote ${historyCount} entries to ${SCAN_HISTORY_PATH} (${pipelineEntries.length} added, ${skipped.length} skipped)`);
+    };
+
     const scanResult = await scanner.scan(context, config, {
       scanHistory: loadScanHistory({ policy: { recheckAfterDays: config.scan_history?.recheck_after_days ?? null } }),
+      onSearchComplete: persist,
     });
     if (!scanResult) return;
 
-    const pipelineEntries = [];
-    const historyEntries = [];
-    let savedJds = 0;
-    for (const detail of scanResult.listings) {
-      const jdFile = saveJd(detail, cli.portalId);
-      if (jdFile) savedJds++;
-      const url = jdFile ? `local:${jdFile}` : detail.url;
-      pipelineEntries.push({
-        url,
-        title: detail.title,
-        company: detail.company,
-      });
-      historyEntries.push({
-        url: detail.url,
-        portal: cli.portalId,
-        title: detail.title,
-        company: detail.company,
-        status: 'added',
-      });
-    }
-
-    for (const entry of scanResult.skipped || []) {
-      historyEntries.push({
-        url: entry.url,
-        portal: cli.portalId,
-        title: entry.title,
-        company: entry.company,
-        status: entry.status,
-      });
-    }
-
-    for (const hold of scanResult.holds || []) {
-      pipelineEntries.push({ ...hold, blocked: true, note: hold.question });
-      historyEntries.push({ ...hold, portal: cli.portalId, status: 'needs_confirmation' });
-    }
-
-    // Admission history follows durable queue publication, never the reverse.
-    await appendCanonicalPipeline(pipelineEntries, { pipelinePath: PIPELINE_PATH });
-    const historyCount = await appendScanHistory(historyEntries);
-    log(`Added ${pipelineEntries.length} listings to ${PIPELINE_PATH}`);
-    log(`Wrote ${historyCount} entries to ${SCAN_HISTORY_PATH} (${pipelineEntries.length} added, ${(scanResult.skipped || []).length} skipped)`);
+    // Anything a scanner returned without handing it over per search.
+    await persist({
+      listings: scanResult.listings.slice(persisted.listings),
+      holds: (scanResult.holds || []).slice(persisted.holds),
+      skipped: (scanResult.skipped || []).slice(persisted.skipped),
+    });
     printSummary(scanner, userContext, {
-      listings: pipelineEntries.filter(entry => !entry.blocked),
+      listings: published.filter(entry => !entry.blocked),
       stats: { ...scanResult.stats, saved: savedJds, blocked: (scanResult.holds || []).length },
       errors: scanResult.errors,
     });

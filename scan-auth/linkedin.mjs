@@ -115,7 +115,11 @@ export function buildLinkedInSearches(config) {
   const levelPrefix = levels.length ? levels.join(' or ') : '';
 
   return config.keywords.map(kw => {
-    const query = levelPrefix ? `${levelPrefix} ${kw}` : kw;
+    // A keyword that already names a level ("Senior Backend Engineer") keeps it
+    // rather than becoming "Senior Senior Backend Engineer".
+    const keyword = kw.trim().toLowerCase();
+    const namesLevel = levels.some(level => keyword.startsWith(`${String(level).trim().toLowerCase()} `));
+    const query = levelPrefix && !namesLevel ? `${levelPrefix} ${kw}` : kw;
     const params = new URLSearchParams({ keywords: query });
     if (datePostedParam) params.set('f_TPR', datePostedParam);
     return { name: kw, url: `https://www.linkedin.com/jobs/search-results/?${params}` };
@@ -223,6 +227,22 @@ export default class LinkedInScanner {
     const stats = {
       searched: 0, found: 0, extracted: 0,
       skipped_filter: 0, skipped_dedup: 0, skipped_viewed: 0, jd_unavailable: 0, errors: 0,
+    };
+
+    // Hand each finished search's results to the caller, so an interrupted scan
+    // keeps every search it completed instead of losing the whole run.
+    const flushed = { listings: 0, holds: 0, skipped: 0 };
+    const flushSearch = async () => {
+      if (!options.onSearchComplete) return;
+      const batch = {
+        listings: listings.slice(flushed.listings),
+        holds: holds.slice(flushed.holds),
+        skipped: skipped.slice(flushed.skipped),
+      };
+      flushed.listings = listings.length;
+      flushed.holds = holds.length;
+      flushed.skipped = skipped.length;
+      await options.onSearchComplete(batch);
     };
 
     // Circuit breaker: bail out after too many consecutive extraction failures
@@ -411,6 +431,8 @@ export default class LinkedInScanner {
         stats.errors++;
         consecutiveFailures++;
       }
+
+      await flushSearch();
 
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         const message = `${MAX_CONSECUTIVE_FAILURES} consecutive extraction failures — stopping LinkedIn scan (loading, throttling or DOM change); other sources may continue`;

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { toolRequired } from './required-tools.mjs';
-import LinkedInScanner from '../scan-auth/linkedin.mjs';
+import LinkedInScanner, { buildLinkedInSearches } from '../scan-auth/linkedin.mjs';
 import { printSummary } from '../scan-auth.mjs';
 
 let browser;
@@ -17,7 +17,7 @@ after(async () => { await browser?.close(); });
 
 // Real scan loop and card readers, fictional local DOM. Only JD extraction is
 // stubbed so failure-limit tests spend no loading budget or network requests.
-async function scan({ limit = 25, searches = 3, readable = () => false } = {}) {
+async function scan({ limit = 25, searches = 3, readable = () => false, options = {} } = {}) {
   const context = await browser.newContext();
   let navigations = 0, attempts = 0;
   try {
@@ -34,7 +34,7 @@ async function scan({ limit = 25, searches = 3, readable = () => false } = {}) {
     const result = await scanner.scan(context, {
       keywords: Array.from({ length: searches }, (_, i) => `Fictional ${i}`),
       max_results: limit, skip_viewed: false, delay_pages: [0, 0], delay_searches: [0, 0],
-    });
+    }, options);
     return { ...result, navigations, attempts };
   } finally { await context.close(); }
 }
@@ -69,6 +69,30 @@ browserTest('successful captures reset consecutive failures while sharing the se
   assert.equal(result.holds.length, 4);
   assert.equal(result.attempts, 8);
   assert.deepEqual(result.errors, []);
+});
+
+browserTest('each finished search is handed over before the next one starts', async () => {
+  const batches = [];
+  const result = await scan({ limit: 2, searches: 3, readable: () => true, options: {
+    onSearchComplete: async batch => batches.push(batch),
+  } });
+  assert.equal(batches.length, 3);
+  assert.deepEqual(batches.map(batch => batch.listings.length), [2, 2, 2]);
+  assert.deepEqual(batches.flatMap(batch => batch.listings), result.listings, 'batches cover the result once each');
+});
+
+browserTest('a scan stopped mid-run has already handed over the searches it finished', async () => {
+  const batches = [];
+  await assert.rejects(scan({ limit: 2, searches: 3, readable: () => true, options: {
+    onSearchComplete: async batch => { batches.push(batch); if (batches.length === 2) throw new Error('stopped'); },
+  } }), /stopped/);
+  assert.equal(batches.flatMap(batch => batch.listings).length, 4);
+});
+
+test('a keyword that already names the experience level is not prefixed again', () => {
+  const urls = buildLinkedInSearches({ experience_level: ['Senior'], keywords: ['Senior Backend Engineer Go', 'Product Engineer', 'Seniority Engineer'] })
+    .map(search => new URL(search.url).searchParams.get('keywords'));
+  assert.deepEqual(urls, ['Senior Backend Engineer Go', 'Senior Product Engineer', 'Senior Seniority Engineer']);
 });
 
 test('summary counts saved JDs separately from blocked listings and errors', () => {

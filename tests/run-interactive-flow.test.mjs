@@ -311,6 +311,7 @@ test('Ctrl+C stops active work and releases ownership without opening an unneces
   const result = await run.completion;
   assert.equal(result.code, 130, result.output.slice(-5000));
   assert.equal(result.result.status, 'interrupted');
+  assert.equal(result.result.error, 'batch-1 failed: interrupted by SIGINT', 'the interrupt, not a stray log line, is the reason');
   assert.doesNotMatch(result.output, /\x1b\[\?2004h/, 'plain logging never enables bracketed input');
   assert.equal(existsSync(join(f.user, 'data/run-workflow.pid')), false);
   assert.ok(result.result.remaining > 0, 'unfinished job remains durable');
