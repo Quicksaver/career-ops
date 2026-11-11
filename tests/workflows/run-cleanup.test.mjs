@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
@@ -70,6 +71,40 @@ try {
     pass('cleanup removes only timestamped workflow, legacy workflow and verification runs strictly older than ten days');
   } else {
     fail(`run cleanup boundary wrong: ${JSON.stringify(cleanup)}`);
+  }
+
+  // batch/logs: finished jobs' files expire, the files still read do not.
+  const logsDir = join(userRoot, 'batch', 'logs');
+  const scratchRoot = join(userRoot, 'batch', 'scratch');
+  mkdirSync(join(logsDir, 'quarantine'), { recursive: true });
+  const oldTime = new Date('2026-07-01T12:00:00.000Z');
+  const recentTime = new Date('2026-07-13T12:00:00.000Z');
+  const expiring = ['042-7.log', '042-7.final.json', '7.source.json', '7.jd-closed.log', '042-7.helper.mjs', '042-7.page.png'];
+  const kept = ['7.hold.json', 'discard.log', '7.browser-capture.json', '7.capture-before-browser-recovery.md', '.gitkeep'];
+  for (const name of [...expiring, ...kept]) {
+    writeFileSync(join(logsDir, name), 'fixture\n');
+    utimesSync(join(logsDir, name), oldTime, oldTime);
+  }
+  writeFileSync(join(logsDir, '043-8.log'), 'recent\n');
+  utimesSync(join(logsDir, '043-8.log'), recentTime, recentTime);
+  writeFileSync(join(logsDir, 'quarantine', 'rejected.tsv'), 'kept\n');
+  utimesSync(join(logsDir, 'quarantine', 'rejected.tsv'), oldTime, oldTime);
+  const oldScratch = join(scratchRoot, '042-7');
+  const recentScratch = join(scratchRoot, '043-8');
+  for (const [dir, time] of [[oldScratch, oldTime], [recentScratch, recentTime]]) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'helper.mjs'), 'scratch\n');
+    utimesSync(dir, time, time);
+  }
+  const batchCleanup = artifacts.cleanupExpiredRuns({ userRoot, now: Date.parse('2026-07-14T12:00:00.000Z') });
+  const remaining = readdirSync(logsDir).sort();
+  const expected = [...kept, '043-8.log', 'quarantine'].sort();
+  if (batchCleanup.deleted_batch_logs === expiring.length && batchCleanup.deleted_batch_scratch === 1 &&
+      JSON.stringify(remaining) === JSON.stringify(expected) &&
+      existsSync(join(logsDir, 'quarantine', 'rejected.tsv')) && !existsSync(oldScratch) && existsSync(recentScratch)) {
+    pass('cleanup removes expired batch/logs files and scratch folders, keeping holds, discard.log, captures and quarantine/');
+  } else {
+    fail(`batch/logs cleanup wrong: result=${JSON.stringify(batchCleanup)} remaining=${JSON.stringify(remaining)}`);
   }
 
   const completedRun = join(verifyRoot, '2026-07-14T12-00-00-000Z');

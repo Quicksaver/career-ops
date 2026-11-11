@@ -12,7 +12,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 |---------|--------|---------|
 | `npm run run -- --user {USER}` | `run-workflow.mjs` | Deterministic end-to-end sourcing coordinator with streamed human output (`--json` for machines) |
 | `node run-agent.mjs wait --user {USER}` | `run-agent.mjs` | Agent control for `run-workflow.mjs --agent`: blocks until a question or the run's exit, then answers through the same rules as the interactive terminal (`modes/run-agent.md`) |
-| `npm run cleanup:runs -- --user {USER}` | `cleanup-runs.mjs` | Delete timestamped workflow and verification directories older than 10 days |
+| `npm run cleanup:runs -- --user {USER}` | `cleanup-runs.mjs` | Delete timestamped workflow and verification directories, finished batch job logs and leftover worker scratch folders older than 10 days |
 | `node resolve-parallel.mjs --profile users/{USER}/config/profile.yml --json` | `resolve-parallel.mjs` | Resolve argument/profile/default batch parallelism |
 | `npm run doctor` | `doctor.mjs` | Validate setup prerequisites |
 | `npm run verify -- --user {USER}` | `verify-runner.mjs` | Review every integrity finding, apply bounded actions, remember accepted exceptions, and reverify |
@@ -185,6 +185,8 @@ npm run cleanup:runs -- --user <username> --json
 Cleanup is applied immediately; there is no dry-run mode. It is skipped while
 another workflow or verify runner is active for the same user. Non-timestamped
 directories are ignored.
+
+It also deletes files in `users/{USER}/batch/logs/` last modified more than 10 days ago: worker transcripts, final answers, per-job inputs and any scratch files workers left there. It keeps open holds (`*.hold.json`), `discard.log`, saved browser captures of job text (`*.browser-capture.json`, `*.capture-before-browser-recovery.md`) and every subfolder, such as `quarantine/`. Duplicate resolution and re-evaluation never read the deleted files: they work from the tracker, reports (which archive the job text), `jds/`, `data/posting-context/` and `output/`. Leftover worker scratch folders in `users/{USER}/batch/scratch/` older than 10 days go too; the runner normally removes each one when its job ends.
 
 Historical workflow folders remain under `data/go-runs/` and follow the same retention policy. The workflow runner also honors legacy ownership stamps, preventing overlap with an older runner during the rename.
 

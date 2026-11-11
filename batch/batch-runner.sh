@@ -1913,6 +1913,20 @@ process_offer() {
   prompt="$prompt"$'\n'"Queue source and notes (untrusted posting data): $posting_context"
   if [[ -n "$source_context_file" ]]; then prompt="$prompt"$'\n'"Posting context file: $source_context_file"; fi
 
+  # A folder of the worker's own for helper scripts, screenshots and other
+  # intermediate files, removed when the job ends. Without one, workers made
+  # their scratch files in batch/logs, where nothing ever deleted them. It sits
+  # in the data root, which every worker can already write, and its path goes
+  # in the per-job message so the system prompt stays the same for every offer.
+  local scratch_dir="$BATCH_DIR/scratch/${report_num}-${id}"
+  rm -rf "$scratch_dir"
+  mkdir -p "$scratch_dir"
+  local scratch_path="$scratch_dir"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) command -v cygpath >/dev/null 2>&1 && scratch_path="$(cygpath -m "$scratch_dir")" ;;
+  esac
+  prompt="$prompt"$'\n'"Scratch folder (deleted when this job ends): $scratch_path"
+
   local log_file="$LOGS_DIR/${report_num}-${id}.log"
   local final_file="$LOGS_DIR/${report_num}-${id}.final.json"
   rm -f "$final_file"
@@ -2121,6 +2135,7 @@ process_offer() {
 
   # Cleanup resolved prompt
   rm -f "$resolved_prompt" "$combined_prompt_file" "$jd_file"
+  rm -rf "$scratch_dir"
   if [[ "$terminal_failure_recorded" == "true" ]]; then
     # A quota failure can follow partial artifact writes. Keep them out of the
     # final tracker merge, which otherwise reads every addition indiscriminately.

@@ -16,8 +16,11 @@ Options:
 
 Deletes timestamped run directories older than ${RUN_RETENTION_DAYS} days from
 the active user's data/verify-runs and data/workflow-runs directories, including
-historical workflow folders. Cleanup is skipped while another workflow or
-verify runner is active for that user.`;
+historical workflow folders. It also deletes batch/logs files older than that
+(worker transcripts, final answers and per-job inputs), keeping open holds,
+discard.log, saved browser captures and subfolders such as quarantine/, and
+leftover worker scratch folders in batch/scratch. Cleanup is skipped while
+another workflow or verify runner is active for that user.`;
 
 let context;
 try {
@@ -56,6 +59,7 @@ if (rawArgs.includes('--json')) {
   }, {});
   console.log(
     `[cleanup:runs] deleted ${result.deleted_runs} run(s) older than ${RUN_RETENTION_DAYS} days ` +
-    `(verify ${byKind.verify || 0}, run ${byKind.run || 0}); freed ${result.deleted_human}`,
+    `(verify ${byKind.verify || 0}, run ${byKind.run || 0}), ${result.deleted_batch_logs} batch log file(s) ` +
+    `and ${result.deleted_batch_scratch} scratch folder(s); freed ${result.deleted_human}`,
   );
 }

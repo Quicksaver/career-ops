@@ -27,6 +27,8 @@ export function fixture({ handoffUrl = '', workerResult = {} } = {}) {
 const args=process.argv.slice(2), prompt=args.at(-1)==='-'?readFileSync(0,'utf8'):args.at(-1);
 writeFileSync(process.env.FIXTURE_CALLS+'.worker',args.join('\\n'));
 writeFileSync(process.env.FIXTURE_CALLS+'.prompt',prompt);
+const scratch=prompt.match(/^Scratch folder \\(deleted when this job ends\\): (.+)$/m)?.[1];
+if(scratch){writeFileSync(scratch+'/helper.mjs','scratch');writeFileSync(process.env.FIXTURE_CALLS+'.scratch',scratch);}
 const jdPath=prompt.match(/^JD file: (.+)$/m)?.[1];
 if(jdPath) writeFileSync(process.env.FIXTURE_CALLS+'.jd',readFileSync(jdPath));
 const result=JSON.parse(process.env.FIXTURE_RESULT);

@@ -584,7 +584,7 @@ async function main() {
         .join(', ');
       log(`cleanup-runs skipped: active runner (${owners})`);
     } else {
-      log(`cleanup-runs deleted ${summary.cleanup.deleted_runs} run(s) older than ${RUN_RETENTION_DAYS} days; freed ${summary.cleanup.deleted_human}`);
+      log(`cleanup-runs deleted ${summary.cleanup.deleted_runs} run(s), ${summary.cleanup.deleted_batch_logs} batch log file(s) and ${summary.cleanup.deleted_batch_scratch} scratch folder(s) older than ${RUN_RETENTION_DAYS} days; freed ${summary.cleanup.deleted_human}`);
     }
 
     const doctor = parseJsonOutput(
@@ -1156,7 +1156,7 @@ function compactRunSummary(summary) {
     parallel: summary.parallel,
     parallel_source: summary.parallel_source,
     cleanup: compactSection(summary.cleanup, [
-      'status', 'retention_days', 'cutoff', 'deleted_runs', 'deleted_bytes', 'deleted_human',
+      'status', 'retention_days', 'cutoff', 'deleted_runs', 'deleted_batch_logs', 'deleted_batch_scratch', 'deleted_bytes', 'deleted_human',
     ]),
     phases: compactPhaseRecords(summary.phases),
   };

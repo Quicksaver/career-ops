@@ -28,6 +28,20 @@ for (const cli of ['claude', 'codex']) test(`${cli} closes a local capture using
   } finally {rmSync(f.root,{recursive:true,force:true});}
 });
 
+test('each job gets its own scratch folder, removed when the job ends', () => {
+  const f=fixture({workerResult:{status:'closed',reason:'posting_closed',question:null}});
+  try {
+    writeFileSync(join(f.root,'jds/scratch.md'),'---\nsource_url: https://www.linkedin.com/jobs/view/456\n---\nArchived posting text.');
+    writeFileSync(join(f.batch,'batch-input.tsv'),`id\turl\tsource\tnotes\n1\tlocal:jds/scratch.md\tfixture\t\n`);
+    const result=f.run([]);
+    assert.equal(result.status,0,result.stdout+result.stderr);
+    const scratch=readFileSync(`${f.calls}.scratch`,'utf8');
+    assert.match(scratch,/batch\/scratch\/001-1$/,'the folder sits under the user batch dir, named by report and job');
+    assert.equal(existsSync(scratch),false,'the runner removed it and the worker file inside it');
+    assert.deepEqual(readdirSync(join(f.batch,'logs')).filter(name => name.endsWith('.mjs')),[],'nothing landed in batch/logs');
+  } finally {rmSync(f.root,{recursive:true,force:true});}
+});
+
 test('a local capture hands the worker its apply link only when that link is a public posting URL', () => {
   const f=fixture({workerResult:{status:'closed',reason:'posting_closed',question:null}});
   try {

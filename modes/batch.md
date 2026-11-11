@@ -48,7 +48,8 @@ batch/
 users/{USER}/batch/
   batch-input.tsv               # URLs (from conductor or manual)
   batch-state.tsv               # Progress (auto-generated, gitignored)
-  logs/                         # One log per job (gitignored)
+  logs/                         # One log per job (gitignored; finished jobs' files expire after 10 days)
+  scratch/                      # Each running worker's scratch folder, removed when its job ends
   tracker-additions/            # Tracker lines (gitignored)
 ```
 
