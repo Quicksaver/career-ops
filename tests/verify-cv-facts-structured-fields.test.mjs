@@ -15,14 +15,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
-import { structuredFieldClaims, verifyFacts } from '../verify-cv-facts.mjs';
 import { userFixtureEnv } from './user-fixture.mjs';
+import { structuredFieldClaims, verifyFacts } from '../verify-cv-facts.mjs';
 import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -50,11 +50,15 @@ writeFileSync(source, CV);
 const options = (extra = {}) => ({ sourcePaths: [source], configPath: join(tmp, 'none.json'), ...extra });
 
 function build(script, payload, ext) {
-  const input = join(tmp, `${script}-${Math.random().toString(36).slice(2)}.json`);
+  // The fork's builders write only inside the active user root. That root
+  // holds no cv.md, as upstream's checkout root does not, so build-cv-latex's
+  // own fact gate skips and these tests judge the built output themselves.
+  const buildRoot = join(tmp, 'build-root');
+  mkdirSync(buildRoot, { recursive: true });
+  const input = join(buildRoot, `${script}-${Math.random().toString(36).slice(2)}.json`);
   const output = `${input}.${ext}`;
   writeFileSync(input, JSON.stringify(payload));
-  // The fork's builders write only inside the active user root; make tmp it.
-  const env = userFixtureEnv({ ...process.env, CAREER_OPS_ROOT: tmp, CAREER_OPS_DATA_DIR: '' });
+  const env = userFixtureEnv({ ...process.env, CAREER_OPS_ROOT: buildRoot, CAREER_OPS_DATA_DIR: '' });
   const run = spawnSync(process.execPath, [join(ROOT, script), input, output], { encoding: 'utf-8', env });
   assert.equal(run.status, 0, describeSpawn(run, `${script} failed`));
   return readFileSync(output, 'utf-8');
@@ -326,6 +330,8 @@ for (const [label, linked] of [
   ['an escaped-parenthesis target', '[Fabrikam](https://fabrikam.example/x\\)(Director))'],
   ['an inline link title', '[Fabrikam](https://fabrikam.example/ "Director")'],
   ['a same-line reference-definition title', '[Fabrikam][ml]\n\n[ml]: https://fabrikam.example/ "Director"'],
+  ['a reference-definition target on the line after its label', '[Fabrikam][ml]\n\n[ml]:\n  https://fabrikam.example/x_(Director)'],
+  ['a reference-definition target in angle brackets holding a space', '[Fabrikam][ml]\n\n[ml]: <./fabrikam/x (Director).pdf>'],
 ]) {
   test(`a role that appears only in ${label} is not evidence`, () => {
     const source = join(tmp, `cv-meta-${Math.random().toString(36).slice(2)}.md`);

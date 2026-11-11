@@ -124,7 +124,8 @@ try {
   writeFileSync(join(additions, '7.tsv'), `${baseTsv}\n`);
   let mergeRejected = false;
   try {
-    execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs')], {
+    // The fixture is a legacy positional TSV, which merge-tracker refuses without --allow-headerless.
+    execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs'), '--allow-headerless'], {
       cwd: ROOT,
       env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: applications, CAREER_OPS_ADDITIONS: additions, CAREER_OPS_REPORTS: reports }, false),
       stdio: 'pipe',

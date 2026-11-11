@@ -69,8 +69,10 @@ function merge(opts) {
     if (opts.additionVia) fields.push(`via=${opts.additionVia}`);
     writeFileSync(join(addsDir, '002-b.tsv'), `${fields.join('\t')}\n`);
 
+    // The `via=` TAG is the headerless form's own field (#1596), so this
+    // fixture stays headerless and opts into it explicitly.
     let rejected = false;
-    try { execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs')], {
+    try { execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs'), '--allow-headerless'], {
       encoding: 'utf-8',
       timeout: 30_000,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -154,7 +156,9 @@ test('a LEGACY tracker with no Via column keeps its existing behaviour', () => {
     ].join('\n'));
     writeFileSync(join(addsDir, '002-b.tsv'),
       ['2', '2026-02-10', '?', 'Data Engineer', 'Applied', '4.3/5', '✅', '—', 're-blast', 'via=Hays'].join('\t') + '\n');
-    execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs')], {
+    // The `via=` TAG is the headerless form's own field (#1596), so this
+    // fixture stays headerless and opts into it explicitly.
+    execFileSync(process.execPath, [join(ROOT, 'merge-tracker.mjs'), '--allow-headerless'], {
       encoding: 'utf-8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'],
       env: userFixtureEnv({ ...process.env, CAREER_OPS_TRACKER: tracker, CAREER_OPS_ADDITIONS: addsDir, CAREER_OPS_BATCH_STATE: isolatedBatchStatePath(addsDir) }, false),
     });

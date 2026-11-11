@@ -24,6 +24,7 @@ Export a tailored, ATS-optimized CV as a `.tex` file and compile it to PDF via `
 13. Run: `node generate-latex.mjs --user {USER} users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.tex users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.pdf`
     - This runs the CV fact gate (`verify-cv-facts.mjs`) on the `.tex` before compiling, the same hard gate `pdf` mode runs in step 19. It reads the selected user's `cv.md`, so pass `--user {USER}` (or inherit `CAREER_OPS_USER`); without a selected user the command refuses to run. A blocked document is not compiled, and the JSON report carries `factCheck.verdict: "block"` with the claims it could not find in `cv.md` / `article-digest.md`.
     - If it blocks, stop and fix the step 11 payload (remove the invented claim, or add verified evidence to `cv.md`, `article-digest.md` or `config/cv-facts.json`), rebuild the `.tex`, and re-run. Never pass `--skip-fact-check` unless the user explicitly asks for it.
+    - A `drift` finding means a bullet opens a clause with a verb its source bullet does not use. Restore the source verb; ask the user before declaring a swap in `allow_swaps`, never add one to get past the gate.
 14. Report: .tex path, .pdf path, file sizes, section count, keyword coverage %
 
 **Naming rule:** All generated CV artifacts in `users/{USER}/output/` MUST use the same report-linked basename:

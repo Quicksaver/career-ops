@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { careerOpsRoot, careerOpsSystemRoot } from "@/lib/career-ops";
@@ -36,6 +37,7 @@ let warned = false;
  *  callers must treat null as "can't resolve" rather than guessing a path. */
 export async function resolvePdfIndexPath(): Promise<string | null> {
   const root = careerOpsRoot();
+  if (!fs.existsSync(root)) return null;
   const file = path.join(careerOpsSystemRoot(), "tracker-utils.mjs");
   const hit = modCache.get(file);
   if (hit) return hit.resolvePdfIndexPath(hit.resolveTrackerPath(root));

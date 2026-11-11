@@ -315,7 +315,7 @@ Registrare **SEMPRE** la valutazione nel tracker. Scrivere un TSV (regola 9 di `
 **Formato del tracker:**
 
 ```markdown
-| # | Data | Azienda | Ruolo | Punteggio | Stato | PDF | Report |
+| # | Data | Azienda | Ruolo | Punteggio | Stato | PDF | Report | Notes |
 ```
 
 ### 3. Osservazioni salariali (solo cifra desiderata)

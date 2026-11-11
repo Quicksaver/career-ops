@@ -49,16 +49,21 @@ for (const reason of ["missing file", "incomplete instructions"]) {
     const previousRoot = process.env.CAREER_OPS_ROOT;
     const previousUser = process.env.CAREER_OPS_USER;
     const previousCode = process.env.CAREER_OPS_CODE_ROOT;
+    const previousData = process.env.CAREER_OPS_DATA_DIR;
     process.env.CAREER_OPS_ROOT = root;
     // The fork requires a selected user. The fixture's modes/ and batch/ are system
     // files, which the route reads from the code root; the temp dir is both roots here.
+    // CAREER_OPS_DATA_DIR is how the web resolves its data root, which must exist.
     process.env.CAREER_OPS_USER = "fixture";
+    process.env.CAREER_OPS_DATA_DIR = root;
     process.env.CAREER_OPS_CODE_ROOT = root;
     t.after(() => {
       if (previousRoot === undefined) delete process.env.CAREER_OPS_ROOT;
       else process.env.CAREER_OPS_ROOT = previousRoot;
       if (previousUser === undefined) delete process.env.CAREER_OPS_USER;
       else process.env.CAREER_OPS_USER = previousUser;
+      if (previousData === undefined) delete process.env.CAREER_OPS_DATA_DIR;
+      else process.env.CAREER_OPS_DATA_DIR = previousData;
       if (previousCode === undefined) delete process.env.CAREER_OPS_CODE_ROOT;
       else process.env.CAREER_OPS_CODE_ROOT = previousCode;
       fs.rmSync(root, { recursive: true, force: true });

@@ -15,6 +15,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { dataFolderMissingMessage } from "./core/data-root.mjs";
 
 /**
  * @typedef {Object} PdfRunSignals
@@ -138,6 +139,9 @@ export function pdfFingerprint(file) {
  * @returns {Promise<{ok: boolean, delivered: boolean, stderr: string}>}
  */
 export function spawnGeneratePdf({ spawnFn, execPath, coreRoot, root, env = process.env, html, finalPdf, format, reportNum }) {
+  if (root && !fs.existsSync(root)) {
+    return Promise.resolve({ ok: false, delivered: false, stderr: dataFolderMissingMessage(root) });
+  }
   const before = pdfFingerprint(finalPdf);
   return new Promise((resolve) => {
     const child = spawnFn(
@@ -209,6 +213,9 @@ export function undeliveredRenderError(render, finalPdf) {
  * @returns {Promise<{ok: boolean, code: number | null, data: {error?: string} | null, stderr: string}>}
  */
 export function markTrackerReady({ spawnFn, execPath, coreRoot, root, env = process.env, reportNum }) {
+  if (root && !fs.existsSync(root)) {
+    return Promise.resolve({ ok: false, code: null, data: null, stderr: dataFolderMissingMessage(root) });
+  }
   return new Promise((resolve) => {
     const child = spawnFn(execPath, [path.join(coreRoot, "mark-pdf-ready.mjs"), reportNum, "--json", ...userArgs(env)], { cwd: coreRoot, env: dataEnv(env, root), windowsHide: true });
     let stdout = "";
