@@ -17,14 +17,29 @@ after(async () => { await browser?.close(); });
 
 // Real scan loop and card readers, fictional local DOM. Only JD extraction is
 // stubbed so failure-limit tests spend no loading budget or network requests.
-async function scan({ limit = 25, searches = 3, readable = () => false, options = {} } = {}) {
+// One search page's cards. Several pages add LinkedIn's numbered page buttons,
+// whose click swaps the cards and moves aria-current like the real results rail.
+const cardsHtml = (prefix, count) => Array.from({ length: count }, (_, i) =>
+  `<div role="button"><button aria-label="Dismiss Engineer ${prefix}-${i} job">Dismiss</button><a href="/company/fictional">Fictional Employer ${prefix}-${i}</a></div>`).join('');
+function searchHtml(search, pages, cardsPerPage) {
+  if (pages === 1) return '<main>' + cardsHtml(search, cardsPerPage) + '</main>';
+  const rails = Array.from({ length: pages }, (_, p) => cardsHtml(`${search}-${p + 1}`, cardsPerPage));
+  const buttons = rails.map((_, p) => `<button aria-label="Page ${p + 1}"${p === 0 ? ' aria-current="true"' : ''} data-page="${p}">${p + 1}</button>`).join('');
+  return `<main id="rail">${rails[0]}</main><nav>${buttons}</nav><script>const rails = ${JSON.stringify(rails)};
+    for (const button of document.querySelectorAll('nav button')) button.onclick = () => {
+      document.getElementById('rail').innerHTML = rails[button.dataset.page];
+      for (const other of document.querySelectorAll('nav button')) other.removeAttribute('aria-current');
+      button.setAttribute('aria-current', 'true');
+    };</script>`;
+}
+
+async function scan({ limit = 25, searches = 3, readable = () => false, options = {}, pages = 1, cardsPerPage = 50 } = {}) {
   const context = await browser.newContext();
   let navigations = 0, attempts = 0;
   try {
     await context.route('**/*', route => {
       const search = ++navigations;
-      return route.fulfill({ contentType: 'text/html', body: '<main>' + Array.from({ length: 50 }, (_, i) =>
-        `<div role="button"><button aria-label="Dismiss Engineer ${search}-${i} job">Dismiss</button><a href="/company/fictional">Fictional Employer ${search}-${i}</a></div>`).join('') + '</main>' });
+      return route.fulfill({ contentType: 'text/html', body: searchHtml(search, pages, cardsPerPage) });
     });
     const scanner = new LinkedInScanner();
     scanner.extractJob = async (page, card, preview) => {
@@ -71,22 +86,32 @@ browserTest('successful captures reset consecutive failures while sharing the se
   assert.deepEqual(result.errors, []);
 });
 
-browserTest('each finished search is handed over before the next one starts', async () => {
+browserTest('each search page is handed over before the next one is read', async () => {
+  const batches = [];
+  const result = await scan({ limit: 25, searches: 2, pages: 3, cardsPerPage: 4, readable: () => true, options: {
+    onResults: async batch => batches.push(batch),
+  } });
+  assert.equal(result.listings.length, 24);
+  assert.deepEqual(batches.map(batch => batch.listings.length), [4, 4, 4, 4, 4, 4]);
+  assert.deepEqual(batches.flatMap(batch => batch.listings), result.listings, 'batches cover the result once each');
+});
+
+browserTest('a search that stops at its result limit still hands over its last page', async () => {
   const batches = [];
   const result = await scan({ limit: 2, searches: 3, readable: () => true, options: {
-    onSearchComplete: async batch => batches.push(batch),
+    onResults: async batch => batches.push(batch),
   } });
   assert.equal(batches.length, 3);
   assert.deepEqual(batches.map(batch => batch.listings.length), [2, 2, 2]);
   assert.deepEqual(batches.flatMap(batch => batch.listings), result.listings, 'batches cover the result once each');
 });
 
-browserTest('a scan stopped mid-run has already handed over the searches it finished', async () => {
+browserTest('a scan stopped mid-search has already handed over the pages it read', async () => {
   const batches = [];
-  await assert.rejects(scan({ limit: 2, searches: 3, readable: () => true, options: {
-    onSearchComplete: async batch => { batches.push(batch); if (batches.length === 2) throw new Error('stopped'); },
+  await assert.rejects(scan({ limit: 25, searches: 2, pages: 3, cardsPerPage: 4, readable: () => true, options: {
+    onResults: async batch => { batches.push(batch); if (batches.length === 2) throw new Error('stopped'); },
   } }), /stopped/);
-  assert.equal(batches.flatMap(batch => batch.listings).length, 4);
+  assert.equal(batches.flatMap(batch => batch.listings).length, 8, 'two pages of the first search are kept');
 });
 
 test('a keyword that already names the experience level is not prefixed again', () => {

@@ -229,11 +229,11 @@ export default class LinkedInScanner {
       skipped_filter: 0, skipped_dedup: 0, skipped_viewed: 0, jd_unavailable: 0, errors: 0,
     };
 
-    // Hand each finished search's results to the caller, so an interrupted scan
-    // keeps every search it completed instead of losing the whole run.
+    // Hand results to the caller after every page and at the end of every
+    // search, so an interrupted scan keeps everything it read before the stop.
     const flushed = { listings: 0, holds: 0, skipped: 0 };
-    const flushSearch = async () => {
-      if (!options.onSearchComplete) return;
+    const flushResults = async () => {
+      if (!options.onResults) return;
       const batch = {
         listings: listings.slice(flushed.listings),
         holds: holds.slice(flushed.holds),
@@ -242,7 +242,13 @@ export default class LinkedInScanner {
       flushed.listings = listings.length;
       flushed.holds = holds.length;
       flushed.skipped = skipped.length;
-      await options.onSearchComplete(batch);
+      if (!batch.listings.length && !batch.holds.length && !batch.skipped.length) return;
+      try {
+        await options.onResults(batch);
+      } catch (error) {
+        // A failed save ends the scan; it is not a failed search to log and skip.
+        throw Object.assign(error, { scanAuthSaveFailed: true });
+      }
     };
 
     // Circuit breaker: bail out after too many consecutive extraction failures
@@ -413,6 +419,8 @@ export default class LinkedInScanner {
             }
           }
 
+          await flushResults();
+
           if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             hasNextPage = false;
           } else if (admitted < maxPerSearch) {
@@ -426,13 +434,14 @@ export default class LinkedInScanner {
           }
         }
       } catch (e) {
+        if (e.scanAuthSaveFailed) throw e;
         log(`Search "${search.name}" failed: ${e.message}`);
         errors.push({ search: search.name, error: e.message });
         stats.errors++;
         consecutiveFailures++;
       }
 
-      await flushSearch();
+      await flushResults();
 
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         const message = `${MAX_CONSECUTIVE_FAILURES} consecutive extraction failures — stopping LinkedIn scan (loading, throttling or DOM change); other sources may continue`;

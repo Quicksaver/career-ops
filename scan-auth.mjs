@@ -348,8 +348,8 @@ export async function main(argv = process.argv.slice(2)) {
       return;
     }
 
-    // Results are saved after every search the scanner completes, so an
-    // interrupted scan keeps what it already found.
+    // Results are saved after every page the scanner reads, so an interrupted
+    // scan keeps what it already found.
     const persisted = { listings: 0, holds: 0, skipped: 0 };
     const published = [];
     let savedJds = 0;
@@ -403,11 +403,11 @@ export async function main(argv = process.argv.slice(2)) {
 
     const scanResult = await scanner.scan(context, config, {
       scanHistory: loadScanHistory({ policy: { recheckAfterDays: config.scan_history?.recheck_after_days ?? null } }),
-      onSearchComplete: persist,
+      onResults: persist,
     });
     if (!scanResult) return;
 
-    // Anything a scanner returned without handing it over per search.
+    // Anything a scanner returned without handing it over as it went.
     await persist({
       listings: scanResult.listings.slice(persisted.listings),
       holds: (scanResult.holds || []).slice(persisted.holds),
