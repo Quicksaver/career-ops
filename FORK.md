@@ -4,16 +4,16 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `072335f5f6a99a942c3dbebdcac43060fe60ca6b`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `98444b98fdac850f5cef03f01e8d1ed64d517bdc`, the upstream integration at `072335f5` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `319`.
-- Diff size against the incorporated base at that snapshot: `974 files changed, 41617 insertions(+), 11309 deletions(-)`.
+- Incorporated upstream base: `605a1e61ee2b0d269b371ebe4351180993ebbfee`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `cfe9ab5ba15c07f7247ac4db09708a3326b720b4`, the upstream integration at `605a1e61` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `329`.
+- Diff size against the incorporated base at that snapshot: `1017 files changed, 42920 insertions(+), 11753 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
 ## Upstream integration at 605a1e61
 
-This update incorporates the 113 commits from `072335f5f6a99a942c3dbebdcac43060fe60ca6b` through `605a1e6141ce77c7d3a3ec1b1a99a8a1f4ba7e12`, released as career-ops v1.40.0 and web v0.18.0. Forty-seven files conflicted.
+This update incorporates the 113 commits from `072335f5f6a99a942c3dbebdcac43060fe60ca6b` through `605a1e61ee2b0d269b371ebe4351180993ebbfee`, released as career-ops v1.40.0 and web v0.18.0. Forty-seven files conflicted.
 
 - **Closures read before the worker (#6604).** `fetch-jd.mjs` exit 3 and `batch/jd-rescue.mjs` exit 3 now mean the posting's own data says it closed, and exit 4 means the download landed on another page. Upstream turns a closure into a `--thin-action` skip, which the fork's runner does not have. `batch/batch-runner.sh` records it as the worker's `closed` result would: state `closed` with error `posting-closed`, the report number released, no worker started, and the evidence in `logs/{id}.jd-closed.log`. Reconciliation then treats it like any other confirmed closure. `jd-rescue.mjs` takes upstream's `rescueDecision()` chain and keeps the fork's DevITJobs `window.__detailedJob` strategy in it, after JSON-LD and before the ATS API. `lib/jd-parse.mjs` exports `htmlToText` and `composeJd` for that strategy.
 - **GitHub evidence freshness (#5674).** `batch-runner.sh` runs `evidence-freshness.mjs --user {USER}` once per run. Its runtime section goes into the resolved prompt next to the data-root section, before the CLI arguments are built. Upstream appends it after that point, which in the fork's layout would miss the Codex combined prompt. The fork's compact `batch/batch-prompt.md` gains a freshness paragraph, the `**GitHub evidence:**` header line, and the `positioning_band` and `evidence_freshness` Machine Summary fields with their rules. `modes/oferta.md` names the batch prompt as the schema source for those fields. `oferta` and `auto-pipeline` run the check with `--user {USER}`, and `auto-pipeline` keeps the fork's inline research line.
@@ -38,6 +38,7 @@ This update incorporates the 113 commits from `072335f5f6a99a942c3dbebdcac43060f
   - The router's fan-out paragraph names the layering rules that `tests/localized-guardrails.test.mjs` pins in upstream's worker snippet.
   - `tests/scan-hn-http-context.test.mjs` was removed: it drives upstream's standalone HN scanner with an in-process fetch fixture, and the fork's `scan-hn.mjs` runs `scan.mjs` as a child, which already fetches through the shared HTTP context.
   - The verify-pipeline coverage check keeps the fork's typed codes (`portal_unclaimed`, `portal_unknown_provider`, `portal_missing_name`) inside upstream's `checkPortalsCoverage()`.
+- **Validation.** `node test-all.mjs --quick --jobs 4`: 27813 passed, 6 failed. Five were fixed afterwards or passed alone: the router `_custom` order check, and `batch-recovery-ownership-retries`, `batch-workflow-parity` and `batch-workflow-parity-prefetch`, killed at the 120s limit under load (the last also needed `providers/_html-entity-table.mjs` in its fixture copy). The remaining failure is upstream's Windows `EPERM` in the web write-scope test "starting the dashboard starts the PDF painter". Dashboard `go vet`, `gofmt` and `go test` pass; the web typecheck is clean. `verify-pipeline.mjs` reports 0 errors for luis (all 117 scannable entries resolve) and joana (all 76).
 
 ## Upstream integration at 072335f5
 
