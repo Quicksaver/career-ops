@@ -72,6 +72,8 @@ const CARD_CLICK_DELAY_MS = 1000;
 const JD_LOAD_TIMEOUT_MS = 5000;
 const SESSION_CHECK_DELAY_MS = 3000;
 const NAV_TIMEOUT_MS = 30000;
+/** Waits before each retry of a failed save; one try plus these retries. */
+const SAVE_RETRY_DELAYS_MS = [1000, 3000, 10000];
 const DEFAULT_DELAY_PAGES_MS = [3000, 8000];
 const DEFAULT_DELAY_SEARCHES_MS = [5000, 15000];
 
@@ -229,8 +231,9 @@ export default class LinkedInScanner {
       skipped_filter: 0, skipped_dedup: 0, skipped_viewed: 0, jd_unavailable: 0, errors: 0,
     };
 
-    // Hand results to the caller after every page and at the end of every
-    // search, so an interrupted scan keeps everything it read before the stop.
+    // Hand results to the caller before each card is read, after every page and
+    // at the end of every search, so an interrupted scan keeps everything it
+    // read before the stop. A failed save is retried before the scan gives up.
     const flushed = { listings: 0, holds: 0, skipped: 0 };
     const flushResults = async () => {
       if (!options.onResults) return;
@@ -243,11 +246,20 @@ export default class LinkedInScanner {
       flushed.holds = holds.length;
       flushed.skipped = skipped.length;
       if (!batch.listings.length && !batch.holds.length && !batch.skipped.length) return;
-      try {
-        await options.onResults(batch);
-      } catch (error) {
-        // A failed save ends the scan; it is not a failed search to log and skip.
-        throw Object.assign(error, { scanAuthSaveFailed: true });
+      const retryDelays = options.saveRetryDelaysMs || SAVE_RETRY_DELAYS_MS;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await options.onResults(batch);
+          return;
+        } catch (error) {
+          if (attempt >= retryDelays.length) {
+            // A save that keeps failing ends the scan; it is not a failed
+            // search to log and skip.
+            throw Object.assign(error, { scanAuthSaveFailed: true });
+          }
+          warn(`Saving scan results failed (${error.message}); retrying in ${(retryDelays[attempt] / 1000).toFixed(1)}s`);
+          await sleep(retryDelays[attempt]);
+        }
       }
     };
 
@@ -279,6 +291,7 @@ export default class LinkedInScanner {
           stats.found += cardCount;
 
           for (let i = 0; i < cardCount; i++) {
+            await flushResults();
             if (admitted >= maxPerSearch) {
               log(`Reached max results (${maxPerSearch}) for this search`);
               break;

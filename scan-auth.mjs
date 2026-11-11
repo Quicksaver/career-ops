@@ -348,17 +348,20 @@ export async function main(argv = process.argv.slice(2)) {
       return;
     }
 
-    // Results are saved after every page the scanner reads, so an interrupted
-    // scan keeps what it already found.
+    // Results are saved after every card the scanner reads, so an interrupted
+    // scan keeps what it already found. Every write here skips rows that are
+    // already there and JD files are named by job ID, so a retried save is safe;
+    // the counters move only once a save has succeeded.
     const persisted = { listings: 0, holds: 0, skipped: 0 };
     const published = [];
     let savedJds = 0;
     const persist = async ({ listings = [], holds = [], skipped = [] }) => {
       const pipelineEntries = [];
       const historyEntries = [];
+      let jds = 0;
       for (const detail of listings) {
         const jdFile = saveJd(detail, cli.portalId);
-        if (jdFile) savedJds++;
+        if (jdFile) jds++;
         const url = jdFile ? `local:${jdFile}` : detail.url;
         pipelineEntries.push({
           url,
@@ -389,16 +392,17 @@ export async function main(argv = process.argv.slice(2)) {
         historyEntries.push({ ...hold, portal: cli.portalId, status: 'needs_confirmation' });
       }
 
+      // Viewed cards carry no URL and write nothing, so they take no lock.
+      const historyRows = historyEntries.filter(entry => entry.url);
+      // Admission history follows durable queue publication, never the reverse.
+      if (pipelineEntries.length) await appendCanonicalPipeline(pipelineEntries, { pipelinePath: PIPELINE_PATH });
+      if (historyRows.length) await appendScanHistory(historyRows);
       persisted.listings += listings.length;
       persisted.holds += holds.length;
       persisted.skipped += skipped.length;
-      if (!pipelineEntries.length && !historyEntries.length) return;
-      // Admission history follows durable queue publication, never the reverse.
-      await appendCanonicalPipeline(pipelineEntries, { pipelinePath: PIPELINE_PATH });
-      const historyCount = await appendScanHistory(historyEntries);
+      savedJds += jds;
       published.push(...pipelineEntries);
-      log(`Added ${pipelineEntries.length} listings to ${PIPELINE_PATH}`);
-      log(`Wrote ${historyCount} entries to ${SCAN_HISTORY_PATH} (${pipelineEntries.length} added, ${skipped.length} skipped)`);
+      if (pipelineEntries.length) log(`Saved ${pipelineEntries.length} listing(s) to ${PIPELINE_PATH}`);
     };
 
     const scanResult = await scanner.scan(context, config, {
@@ -408,11 +412,13 @@ export async function main(argv = process.argv.slice(2)) {
     if (!scanResult) return;
 
     // Anything a scanner returned without handing it over as it went.
-    await persist({
+    const remaining = {
       listings: scanResult.listings.slice(persisted.listings),
       holds: (scanResult.holds || []).slice(persisted.holds),
       skipped: (scanResult.skipped || []).slice(persisted.skipped),
-    });
+    };
+    if (remaining.listings.length || remaining.holds.length || remaining.skipped.length) await persist(remaining);
+    log(`Saved ${published.length} listing(s) to ${PIPELINE_PATH} in total`);
     printSummary(scanner, userContext, {
       listings: published.filter(entry => !entry.blocked),
       stats: { ...scanResult.stats, saved: savedJds, blocked: (scanResult.holds || []).length },

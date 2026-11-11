@@ -86,32 +86,56 @@ browserTest('successful captures reset consecutive failures while sharing the se
   assert.deepEqual(result.errors, []);
 });
 
-browserTest('each search page is handed over before the next one is read', async () => {
+browserTest('each card is handed over before the next one is read, across pages', async () => {
   const batches = [];
   const result = await scan({ limit: 25, searches: 2, pages: 3, cardsPerPage: 4, readable: () => true, options: {
     onResults: async batch => batches.push(batch),
   } });
   assert.equal(result.listings.length, 24);
-  assert.deepEqual(batches.map(batch => batch.listings.length), [4, 4, 4, 4, 4, 4]);
+  assert.deepEqual(batches.map(batch => batch.listings.length), Array(24).fill(1));
   assert.deepEqual(batches.flatMap(batch => batch.listings), result.listings, 'batches cover the result once each');
 });
 
-browserTest('a search that stops at its result limit still hands over its last page', async () => {
+browserTest('a failed save is retried and the scan carries on', async () => {
+  const saved = [];
+  let failures = 0;
+  const result = await scan({ limit: 25, searches: 1, pages: 2, cardsPerPage: 3, readable: () => true, options: {
+    saveRetryDelaysMs: [0, 0, 0],
+    onResults: async batch => {
+      if (saved.length === 2 && failures < 2) { failures++; throw new Error('pipeline locked'); }
+      saved.push(batch);
+    },
+  } });
+  assert.equal(failures, 2);
+  assert.deepEqual(saved.flatMap(batch => batch.listings), result.listings, 'every card saved exactly once');
+});
+
+browserTest('a save that keeps failing ends the scan after its retries', async () => {
+  let calls = 0;
+  await assert.rejects(scan({ limit: 25, searches: 2, pages: 2, cardsPerPage: 3, readable: () => true, options: {
+    saveRetryDelaysMs: [0, 0, 0],
+    onResults: async () => { calls++; throw new Error('disk full'); },
+  } }), /disk full/);
+  assert.equal(calls, 4, 'one try and three retries, then no further search');
+});
+
+browserTest('a search that stops at its result limit still hands over its last card', async () => {
   const batches = [];
   const result = await scan({ limit: 2, searches: 3, readable: () => true, options: {
     onResults: async batch => batches.push(batch),
   } });
-  assert.equal(batches.length, 3);
-  assert.deepEqual(batches.map(batch => batch.listings.length), [2, 2, 2]);
+  assert.equal(result.listings.length, 6);
+  assert.deepEqual(batches.map(batch => batch.listings.length), Array(6).fill(1));
   assert.deepEqual(batches.flatMap(batch => batch.listings), result.listings, 'batches cover the result once each');
 });
 
-browserTest('a scan stopped mid-search has already handed over the pages it read', async () => {
-  const batches = [];
+browserTest('a scan stopped mid-page has already handed over the cards it read', async () => {
+  const kept = [];
   await assert.rejects(scan({ limit: 25, searches: 2, pages: 3, cardsPerPage: 4, readable: () => true, options: {
-    onResults: async batch => { batches.push(batch); if (batches.length === 2) throw new Error('stopped'); },
+    saveRetryDelaysMs: [],
+    onResults: async batch => { if (kept.length === 5) throw new Error('stopped'); kept.push(batch); },
   } }), /stopped/);
-  assert.equal(batches.flatMap(batch => batch.listings).length, 8, 'two pages of the first search are kept');
+  assert.equal(kept.flatMap(batch => batch.listings).length, 5, 'the five cards read before the stop are kept');
 });
 
 test('a keyword that already names the experience level is not prefixed again', () => {
