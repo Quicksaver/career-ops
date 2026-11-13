@@ -4,10 +4,10 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `605a1e61ee2b0d269b371ebe4351180993ebbfee`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `cfe9ab5ba15c07f7247ac4db09708a3326b720b4`, the upstream integration at `605a1e61` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `329`.
-- Diff size against the incorporated base at that snapshot: `1017 files changed, 42920 insertions(+), 11753 deletions(-)`.
+- Incorporated upstream base: `751baa8359e9ac2f7e2437ce8ba2286f09d8aa8a`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `6543452d6cb65ebf14394e5035bb555f57f4b594`, the upstream integration at `751baa83` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `336`.
+- Diff size against the incorporated base at that snapshot: `1044 files changed, 43563 insertions(+), 11998 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
@@ -34,6 +34,7 @@ This update incorporates the 137 commits from `605a1e61ee2b0d269b371ebe435118099
   - `tests/tracker-relative-override.test.mjs` checks the web resolver only with an explicit `CAREER_OPS_CODE_ROOT`: with it unset, the fork's web reads `CAREER_OPS_ROOT` as its legacy code-root alias, and the fixture points that at the data root.
   - `batch/batch-prompt.md` names `PDF_GATE_DEFAULT` beside the 3.0 PDF default, which `tests/score-action.test.mjs` reads.
 - **Known Windows failure.** `ollama-eval.mjs` (unchanged from upstream) prints the oversized-record error, then Node aborts on a libuv assertion (`src\win\async.c`, exit `0xC0000409`) because `process.exit(1)` runs while the response stream is closing, so the two Ollama oversized-record cases in `evaluator-stream-integrity` see that exit code instead of `1`. The OpenAI cases pass.
+- **Validation.** `node test-all.mjs --quick --jobs 4` after the fixes: 27812 passed, 11 failed. Eight were batch-runner suites killed at 120s or starved under that load; run alone, all pass (default parallel 2/2, prompt-cache stability 1/1, recovery ownership 7/7 and retries 9/9, evidence freshness 4/4, workflow parity 16/16, parity retries 2/2, parity prefetch 12/12). The other three are the two Ollama cases above and upstream's Windows `EPERM` in the web test "starting the dashboard starts the PDF painter". The `run` lane fixtures pass alone through the real Git Bash runner: queue flow 41/41, interactive flow 26/26, interactive 25/25, output 10/10, live batch 4/4 and the four `tests/workflows/` suites. The web suite passes 2886 of 2975 tests with 88 skipped and the same `EPERM` failure, and the web typecheck is clean. Dashboard `go vet`, `gofmt` and `go test ./...` pass. Raw `verify-pipeline.mjs --user fixture --json` is clean on an isolated empty user, and both real users report 0 errors and no unclaimed portal entry. Paid evaluations and live sources beyond the portal audit were not exercised.
 
 ## Upstream integration at 605a1e61
 
