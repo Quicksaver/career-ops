@@ -60,12 +60,12 @@ func (m *appModel) reloadPipelineData() {
 	}
 	metrics := data.ComputeMetrics(apps)
 	ledger, historyErr := data.ReadStatusLedger(m.careerOpsPath)
+	// After a failed ledger read the ledger is empty, so the DATE column falls
+	// back to each row's tracker date while current statuses still refresh.
+	data.ApplyStatusLedger(apps, ledger)
 	if historyErr == nil {
 		m.progressMetrics = data.ComputeProgressMetrics(apps, ledger.Reached)
 	}
-	// After a failed ledger read LatestDate is nil, so the DATE column falls
-	// back to each row's tracker date while current statuses still refresh.
-	data.ApplyStatusDates(apps, ledger.LatestDate)
 	m.pipeline = m.pipeline.WithReloadedData(apps, metrics)
 	m.statsMetrics = data.ComputeStatsMetrics(apps)
 	// Count only apps with a score so the header reflects evaluated offers.
@@ -810,7 +810,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	data.ApplyStatusDates(apps, ledger.LatestDate)
+	data.ApplyStatusLedger(apps, ledger)
 	metrics := data.ComputeMetrics(apps)
 	progressMetrics := data.ComputeProgressMetrics(apps, ledger.Reached)
 

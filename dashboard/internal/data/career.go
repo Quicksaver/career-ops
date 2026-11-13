@@ -1387,17 +1387,16 @@ func ComputeProgressMetrics(apps []model.CareerApplication, history ...map[int]i
 		{Label: "  <3.0", Count: buckets[4]},
 	}
 
-	// Weekly activity: group by ISO week from Date field, every week with rows.
+	// Weekly activity: every week in which something happened, by ISO week. A
+	// row counts in the week of its tracker date under the status it was added
+	// with, then in the week of each status-log.tsv change under its new status.
 	weekCounts := make(map[string]int)
 	weekStatuses := make(map[string]map[string]int)
 	weekStarts := make(map[string]time.Time)
-	for _, app := range apps {
-		if app.Date == "" {
-			continue
-		}
-		t, err := time.Parse("2006-01-02", app.Date)
+	addEvent := func(date, status string) {
+		t, err := time.Parse("2006-01-02", date)
 		if err != nil {
-			continue
+			return
 		}
 		year, week := t.ISOWeek()
 		key := fmt.Sprintf("%d-W%02d", year, week)
@@ -1407,7 +1406,20 @@ func ComputeProgressMetrics(apps []model.CareerApplication, history ...map[int]i
 			// ISO weeks start on Monday.
 			weekStarts[key] = t.AddDate(0, 0, -((int(t.Weekday()) + 6) % 7))
 		}
-		weekStatuses[key][NormalizeStatus(app.Status)]++
+		weekStatuses[key][NormalizeStatus(status)]++
+	}
+	for _, app := range apps {
+		added := app.Status
+		if len(app.StatusEvents) > 0 && app.StatusEvents[0].From != "-" {
+			added = app.StatusEvents[0].From
+		}
+		addEvent(app.Date, added)
+		for _, e := range app.StatusEvents {
+			if NormalizeStatus(e.From) == NormalizeStatus(e.To) {
+				continue
+			}
+			addEvent(e.Date, e.To)
+		}
 	}
 
 	var weeks []string

@@ -38,6 +38,9 @@ type StatusLedger struct {
 	// LatestDate is the date of each tracker #'s most recent surviving
 	// transition — what the DATE column shows. Absent when the row has none.
 	LatestDate map[int]string
+	// Events is each tracker #'s surviving transitions in ledger order, after
+	// the same retractions and corrections LatestDate applies.
+	Events map[int][]model.StatusEvent
 }
 
 var reLedgerDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -71,6 +74,7 @@ func parseFunnelHistory(content string) map[int]int {
 }
 
 type ledgerObservation struct {
+	from string
 	to   string
 	date string
 }
@@ -115,7 +119,7 @@ func parseStatusLedger(content string) StatusLedger {
 		if !reLedgerDate.MatchString(c[1]) {
 			continue
 		}
-		date, to := c[1], c[3]
+		date, from, to := c[1], c[2], c[3]
 		source := ""
 		if len(c) > 4 {
 			source = c[4]
@@ -136,41 +140,44 @@ func parseStatusLedger(content string) StatusLedger {
 				}
 			}
 			if !corrected {
-				tl = append(tl, ledgerObservation{to: to, date: date})
+				tl = append(tl, ledgerObservation{from: from, to: to, date: date})
 			}
 		default:
-			tl = append(tl, ledgerObservation{to: to, date: date})
+			tl = append(tl, ledgerObservation{from: from, to: to, date: date})
 		}
 		timelines[num] = tl
 	}
 
 	latest := make(map[int]string, len(timelines))
+	events := make(map[int][]model.StatusEvent, len(timelines))
 	for num, tl := range timelines {
 		for _, o := range tl {
 			if o.date > latest[num] {
 				latest[num] = o.date
 			}
+			events[num] = append(events[num], model.StatusEvent{Date: o.date, From: o.from, To: o.to})
 		}
 		if latest[num] == "" {
 			delete(latest, num)
 		}
 	}
-	return StatusLedger{Reached: reached, LatestDate: latest}
+	return StatusLedger{Reached: reached, LatestDate: latest, Events: events}
 }
 
-// ApplyStatusDates stamps each row's latest ledger transition date onto
-// StatusDate. Rows whose tracker # was synthesized (TrackerNumberMissing) are
-// skipped: a display number must never join another row's ledger history.
-func ApplyStatusDates(apps []model.CareerApplication, dates map[int]string) {
-	if len(dates) == 0 {
-		return
-	}
+// ApplyStatusLedger stamps each row's latest ledger transition date onto
+// StatusDate and its surviving transitions onto StatusEvents. Rows whose
+// tracker # was synthesized (TrackerNumberMissing) are skipped: a display
+// number must never join another row's ledger history.
+func ApplyStatusLedger(apps []model.CareerApplication, ledger StatusLedger) {
 	for i := range apps {
 		if apps[i].TrackerNumberMissing {
 			continue
 		}
-		if d, ok := dates[apps[i].Number]; ok {
+		if d, ok := ledger.LatestDate[apps[i].Number]; ok {
 			apps[i].StatusDate = d
+		}
+		if ev, ok := ledger.Events[apps[i].Number]; ok {
+			apps[i].StatusEvents = ev
 		}
 	}
 }

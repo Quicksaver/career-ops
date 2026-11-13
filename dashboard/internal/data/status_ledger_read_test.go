@@ -126,16 +126,23 @@ func TestReadStatusLedgerFollowsTrackerOverride(t *testing.T) {
 	}
 }
 
-func TestApplyStatusDates(t *testing.T) {
+func TestApplyStatusLedger(t *testing.T) {
 	apps := []model.CareerApplication{
 		{Number: 1, Date: "2026-05-01"},
 		{Number: 2, Date: "2026-05-02"},
 		{Number: 3, Date: "2026-05-03", TrackerNumberMissing: true}, // synthesized # collides with a real row's history
 		{Number: 4, Date: "2026-05-04", StatusDate: "stale"},        // no entry: left untouched
 	}
-	ApplyStatusDates(apps, map[int]string{1: "2026-06-01", 3: "2026-06-03"})
-	if apps[0].StatusDate != "2026-06-01" {
-		t.Errorf("row 1 StatusDate = %q, want 2026-06-01", apps[0].StatusDate)
+	row1 := []model.StatusEvent{{Date: "2026-06-01", From: "Evaluated", To: "Applied"}}
+	ApplyStatusLedger(apps, StatusLedger{
+		LatestDate: map[int]string{1: "2026-06-01", 3: "2026-06-03"},
+		Events:     map[int][]model.StatusEvent{1: row1, 3: {{Date: "2026-06-03", From: "Evaluated", To: "Applied"}}},
+	})
+	if apps[0].StatusDate != "2026-06-01" || len(apps[0].StatusEvents) != 1 || apps[0].StatusEvents[0] != row1[0] {
+		t.Errorf("row 1 = %q %+v, want 2026-06-01 with its one event", apps[0].StatusDate, apps[0].StatusEvents)
+	}
+	if apps[2].StatusEvents != nil {
+		t.Errorf("synthesized display number joined another row's events: %+v", apps[2].StatusEvents)
 	}
 	if apps[1].StatusDate != "" {
 		t.Errorf("row 2 StatusDate = %q, want empty (no ledger history)", apps[1].StatusDate)
@@ -147,6 +154,6 @@ func TestApplyStatusDates(t *testing.T) {
 		t.Errorf("row 4 StatusDate = %q, want untouched", apps[3].StatusDate)
 	}
 	// nil / empty maps are a no-op, never a panic (failed ledger read path).
-	ApplyStatusDates(apps, nil)
-	ApplyStatusDates(nil, map[int]string{1: "2026-06-01"})
+	ApplyStatusLedger(apps, StatusLedger{})
+	ApplyStatusLedger(nil, StatusLedger{LatestDate: map[int]string{1: "2026-06-01"}})
 }

@@ -342,8 +342,9 @@ func (m ProgressModel) renderWeeklyActivity() string {
 		return strings.Join(lines, "\n")
 	}
 
-	// Each week's bar is stacked by the rows' current status, in pipeline tab
-	// order, and followed by the total and a "6 open \u00b7 2 applied" breakdown.
+	// Each week's bar is stacked by the statuses rows were added with or moved
+	// to that week, in pipeline tab order, and followed by the total and a
+	// "6 open \u00b7 2 applied" breakdown.
 	colors := statusColors(m.theme)
 	type part struct {
 		status string

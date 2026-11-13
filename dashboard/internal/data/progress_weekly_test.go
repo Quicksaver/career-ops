@@ -1,6 +1,7 @@
 package data
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,37 @@ func TestWeeklyActivitySplitsByStatus(t *testing.T) {
 	}
 	if got := pm.WeeklyActivity[1]; got.Start != "2026-11-09" || got.ByStatus["closed"] != 1 {
 		t.Errorf("W46 = %+v, want start 2026-11-09 with 1 closed", got)
+	}
+}
+
+// A status change counts in the week it happened, not the week the row was
+// evaluated: a row evaluated in W45 and applied to in W46 is one evaluation in
+// W45 and one application in W46.
+func TestWeeklyActivityCountsStatusChangesInTheirWeek(t *testing.T) {
+	ledger := parseStatusLedger(strings.Join([]string{
+		"1\t2026-11-10\tEvaluated\tApplied\tset-status\t",
+		"2\t2026-11-11\tEvaluated\tApplied\tset-status\t",
+		"2\t2026-11-12\tApplied\tRejected\tset-status\t",
+		"3\t2026-11-12\tEvaluated\tApplied\tset-status\t",
+		"3\t2026-11-12\t-\t-\tset-status\tmis-click",
+	}, "\n"))
+	apps := []model.CareerApplication{
+		{Number: 1, Date: "2026-11-03", Status: "Applied"},
+		{Number: 2, Date: "2026-11-04", Status: "Rejected"},
+		{Number: 3, Date: "2026-11-05", Status: "Evaluated"},
+		{Number: 4, Date: "2026-11-10", Status: "Evaluated"},
+	}
+	ApplyStatusLedger(apps, ledger)
+	pm := ComputeProgressMetrics(apps)
+	if len(pm.WeeklyActivity) != 2 {
+		t.Fatalf("got %d weeks, want 2: %+v", len(pm.WeeklyActivity), pm.WeeklyActivity)
+	}
+	w45, w46 := pm.WeeklyActivity[0], pm.WeeklyActivity[1]
+	if w45.Count != 3 || w45.ByStatus["evaluated"] != 3 {
+		t.Errorf("W45 = %+v, want 3 evaluated", w45)
+	}
+	if w46.Count != 4 || w46.ByStatus["applied"] != 2 || w46.ByStatus["rejected"] != 1 || w46.ByStatus["evaluated"] != 1 {
+		t.Errorf("W46 = %+v, want 2 applied, 1 rejected, 1 evaluated (the retracted change not counted)", w46)
 	}
 }
 

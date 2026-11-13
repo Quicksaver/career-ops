@@ -6,7 +6,8 @@ type CareerApplication struct {
 	// Display numbers synthesized for backfill rows must never join ledger IDs.
 	TrackerNumberMissing bool
 	Date                 string
-	StatusDate           string // latest status-log.tsv transition date (data.ApplyStatusDates); "" when none
+	StatusDate           string        // latest status-log.tsv transition date (data.ApplyStatusLedger); "" when none
+	StatusEvents         []StatusEvent // surviving status-log.tsv transitions, oldest first (data.ApplyStatusLedger)
 	Company              string
 	Role                 string
 	Status               string
@@ -98,10 +99,19 @@ type WeekActivity struct {
 	Week  string // e.g., "2026-W14", "2026-W13"
 	Start string // the week's Monday, YYYY-MM-DD
 	Count int
-	// ByStatus splits Count by each row's current normalized status. The week
-	// is the tracker date, so this says where that week's rows stand now, not
-	// which status changes happened during the week.
+	// ByStatus splits Count by normalized status: each row counts once in the
+	// week of its tracker date under the status it was added with, and again in
+	// the week of every status-log.tsv change under the status it moved to. So
+	// a row evaluated in one week and applied to in the next counts as
+	// evaluated in the first and applied in the second.
 	ByStatus map[string]int
+}
+
+// StatusEvent is one surviving status-log.tsv transition of a tracker row.
+type StatusEvent struct {
+	Date string // YYYY-MM-DD
+	From string
+	To   string
 }
 
 // StatsMetrics holds cross-cutting breakdowns for the stats analytics screen,
