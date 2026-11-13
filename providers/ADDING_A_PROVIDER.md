@@ -36,7 +36,7 @@ In short:
 - **Complete inventory, no paid placement (rule 3).** The provider must
   traverse the source's full inventory, not a promoted or default-filtered
   view.
-- **Read like a visitor (rule 6).** A provider reads only what any visitor
+- **Read what is public, and say who is reading (rule 6).** A provider reads only what any visitor
   sees without signing in, with a bounded number of requests per host,
   honouring a `Crawl-delay` the source states. A login, a user account or a
   CAPTCHA in the way is a stop, and so is a source whose operator has asked
@@ -144,7 +144,10 @@ export default {
   job can be done ("can be done remotely anywhere in the United States"),
   put only that statement in `eligibilityText`, which
   `country_eligibility_filter` reads and no other filter does. Reference:
-  `teaserLocationClause` in `providers/cryptocurrencyjobs.mjs`. When the
+  `teaserLocationClause` in `providers/cryptocurrencyjobs.mjs`. The same
+  statement can also fill `location` when the payload has no location
+  field (`locationFromClause` in the same file); leave `location` empty
+  rather than guessing "Remote" when the blurb says nothing. When the
   blurb can mention visa sponsorship, put it in `visaText`, which only
   `visa_filter` reads. The whole blurb may go there, since `visa_filter`
   matches nothing but its sponsorship keywords. Reference:

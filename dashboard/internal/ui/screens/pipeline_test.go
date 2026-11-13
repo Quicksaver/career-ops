@@ -123,11 +123,15 @@ func TestPipelineTabsPrioritizeEvaluatedAndHideAll(t *testing.T) {
 	if len(tabs) == 0 {
 		t.Fatal("expected pipeline tabs")
 	}
-	if tabs[0].filter != filterEvaluated {
-		t.Fatalf("expected first tab to be Evaluated, got %+v", tabs[0])
+	// The read-only Inbox (#5269) sits in front; OPEN is the first tracker tab.
+	if tabs[0].filter != filterPending {
+		t.Fatalf("expected first tab to be the Inbox, got %+v", tabs[0])
 	}
-	if tabs[0].label != "OPEN" {
-		t.Fatalf("expected first tab label to be Open, got %+v", tabs[0])
+	if tabs[1].filter != filterEvaluated {
+		t.Fatalf("expected second tab to be Evaluated, got %+v", tabs[1])
+	}
+	if tabs[1].label != "OPEN" {
+		t.Fatalf("expected second tab label to be Open, got %+v", tabs[1])
 	}
 	// Other is last and hidden while empty, so Skip is the last tab a clean
 	// tracker shows.
@@ -1058,6 +1062,11 @@ func TestPreviewTruncatesTldrToTerminalCells(t *testing.T) {
 		{name: "wide runes at 80 columns", width: 80, tldr: strings.Repeat("界", 117) + "...", wantSuffix: "..."},
 		{name: "wide runes at 120 columns", width: 120, tldr: strings.Repeat("界", 117) + "...", wantSuffix: "..."},
 		{name: "wide runes at 160 columns", width: 160, tldr: strings.Repeat("界", 117) + "...", wantSuffix: "..."},
+		// 14 columns leave exactly three cells for the value: the ellipsis still fits.
+		{name: "exactly three cells left", width: 14, tldr: strings.Repeat("a", 20), wantSuffix: "..."},
+		// ansi.Truncate counts a keycap as one cell where ansi.StringWidth counts two.
+		{name: "keycap emoji at 15 columns", width: 15, tldr: "1️⃣ 2️⃣ 3️⃣ ok", wantSuffix: "..."},
+		{name: "keycap emoji at 24 columns", width: 24, tldr: strings.Repeat("1️⃣ ", 20), wantSuffix: "..."},
 	}
 
 	for _, tt := range tests {

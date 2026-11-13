@@ -55,6 +55,7 @@ func (m *appModel) reloadPipelineData() {
 		// empty the pipeline AND drop every rate to 0% through
 		// ComputeProgressMetrics, so the screen would report an empty, failing
 		// search because a file could not be opened.
+		m.reloadPendingRows()
 		m.pipeline, _ = m.pipeline.Update(screens.PipelineTrackerFailedMsg{Err: trackerErr.Error()})
 		return
 	}
@@ -67,6 +68,7 @@ func (m *appModel) reloadPipelineData() {
 		m.progressMetrics = data.ComputeProgressMetrics(apps, ledger.Reached)
 	}
 	m.pipeline = m.pipeline.WithReloadedData(apps, metrics)
+	m.reloadPendingRows()
 	m.statsMetrics = data.ComputeStatsMetrics(apps)
 	// Count only apps with a score so the header reflects evaluated offers.
 	m.evaluatedCount = 0
@@ -80,6 +82,19 @@ func (m *appModel) reloadPipelineData() {
 		// the failed history read in the TUI after rebuilding the pipeline.
 		m.pipeline, _ = m.pipeline.Update(screens.PipelineHistoryFailedMsg{Err: historyErr.Error()})
 	}
+}
+
+// reloadPendingRows re-reads the Inbox tab's rows (#5269) from
+// data/pipeline.md and the batch files. It runs only with a tracker reload
+// (startup, `r`, after a status write): there is no timer. A failed read keeps
+// the rows already shown and says why.
+func (m *appModel) reloadPendingRows() {
+	rows, err := data.LoadPendingRows(m.careerOpsPath)
+	if err != nil {
+		m.pipeline, _ = m.pipeline.Update(screens.PipelinePendingFailedMsg{Err: err.Error()})
+		return
+	}
+	m.pipeline.SetPendingRows(rows)
 }
 
 // enrichArchetypes lazy-loads each app's report-derived archetype (used by
@@ -847,6 +862,7 @@ func main() {
 			return n
 		}(),
 	}
+	m.reloadPendingRows()
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

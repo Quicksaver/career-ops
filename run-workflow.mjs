@@ -757,6 +757,8 @@ async function main() {
       ['scan-hn', rawArgs.includes('--scan-hn') || portals.hn_hiring?.enabled === true, 'scan-hn.mjs'],
       ['scan-dayforce', rawArgs.includes('--scan-dayforce') || portals.dayforce_boards?.some(board => board.enabled !== false), 'scan-dayforce.mjs'],
       ['scan-interamt', rawArgs.includes('--scan-interamt') || portals.interamt_searches?.length > 0, 'scan-interamt.mjs'],
+      ['scan-seek', portals.seek_searches?.length > 0, 'scan-seek.mjs'],
+      ['scan-topdev', portals.topdev_searches?.length > 0, 'scan-topdev.mjs'],
     ];
     summary.sources = [];
     async function runExtra(name, script) {

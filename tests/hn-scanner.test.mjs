@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { extractWithAI, hnScanConfig } from '../scan-hn.mjs';
 import { describeSpawn } from './helpers/describe-spawn.mjs';
 import { exitedNonZero } from './helpers/describe-spawn.mjs';
+import { PORTAL_TOP_LEVEL_KEYS, portalTopLevelTypos } from '../validate-portals.mjs';
 
 test('Hacker News AI Extraction Logic', async (t) => {
   const mockModel = {
@@ -441,3 +442,14 @@ for (const stop of ['concurrent', 'child', 'wrapper']) {
     }
   });
 }
+test('hn_hiring is a registered portals.yml key, so a typo of it is reported', () => {
+  // scan-hn reads hn_hiring.keywords. A misspelled `hn_hirng:` validated clean,
+  // and the scan fell back to the default "Software Engineer" keyword without
+  // saying why: the same silent miss as seek_searches and topdev_searches.
+  assert.ok(PORTAL_TOP_LEVEL_KEYS.includes('hn_hiring'));
+  assert.deepStrictEqual(portalTopLevelTypos({ hn_hiring: { keywords: ['Data Engineer'] } }), []);
+  assert.deepStrictEqual(
+    portalTopLevelTypos({ hn_hirng: { keywords: ['Data Engineer'] } }),
+    [{ key: 'hn_hirng', suggestion: 'hn_hiring' }],
+  );
+});

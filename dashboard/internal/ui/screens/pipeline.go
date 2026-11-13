@@ -203,6 +203,7 @@ type pipelineTab struct {
 
 func getPipelineTabs() []pipelineTab {
 	return []pipelineTab{
+		{filterPending, i18n.Current.TabInbox}, // read only, #5269 (pipeline_pending.go)
 		{filterEvaluated, i18n.Current.TabOpen},
 		{filterApplied, i18n.Current.TabApplied},
 		{filterResponded, i18n.Current.TabResponded},
@@ -372,6 +373,17 @@ type PipelineModel struct {
 	// Hired win flow sub-state (Issue 1447)
 	hiredApp  model.CareerApplication
 	hiredStep int // 0 = inactive, 1 = celebration, 2 = story invite, 3 = anonymous stat
+
+	// Inbox tab (#5269, pipeline_pending.go): the Pending rows of
+	// data/pipeline.md, the searched and sorted view of them, and the Inbox's
+	// own sort mode.
+	pending     []data.PendingRow
+	pendingView []data.PendingRow
+	pendingSort string
+	// pendingErr is the last failed Inbox read, shown on the tab until a read
+	// succeeds. A flash alone is cleared by the next key, which left an
+	// unreadable inbox looking empty.
+	pendingErr string
 }
 
 // IsTextInputActive returns true if the search or any other text input is currently focused
@@ -389,7 +401,7 @@ func NewPipelineModel(t theme.Theme, apps []model.CareerApplication, metrics mod
 		apps:          apps,
 		metrics:       metrics,
 		sortMode:      sortScore,
-		activeTab:     0,
+		activeTab:     defaultTabIndex(),
 		width:         width,
 		height:        height,
 		theme:         t,
@@ -509,10 +521,19 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 		selectedCompany = app.Company
 		selectedRole = app.Role
 	}
+	selectedPendingURL := ""
+	if row, ok := m.currentPendingRow(); ok {
+		selectedPendingURL = row.URL
+	}
 
 	reloaded := NewPipelineModel(m.theme, apps, metrics, m.careerOpsPath, m.width, m.height)
 	reloaded.sortMode = m.sortMode
 	reloaded.activeTab = m.activeTab
+	// The Inbox rows are set by the caller after the tracker reload; carry the
+	// current ones over so a failed Inbox read keeps showing them.
+	reloaded.pending = m.pending
+	reloaded.pendingSort = m.pendingSort
+	reloaded.pendingErr = m.pendingErr
 	// Preserve search state across refresh — otherwise pressing `r` silently drops a
 	// committed query and the user loses their place mid-investigation.
 	reloaded.searchQuery = m.searchQuery
@@ -541,6 +562,13 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 		reloaded.applyReportDetails(report, summary.jobURL, summary.listingDate)
 	}
 	reloaded.applyFilterAndSort()
+
+	if reloaded.onPendingTab() {
+		reloaded.cursor = m.cursor
+		reloaded.scrollOffset = m.scrollOffset
+		reloaded.restorePendingCursor(selectedPendingURL)
+		return reloaded
+	}
 
 	for i, app := range reloaded.filtered {
 		if selectedReportPath != "" && app.ReportPath == selectedReportPath {
@@ -631,7 +659,15 @@ func (m PipelineModel) Update(msg tea.Msg) (PipelineModel, tea.Cmd) {
 	case PipelineTrackerFailedMsg:
 		m.flash = "Tracker unavailable; showing previous applications: " + msg.Err
 		return m, nil
+	case PipelinePendingFailedMsg:
+		m.pendingErr = msg.Err
+		m.flash = fmt.Sprintf(i18n.Current.InboxUnavailable, msg.Err)
+		return m, nil
 	case pipelineStartDiscardPickerMsg:
+		// The status change that starts this flow came from a tracker tab; if
+		// the user has since moved to the read-only Inbox, go back to ALL so the
+		// picker never commits from the Inbox screen (#5269).
+		m.leavePendingTab()
 		// Issue 1380: initialise the discard reason picker state.
 		// Merge predicted reasons (from report) with canonical fallback options.
 		seen := make(map[string]bool)
@@ -667,6 +703,12 @@ func (m PipelineModel) Update(msg tea.Msg) (PipelineModel, tea.Cmd) {
 func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 	if m.keysHelp {
 		return m.handleKeysHelp(msg)
+	}
+	// The Inbox is read only: only its allowlisted keys reach the switch below.
+	if m.onPendingTab() {
+		if next, cmd, handled := m.handlePendingKey(msg); handled {
+			return next, cmd
+		}
 	}
 	switch msg.String() {
 	case "?":
@@ -942,7 +984,7 @@ func (m PipelineModel) handleKeysHelp(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 }
 
 func (m PipelineModel) keyHelpRowCount() int {
-	const bindings = 19
+	bindings := len(m.keyHelpItems())
 	if m.width >= 56 {
 		return (bindings + 1) / 2
 	}
@@ -1171,6 +1213,7 @@ func (m PipelineModel) handleDiscardPicker(msg tea.KeyMsg) (PipelineModel, tea.C
 }
 
 func (m PipelineModel) StartHiredFlow(app model.CareerApplication) (PipelineModel, tea.Cmd) {
+	m.leavePendingTab()
 	m.hiredApp = app
 	m.hiredStep = 1
 	return m, nil
@@ -1446,6 +1489,18 @@ func (m *PipelineModel) stepTab(delta int) {
 	}
 }
 
+// defaultTabIndex is the tab the dashboard opens on, and the one an invalid
+// selection falls back to: OPEN. Looked up by filter rather than assumed to be
+// index 0, because the Inbox tab sits in front of it.
+func defaultTabIndex() int {
+	for i, tab := range getPipelineTabs() {
+		if tab.filter == filterEvaluated {
+			return i
+		}
+	}
+	return 0
+}
+
 // clampActiveTab keeps the selection on a tab the tracker can show.
 func (m *PipelineModel) clampActiveTab() {
 	tabs := getPipelineTabs()
@@ -1454,16 +1509,20 @@ func (m *PipelineModel) clampActiveTab() {
 		return
 	}
 	if m.activeTab < 0 || m.activeTab >= len(tabs) {
-		m.activeTab = 0
+		m.activeTab = defaultTabIndex()
 	}
 	if tabs[m.activeTab].filter == filterOther && m.countForFilter(filterOther) == 0 {
-		m.activeTab = 0
+		m.activeTab = defaultTabIndex()
 	}
 }
 
 // applyFilterAndSort rebuilds the filtered list from apps.
 func (m *PipelineModel) applyFilterAndSort() {
 	m.clampActiveTab()
+	if m.onPendingTab() {
+		m.applyPendingFilterAndSort()
+		return
+	}
 	var filtered []model.CareerApplication
 
 	currentFilter := getPipelineTabs()[m.activeTab].filter
@@ -1741,7 +1800,7 @@ func (m PipelineModel) renderSearchBar() string {
 	}
 
 	tabFiltered := m.countForFilter(getPipelineTabs()[m.activeTab].filter)
-	matchInfo := hintStyle.Render(fmt.Sprintf(i18n.Current.SearchMatching, len(m.filtered), tabFiltered))
+	matchInfo := hintStyle.Render(fmt.Sprintf(i18n.Current.SearchMatching, m.shownCount(), tabFiltered))
 
 	hint := ""
 	if m.searchInput {
@@ -1772,7 +1831,17 @@ func (m PipelineModel) renderHeader() string {
 		Padding(0, 2)
 
 	right := lipgloss.NewStyle().Foreground(m.theme.Subtext)
-	info := right.Render(fmt.Sprintf(i18n.Current.OffersSummary, m.metrics.Total, avgScoreLabel(m.metrics.AvgScore)))
+	infoText := fmt.Sprintf(i18n.Current.OffersSummary, m.metrics.Total, avgScoreLabel(m.metrics.AvgScore))
+	readError := false
+	if m.onPendingTab() {
+		// The Inbox has no status counts: the summary takes its row counts, or
+		// says that the last read failed and the rows shown are the previous ones.
+		infoText = m.pendingSummaryText()
+		if m.pendingErr != "" {
+			right = right.Foreground(m.theme.Peach)
+			readError = true
+		}
+	}
 	title := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Blue).Render(i18n.Current.AppTitle)
 	inner := m.width - 4
 	if inner < 1 {
@@ -1780,10 +1849,15 @@ func (m PipelineModel) renderHeader() string {
 	}
 	titleWidth := lipgloss.Width(title)
 	// The inline tabs are the navigation, so they outrank the summary: drop the
-	// summary once it leaves no room for at least the active tab.
+	// summary once it leaves no room for at least the active tab. A read error
+	// is cut short instead, so it never disappears.
 	minTabs := lipgloss.Width("["+getPipelineTabs()[m.activeTab].label+"]") + 2
+	if room := inner - titleWidth - minTabs; readError && lipgloss.Width(infoText) > room {
+		infoText = truncateCells(infoText, max(room, 1))
+	}
+	info := right.Render(infoText)
 	gapWidth := inner - titleWidth - lipgloss.Width(info)
-	if gapWidth < minTabs {
+	if gapWidth < minTabs && !readError {
 		info = ""
 		gapWidth = inner - titleWidth
 	}
@@ -1882,6 +1956,9 @@ func (m PipelineModel) tabColor(filter string) (color lipgloss.Color, own bool) 
 }
 
 func (m PipelineModel) countForFilter(filter string) int {
+	if filter == filterPending {
+		return len(m.pending)
+	}
 	count := 0
 	for _, app := range m.apps {
 		norm := data.NormalizeStatus(app.Status)
@@ -1915,6 +1992,9 @@ func (m PipelineModel) renderBody() string {
 // selected row stays one line too. The split below still counts a real wrap
 // if one ever slips through.
 func (m PipelineModel) renderBodyWindow(start, height int) []string {
+	if m.onPendingTab() {
+		return m.renderPendingBodyWindow(start, height)
+	}
 	lines := make([]string, 0, min(height, len(m.filtered)+8))
 	line := 0 // index of the next display line
 	emit := func(s string) bool {
@@ -2218,6 +2298,9 @@ func (m PipelineModel) renderPayCell(app model.CareerApplication, width int, sel
 
 // renderColumnHeader labels the table columns; widths mirror renderAppLine.
 func (m PipelineModel) renderColumnHeader() string {
+	if m.onPendingTab() {
+		return m.renderPendingColumnHeader()
+	}
 	cw := m.columnWidths()
 	h := lipgloss.NewStyle().Foreground(m.theme.Subtext).Bold(true)
 	cell := func(label string, width int) string {
@@ -2381,10 +2464,39 @@ func dashboardDate(app model.CareerApplication) string {
 	return app.Date
 }
 
+// truncateToCells cuts s to at most width terminal cells, ending in "..."
+// when at least three cells are left. ansi.Truncate and ansi.StringWidth can
+// disagree on a grapheme such as a keycap emoji (1️⃣), so the result is
+// measured again and cut shorter until ansi.StringWidth agrees that it fits.
+// @param s The text to fit.
+// @param width The number of cells available.
+// @returns s, or a prefix of it, at most width cells wide.
+func truncateToCells(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= width {
+		return s
+	}
+	tail := "..."
+	if width < ansi.StringWidth(tail) {
+		tail = ""
+	}
+	for limit := width; limit > 0; limit-- {
+		if out := ansi.Truncate(s, limit, tail); ansi.StringWidth(out) <= width {
+			return out
+		}
+	}
+	return ""
+}
+
 // renderPreview renders the selected application's details within the current terminal width.
 // @param None.
 // @returns The newline-separated preview.
 func (m PipelineModel) renderPreview() string {
+	if m.onPendingTab() {
+		return m.renderPendingPreview()
+	}
 	app, ok := m.CurrentApp()
 	if !ok {
 		return ""
@@ -2445,13 +2557,7 @@ func (m PipelineModel) renderPreview() string {
 			label := "TL;DR: "
 			value := summary.tldr
 			valueWidth := max(0, m.width-4-ansi.StringWidth(label))
-			if ansi.StringWidth(value) > valueWidth {
-				if valueWidth <= ansi.StringWidth("...") {
-					value = ansi.Truncate(value, valueWidth, "")
-				} else {
-					value = ansi.Truncate(value, valueWidth, "...")
-				}
-			}
+			value = truncateToCells(value, valueWidth)
 			lines = append(lines, padStyle.Render(
 				labelStyle.Render(label)+valueStyle.Render(value)))
 		}
@@ -2601,41 +2707,33 @@ func (m PipelineModel) renderHelp() string {
 	// gap math uses the plain text so the escapes never skew the layout.
 	manifestoLink := "\x1b]8;;https://career-ops.org/manifesto?utm_source=dashboard\x1b\\built on the CareerOps Manifesto\x1b]8;;\x1b\\"
 	brand := lipgloss.NewStyle().Foreground(m.theme.Overlay).Render(manifestoLink + " · career-ops by santifer.io")
-
 	const brandPlain = "built on the CareerOps Manifesto · career-ops by santifer.io"
 
-	pieces := []helpPiece{
-		piece("↑↓/jk", i18n.Current.HelpNav, false),
-		piece("←→/hl", i18n.Current.HelpTabs, false),
-		piece("/", i18n.Current.HelpSearch, false),
-		piece("s", i18n.Current.HelpSort, false),
-		piece("r", i18n.Current.HelpRefresh, false),
-		piece("Enter", i18n.Current.HelpReport, false),
-		piece("o", i18n.Current.HelpOpenURL, false),
-		piece("d", i18n.Current.HelpOpenPDF, false),
-		piece("c", i18n.Current.HelpChange, false),
-		piece("y", i18n.Current.HelpCopyPDF, false),
-		piece("D", i18n.Current.HelpRegenPDF, false),
-		piece("C", i18n.Current.HelpColumns, false),
-		piece("p", i18n.Current.HelpProgress, false),
-		piece("S", i18n.Current.HelpStats, false),
-		piece("t", i18n.Current.HelpLanguage, false),
-		piece("m", i18n.Current.HelpManifesto, false),
-		piece("g/G", i18n.Current.HelpTopEnd, false),
-		piece("?", i18n.Current.HelpKeys, true),
-		piece("q", i18n.Current.HelpQuit, true),
-	}
+	// The footer offers the same keys as the `?` list, in the same order, with
+	// the key list and quit always kept.
+	items := m.keyHelpItems()
+	pieces := make([]helpPiece, 0, len(items))
 	pinWidth := 0
-	for _, p := range pieces {
+	for _, it := range items {
+		p := piece(it.key, it.desc, it.key == "?" || it.key == "q")
+		pieces = append(pieces, p)
 		if p.pin {
 			pinWidth += lipgloss.Width(p.text)
 		}
 	}
 
 	// The active sort sits on the right, followed by the brand when there is
-	// room. Keys give way to the sort label, but never the ? and q pins.
-	sortPlain := "Sort: " + i18n.Current.SortModeLabel(m.sortMode)
-	sortInfo := descStyle.Render("Sort: ") + keyStyle.Render(i18n.Current.SortModeLabel(m.sortMode))
+	// room. Keys give way to the sort label, but never the ? and q pins. The
+	// Inbox keeps its own sort, and its score order is the first-pass rank.
+	sortName := i18n.Current.SortModeLabel(m.sortMode)
+	if m.onPendingTab() {
+		sortName = i18n.Current.SortModeLabel(m.pendingSortMode())
+		if m.pendingSortMode() == sortScore {
+			sortName = i18n.Current.SortRank
+		}
+	}
+	sortPlain := "Sort: " + sortName
+	sortInfo := descStyle.Render("Sort: ") + keyStyle.Render(sortName)
 	keyBudget := budget - lipgloss.Width(sortPlain) - 1
 	if keyBudget < pinWidth {
 		return oneLine(m.width, style, joinHelp(budget, pieces, "", ""))
@@ -2655,30 +2753,44 @@ func (m PipelineModel) renderHelp() string {
 	return oneLine(m.width, style, keys+strings.Repeat(" ", gap)+right)
 }
 
+// keyHelpItem is one binding in the footer and the `?` list.
+type keyHelpItem struct{ key, desc string }
+
+// keyHelpItems are the bindings of the active tab. The Inbox offers only its
+// allowlist (pipeline_pending.go).
+func (m PipelineModel) keyHelpItems() []keyHelpItem {
+	if m.onPendingTab() {
+		return pendingHelpItems()
+	}
+	return []keyHelpItem{
+		{"↑↓/jk", i18n.Current.HelpNav},
+		{"←→/hl", i18n.Current.HelpTabs},
+		{"/", i18n.Current.HelpSearch},
+		{"s", i18n.Current.HelpSort},
+		{"r", i18n.Current.HelpRefresh},
+		{"Enter", i18n.Current.HelpReport},
+		{"o", i18n.Current.HelpOpenURL},
+		{"d", i18n.Current.HelpOpenPDF},
+		{"y", i18n.Current.HelpCopyPDF},
+		{"D", i18n.Current.HelpRegenPDF},
+		{"c", i18n.Current.HelpChange},
+		{"C", i18n.Current.HelpColumns},
+		{"p", i18n.Current.HelpProgress},
+		{"S", i18n.Current.HelpStats},
+		{"t", i18n.Current.HelpLanguage},
+		{"m", i18n.Current.HelpManifesto},
+		{"g/G", i18n.Current.HelpTopEnd},
+		{"?", i18n.Current.HelpKeys},
+		{"q", i18n.Current.HelpQuit},
+	}
+}
+
 // renderKeysHelp draws the bindings the footer had to drop. Two columns once
 // the terminal is wide enough that a single column would waste the row.
 func (m PipelineModel) renderKeysHelp(maxLines int) string {
-	type kv struct{ key, desc string }
-	items := []kv{
-		{"↑↓/jk", strings.TrimSpace(i18n.Current.HelpNav)},
-		{"←→/hl", strings.TrimSpace(i18n.Current.HelpTabs)},
-		{"/", strings.TrimSpace(i18n.Current.HelpSearch)},
-		{"s", strings.TrimSpace(i18n.Current.HelpSort)},
-		{"r", strings.TrimSpace(i18n.Current.HelpRefresh)},
-		{"Enter", strings.TrimSpace(i18n.Current.HelpReport)},
-		{"o", strings.TrimSpace(i18n.Current.HelpOpenURL)},
-		{"d", strings.TrimSpace(i18n.Current.HelpOpenPDF)},
-		{"y", strings.TrimSpace(i18n.Current.HelpCopyPDF)},
-		{"D", strings.TrimSpace(i18n.Current.HelpRegenPDF)},
-		{"c", strings.TrimSpace(i18n.Current.HelpChange)},
-		{"C", strings.TrimSpace(i18n.Current.HelpColumns)},
-		{"p", strings.TrimSpace(i18n.Current.HelpProgress)},
-		{"S", strings.TrimSpace(i18n.Current.HelpStats)},
-		{"t", strings.TrimSpace(i18n.Current.HelpLanguage)},
-		{"m", strings.TrimSpace(i18n.Current.HelpManifesto)},
-		{"g/G", strings.TrimSpace(i18n.Current.HelpTopEnd)},
-		{"?", strings.TrimSpace(i18n.Current.HelpKeys)},
-		{"q", strings.TrimSpace(i18n.Current.HelpQuit)},
+	items := m.keyHelpItems()
+	for i := range items {
+		items[i].desc = strings.TrimSpace(items[i].desc)
 	}
 	pad := lipgloss.NewStyle().Padding(0, 2).MaxWidth(max(1, m.width)).MaxHeight(1)
 	var rows []string

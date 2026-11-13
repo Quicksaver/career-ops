@@ -332,7 +332,7 @@ Full evaluation を `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM-DD}.md` 
 ## Risk Summary
 (リスクシグナルごとに1行、順序は固定 — 上記の Risk Summary セクションを参照)
 
-## H) Draft Application Answers
+## H) Draft Application Answers (draft)
 (only if score >= 4.5 -- draft answers for the application form)
 
 ---

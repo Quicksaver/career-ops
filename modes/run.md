@@ -4,7 +4,7 @@ Resolve the active user, then run `node run-workflow.mjs --user {USER}`. Read th
 
 ## Workflow
 
-The coordinator checks setup, scans configured sources, processes the current scan handoff, attempts authenticated LinkedIn discovery, and drains the existing inbox together with newly found jobs. Dayforce and Interamt run when explicitly configured; standalone HN runs when enabled and uses the canonical scanner filters. The broad full-ATS sweep remains an explicit `--scan-full` opt-in. `--skip-scan` processes existing work without discovery; `--skip-linkedin` excludes only authenticated LinkedIn discovery.
+The coordinator checks setup, scans configured sources, processes the current scan handoff, attempts authenticated LinkedIn discovery, and drains the existing inbox together with newly found jobs. Dayforce, Interamt, SEEK (`seek_searches`) and TopDev (`topdev_searches`) run when explicitly configured; standalone HN runs when enabled and uses the canonical scanner filters. The broad full-ATS sweep remains an explicit `--scan-full` opt-in. `--skip-scan` processes existing work without discovery; `--skip-linkedin` excludes only authenticated LinkedIn discovery.
 
 Before dispatch, merge durable tracker additions and reconcile previously completed/skipped jobs. Check liveness for pending HTTP(S) jobs except LinkedIn, then synchronize pending jobs into stable batch IDs. Each batch pass receives an exact pending-URL queue file, so unrelated historical batch input is not dispatched. Workers load the canonical evaluation and chosen CV mode; output format, template packs, page format, fact/title/structure checks, keyword coverage, optional ATS output, profile hard stops, and report-linked artifact identity apply equally to interactive and batch processing.
 

@@ -236,10 +236,22 @@ function main(userContext) {
   console.log(`  ${padTotal}${formatK(grandTotalTokens)} tokens ($${grandCost.toFixed(4)})\n`);
 }
 
+const USAGE = `Usage: node batch/aggregate-tokens.mjs --user {USER}
+
+Prints the token usage and estimated cost of the last batch run, per worker
+and in total, from users/{USER}/batch/batch-state.tsv, the worker logs in
+users/{USER}/batch/logs/ and the report names in users/{USER}/reports/. batch-runner.sh runs it at the end of a batch.
+It writes nothing.`;
+
 if (isMainModule(import.meta.url)) {
-  try {
-    main(getUserContext(process.argv.slice(2)));
-  } catch (err) {
-    printUserContextErrorAndExit(err);
+  // --help used to fall through and print the last batch's breakdown instead.
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    process.stdout.write(`${USAGE}\n`);
+  } else {
+    try {
+      main(getUserContext(process.argv.slice(2)));
+    } catch (err) {
+      printUserContextErrorAndExit(err);
+    }
   }
 }
