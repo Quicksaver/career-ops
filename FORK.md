@@ -4,16 +4,16 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `751baa8359e9ac2f7e2437ce8ba2286f09d8aa8a`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `6543452d6cb65ebf14394e5035bb555f57f4b594`, the upstream integration at `751baa83` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `336`.
-- Diff size against the incorporated base at that snapshot: `1044 files changed, 43563 insertions(+), 11998 deletions(-)`.
+- Incorporated upstream base: `b0a03753b70c5cc21cea2066a0b2002ca2099f53`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `522bcb80fbf48ca1d1a826128eca5ae9745aac59`, the upstream integration at `b0a03753` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `338`.
+- Diff size against the incorporated base at that snapshot: `1059 files changed, 43842 insertions(+), 12482 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
 ## Upstream integration at b0a03753
 
-This update incorporates the 81 commits from `751baa8359e9ac2f7e2437ce8ba2286f09d8aa8a` through `b0a03753`, main-branch work with no new release tag. Fifty-eight files conflicted.
+This update incorporates the 81 commits from `751baa8359e9ac2f7e2437ce8ba2286f09d8aa8a` through `b0a03753b70c5cc21cea2066a0b2002ca2099f53`, main-branch work with no new release tag. Fifty-eight files conflicted.
 
 - **Inbox queue key (#7033).** The dashboard's Inbox `e` key queues the selected Pending row through the fork's synchronizer. `synchronizeBatch()` (`lib/run-batch-sync.mjs`) takes `onlyUrl`, matching the first Pending row whose URL is the same after `new URL()` normalization, and returns `not_pending` when there is none. `sync-pipeline-batch.mjs` takes `--url` and exits 3 when the row is already in `batch-input.tsv` and 4 when it is not an unchecked Pending row (`URL_EXIT`, re-exported by `sync-batch-input.mjs`, which refuses a `--url` that is not a public http(s) URL before forwarding). Unlike upstream, a URL known only to `batch-state.tsv` is queued again with its saved ID, as a full sync does. Upstream's checkout-level `--input`/`--state`/`--pipeline` flags and temp-directory lock are not taken. `runQueueEval()` in `dashboard/main.go` passes `--user` and the selected user's environment, with `CAREER_OPS_PIPELINE` set to the pipeline the Inbox shows, and `PipelineQueueEvalMsg` carries `UserID`. The Inbox columns take upstream's tracker order (#7022: rank, company, role, status, location, posted) with the fork's full-row highlight.
 - **Web CVs from the JSON payload (#6706).** The web pdf prompt asks for the JSON payload instead of a filled template, with the fork's checkout and user-root paths. Upstream's `cvTemplateAbsolute()` replaces the fork's `templateFile()`. `renderAndMarkPdf()` and `spawnAtsPdf()` take the fork's `root` and `env`, so the ATS sibling renders for the selected user with `--user`. `cv-title-check.mjs` resolves the user's `cv.md` only when it runs as a CLI, since the web now imports it. The keyword-match route passes the tailored HTML with `--cv` and keeps the fork's `careerOpsSystemRoot()`/`careerOpsCoreEnv()`. `modes/pdf.md` names the optional ATS PDF `{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.ats.pdf`, upstream's `.ats.pdf` suffix on the fork's report-numbered name, so Apply never uploads it as the styled CV.
