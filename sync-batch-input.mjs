@@ -14,13 +14,23 @@
  * The pure pipeline-row helpers below stay exported for callers and tests. The
  * Pending header is the shared queue definition in lib/pipeline-queue.mjs.
  *
- * Run: node sync-batch-input.mjs --user <id> [--dry-run] [--json]
+ * --url <url> queues that one Pending row (#5269; the dashboard's Inbox `e`
+ * key calls it) with the same ID recovery and conflict checks. Its exit status
+ * says what happened: 0 queued (or, with --dry-run, would be), 3 nothing to
+ * queue because the URL is already in batch-input.tsv, 4 not an unchecked
+ * Pending row (its URL must be the first cell after "- [ ] "), 1 any other
+ * error, such as a --url that is not a public http(s) URL. A URL known only to
+ * batch-state.tsv is queued again with its saved ID, as a full sync does.
+ *
+ * Run: node sync-batch-input.mjs --user <id> [--dry-run] [--json] [--url <url>]
  */
 
 import { isIP } from 'net';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { sectionKind } from './lib/pipeline-sections.mjs';
 import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
+
+export { URL_EXIT } from './lib/run-batch-sync.mjs';
 
 /** Batch source label written into the source column. */
 export const SOURCE = 'pipeline';
@@ -281,10 +291,13 @@ export function planBatchRows(pending, existingUrls, startId = 1) {
 
 // ── CLI entry point ────────────────────────────────────────────────────────
 
-const USAGE = `Usage: node sync-batch-input.mjs --user <id> [--dry-run] [--json]
+const USAGE = `Usage: node sync-batch-input.mjs --user <id> [--dry-run] [--json] [--url <url>]
   Appends the selected user's pipeline Pending rows to users/{USER}/batch/batch-input.tsv
   with stable IDs (same as sync-pipeline-batch.mjs). Set CAREER_OPS_PIPELINE to read
-  another inbox lane.`;
+  another inbox lane.
+  --url <url>  queue only the Pending row with this posting URL. Exit status:
+               0 queued, 3 already in batch-input.tsv (nothing to queue),
+               4 not an unchecked Pending row whose URL is the first cell after "- [ ] ", 1 other errors.`;
 const RETIRED_PATH_FLAGS = ['--input', '--state', '--pipeline'];
 
 if (isMainModule(import.meta.url)) {
@@ -306,6 +319,14 @@ if (isMainModule(import.meta.url)) {
   } catch (error) {
     printUserContextErrorAndExit(error);
   }
-  // sync-pipeline-batch.mjs reads the same argv: --user, --dry-run and --json.
+  const urlIndex = argv.findIndex(arg => arg === '--url' || arg.startsWith('--url='));
+  if (urlIndex >= 0) {
+    const value = argv[urlIndex] === '--url' ? argv[urlIndex + 1] : argv[urlIndex].slice('--url='.length);
+    if (value && !value.startsWith('--') && !isSafePublicHttpUrl(value)) {
+      console.error(`--url must be a public http(s) URL: ${value}`);
+      process.exit(1);
+    }
+  }
+  // sync-pipeline-batch.mjs reads the same argv: --user, --dry-run, --json and --url.
   await import('./sync-pipeline-batch.mjs');
 }

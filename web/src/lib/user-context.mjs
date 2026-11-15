@@ -1,7 +1,8 @@
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { resolveCodeRoot } from "./core/code-root.mjs";
-import { resolveDataRoot } from "./core/data-root.mjs";
+import { isPluginInstallCopy, pluginDefaultDataRoot, resolveDataRoot } from "./core/data-root.mjs";
 import { profileOverride } from "./core/profile-path.mjs";
 
 /** Resolve system code independently of the selected user's data. */
@@ -23,7 +24,11 @@ export function careerOpsUserId() {
 
 export function careerOpsUsersRoot() {
   const configured = process.env.CAREER_OPS_USERS_DIR?.trim();
-  return configured ? path.resolve(careerOpsSystemRoot(), configured) : path.join(/* turbopackIgnore: true */ careerOpsSystemRoot(), "users");
+  if (configured) return path.resolve(careerOpsSystemRoot(), configured);
+  // A plugin install copy keeps users under ~/career-ops-data, as the core does.
+  const host = { homedir: os.homedir, realpath: fs.realpathSync, platform: process.platform };
+  if (isPluginInstallCopy(careerOpsSystemRoot(), process.env, host)) return path.join(pluginDefaultDataRoot(host), "users");
+  return path.join(/* turbopackIgnore: true */ careerOpsSystemRoot(), "users");
 }
 
 export function careerOpsRoot() {

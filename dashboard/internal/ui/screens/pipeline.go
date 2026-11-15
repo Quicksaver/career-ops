@@ -203,7 +203,7 @@ type pipelineTab struct {
 
 func getPipelineTabs() []pipelineTab {
 	return []pipelineTab{
-		{filterPending, i18n.Current.TabInbox}, // read only, #5269 (pipeline_pending.go)
+		{filterPending, i18n.Current.TabInbox}, // #5269 (pipeline_pending.go)
 		{filterEvaluated, i18n.Current.TabOpen},
 		{filterApplied, i18n.Current.TabApplied},
 		{filterResponded, i18n.Current.TabResponded},
@@ -663,10 +663,12 @@ func (m PipelineModel) Update(msg tea.Msg) (PipelineModel, tea.Cmd) {
 		m.pendingErr = msg.Err
 		m.flash = fmt.Sprintf(i18n.Current.InboxUnavailable, msg.Err)
 		return m, nil
+	case PipelineQueueEvalDoneMsg:
+		return m.onQueueEvalDone(msg), nil
 	case pipelineStartDiscardPickerMsg:
 		// The status change that starts this flow came from a tracker tab; if
-		// the user has since moved to the read-only Inbox, go back to ALL so the
-		// picker never commits from the Inbox screen (#5269).
+		// the user has since moved to the Inbox, which has no tracker rows, go
+		// back to ALL so the picker never commits from the Inbox screen (#5269).
 		m.leavePendingTab()
 		// Issue 1380: initialise the discard reason picker state.
 		// Merge predicted reasons (from report) with canonical fallback options.
@@ -704,7 +706,8 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 	if m.keysHelp {
 		return m.handleKeysHelp(msg)
 	}
-	// The Inbox is read only: only its allowlisted keys reach the switch below.
+	// On the Inbox only its allowlisted keys reach the switch below; its own
+	// keys, `e` among them, are handled in handlePendingKey.
 	if m.onPendingTab() {
 		if next, cmd, handled := m.handlePendingKey(msg); handled {
 			return next, cmd

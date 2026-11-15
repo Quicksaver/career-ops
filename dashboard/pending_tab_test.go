@@ -73,6 +73,7 @@ func newInboxApp(t *testing.T, root string) appModel {
 	th := theme.NewTheme("auto")
 	m := appModel{
 		careerOpsPath: root,
+		userID:        "fixture",
 		theme:         th,
 		pipeline:      screens.NewPipelineModel(th, apps, data.ComputeMetrics(apps), root, 140, 40),
 	}
@@ -168,7 +169,8 @@ func TestInboxKeysChangeNoFile(t *testing.T) {
 
 	m, _ = sendKey(t, m, "left") // OPEN → Inbox
 	keys := []string{
-		"c", "d", "y", "D", "v", "C", "enter", "e", "x", "u", "i", "z",
+		// `e` queues a row through sync-batch-input.mjs (queue_eval_test.go).
+		"c", "d", "y", "D", "v", "C", "enter", "x", "u", "i", "z",
 		"j", "k", "g", "G", "pgdown", "pgup", "ctrl+d", "ctrl+u", "s", "s",
 		"r", "m", "o", "j", "o", "j", "o",
 		"/", "a", "c", "m", "e", "enter", "esc",

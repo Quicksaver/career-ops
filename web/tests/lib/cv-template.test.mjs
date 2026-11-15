@@ -24,7 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveCvTemplate, resolveUserTemplatesDir } from "../../src/lib/core/cv-template.mjs";
-import { BASE_CV_TEMPLATE, buildPrompt } from "../../src/lib/run-prompts.mjs";
+import { BASE_CV_TEMPLATE, buildPrompt, cvTemplateAbsolute } from "../../src/lib/run-prompts.mjs";
 import { linkCorePackage } from "../helpers/core-package.mjs";
 
 const CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -201,11 +201,9 @@ test("a template pack survives BOTH halves: the resolver and the prompt's guard"
   const rel = await asDashboard(root, undefined, () => resolveCvTemplate(root));
   assert.equal(rel, "templates/My Pack/cv-template.mine.html");
 
-  // And the prompt names the file the resolver actually chose.
-  assert.ok(
-    buildPrompt({ kind: "pdf", input: "018", memory: "", today: "2026-08-04", cvTemplate: rel }).includes(rel),
-    "the resolver's own output must pass run-prompts.mjs's template guard",
-  );
+  assert.equal(cvTemplateAbsolute({ cvTemplate: rel, codeRoot: root }), path.join(root, rel));
+  const prompt = buildPrompt({ kind: "pdf", input: "018", memory: "", today: "2026-08-04", cvTemplate: rel });
+  assert.ok(!prompt.includes(rel), "the prompt no longer names the template file");
 });
 
 test("an unresolvable checkout yields the base template rather than throwing", async () => {
@@ -251,13 +249,12 @@ test("a template in the data root's user layer reaches the prompt relative to th
   const userTemplatesDir = await asDashboard(root, undefined, () => resolveUserTemplatesDir(root, dataRoot), { dataRoot });
   assert.equal(userTemplatesDir, path.posix.dirname(expected));
 
-  // And the prompt names that file under the user's data root rather than joined
-  // onto the checkout (the fork's worker runs from the checkout), and not the base
-  // template it used to fall back to
   const prompt = buildPrompt({ kind: "pdf", input: "018", memory: "", today: "2026-08-04", cvTemplate: rel, userTemplatesDir, codeRoot: root, userRoot: dataRoot, userId: "fixture" });
-  const absolute = path.join(dataRoot, expected).split(path.sep).join("/");
-  assert.ok(prompt.includes(JSON.stringify(absolute)), `the prompt must name ${absolute}`);
+  assert.equal(
+    cvTemplateAbsolute({ cvTemplate: rel, userTemplatesDir, codeRoot: root, dataRoot }),
+    path.join(dataRoot, expected),
+  );
+  assert.ok(!prompt.includes(expected), "the prompt must not name the template file");
   assert.ok(!prompt.includes(`${root}/${expected}`), "a user template must not be anchored to the checkout");
-  assert.ok(!prompt.includes(`${root}/${BASE_CV_TEMPLATE}`), "the base template must not be filled instead");
   fs.rmSync(dataRoot, { recursive: true, force: true });
 });

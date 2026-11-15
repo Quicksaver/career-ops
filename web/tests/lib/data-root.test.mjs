@@ -66,3 +66,21 @@ test('production web data roots honor data-dir, marker and users override preced
     assert.equal(resolve(root,{CAREER_OPS_USER:'fixture',CAREER_OPS_USERS_DIR:'other-users'}),path.join(root,'other-users','fixture'));
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('a plugin install copy keeps users under ~/career-ops-data and refuses explicit roots inside the copy', async () => {
+  const { resolveDataRoot, unsafeDataRootMessage, UnsafeDataRootError } = await import('../../src/lib/core/data-root.mjs');
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'web-plugin-home-')));
+  try {
+    const copy = path.join(home, '.claude', 'plugins', 'cache', 'career-ops', '1.0.0');
+    fs.mkdirSync(copy, { recursive: true });
+    const host = { homedir: () => home, realpath: fs.realpathSync, platform: process.platform };
+    const run = (env, marker = null) => resolveDataRoot(copy, () => marker, { CAREER_OPS_USER: 'fixture', ...env }, path.resolve, path.join, host);
+    assert.equal(run({}), path.join(home, 'career-ops-data', 'users', 'fixture'));
+    assert.equal(run({ CAREER_OPS_USERS_DIR: path.join(home, 'elsewhere') }), path.join(home, 'elsewhere', 'fixture'));
+    assert.equal(run({ CAREER_OPS_DATA_DIR: path.join(home, 'data') }), path.join(home, 'data'));
+    assert.throws(() => run({ CAREER_OPS_DATA_DIR: 'inside' }), (err) => err instanceof UnsafeDataRootError && /CAREER_OPS_DATA_DIR points inside a Claude Code plugin install/.test(unsafeDataRootMessage(err)));
+    assert.throws(() => run({}, 'marker-data'), (err) => /The \.career-ops-data marker points inside/.test(err.message));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

@@ -16,6 +16,8 @@ id	url	source	notes
 2	local:jds/archived-role.md	Authenticated capture	archived
 ```
 
+Or fill it from the Pending section of `users/{USER}/data/pipeline.md`: `node sync-batch-input.mjs --user USER` adds every Pending row, and `node sync-batch-input.mjs --user USER --url <url>` adds only that one (the dashboard's Inbox `e` key runs this). Both skip URLs already in `batch-input.tsv`; a URL known only to `batch-state.tsv` comes back with its saved ID. With `--url`, exit status 3 means there was nothing to queue and 4 means the URL is not an unchecked Pending row the script can read (the URL must be the first cell after `- [ ] `).
+
 ```bash
 ./batch/batch-runner.sh --user USER --dry-run
 ./batch/batch-runner.sh --user USER

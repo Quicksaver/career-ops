@@ -66,7 +66,9 @@ import {
   boldLineText, findExperienceSections, headingText, toPlainText, EXPERIENCE_HEADING_NAMES, parseRoleFirstHeading,
 } from './lib/cv-markdown.mjs';
 
-const CV_PATH = join(getCareerOpsRoot(), 'cv.md');
+// The CLI resolves the selected user (consuming --user) before it reads its
+// arguments. An importer such as the web passes cv.md text in and selects no user.
+const CV_PATH = isMainModule(import.meta.url) ? join(getCareerOpsRoot(), 'cv.md') : null;
 
 // ── cv.md experience parsing ────────────────────────────────────────
 //

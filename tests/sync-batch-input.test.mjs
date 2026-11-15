@@ -202,6 +202,64 @@ try {
     writeFileSync(inputPath, 'id\turl\tsource\tnotes\n7\thttps://jobs.example.org/other\tmanual\t\n');
     const conflict = runCli(['--user', 'fixture', '--json']);
     check('an input/state ID conflict fails closed', conflict.exitCode === 1 && JSON.parse(conflict.stdout.trim()).state_conflicts?.[0]?.id === '7');
+
+    // ── --url queues one Pending row (#5269, the dashboard Inbox `e` key) ──
+    check('URL_EXIT values are pinned', mod.URL_EXIT.ALREADY_QUEUED === 3 && mod.URL_EXIT.NOT_PENDING === 4);
+    writeFileSync(join(userRoot, 'data', 'pipeline.md'), [
+      '# Pipeline', '', '## Pending',
+      '- [ ] https://jobs.example.org/one | Fictional | One | rank: 4.2/5',
+      '- [ ] https://JOBS.Example.org:443/two | Fictional | Two',
+      '- [ ] https://jobs.example.org/recovered | Fictional | Recovered',
+      '- [x] https://jobs.example.org/checked | Fictional | Checked',
+      '- [ ] Fictional | https://jobs.example.org/url-second | URL second', '',
+      '## Processed', '',
+    ].join('\n'));
+    const inputHeader = 'id\turl\tsource\tnotes\n';
+    const resetInput = () => writeFileSync(inputPath, inputHeader);
+    const inputRows = () => readFileSync(inputPath, 'utf8').trim().split('\n').slice(1).map(line => line.split('\t'));
+
+    resetInput();
+    const one = runCli(['--user', 'fixture', '--url', 'https://jobs.example.org/one']);
+    check('--url exits 0 and appends only the selected row',
+      one.exitCode === 0 && inputRows().length === 1 && inputRows()[0][1] === 'https://jobs.example.org/one' && inputRows()[0][3] === 'Fictional | One | rank: 4.2/5');
+    check('--url names the batch runner as the next step', /batch-runner\.sh --user fixture/.test(one.stdout));
+    const twice = runCli(['--user', 'fixture', '--url=https://jobs.example.org/one']);
+    check('--url on a row already in batch-input.tsv exits 3 and writes nothing',
+      twice.exitCode === 3 && /already in batch-input\.tsv/.test(twice.stdout) && inputRows().length === 1);
+
+    resetInput();
+    const norm = runCli(['--user', 'fixture', '--url', 'https://jobs.example.org/two']);
+    check('--url matches a row that differs only in host case and default port', norm.exitCode === 0 && inputRows()[0]?.[1] === 'https://JOBS.Example.org:443/two');
+
+    resetInput();
+    const recovered = runCli(['--user', 'fixture', '--url', 'https://jobs.example.org/recovered']);
+    check('--url on a URL known only to batch-state.tsv queues it with its saved ID',
+      recovered.exitCode === 0 && inputRows()[0]?.[0] === '7' && inputRows()[0]?.[2] === 'pipeline-recovered');
+
+    for (const [label, target] of [
+      ['a URL not in the pipeline', 'https://jobs.example.org/missing'],
+      ['a checked row', 'https://jobs.example.org/checked'],
+      ['a row whose URL is not the first cell', 'https://jobs.example.org/url-second'],
+    ]) {
+      resetInput();
+      const r = runCli(['--user', 'fixture', '--url', target]);
+      check(`--url with ${label} exits 4 and writes nothing`,
+        r.exitCode === 4 && r.stderr.includes('first cell after "- [ ] "') && inputRows().length === 0);
+    }
+    for (const target of ['local:jds/fictional-role.md', 'http://127.0.0.1/jobs/1']) {
+      resetInput();
+      const r = runCli(['--user', 'fixture', '--url', target]);
+      check(`--url refuses ${target} with exit 1`, r.exitCode === 1 && /--url must be a public http\(s\) URL/.test(r.stderr) && inputRows().length === 0);
+    }
+    check('--url without a value exits with an error', runCli(['--user', 'fixture', '--url', '--dry-run']).exitCode === 1);
+
+    resetInput();
+    const dryOne = runCli(['--user', 'fixture', '--dry-run', '--json', '--url', 'https://jobs.example.org/one']);
+    const dryOneResult = dryOne.exitCode === 0 ? JSON.parse(dryOne.stdout.trim()) : null;
+    check('--dry-run with --url reports one addition and writes nothing',
+      dryOneResult?.added === 1 && dryOneResult.selected === 1 && inputRows().length === 0);
+    const queueLane = runCli(['--user', 'fixture', '--url', 'https://jobs.example.org/one'], { CAREER_OPS_PIPELINE: join(usersDir, 'absent.md') });
+    check('--url with no pipeline file exits 4', queueLane.exitCode === 4);
   } finally {
     rmSync(usersDir, { recursive: true, force: true });
   }
