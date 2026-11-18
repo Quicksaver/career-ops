@@ -4,10 +4,10 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `b0a03753b70c5cc21cea2066a0b2002ca2099f53`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `522bcb80fbf48ca1d1a826128eca5ae9745aac59`, the upstream integration at `b0a03753` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `338`.
-- Diff size against the incorporated base at that snapshot: `1059 files changed, 43842 insertions(+), 12482 deletions(-)`.
+- Incorporated upstream base: `a793313d216bf68268dda845aaa7cfe01629feb5`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `337d15f90e50205ff98c059e1947457bbef99e9f`, the upstream integration at `a793313d` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `341`.
+- Diff size against the incorporated base at that snapshot: `1083 files changed, 44049 insertions(+), 12577 deletions(-)`.
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
@@ -32,7 +32,7 @@ This update incorporates the 150 commits from `b0a03753b70c5cc21cea2066a0b2002ca
   - Dashboard: the narrow-header test counts the `SPEC` tab; the Linux-only `inbox_skip_test.go` expects `--user fixture`.
   - `tests/portals-template-in-registry.test.mjs` compares the template with `HEAD^1`, so it fails only while the merge is uncommitted.
 - **Known Windows failures.** None in this run: the web launcher `EPERM` and the two Ollama oversized-record cases from earlier merges passed.
-- **Validation.** `node test-all.mjs --quick --jobs 4` before the last fixes: 29068 passed, 13 failed. Four are batch suites killed at 120s or starved under that load; run alone, all pass (recovery ownership 9/9, default parallel 2/2, workflow parity 16/16, parity prefetch 12/12 after its sandbox copy list gained `lib/jd-parse.mjs`). The other nine were the adapted tests listed above, each passing alone afterwards, and the registry-template check, which needs the committed merge. The `run` lane fixtures pass alone through the real Git Bash runner: queue flow 41/41, interactive flow 26/26, interactive 25/25, output 10/10, live batch 4/4, agent channel 3/3, agent preflight 4/4 and the four `tests/workflows/` suites. The web suite ran 3219 tests with 98 skipped; its 32 failures were the seven web files listed above, which pass after the fixes, and the web typecheck is clean after the CV Studio lock fix. Dashboard `go vet` (also with `GOOS=linux`), `gofmt` and `go test ./...` pass; the Linux-only queue and skip tests compile but were not run. Raw `verify-pipeline.mjs --user fixture --json` is clean on an isolated empty user. Paid evaluations were not exercised.
+- **Validation.** On the committed merge, `node test-all.mjs --quick --jobs 4` passed 29079 with 2 failures, both fixed afterwards: the web ATS argv test, which expected no `--user` while test-all exports `CAREER_OPS_USER` (`337d15f9` pins it; the whole web suite then passes with `CAREER_OPS_USER=test`), and the registry-template check, which passes once `HEAD^1` is the merge. An earlier run of the same suite showed four batch suites killed at 120s under load; run alone they pass (recovery ownership 9/9, default parallel 2/2, workflow parity 16/16, parity prefetch 12/12 after its sandbox copy list gained `lib/jd-parse.mjs`). One run lost its inline sections to a native Windows crash (0xC0000409) during the live archive capture; the next run passed them. The `run` lane fixtures pass alone through the real Git Bash runner: queue flow 41/41, interactive flow 26/26, interactive 25/25, output 10/10, live batch 4/4, agent channel 3/3, agent preflight 4/4 and the four `tests/workflows/` suites. The web suite passes 3121 of 3219 tests with 98 skipped, and the web typecheck is clean. Dashboard `go vet` (also with `GOOS=linux`), `gofmt` and `go test ./...` pass; the Linux-only queue and skip tests compile but were not run. Raw `verify-pipeline.mjs --user fixture --json` is clean on an isolated empty user, and both real users report 0 errors and no portal finding. The root `node_modules` still had Playwright 1.64.1 while `package.json` now asks for 1.65.0. Paid evaluations were not exercised.
 
 ## Upstream integration at b0a03753
 
