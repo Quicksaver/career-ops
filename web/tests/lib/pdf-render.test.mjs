@@ -952,6 +952,8 @@ test("renderAndMarkPdf: the ATS sibling omits --report and --allow-nonchronologi
       format: "letter",
       reportNum: "8",
       ats: { html: atsHtml, finalPdf: atsPdf },
+      // No selected user, so the argv below carries no --user (test-all exports one).
+      env: { ...process.env, CAREER_OPS_USER: "" },
     });
     assert.equal(result.kind, "rendered");
     const renders = calls.filter((call) => String(call.args[0]).endsWith("generate-pdf.mjs"));
