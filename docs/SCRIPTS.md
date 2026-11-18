@@ -39,7 +39,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run upskill` | `upskill.mjs` | Aggregate skill-gap map from tracked reports (or `--url-text <url\|file>` for a single-JD targeted gap analysis) |
 | `npm run add` | `add-entry.mjs` | Dedup + insert a `/career-ops add` entry into cv.md / article-digest.md |
 | `node clean-markers.mjs` | `clean-markers.mjs` | Audit or strip invisible Unicode from generated text files (see [CLEAN_MARKERS.md](CLEAN_MARKERS.md)) |
-| `node backup.mjs --dest <dir>` | `backup.mjs` | Copy your User Layer (the updater's `USER_PATHS`) to a folder you choose, or a cloud drive with `--provider` (never deletes at the destination; the contact files `data/Connections.csv`, `data/contacts.tsv`, `data/reply-candidates.json` and `output/contacts.vcf` (and any other `.vcf` file) only with `--include-contacts`, never with `--provider` or a `--dest` inside a provider folder at its default location; a synced folder moved elsewhere is not detected, so keep contact exports out of any synced folder; `--include-claude-memory` also copies Claude Code's auto-memory for the checkout into `claude-memory/`, or from a folder you name with `--claude-memory-dir <dir>`) |
+| `node backup.mjs --dest <dir>` | `backup.mjs` | Copy your User Layer (the updater's `USER_PATHS`) to a folder you choose, or a cloud drive with `--provider` (never deletes at the destination; the contact files `data/Connections.csv`, `data/contacts.tsv`, `data/reply-candidates.json` and `output/contacts.vcf` (and any other `.vcf` file) only with `--include-contacts`, refused with `--provider` or a `--dest` inside a provider folder at its default location unless `--allow-synced-contacts` is also passed; a synced folder moved elsewhere is not detected, so keep contact exports out of any synced folder; `--include-claude-memory` also copies Claude Code's auto-memory for the checkout into `claude-memory/`, or from a folder you name with `--claude-memory-dir <dir>`) |
 | `npm run update:check` | `update-system.mjs check` | Check for a newer published release |
 | `npm run update` | `update-system.mjs apply --confirm` | Apply upstream update |
 | `npm run rollback` | `update-system.mjs rollback` | Rollback last update |
@@ -58,6 +58,7 @@ Scripts that read or write user data require `--user {USER}` or `CAREER_OPS_USER
 | `npm run scan:dayforce -- --user {USER}` | `scan-dayforce.mjs` | Dayforce (Ceridian) scanner via Playwright. `--dry-run` writes nothing to the pipeline or scan history; `--tenant NAME` scans one board |
 | `npm run scan:topdev -- --user {USER}` | `scan-topdev.mjs` | TopDev (Vietnam) scanner via Playwright (the listing is hydrated in the browser). `--dry-run` writes nothing to the pipeline or scan history; `--keyword TEXT` scans one keyword |
 | `node web/scripts/scheduled-jobs-runner.mjs` | `web/scripts/scheduled-jobs-runner.mjs` | Run one due local scheduled scan (normally invoked by the OS scheduler: Task Scheduler, launchd or cron) |
+| `node web/scripts/scheduled-jobs-task.mjs` | `web/scripts/scheduled-jobs-task.mjs` | What the Windows scan task runs: sets the path overrides passed as `--env KEY=VALUE`, then runs the scheduled-jobs runner with its errors appended to `--log` (written by `install-scan-schedule.ps1`) |
 | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File web/scripts/install-scan-schedule.ps1` | `web/scripts/install-scan-schedule.ps1` | Install the 15-minute Windows scheduled-jobs queue worker for the logged-in current user |
 | `sh web/scripts/install-scan-schedule.sh` | `web/scripts/install-scan-schedule.sh` | Install the 15-minute scheduled-jobs queue worker on macOS (launchd) or Linux (cron) for the current user |
 | `sh web/scripts/uninstall-scan-schedule.sh` | `web/scripts/uninstall-scan-schedule.sh` | Remove the macOS launchd agent or Linux cron line for the scheduled-jobs queue worker |
@@ -237,7 +238,7 @@ Semantic validation aggregates every invalid item in a five-finding response and
 
 A normal invocation always performs a fresh review and ignores old run artifacts. `--resume-run RUN_ID` is an explicit recovery option for an interrupted or operationally failed run: it reuses only checkpoints whose signature exactly matches the active user, chunk findings, and prior lane decisions, then mechanically normalizes and revalidates each decision under the current contract. When a duplicate phase completed but its following apply phase failed, exact-fingerprint-matched apply artifacts are resumed directly and the completed duplicate action result is retained; the remaining findings are not sent through review again. Once apply and its raw recheck complete, the exact post-review verification is checkpointed too; a matching resume starts at the next pass and reuses the committed action results instead of replaying that pass. Raw output, invalid responses, and mismatched checkpoints are rerun. The `--json` result records semantic retry limit/usage, reused checkpoints, and mechanical normalizations under `review_resilience`.
 
-Confirmed tracker duplicates preserve lifecycle order as `Hired > Offer > Interview > Assessment > Responded > Rejected > Applied > Evaluated > Skip/Closed/Discarded`. The deterministic resolver makes the most advanced row the keeper; reviewer-selected canonical identity is only the equal-status tiebreaker. The keeper retains its original tracker ID, report, PDF, HTML, and links without renaming. Losing rows contribute their notes, then their reports/output artifacts are backed up and archived. `data/duplicate-resolutions.jsonl` records the reviewer-selected keeper, effective lifecycle keeper, override flag, rationale, evidence, and backup root.
+Confirmed tracker duplicates preserve lifecycle order as `Hired > Offer > Interview > Assessment > Responded > Rejected > Applied > Speculative > Evaluated > Skip/Closed/Discarded`. The deterministic resolver makes the most advanced row the keeper; reviewer-selected canonical identity is only the equal-status tiebreaker. The keeper retains its original tracker ID, report, PDF, HTML, and links without renaming. Losing rows contribute their notes, then their reports/output artifacts are backed up and archived. `data/duplicate-resolutions.jsonl` records the reviewer-selected keeper, effective lifecycle keeper, override flag, rationale, evidence, and backup root.
 
 The raw command preserves the low-level contract: exit `0` with zero errors and exit `1` when errors exist; warnings alone remain exit `0`.
 
@@ -598,7 +599,7 @@ npm run keyword-match -- --self-test
 
 ## calibrate
 
-Reads the tracker and the outcome journals under `users/{USER}/data/outcomes/` and reports whether higher evaluation scores actually convert better for you. Advisory and read-only: it never edits scoring rules, thresholds, or any user file. Applications still in flight are excluded from every rate and counted separately. A score band with fewer than `--min-band-n` resolved applications (default 5) is printed without a percentage.
+Reads the tracker and the outcome journals under `users/{USER}/data/outcomes/` and reports whether higher evaluation scores actually convert better for you. Advisory and read-only: it never edits scoring rules, thresholds, or any user file. Applications still in flight are excluded from every rate and counted separately. A row closed by `close-stale.mjs --confirm` counts as a `no_response` outcome until its status changes. A score band with fewer than `--min-band-n` resolved applications (default 5) is printed without a percentage.
 
 ```bash
 npm run calibrate -- --user {USER}
@@ -760,11 +761,16 @@ mode (#4691) before any cold WebSearch — "do I already have a saved contact
 at this company?" A real prior relationship (a past interviewer, or a contact
 from an earlier, different-role application) is a far stronger outreach
 target than a fresh search, so a match is surfaced first and offered as an
-`internal-referral` ask. Matching is exact-key via `normalizeCompany()`
-(`tracker-utils.mjs`) — the same key `merge-tracker.mjs`/`set-status.mjs`/
-`company-history.mjs` use for same-company lookups — deliberately not
-`linkedin-join.mjs`'s fuzzy token matching, since `contacts.tsv`'s company
-column is normally written from the same string already in the tracker.
+`internal-referral` ask. A contact matches when its company has the same
+`normalizeCompany()` key as `--company`, or when
+`companiesMatchIgnoringCorporateForm()` accepts the pair, so a contact saved
+as "Acme Inc." surfaces for "Acme". Both helpers live in `tracker-utils.mjs`
+and are the rule `set-status.mjs` and `outcome.mjs` use to find a company's
+tracker row. The corporate-form rule only lets the names differ by a trailing
+legal suffix or generic descriptor ("Acme Robotics" never matches "Acme"), and
+it is deliberately not `linkedin-join.mjs`'s fuzzy token matching, since
+`contacts.tsv`'s company column is normally written from the same string
+already in the tracker.
 
 ```bash
 node contact-lookup.mjs --company "Acme"            # JSON: saved contacts at "Acme"
@@ -1291,7 +1297,7 @@ parser:
 
 Use `args` only for reusable parsers that intentionally accept runtime parameters such as `{careers_url}` or `{company}`.
 
-The script must resolve inside the repo root (security boundary in `providers/local-parser.mjs`). Keep a private, non-contributed parser under a gitignored path — `local/` is ignored by default — so it is never staged; `portals.yml` itself is already gitignored. Use `scripts/parsers/` only for a parser you intend to upstream. See [local-parser-cookbook.md](local-parser-cookbook.md).
+The script must resolve inside the repo root or the data root's `local/` folder (security boundary in `providers/local-parser.mjs`). Keep a private, non-contributed parser in `local/`: gitignored in a checkout, so it is never staged, and under the data root in a Claude Code plugin install, where a plugin update replaces the code root. `portals.yml` itself is already gitignored. Use `scripts/parsers/` only for a parser you intend to upstream. See [local-parser-cookbook.md](local-parser-cookbook.md).
 
 If a parser writes full extraction artifacts for debugging or audit, store them under `data/parser-output/{company}/`. `scan.mjs` reads stdout and does not require those JSON files after parsing. Keep generated JSON artifacts out of git; `.gitkeep` placeholders are the only exception for preserving directory structure.
 
@@ -2287,7 +2293,7 @@ Exit status: `0` success, `1` invalid option or write error, `2` missing tracker
 
 Copies the User Layer to a backup folder. The file list is `USER_PATHS` in `update-system.mjs` (the updater's own list of what is yours: CV, profile, `portals.yml`, everything under `data/`, `reports/`, `output/`, `jds/`, `interview-prep/`, `documents/`, `writing-samples/`, the web app's `.career-ops-web/` stores and more), plus any paths a fork declares in `config/local-paths.txt`, plus the files under `templates/` that are yours (generated per-application CVs and cover letters, and the template variant `config/profile.yml` selects; the shipped templates are not copied). It reads `CAREER_OPS_ROOT` / `.career-ops-data` like every other script. Files are copied whole, and nothing is ever deleted at the destination. Unchanged files (same size and modification time) are skipped, so a repeat run is cheap.
 
-Never copied: `.env` files, `data/cache/`, lock and temp files (except `plugins.lock`, which is yours), editor swap and autosave files of any file (vim `.name.swp`/`.swo`/`.swn`, emacs `#name#` and `.#name`, and `name~`), `.git/` and `node_modules/` folders inside nested checkouts, symlinks and anything under a symlinked folder, and anything outside the User Layer. `data/Connections.csv` (a LinkedIn export), `data/contacts.tsv` and `data/reply-candidates.json` and `output/contacts.vcf` (and any other `.vcf` file) and their `.bak`/`.orig`/`.old`/`.save` copies such as `contacts.tsv.bak` (other people's contact details), are copied only with `--include-contacts` (their editor swap, autosave and lock files stay excluded even then), which cannot be combined with `--provider` or with a `--dest` inside a provider folder at its default location. A synced folder moved elsewhere is not detected, so keep contact exports out of any synced folder.
+Never copied: `.env` files, `data/cache/`, lock and temp files (except `plugins.lock`, which is yours), editor swap and autosave files of any file (vim `.name.swp`/`.swo`/`.swn`, emacs `#name#` and `.#name`, and `name~`), `.git/` and `node_modules/` folders inside nested checkouts, symlinks and anything under a symlinked folder, and anything outside the User Layer. `data/Connections.csv` (a LinkedIn export), `data/contacts.tsv` and `data/reply-candidates.json` and `output/contacts.vcf` (and any other `.vcf` file) and their `.bak`/`.orig`/`.old`/`.save` copies such as `contacts.tsv.bak` (other people's contact details), are copied only with `--include-contacts` (their editor swap, autosave and lock files stay excluded even then), which is refused with `--provider` or with a `--dest` inside a provider folder at its default location, because a sync client would upload other people's contact details. Add `--allow-synced-contacts` to say they may be uploaded there; the run then still prints a warning. A synced folder moved elsewhere is not detected, so keep contact exports out of any synced folder.
 
 Claude Code's auto-memory for the checkout is outside the data root, in `<config dir>/projects/<slug>/memory/`: the config dir is `CLAUDE_CONFIG_DIR` or `~/.claude`, and the slug is the checkout path with every non-alphanumeric character replaced by `-`. `--include-claude-memory` copies it to `claude-memory/` at the destination by the same rules as every other file (unchanged files skipped, nothing deleted, `.env` files, editor leftovers and symlinks left out). It works with `--provider` and with a synced `--dest`. Memory files are compared byte for byte before being skipped as unchanged (the size and time check alone is not enough for them). When the folder does not exist the run says so and carries on; a folder that exists but cannot be read is a failure. An empty `--claude-memory-dir` value is a usage error (exit `2`). From a linked git worktree the main checkout's folder is used, because Claude Code shares one memory folder per repository. If Claude Code keeps the memory somewhere else (a session started in another folder, a plugin install, or a Claude Code setting that moves it), name the folder with `--claude-memory-dir <dir>`: it implies the copy, and a folder that does not exist is then a failure (exit `1`). A destination that holds the memory folder, or sits inside it, is refused. If a fork declares its own `claude-memory` path in `config/local-paths.txt`, that path is backed up as usual and the memory copy is reported as failed instead of writing over it. The `--json` result reports the number of memory files as `claudeMemory`; they do not count towards the "nothing to back up" check on the data root.
 
@@ -2299,6 +2305,7 @@ node backup.mjs --provider google-drive    # <Google Drive>/Backups/career-ops; 
 node backup.mjs --provider google-drive --account work@example.com   # when several accounts are signed in
 node backup.mjs --provider dropbox --folder Work/career-ops       # folder under the drive (default Backups/career-ops)
 node backup.mjs --dest ~/Backups/career-ops --include-contacts # also copy the four contact files
+node backup.mjs --provider google-drive --include-contacts --allow-synced-contacts  # contacts into a synced folder: the sync client uploads them
 node backup.mjs --dest ~/Backups/career-ops --include-claude-memory  # also copy Claude Code's auto-memory into claude-memory/
 node backup.mjs --dest ~/Backups/career-ops --claude-memory-dir ~/notes/claude-memory  # the same, from a memory folder you name
 node backup.mjs --dest ~/Backups/career-ops --dry-run             # print the counts and bytes that would be copied, copy nothing

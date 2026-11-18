@@ -180,20 +180,21 @@ const (
 
 // Filter modes
 const (
-	filterAll        = "all"
-	filterEvaluated  = "evaluated"
-	filterApplied    = "applied"
-	filterInterview  = "interview"
-	filterOffer      = "offer"
-	filterHired      = "hired"
-	filterResponded  = "responded"
-	filterSkip       = "skip"
-	filterRejected   = "rejected"
-	filterClosed     = "closed"
-	filterDiscarded  = "discarded"
-	filterAssessment = "assessment"
-	filterTop        = "top"
-	filterOther      = "other"
+	filterAll         = "all"
+	filterEvaluated   = "evaluated"
+	filterSpeculative = "speculative"
+	filterApplied     = "applied"
+	filterInterview   = "interview"
+	filterOffer       = "offer"
+	filterHired       = "hired"
+	filterResponded   = "responded"
+	filterSkip        = "skip"
+	filterRejected    = "rejected"
+	filterClosed      = "closed"
+	filterDiscarded   = "discarded"
+	filterAssessment  = "assessment"
+	filterTop         = "top"
+	filterOther       = "other"
 )
 
 type pipelineTab struct {
@@ -205,6 +206,7 @@ func getPipelineTabs() []pipelineTab {
 	return []pipelineTab{
 		{filterPending, i18n.Current.TabInbox}, // #5269 (pipeline_pending.go)
 		{filterEvaluated, i18n.Current.TabOpen},
+		{filterSpeculative, i18n.Current.TabSpeculative},
 		{filterApplied, i18n.Current.TabApplied},
 		{filterResponded, i18n.Current.TabResponded},
 		{filterAssessment, i18n.Current.TabAssessment},
@@ -269,6 +271,7 @@ type StatusPair struct {
 func getStatusPairs(currentNormalized string) []StatusPair {
 	base := []StatusPair{
 		{i18n.Current.StatusEvaluated, "Evaluated"},
+		{i18n.Current.StatusSpeculative, "Speculative"},
 		{i18n.Current.StatusApplied, "Applied"},
 		{i18n.Current.StatusResponded, "Responded"},
 		{i18n.Current.StatusAssessment, "Assessment"},
@@ -318,7 +321,10 @@ func (m PipelineModel) currentStatusPairs() []StatusPair {
 }
 
 // statusGroupOrder defines display order for grouped view.
-var statusGroupOrder = []string{"hired", "interview", "offer", "assessment", "responded", "applied", "evaluated", "skip", "rejected", "closed", "discarded"}
+// speculative sits just after evaluated: a gambit pitch is pre-application, so
+// it outranks nothing that has actually been sent, but it is live work and
+// belongs above skip/rejected/closed/discarded.
+var statusGroupOrder = []string{"hired", "interview", "offer", "assessment", "responded", "applied", "evaluated", "speculative", "skip", "rejected", "closed", "discarded"}
 
 // PipelineModel implements the career pipeline dashboard screen.
 type PipelineModel struct {
@@ -384,6 +390,9 @@ type PipelineModel struct {
 	// succeeds. A flash alone is cleared by the next key, which left an
 	// unreadable inbox looking empty.
 	pendingErr string
+	// pendingLastSkip is the URL of the last row `x` skipped in this session,
+	// which `u` puts back (pipeline_pending_skip.go). "" when there is none.
+	pendingLastSkip string
 }
 
 // IsTextInputActive returns true if the search or any other text input is currently focused
@@ -534,6 +543,7 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 	reloaded.pending = m.pending
 	reloaded.pendingSort = m.pendingSort
 	reloaded.pendingErr = m.pendingErr
+	reloaded.pendingLastSkip = m.pendingLastSkip
 	// Preserve search state across refresh — otherwise pressing `r` silently drops a
 	// committed query and the user loses their place mid-investigation.
 	reloaded.searchQuery = m.searchQuery
@@ -665,6 +675,8 @@ func (m PipelineModel) Update(msg tea.Msg) (PipelineModel, tea.Cmd) {
 		return m, nil
 	case PipelineQueueEvalDoneMsg:
 		return m.onQueueEvalDone(msg), nil
+	case PipelineSkipDoneMsg:
+		return m.onSkipDone(msg), nil
 	case pipelineStartDiscardPickerMsg:
 		// The status change that starts this flow came from a tracker tab; if
 		// the user has since moved to the Inbox, which has no tracker rows, go
@@ -707,7 +719,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		return m.handleKeysHelp(msg)
 	}
 	// On the Inbox only its allowlisted keys reach the switch below; its own
-	// keys, `e` among them, are handled in handlePendingKey.
+	// keys, `e`, `x` and `u` among them, are handled in handlePendingKey.
 	if m.onPendingTab() {
 		if next, cmd, handled := m.handlePendingKey(msg); handled {
 			return next, cmd
@@ -3016,17 +3028,18 @@ func (m PipelineModel) statusColorMap() map[string]lipgloss.Color {
 // pipeline tabs and the progress screen's weekly activity.
 func statusColors(t theme.Theme) map[string]lipgloss.Color {
 	return map[string]lipgloss.Color{
-		"hired":      t.Green, // terminal success — never uncoloured (default) like an unknown status
-		"interview":  t.Green,
-		"offer":      t.Green,
-		"applied":    t.Sky,
-		"responded":  t.Blue,
-		"evaluated":  t.Text,
-		"skip":       t.Red,
-		"rejected":   t.Subtext,
-		"closed":     t.Subtext,
-		"discarded":  t.Subtext,
-		"assessment": t.Mauve,
+		"hired":       t.Green, // terminal success — never uncoloured (default) like an unknown status
+		"interview":   t.Green,
+		"offer":       t.Green,
+		"applied":     t.Sky,
+		"responded":   t.Blue,
+		"evaluated":   t.Text,
+		"speculative": t.Pink,
+		"skip":        t.Red,
+		"rejected":    t.Subtext,
+		"closed":      t.Subtext,
+		"discarded":   t.Subtext,
+		"assessment":  t.Mauve,
 	}
 }
 

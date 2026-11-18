@@ -55,6 +55,34 @@ ok('recognized hash-route job IDs stay distinct', () => {
     normalizeUrl('https://jobs.example.com/careers#/jobs/123'),
     normalizeUrl('https://jobs.example.com/careers#/jobs/456'));
 });
+ok('a trailing slash does not collapse two fragment jobs', () => {
+  assert.notEqual(
+    normalizeUrl('https://jobs.example.com/careers#/job/111/'),
+    normalizeUrl('https://jobs.example.com/careers#/job/222/'));
+  assert.equal(
+    normalizeUrl('https://jobs.example.com/careers#/job/111/'),
+    'https://jobs.example.com/careers?_career_ops_fragment_job_id=111');
+});
+ok('a hashbang does not collapse two fragment jobs', () => {
+  assert.notEqual(
+    normalizeUrl('https://jobs.example.com/careers#!/job/111'),
+    normalizeUrl('https://jobs.example.com/careers#!/job/222'));
+});
+ok('a language query inside the fragment keeps two versions apart', () => {
+  assert.equal(postingUrlRelation(
+    'https://jobs.example.com/careers#/jobs/123?lang=en',
+    'https://jobs.example.com/careers#/jobs/123?lang=de'), 'distinct');
+});
+ok('lang in the fragment and lang in the query name the same job', () => {
+  assert.equal(postingUrlRelation(
+    'https://jobs.example.com/careers#/jobs/123?lang=en',
+    'https://jobs.example.com/careers?lang=en#/jobs/123'), 'same');
+});
+ok('a fragment language against the bare fragment job is one-sided', () => {
+  assert.equal(postingUrlRelation(
+    'https://jobs.example.com/careers#/jobs/123?lang=en',
+    'https://jobs.example.com/careers#/jobs/123'), 'one-sided-language');
+});
 ok('pre-existing internal fragment key is preserved beside promoted hash job ID', () => {
   assert.equal(
     normalizeUrl('https://jobs.example.com/careers?_career_ops_fragment_job_id=query-id#/jobs/hash-id'),
@@ -201,14 +229,14 @@ ok('the supplement survives: boards the shared list deliberately omits', () => {
 console.log('\naggregatorPostingId()');
 ok('LinkedIn: bare id, title slug and currentJobId are one posting id', () => {
   // The three shapes liveness-api.mjs already resolves to a single posting.
-  assert.deepEqual(aggregatorPostingId('https://www.linkedin.com/jobs/view/4001'),
-    { domain: 'linkedin.com', id: '4001' });
-  assert.deepEqual(aggregatorPostingId('https://uk.linkedin.com/jobs/view/director-of-marketing-at-acme-4001/'),
-    { domain: 'linkedin.com', id: '4001' });
-  assert.deepEqual(aggregatorPostingId('https://www.linkedin.com/jobs/search/?currentJobId=4001&keywords=x'),
-    { domain: 'linkedin.com', id: '4001' });
+  assert.deepEqual(aggregatorPostingId('https://www.linkedin.com/jobs/view/4000001'),
+    { domain: 'linkedin.com', id: '4000001' });
+  assert.deepEqual(aggregatorPostingId('https://uk.linkedin.com/jobs/view/director-of-marketing-at-acme-4000001/'),
+    { domain: 'linkedin.com', id: '4000001' });
+  assert.deepEqual(aggregatorPostingId('https://www.linkedin.com/jobs/search/?currentJobId=4000001&keywords=x'),
+    { domain: 'linkedin.com', id: '4000001' });
   // Different ids are different postings — that is the whole point.
-  assert.notEqual(aggregatorPostingId('https://www.linkedin.com/jobs/view/4002').id, '4001');
+  assert.notEqual(aggregatorPostingId('https://www.linkedin.com/jobs/view/4000002').id, '4000001');
 });
 ok('LinkedIn: the /comm/ link an alert email carries is the same posting id', () => {
   // linkedin.com answers /comm/jobs/view/{id} with a 307 whose session_redirect
@@ -304,6 +332,28 @@ ok('different pages are distinct; no key on either side is no evidence', () => {
   assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a', 'https://acme.recruitee.com/o/b'), 'distinct');
   assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a', 'N/A'), 'no-key');
   assert.equal(postingUrlRelation('', 'https://acme.recruitee.com/o/a'), 'no-key');
+});
+ok('two spellings canonicalJobKey reads as one posting are the same page', () => {
+  const GH = 'https://boards.greenhouse.io/acme/jobs/4001';
+  assert.equal(postingUrlRelation(GH, 'https://job-boards.greenhouse.io/acme/jobs/4001'), 'same');
+  assert.equal(postingUrlRelation(GH, 'https://careers.acme.example/jobs?gh_jid=4001'), 'same');
+  assert.equal(postingUrlRelation(GH, 'https://boards.greenhouse.io/embed/job_app?for=acme&token=4001'), 'same');
+  assert.equal(postingUrlRelation('https://jobs.lever.co/acme/5ac21346-8e0c-4494-8e7a-3eb92ff77902',
+    'https://jobs.lever.co/acme/5ac21346-8e0c-4494-8e7a-3eb92ff77902/apply'), 'same');
+  assert.equal(postingUrlRelation(GH, 'https://job-boards.greenhouse.io/acme/jobs/4002'), 'distinct');
+  assert.equal(postingUrlRelation('https://job-boards.greenhouse.io/acme/jobs/4001?lang=de', `${GH}?lang=en`), 'distinct');
+  assert.equal(postingUrlRelation('https://job-boards.greenhouse.io/acme/jobs/4001?lang=de', GH), 'one-sided-language');
+  // canonicalJobKey drops `ref` and `source`, lowercases the path and strips
+  // every trailing slash; on a generic site none of that joins two pages.
+  assert.equal(postingUrlRelation('https://careers.acme.example/job?ref=1', 'https://careers.acme.example/job?ref=2'), 'distinct');
+  assert.equal(postingUrlRelation('https://careers.acme.example/job?source=a1', 'https://careers.acme.example/job'), 'distinct');
+  assert.equal(postingUrlRelation('https://careers.acme.example/openings/AbC', 'https://careers.acme.example/openings/abc'), 'distinct');
+  assert.equal(postingUrlRelation('https://careers.acme.example/openings/123//', 'https://careers.acme.example/openings/123'), 'distinct');
+  // An extracted id names the posting whatever the rest of the query says.
+  assert.equal(postingUrlRelation(`${GH}?ref=1`, `${GH}?ref=2`), 'same');
+  const WD = 'https://acme.wd5.myworkdayjobs.com/External/job/Remote-USA/Data-Engineer_R123';
+  assert.equal(postingUrlRelation(WD, 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote-USA/Data-Engineer_R123'), 'same');
+  assert.equal(postingUrlRelation(WD, 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote-USA/Data-Engineer_R124'), 'distinct');
 });
 ok('the same page with a language on one side only is its own relation, in either order', () => {
   assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a', 'https://acme.recruitee.com/o/a?lang=de'), 'one-sided-language');

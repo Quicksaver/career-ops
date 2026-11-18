@@ -162,17 +162,33 @@ The task runs in the current user's interactive session, so you must be logged i
 
 The macOS and Linux worker records each check in `<store>.tick`, next to the
 scheduled jobs store (`users/<username>/data/scheduled-jobs.json.tick` by default); the page reads
-that file for "Last OS check". The worker runs for one selected user, so export
-`CAREER_OPS_USER=<username>` in the shell that runs the installer. The installer
-bakes `CAREER_OPS_USER`, `CAREER_OPS_USERS_DIR`, `CAREER_OPS_DATA_DIR` and
-`CAREER_OPS_SCHEDULED_JOBS_PATH` into the job when they are set in that shell. The
-web process must get the same values, for example in `web/.env.local`, or the page
-reads a different store and tick file. The installer does not read
-`web/.env.local`, so export the values in your shell when you install (for example
-`CAREER_OPS_USER=<username> sh web/scripts/install-scan-schedule.sh`). Prefer
-`CAREER_OPS_DATA_DIR` for a separate data directory: the web app reads
+that file for "Last OS check". On Windows the page reads the task's last run time
+from Task Scheduler instead, so there is no tick file.
+
+The worker runs for one selected user, so set `CAREER_OPS_USER=<username>` in the
+shell that runs the installer; the Windows installer refuses to run without it.
+Both installers carry `CAREER_OPS_USER`, `CAREER_OPS_USERS_DIR`, `CAREER_OPS_ROOT`,
+`CAREER_OPS_DATA_DIR` and `CAREER_OPS_SCHEDULED_JOBS_PATH` into the job when they
+are set in that shell: the macOS and Linux installer writes them into the job's
+command, and the Windows installer passes them to
+`web/scripts/scheduled-jobs-task.mjs` as arguments, with an empty value for each one
+that is unset so a value saved in your Windows user environment cannot override it.
+The web process must get the same values, for example in `web/.env.local`, or the
+page reads a different store. Neither installer reads `web/.env.local`, so set the
+values in your shell when you install, for example
+`CAREER_OPS_USER=<username> sh web/scripts/install-scan-schedule.sh`, or in
+PowerShell:
+
+```powershell
+$env:CAREER_OPS_USER = '<username>'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File web/scripts/install-scan-schedule.ps1
+```
+
+Prefer `CAREER_OPS_DATA_DIR` for a separate data directory: the web app reads
 `CAREER_OPS_ROOT` as the system checkout, not as user data. Run the installer again
-after you change them.
+after you change them. On all three systems the worker appends its errors to
+`scheduled-jobs.log` next to the store (`users/<username>/data/scheduled-jobs.log`
+by default).
 
 After any of these, new postings land in `users/<username>/data/pipeline.md` under `## Pending` on
 each run. Next you decide which are worth your attention — cheaply.
