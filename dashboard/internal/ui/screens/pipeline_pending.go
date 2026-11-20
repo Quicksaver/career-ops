@@ -2,10 +2,12 @@ package screens
 
 // The Inbox tab (#5269): the Pending rows of data/pipeline.md, beside the
 // tracker tabs, with the first-pass rank and what the batch files record for
-// each row. Three keys act on a row: `e` queues it for evaluation through
-// sync-batch-input.mjs (pipeline_pending_queue.go), and `x` skips it and `u`
-// undoes that skip through inbox-skip.mjs (pipeline_pending_skip.go). No key
-// triages or evaluates a row, and the dashboard itself writes no file.
+// each row. Five keys act on rows: `e` queues one for evaluation through
+// sync-batch-input.mjs (pipeline_pending_queue.go), `x` skips one and `u`
+// undoes that skip through inbox-skip.mjs (pipeline_pending_skip.go), and `a`
+// ranks one and `A` the unranked rows through rank-pipeline.mjs, after a `y`
+// (pipeline_pending_rank.go). No key evaluates a row, and the dashboard itself
+// writes no file.
 //
 // Two things keep tracker actions off this tab. applyFilterAndSort leaves the
 // tracker's row list empty while the Inbox is active, so CurrentApp has
@@ -260,6 +262,12 @@ func (m PipelineModel) handlePendingKey(msg tea.KeyMsg) (next PipelineModel, cmd
 	case "u":
 		next, cmd := m.undoPendingSkip()
 		return next, cmd, true
+	case "a":
+		next, cmd := m.askRankRow()
+		return next, cmd, true
+	case "A":
+		next, cmd := m.askRankAll()
+		return next, cmd, true
 	}
 	return m, nil, true
 }
@@ -489,17 +497,17 @@ func (m PipelineModel) renderPendingPreview() string {
 
 // pendingSummaryText is the header summary on the Inbox: the row counts, or,
 // after a failed read, the error and that the rows shown are the previous ones.
+// While a rank run is going it also says how many rows it is ranking; the
+// flash goes at the next key, this stays until the run ends.
 func (m PipelineModel) pendingSummaryText() string {
+	text := fmt.Sprintf(i18n.Current.InboxSummary, len(m.pending), countUnranked(m.pending))
 	if m.pendingErr != "" {
-		return sanitizeFlash(fmt.Sprintf(i18n.Current.InboxUnavailable, m.pendingErr))
+		text = sanitizeFlash(fmt.Sprintf(i18n.Current.InboxUnavailable, m.pendingErr))
 	}
-	unranked := 0
-	for _, row := range m.pending {
-		if !row.HasRank {
-			unranked++
-		}
+	if m.pendingRanking != nil {
+		text += " · " + fmt.Sprintf(i18n.Current.InboxRankRunning, m.pendingRanking.Count)
 	}
-	return fmt.Sprintf(i18n.Current.InboxSummary, len(m.pending), unranked)
+	return text
 }
 
 // pendingHelpItems are the keys the Inbox footer and `?` list offer: the
@@ -515,6 +523,8 @@ func pendingHelpItems() []keyHelpItem {
 		{"e", i18n.Current.HelpQueue},
 		{"x", i18n.Current.HelpSkip},
 		{"u", i18n.Current.HelpUndoSkip},
+		{"a", i18n.Current.HelpRankRow},
+		{"A", i18n.Current.HelpRankAll},
 		{"p", i18n.Current.HelpProgress},
 		{"S", i18n.Current.HelpStats},
 		{"t", i18n.Current.HelpLanguage},

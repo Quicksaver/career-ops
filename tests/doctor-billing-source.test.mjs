@@ -20,7 +20,8 @@ function runDoctor(env) {
   try {
     return execFileSync(NODE, [DOCTOR, '--user', 'test'], {
       cwd: ROOT,
-      env: { ...process.env, CAREER_OPS_USERS_DIR: TEST_USERS_DIR, ...env },
+      // No browser launches: this suite tests the billing warning, not them.
+      env: { ...process.env, CAREER_OPS_DOCTOR_SKIP_BROWSER: '1', CAREER_OPS_USERS_DIR: TEST_USERS_DIR, ...env },
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });

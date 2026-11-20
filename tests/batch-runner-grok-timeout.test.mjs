@@ -38,6 +38,7 @@ function stub(bin, name, body) {
 test('grok launches through worker-process.mjs with one prompt argument, closed stdin and a timeout', () => {
   assert.ok(dispatchBlock, 'dispatch block through the timeout handling in batch/batch-runner.sh');
   const work = mkdtempSync(join(tmpdir(), 'batch-grok-'));
+  const taskFiles = [];
   try {
     copyBatchOwnership(work);
     const bin = join(work, 'bin');
@@ -67,6 +68,7 @@ test('grok launches through worker-process.mjs with one prompt argument, closed 
         '    break',
         '  done',
         '  printf \'EXIT:%s TIMED_OUT:%s\\n\' "$exit_code" "$timed_out"',
+        '  if [[ -n "${grok_task:-}" ]]; then printf \'TASK:%s\\n\' "$grok_task"; fi',
         '}',
         'wrapper',
       ].join('\n'));
@@ -80,19 +82,25 @@ test('grok launches through worker-process.mjs with one prompt argument, closed 
       'if IFS= read -r line; then echo "STDIN:$line"; else echo "STDIN:eof"; fi',
     ].join('\n'));
     const grok = run(600);
+    for (const line of grok.out.split('\n')) if (line.startsWith('TASK:')) taskFiles.push(line.slice(5));
     const args = grok.log.split('\n').filter(l => l.startsWith('ARG:')).map(l => l.slice(4));
     assert.match(grok.out, /EXIT:0 TIMED_OUT:false/, grok.log);
     assert.deepEqual(args.slice(0, 4), ['--always-approve', '--output-format', 'plain', '-p']);
-    assert.ok(grok.log.includes('ARG:SYSTEM PROMPT\n\nJOB PROMPT'), `grok prompt drifted: ${JSON.stringify(grok.log.slice(0, 160))}`);
+    const promptArg = args[args.indexOf('-p') + 1] || '';
+    const taskFile = promptArg.match(/"([^"]+)"/)?.[1];
+    const taskText = taskFile && existsSync(taskFile) ? readFileSync(taskFile, 'utf8') : '';
+    assert.ok(promptArg && !promptArg.includes('SYSTEM PROMPT') && taskText.includes('SYSTEM PROMPT') && taskText.includes('JOB PROMPT'), `grok must read the prompt from a file: ${JSON.stringify(promptArg.slice(0, 160))}`);
     assert.match(grok.log, /STDIN:eof/, 'the worker reads EOF, not the runner\'s stdin');
     assert.equal(existsSync(join(work, 'fixture.json')), false, 'the drained worker leaves no ownership record');
 
     stub(bin, 'grok', 'sleep 30');
     const slow = run(2);
+    for (const line of slow.out.split('\n')) if (line.startsWith('TASK:')) taskFiles.push(line.slice(5));
     assert.match(slow.out, /EXIT:124 TIMED_OUT:true/, slow.log);
     assert.ok(slow.seconds < 20, `slow worker took ${slow.seconds}s`);
     assert.match(slow.log, /timed out after 2s; its process tree was stopped/, 'the timeout is written to the worker log, where the failure message is read from');
   } finally {
+    for (const file of taskFiles) rmSync(file, { force: true });
     rmSync(work, { recursive: true, force: true });
   }
 });

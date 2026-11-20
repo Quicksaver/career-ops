@@ -45,7 +45,13 @@ func CheckoutScriptPath(name string) (string, error) {
 	return "", fmt.Errorf("dashboard actions need %s in the career-ops checkout", name)
 }
 
-func runStatusWriter(dataRoot, report, status, note string, selectedUser ...string) error {
+// runStatusWriter runs set-status.mjs against the row named by ids[0], which
+// trackerIdentities orders. The remaining ids name the same row through the
+// other selector and are used for the pending-repair bookkeeping only.
+func runStatusWriter(dataRoot string, ids []trackerIdentity, status, note string, selectedUser ...string) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("status write needs a row selector")
+	}
 	userID := strings.TrimSpace(os.Getenv("CAREER_OPS_USER"))
 	if len(selectedUser) > 0 && selectedUser[0] != "" {
 		userID = selectedUser[0]
@@ -71,13 +77,26 @@ func runStatusWriter(dataRoot, report, status, note string, selectedUser ...stri
 	// --detach-jd-archive: a move into Interview may start a JD archive that can
 	// outlast the 30s budget below, and this runs inside Bubble Tea's Update, so
 	// waiting froze the TUI and then reported a saved status as timed out.
-	args := []string{script, "--report-link", report, status, "--detach-jd-archive", "--json"}
-	repairKey := tracker + "\x00" + report
+	args := []string{script, ids[0].flag, ids[0].value, status, "--detach-jd-archive", "--json"}
+	// The flag is part of each key, so report #32 and row #32 can never share
+	// another application's repair. A repair is filed under the selector the
+	// failed write used and looked up under every identity the row carries now:
+	// a merge can add report #7 to the row saved as row #32, and the retry must
+	// still find the repair rather than report success without seeding.
+	repairKeys := make([]string, 0, len(ids))
+	for _, id := range ids {
+		repairKeys = append(repairKeys, tracker+"\x00"+id.flag+"\x00"+id.value)
+	}
 	if strings.EqualFold(status, "applied") {
 		// Only a retry after a partial Applied save may repair missing
 		// lifecycle observations even though the tracker is already Applied.
 		pendingRepairsMu.Lock()
-		pending := pendingRepairs[repairKey]
+		var pending struct{ ledger, followup bool }
+		for _, key := range repairKeys {
+			p := pendingRepairs[key]
+			pending.ledger = pending.ledger || p.ledger
+			pending.followup = pending.followup || p.followup
+		}
 		pendingRepairsMu.Unlock()
 		if pending.ledger {
 			args = append(args, "--repair-status-log")
@@ -89,10 +108,10 @@ func runStatusWriter(dataRoot, report, status, note string, selectedUser ...stri
 	markPending := func(ledger, followup bool) {
 		pendingRepairsMu.Lock()
 		defer pendingRepairsMu.Unlock()
-		p := pendingRepairs[repairKey]
+		p := pendingRepairs[repairKeys[0]]
 		p.ledger = p.ledger || ledger
 		p.followup = p.followup || followup
-		pendingRepairs[repairKey] = p
+		pendingRepairs[repairKeys[0]] = p
 	}
 	if note != "" {
 		args = append(args, "--note="+note)
@@ -160,7 +179,9 @@ func runStatusWriter(dataRoot, report, status, note string, selectedUser ...stri
 		return fmt.Errorf("status saved, but follow-up seeding failed: %s", seed.Error)
 	}
 	pendingRepairsMu.Lock()
-	delete(pendingRepairs, repairKey)
+	for _, key := range repairKeys {
+		delete(pendingRepairs, key)
+	}
 	pendingRepairsMu.Unlock()
 	return nil
 }

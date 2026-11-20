@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { chromium } from 'playwright';
+import { chromium } from './lib/hardened-chromium.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { getUserContext } from './lib/user-context.mjs';

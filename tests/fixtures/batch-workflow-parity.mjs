@@ -19,6 +19,9 @@ export function fixture({ handoffUrl = '', workerResult = {} } = {}) {
   mkdirSync(join(root, 'lib'), { recursive: true });
   copyBatchOwnership(root);
   copyFileSync(join(ROOT, 'lib/is-main-module.mjs'), join(root, 'lib/is-main-module.mjs'));
+  // The JD prefetch asks lib/egress-pin.mjs before curl. The stub allows every
+  // host and pins nothing, so the fixture makes no DNS lookup.
+  writeFileSync(join(root, 'lib/egress-pin.mjs'), '');
   writeFileSync(join(root, 'reserve-report-num.mjs'), 'if (!process.argv.includes("--release")) console.log("001");\n');
   for (const name of ['merge-tracker.mjs', 'reconcile-pipeline.mjs']) writeFileSync(join(root, name), 'console.log("fixture reconciliation");\n');
   // Any network/paid agent call becomes observable without contacting anything.

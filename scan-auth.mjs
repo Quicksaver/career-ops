@@ -13,7 +13,7 @@ import { isMainModule } from './lib/is-main-module.mjs';
  *   node scan-auth.mjs --user <id> --login linkedin
  */
 
-import { chromium } from 'playwright';
+import { chromium } from './lib/hardened-chromium.mjs';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';

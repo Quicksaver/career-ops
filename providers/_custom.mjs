@@ -198,7 +198,7 @@ function splitHtmlSegments(value) {
     .replace(/<\/(div|p|li)>/gi, '|')
     .replace(/&nbsp;/gi, ' ');
 
-  return decodeHtmlEntities(prepared.replace(/<[^>]+>/g, ' ').replace(/\u00a0/g, ' '))
+  return decodeHtmlEntities(prepared.replace(/<[^>]*(>?)/g, (tag, close) => (close ? ' ' : tag)).replace(/\u00a0/g, ' '))
     .split('|')
     .map(normalizeWhitespace)
     .filter(Boolean);
