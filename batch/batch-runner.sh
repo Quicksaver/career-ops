@@ -953,7 +953,7 @@ resolve_worker_model() {
     return 0
   fi
   if [[ "$CLI" == "codex" ]]; then
-    RESOLVED_MODEL="${MODEL:-gpt-6.1-sol}"
+    RESOLVED_MODEL="${MODEL:-gpt-6.2-sol}"
     REASONING_EFFORT="${REASONING_EFFORT:-medium}"
     RESOLVED_SPEND_TIER="default"
     return 0

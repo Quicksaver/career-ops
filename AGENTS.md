@@ -688,7 +688,7 @@ in a user-scoped seen ledger before raw re-verification. Unresolved findings set
 
 Duplicate resolution preserves lifecycle order as `Hired > Offer > Interview > Assessment > Responded > Rejected > Applied > Speculative > Evaluated > Skip/Closed/Discarded`. The most advanced row becomes the keeper together with its existing report/CV artifacts; reviewer-selected identity breaks equal-status ties only. Back up and archive the losing row's artifacts and record any keeper override.
 
-`run-workflow.mjs` resolves Codex model and reasoning independently in this order: `--codex-model` / `--codex-reasoning-effort`, then `codex.model` / `codex.reasoning_effort` in `users/{USER}/config/profile.yml`, then the system defaults `gpt-6.1-sol` / `medium`. It passes resolved values to scan-handoff, reviewed verification, and every Codex batch worker. `--resume-verify RUN_ID` forwards to `verify-runner.mjs --resume-run RUN_ID`; `--review-retries` is a verifier option.
+`run-workflow.mjs` resolves Codex model and reasoning independently in this order: `--codex-model` / `--codex-reasoning-effort`, then `codex.model` / `codex.reasoning_effort` in `users/{USER}/config/profile.yml`, then the system defaults `gpt-6.2-sol` / `medium`. It passes resolved values to scan-handoff, reviewed verification, and every Codex batch worker. `--resume-verify RUN_ID` forwards to `verify-runner.mjs --resume-run RUN_ID`; `--review-retries` is a verifier option.
 
 `--parallel` is optional for `run-workflow.mjs`, `batch/batch-runner.sh`, and
 `verify-runner.mjs`.

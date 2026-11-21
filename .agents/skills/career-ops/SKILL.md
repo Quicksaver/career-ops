@@ -334,7 +334,7 @@ and archives losing artifacts and records any keeper override in the duplicate
 ledger.
 Resolve Codex model and reasoning independently with this precedence:
 `run-workflow.mjs` arguments, `users/{ACTIVE_USER}/config/profile.yml` under
-`codex.model` / `codex.reasoning_effort`, then GPT 6.1 Sol with medium reasoning. The runner
+`codex.model` / `codex.reasoning_effort`, then GPT 6.2 Sol with medium reasoning. The runner
 must pass resolved values to the handoff worker, verification-review
 worker, and all Codex batch workers.
 

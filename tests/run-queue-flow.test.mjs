@@ -22,10 +22,10 @@ test('run drains existing backlog when discovery adds zero, using real Bash and 
   assert.deepEqual(f.dispatched(), [A]);
   const batch = f.calls().find(c => c.phase === 'batch-mock');
   assert.ok(batch, 'the Bash stub must actually invoke Node');
-  assert.equal(batch.args[batch.args.indexOf('--model') + 1], 'gpt-6.1-sol');
+  assert.equal(batch.args[batch.args.indexOf('--model') + 1], 'gpt-6.2-sol');
   assert.equal(batch.args[batch.args.indexOf('--reasoning-effort') + 1], 'medium');
   const verify = f.calls().find(c => c.phase === 'verify-runner');
-  assert.equal(verify.args[verify.args.indexOf('--codex-model') + 1], 'gpt-6.1-sol');
+  assert.equal(verify.args[verify.args.indexOf('--codex-model') + 1], 'gpt-6.2-sol');
   assert.equal(verify.args[verify.args.indexOf('--codex-reasoning-effort') + 1], 'medium');
   for (const path of workflowRunnerPidPaths(f.user)) {
     assert.ok(!existsSync(path));
@@ -85,7 +85,7 @@ for (const scenario of [{ scanError: true }, { handoff: true, handoffPartial: tr
     if (scenario.handoff) {
       const call = f.calls().find(c => c.phase === 'codex-mock');
       assert.ok(call, `real Windows .cmd launcher must reach offline Codex: ${JSON.stringify(result)}`);
-      assert.equal(call.args[call.args.indexOf('--model') + 1], 'gpt-6.1-sol');
+      assert.equal(call.args[call.args.indexOf('--model') + 1], 'gpt-6.2-sol');
       assert.ok(call.args.includes('model_reasoning_effort="medium"'));
       if (scenario.handoffPartial) assert.equal(result.handoff.status, 'partial');
       if (scenario.malformedHandoff) assert.match(result.issues.find(i => i.phase === 'handoff').message, /counts\/status disagree/);

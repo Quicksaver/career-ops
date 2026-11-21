@@ -202,7 +202,7 @@ spend_tier: standard
 # Optional Codex defaults for automatic runners. Resolution is per setting:
 # Runner argument -> this profile -> career-ops system defaults below.
 # codex:
-#   model: gpt-6.1-sol
+#   model: gpt-6.2-sol
 #   reasoning_effort: medium  # minimal | low | medium | high | xhigh
 
 # Optional default for run-workflow, direct batch-runner, and reviewed verification.

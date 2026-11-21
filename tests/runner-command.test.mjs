@@ -19,7 +19,7 @@ test('Codex defaults and per-field precedence are explicit', () => {
   const dir = temporary();
   try {
     assert.deepEqual(resolveCodexSettings(), {
-      model: 'gpt-6.1-sol', reasoningEffort: 'medium', modelSource: 'default', reasoningEffortSource: 'default',
+      model: 'gpt-6.2-sol', reasoningEffort: 'medium', modelSource: 'default', reasoningEffortSource: 'default',
     });
     const profilePath = join(dir, 'profile.yml');
     writeFileSync(profilePath, 'codex:\n  model: profile-model\n  reasoning_effort: high\n');

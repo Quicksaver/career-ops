@@ -315,7 +315,7 @@ try {
     fail(`mixed Codex resolution wrong: ${JSON.stringify(mixed)}`);
   }
   const global = codexConfig.resolveCodexSettings({ profilePath: join(configTmp, 'missing.yml') });
-  if (global.model === 'gpt-6.1-sol' && global.reasoningEffort === 'medium' &&
+  if (global.model === 'gpt-6.2-sol' && global.reasoningEffort === 'medium' &&
       global.modelSource === 'default' && global.reasoningEffortSource === 'default') {
     pass('absent Codex arguments and profile values use GPT6.1Sol medium system defaults');
   } else {

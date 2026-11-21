@@ -144,13 +144,13 @@ Optional Codex overrides apply to every Codex CLI call made by the run:
 
 ```bash
 npm run run -- --user <username> \
-  --codex-model gpt-6.1-sol \
+  --codex-model gpt-6.2-sol \
   --codex-reasoning-effort medium
 ```
 
 Each setting resolves independently as command argument, then
 `users/{USER}/config/profile.yml` under `codex.model` or
-`codex.reasoning_effort`, then the system defaults `gpt-6.1-sol` and `medium`. The resolved values are forwarded explicitly.
+`codex.reasoning_effort`, then the system defaults `gpt-6.2-sol` and `medium`. The resolved values are forwarded explicitly.
 
 Batch and verification-review parallelism resolve as an explicit `--parallel N` override, then
 `batch.parallel` in `users/{USER}/config/profile.yml`, then the system default

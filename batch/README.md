@@ -30,7 +30,7 @@ Before launching the worker, an empty HTTP/API prefetch triggers one read-only `
 
 Workers also receive the queue's source/notes and `batch/logs/{id}.source.json`, containing exact-URL scan history and any original provider description saved by the scanner. HN hiring comments are retained as individual posting identities. Older HN homepage entries can recover a unique original hiring comment through their recorded month, URL and title before prefetch or evaluation. Missing-JD escalation follows the supplied source/application links and a targeted recovery search within the normal research budget. Source snapshots retain their capture date and require the normal liveness checks; they never count as candidate facts or user confirmation. Supplied JDs, terminal rows and existing unanswered holds retain their existing handling.
 
-Codex model and reasoning resolve independently from command-line `--model` / `--reasoning-effort`, then `codex.model` / `codex.reasoning_effort` in the active profile, then `gpt-6.1-sol` / `medium`. Claude resolves its model from `--model`, then the profile's `spend_tier`.
+Codex model and reasoning resolve independently from command-line `--model` / `--reasoning-effort`, then `codex.model` / `codex.reasoning_effort` in the active profile, then `gpt-6.2-sol` / `medium`. Claude resolves its model from `--model`, then the profile's `spend_tier`.
 
 Parallelism resolves as `--parallel`, profile `batch.parallel`, then `1` for both CLIs. After a transient rate limit, the owning batch pool reduces new dispatch to one worker for the rest of that batch. Active workers drain normally; quota/session holds still require explicit recovery.
 

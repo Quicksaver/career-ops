@@ -107,8 +107,8 @@ test('handoff subjects, metadata, links, paths and durations are distinct fields
   const handoff = output.format('[handoff-progress] 1/12: SoSafe (websearch) — checking employer in 4.2s');
   assert.ok(handoff.includes('\x1b[1;36m1/12\x1b[0m: \x1b[1mSoSafe\x1b[0m (websearch)'));
   assert.ok(handoff.includes('\x1b[2m4.2s\x1b[0m'));
-  const metadata = output.format('Company: SoSafe | Role: Product Engineer | Model: gpt-6.1-sol');
-  for (const value of ['SoSafe', 'Product Engineer', 'gpt-6.1-sol']) assert.ok(metadata.includes(`\x1b[1m${value}\x1b[0m`));
+  const metadata = output.format('Company: SoSafe | Role: Product Engineer | Model: gpt-6.2-sol');
+  for (const value of ['SoSafe', 'Product Engineer', 'gpt-6.2-sol']) assert.ok(metadata.includes(`\x1b[1m${value}\x1b[0m`));
   const url = 'https://example.org/jobs/failed-role-429';
   assert.equal(output.format(url), `\x1b[4;36m${url}\x1b[0m`);
   const path = 'C:/Career Ops/batch/failed-429.log';

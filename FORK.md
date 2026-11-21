@@ -997,7 +997,7 @@ What this customizes:
 - Supplies the active user root to the canonical worker mode loader. Targeting configuration comes from that user's profile; candidate narratives and proof points load only after the JD-only Block B importance pass, before matching and scoring.
 - Preserves upstream `spend_tier` routing for explicitly selected Claude workers, reading it from the selected user profile. Codex is the runner default and resolves model/reasoning through the shared argument/profile/system hierarchy.
 - Treats `--model` as an explicit override for either worker CLI and adds the Codex-only `--reasoning-effort minimal|low|medium|high|xhigh` override, which is forwarded to every Codex batch worker as `model_reasoning_effort`.
-- Uses the same model/reasoning resolution for direct Codex batches, run handoff, and reviewed verification: explicit argument, selected-user profile, then `gpt-6.1-sol` / `medium`. Standalone batch defaults to Codex; explicit Claude selection remains supported.
+- Uses the same model/reasoning resolution for direct Codex batches, run handoff, and reviewed verification: explicit argument, selected-user profile, then `gpt-6.2-sol` / `medium`. Standalone batch defaults to Codex; explicit Claude selection remains supported.
 - Preserves upstream pre-screen discards and their audit records under `users/{USER}/batch/logs/discard.log`; sourced helper tests fall back to the fixture-local batch directory without weakening runtime user routing.
 - Injects `users/{USER}/modes/_custom.md` after the profile context and keeps the batch CV fact gate/output command on the same `{{USER_ROOT}}/output/{REPORT_NUM}-...` artifact path.
 
@@ -1723,7 +1723,7 @@ What this customizes:
 - Streams zero-token target/provider start and completion, handoff task activity, LinkedIn search prompts, queue deltas, batch job start/completion, and one short line per reviewed finding after its five-finding call completes: `reviewed X/Y, job(s) #{related IDs}, {issue code} → {classification}`. Tracker IDs are preferred, with report IDs used for report-only and orphan findings. Full rationale, evidence, and action details stay in run artifacts and the opt-in JSON result. `--quiet` retains the phase-log-only behavior.
 - Registers the runner, helpers, shared library, tests, and JSON schema in the updater-managed system layer so updates do not leave a partial coordinator.
 - A phase the coordinator stopped (Ctrl+C, SIGTERM, or `run-agent.mjs stop`) fails with `{phase} failed: interrupted by {signal}` instead of the child's last output line. A stopped LinkedIn scan used to report its only warning, `No JD content: …`, as the cause.
-- Resolves Codex model and reasoning independently as runner argument, active-user `profile.yml`, then GPT 6.1 Sol (`gpt-6.1-sol`) with medium reasoning, forwarding both values to handoff, reviewed verification, and every Codex batch worker through the shared resolver.
+- Resolves Codex model and reasoning independently as runner argument, active-user `profile.yml`, then GPT 6.2 Sol (`gpt-6.2-sol`) with medium reasoning, forwarding both values to handoff, reviewed verification, and every Codex batch worker through the shared resolver.
 - Resolves parallelism independently as runner argument, active-user `batch.parallel`, then `1`, records `parallel` and `parallel_source`, and passes the resolved value explicitly to the batch and reviewed-verification runners. Verification uses it only for isolated read-only review lanes; deterministic repair and ledger mutation remain serialized in the parent.
 
 Future merge notes:
@@ -1864,7 +1864,7 @@ On every upstream update, explicitly check whether upstream now includes:
 - Schema-checked Codex batch worker final JSON via `--output-last-message`.
 - Cross-artifact batch validation equivalent to the fork's report/TSV/final-JSON consistency gate, confidential-employer Via requirement, bounded deterministic repair, merge-time pending-file preservation, and structured verifier failure propagation.
 - Optional profile-driven batch parallelism with argument -> `batch.parallel` -> `1` precedence and bounded validation.
-- Codex model/reasoning argument -> profile -> GPT 6.1 Sol/medium resolution across every Codex call owned by the deterministic run coordinator.
+- Codex model/reasoning argument -> profile -> GPT 6.2 Sol/medium resolution across every Codex call owned by the deterministic run coordinator.
 - Deterministic `run-workflow.mjs` orchestration with strict handoff and verification-review schemas, stable queue synchronization, duplicate resolution, orphan restoration/archive, bounded tracker patches, and human-review-preserving final status.
 - Bounded batch runs through `--limit` are now upstream baseline; preserve only the fork-specific user-scoped/Codex integration around the flag.
 - Batch status/watch progress monitoring through user-scoped batch state.

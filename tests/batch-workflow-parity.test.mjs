@@ -63,7 +63,7 @@ test('standalone defaults to Codex with system model/reasoning; env and explicit
   try {
     let result = f.run(['--dry-run'], null);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /CLI: codex/); assert.match(result.stdout, /Model: gpt-6.1-sol/); assert.match(result.stdout, /Reasoning effort: medium/);
+    assert.match(result.stdout, /CLI: codex/); assert.match(result.stdout, /Model: gpt-6.2-sol/); assert.match(result.stdout, /Reasoning effort: medium/);
     result = f.run(['--dry-run'], null, 'claude');
     assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /CLI: claude/);
     result = f.run(['--dry-run'], 'claude', 'codex');
