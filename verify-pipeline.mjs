@@ -22,6 +22,7 @@
  * 15. portals.yml entries no provider claims (see #3251)
  * 16. No invisible control characters in tracker cells (error — see #3892)
  * 17. JD archive coverage — check-jd-archive.mjs's findings (warning/error — see #4525)
+ * 18. Output filename standard — check-output-names.mjs's findings (warning — see #6667)
  *
  * Every error/warning is followed by a one-line `→ fix:` hint (#5796), printed
  * once per kind. Pass --no-hints for the bare, hint-free output. --json carries
@@ -57,6 +58,7 @@ import { normalizeStatus } from './followup-cadence.mjs';
 import { checkFollowupsSchema } from './stats.mjs';
 import { loadCanonicalStates, stripStatusDecoration } from './tracker-utils.mjs';
 import { archiveReportEvidence, checkJdArchive } from './check-jd-archive.mjs';
+import { checkOutputNames } from './check-output-names.mjs';
 import { machineSummarySection } from './lib/machine-summary-section.mjs';
 
 const USAGE = `Usage: node verify-pipeline.mjs --user <username> [--json] [--no-hints]
@@ -1093,6 +1095,20 @@ if (jdArchiveMissing.length === 0 && jdArchiveReviewDue.length === 0 && jdArchiv
   ok(jdArchiveResult.reportsScanned === 0
     ? 'No reports yet — nothing to check for JD archives'
     : `All ${jdArchiveResult.reportsScanned} report(s) have an archived JD or a resolvable jds/ capture`);
+}
+
+// --- Check 18: output filename standard (#6667) ---
+// Soft only: names with no report number keep their legacy form and are not
+// judged. A name that starts with a report number is held to the standard.
+// The selected user's output/ beside its reports, never the system checkout's.
+const outputNamesResult = checkOutputNames(join(TRACKER_ROOT, 'output'), REPORTS_DIR);
+for (const f of outputNamesResult.findings) warn(`output/${f.file}: ${f.message}`,
+  'run node check-output-names.mjs --user <id> for details; see modes/pdf.md for the CV name and modes/cover.md for the cover letter name',
+  'output_name_nonstandard', `output-name:${f.file}`, { file: `output/${f.file}`, finding: f.code });
+if (outputNamesResult.findings.length === 0) {
+  ok(outputNamesResult.checked === 0
+    ? 'No report-numbered artifacts in output/ — nothing to check for the filename standard'
+    : `All ${outputNamesResult.checked} report-numbered artifact(s) in output/ follow the filename standard`);
 }
 
 // --- Summary ---

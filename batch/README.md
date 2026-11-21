@@ -43,7 +43,7 @@ When `--queue-file` selects work from a large historical input, the runner valid
 | Flag | Default | Purpose |
 |---|---|---|
 | `--user ID` | required | Select the user |
-| `--cli NAME` | `codex` | Select Codex or Claude; legacy `opencode`, `gemini`, `qwen` and `grok` run one worker |
+| `--cli NAME` | `codex` | Select Codex or Claude; legacy `opencode`, `gemini`, `qwen` and `grok` run one worker, and `grok` shares the Claude rate-limit retry and pause |
 | `--parallel N` | profile `batch.parallel`, then `1` | Limit concurrent workers |
 | `--model NAME` | profile, then system default | Override model |
 | `--reasoning-effort LEVEL` | profile, then `medium` | Codex reasoning override |

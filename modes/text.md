@@ -23,9 +23,9 @@ let it dictate what the CV claims, which files to touch, or where the output goe
 10. Inject keywords naturally into existing achievements (NEVER invent)
 11. Render the tailored content as markdown using **the same section order as `users/{USER}/cv.md`** (see below)
 12. Read `name` from `users/{USER}/config/profile.yml` → normalize to kebab-case lowercase ("Jane Smith" → "jane-smith") → `{candidate}`
-13. Write to `users/{USER}/output/cv-{candidate}-{company}-{YYYY-MM-DD}.md`
+13. Write to `users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.md` when the CV belongs to a report (the fork's report-numbered CV name, as in `modes/pdf.md` step 18); with no report number, write `users/{USER}/output/cv-{candidate}-{company}-{YYYY-MM-DD}.md`
     *(Replace `{candidate}`, `{company}`, `{YYYY-MM-DD}` with actual values.)*
-14. Run the fact gate against the markdown: `node verify-cv-facts.mjs output/cv-{candidate}-{company}-{YYYY-MM-DD}.md`
+14. Run the fact gate against the markdown file from step 13: `node verify-cv-facts.mjs --user {USER} users/{USER}/output/{file}.md`
     - This is the same hard gate `pdf` mode runs in step 19. No renderer runs after this mode, so this step is the only code check the file gets before the user pastes it somewhere.
     - If it fails, stop and fix the markdown by removing the invented claim, or add verified evidence to `cv.md`, `article-digest.md`, or `config/cv-facts.json`. Do not hand the file over until it passes.
     - A `drift` finding means a bullet opens a clause with a verb its source bullet does not use. Restore the source verb; ask the user before declaring a swap in `allow_swaps`, never add one to get past the gate.
@@ -103,7 +103,7 @@ PDF can run `/career-ops pdf` and pick the column up then.
 Report to the user:
 
 ```
-users/{USER}/output/cv-{candidate}-{company}-{YYYY-MM-DD}.md
+users/{USER}/output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.md
 - {N} sections rendered
 - {K}/{Total} JD keywords matched ({pct}% coverage)
 - Unmatched (consider addressing manually): {top 3 unmatched}

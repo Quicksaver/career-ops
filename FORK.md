@@ -1030,7 +1030,7 @@ Future merge notes:
 - The hook registers native identities without copying transcript history into T3. Original logs remain unchanged. This avoids the full-history importer's 30-day window, 5,000-session discovery cap and broad project-history import. Only recorded batch sessions get new bindings. Existing full-history imports are reused; a matching thread that has subsequently run inside T3, or belongs to another project, is left unchanged and marked as protected in its receipt. Ownership is saved before creating a native binding so an interrupted create or archive can resume. The sync processes at most four session bindings concurrently and checks a two-minute scheduling budget between groups; individual RPCs time out after 60 seconds. T3's existing creation command creates active threads, so they can briefly appear in the active list before archival. Creating them settled atomically would require a T3 change; the fork leaves T3 unchanged.
 - Set `CAREER_OPS_T3_USAGE=0` to disable recording and automatic synchronization. To retry pending receipts, run `node batch/t3-usage.mjs sync --user <id>`. Add `--logs <resolved-user-root>/batch/logs` to collect session IDs from retained batch logs too. `--sessions <codex-home>/sessions` also recovers saved Codex rollouts when batch logs are missing; repeat with `<codex-home>/archived_sessions` for archived rollouts. It requires an `exec` session in this checkout and an actual batch-worker task naming the selected user; copied AGENTS instructions, other users and interactive sessions do not qualify. This performs import and archive only, with no job searches, batches, or evaluations. The WebSocket handshake includes T3's orchestration protocol version, and project lookup uses the existing project snapshot rather than scanning provider session folders. Thread identities are checked in batches of 200 for large backfills.
 
-`lib/update-manifest.mjs` lists `batch/t3-usage.mjs` with the other fork batch helpers, so updated installs receive it; `lib/t3-usage.mjs` ships with `lib/`.
+`lib/update-manifest.mjs` lists `batch/t3-usage.mjs` with the other fork batch helpers, so updated installs receive it; `lib/t3-usage.mjs` ships with `lib/`. `.github/workflows/no-user-data.yml` exempts `batch/t3-usage.mjs` like the other tracked batch sources, and the saved-rollout scan reads `--sessions` through `listTree()` from `lib/walk-tree.mjs`, the repository's one recursive walker.
 
 Validation lives in `tests/t3-usage.test.mjs`: synthetic per-user logs and saved rollouts, native binding creation without an initial message, custom Codex instances, archive failure recovery, existing-conversation protection, offline behavior, temporary authentication cleanup, the Windows launcher, a real isolated WebSocket handshake with the protocol version, and the runner's exit cleanup. Preserve these hooks when merging upstream runner changes, particularly the capture before log reuse and synchronization after all workers exit.
 
@@ -1218,15 +1218,19 @@ The fork standardizes generated CV artifacts around the report number.
 
 Files:
 
-- `modes/pdf.md`
+- `modes/pdf.md`, `modes/pdf/hm-audit.md`
 - `modes/latex.md`
+- `modes/text.md`
 - `batch/batch-prompt.md`
 - `openai-tailor.mjs`
 - `templates/README.md`
+- `check-output-names.mjs` and its check 18 in `verify-pipeline.mjs`
 
 What this customizes:
 
-- Requires generated CV artifacts to use `output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.{html|pdf|tex}`.
+- Requires generated CV artifacts to use `output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.{html|pdf|tex}`. The text mode writes `output/{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}.md` when the CV has a report, and upstream's legacy `cv-{candidate}-{company}-{YYYY-MM-DD}.md` only without one.
+- Keeps this name instead of upstream's #6667 standard `{NNN}-{company}-cv-{candidate}-{YYYY-MM-DD}`, which adds a kind and the candidate's name. Cover letters take upstream's standard (`{NNN}-{company}-cover-{candidate}-{YYYY-MM-DD}`), since the fork never renamed them.
+- `check-output-names.mjs` accepts the fork CV name next to upstream's standard. With no kind token to anchor the split, the name's company must equal the report filename's slug exactly, so `024-zep-resume-...` is not read as a CV of `024-zep-...`; a fork name with no matching report is still `unknown-report`. It also accepts `output/duplicates/` and `output/orphans/`, where reviewed verification archives the artifacts it moves aside. Check 18 in `verify-pipeline.mjs` reads the selected user's `output/` (upstream read the checkout's) and reports `output_name_nonstandard` findings with the file in `details`.
 - Removes candidate-name/ad-hoc CV output names from the instructions.
 - Keeps report, tracker, PDF, HTML, and LaTeX artifact names aligned.
 - Adapts the headless OpenAI-compatible tailor to the same basename and prints an explicit-user PDF command. Upstream's role-slug filename addition is redundant here because each report number already identifies one company/role evaluation.

@@ -272,7 +272,7 @@ await check('runner cleanup drains workers before sync and preserves the batch e
   const source = readFileSync(join(ROOT, 'batch/batch-runner.sh'), 'utf8').replaceAll('\r\n', '\n');
   const release = source.match(/release_lock\(\) \{[\s\S]*?\n\}/)[0];
   const scriptDir = join(root, 'batch'); mkdirSync(scriptDir);
-  writeFileSync(join(scriptDir, 't3-usage.mjs'), 'process.exit(1);\n');
+  writeFileSync(join(scriptDir, 't3-usage.mjs'), 'process.exitCode = 1;\n');
   writeFileSync(join(scriptDir, 'runner-ownership.mjs'), '');
   const shell = join(root, 'check.sh');
   writeFileSync(shell, [

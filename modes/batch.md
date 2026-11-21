@@ -111,10 +111,10 @@ batch/batch-runner.sh --user {USER} [OPTIONS]
 
 Options:
 - `--user ID` — required user folder under `users/`
-- `--cli NAME` — worker CLI: `codex` (default, or `CAREER_OPS_BATCH_CLI`), `claude`, `opencode`, `gemini`, `qwen` or `grok`; every CLI except `codex` and `claude` runs one job at a time, with a single attempt per run (a later run still retries a failed job, up to `--max-retries`)
+- `--cli NAME` — worker CLI: `codex` (default, or `CAREER_OPS_BATCH_CLI`), `claude`, `opencode`, `gemini`, `qwen` or `grok`; every CLI except `codex` and `claude` runs one job at a time; `claude` and `grok` retry a rate limit, and the others make a single attempt per run (a later run still retries a failed job, up to `--max-retries`)
 - `--dry-run` — list pending jobs without executing
 - `--retry-failed` — retry only failed jobs
-- `--resume-paused` — resume jobs paused after a Claude session/rate limit
+- `--resume-paused` — resume jobs paused after a session or rate limit
 - `--start-from N` — start from ID N
 - `--limit N` — max number of jobs to process in this run
 - `--parallel N` — optional worker-count override; profile `batch.parallel`, then `1` (`codex` and `claude` only; other CLIs always use one worker)

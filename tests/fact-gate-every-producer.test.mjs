@@ -30,8 +30,9 @@ import { describeSpawn } from './helpers/describe-spawn.mjs';
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // A step that builds or writes a CV. `--preview` and `--test` produce nothing
-// to send. Fork: modes write under the active user's `users/{USER}/` root.
-const PRODUCER_RE = /node (?:build-cv-html|build-cv-latex|patch-latex-content)\.mjs (?!--preview|--test)|Write to `(?:users\/\{USER\}\/)?output\/cv-/;
+// to send. Fork: modes write under the active user's `users/{USER}/` root, and a
+// report-numbered CV is `{REPORT_NUM}-{company-slug}-{YYYY-MM-DD}`.
+const PRODUCER_RE = /node (?:build-cv-html|build-cv-latex|patch-latex-content)\.mjs (?!--preview|--test)|Write to `(?:users\/\{USER\}\/)?output\/(?:cv-|\{REPORT_NUM\})/;
 // The gate itself, or a renderer that runs it before writing its output.
 const GATE_RE = /node (?:verify-cv-facts|generate-pdf|generate-latex)\.mjs/;
 // Renderers that run the gate in code. Asserted below, so this list cannot

@@ -94,6 +94,7 @@ jobs:
                 'batch/runner-ownership.mjs',
                 'batch/state-store.mjs',
                 'batch/worker-process.mjs',
+                'batch/t3-usage.mjs',
                 'batch/company-scope.mjs',
                 'batch/jd-rescue.mjs',
                 'batch/logs/.gitkeep',

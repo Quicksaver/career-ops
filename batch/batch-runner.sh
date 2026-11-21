@@ -114,7 +114,7 @@ Options:
                        0 = no limit)
   --skip-pdf           Skip PDF generation entirely (write ❌ in tracker PDF column)
   --rate-limit-sleep N Maximum adaptive retry delay in seconds; 0 pauses immediately
-                       (default: 300; range: 0–2147483647; claude only)
+                       (default: 300; range: 0–2147483647; claude and grok)
 
   --model NAME         Explicit worker model for the selected CLI. Without it,
                        Claude uses spend_tier; Codex uses codex profile settings, then system defaults.
@@ -464,8 +464,8 @@ check_prerequisites() {
     [[ "$DRY_RUN" == "true" ]] || exit 1
   fi
 
-  # Parallelism, the rate-limit retry loop, and --strict-mcp-config are
-  # claude-only; local models run one at a time.
+  # Parallelism and --strict-mcp-config are claude/codex-only. Grok shares the
+  # claude rate-limit pause and still runs one worker at a time.
   if [[ "$CLI" != "claude" && "$CLI" != "codex" && "$PARALLEL" -gt 1 ]]; then
     echo "WARN: --parallel >1 is not supported for --cli $CLI (local models run sequentially). Resetting to 1."
     PARALLEL=1
@@ -1388,6 +1388,25 @@ reserve_report_num() {
   run_with_state_lock reserve_report_num_unlocked "$@"
 }
 
+# Move this attempt's report and tracker files aside before a retry reuses the
+# report number. A retry that writes nothing would pass the report-file check
+# on the stale report, and a retry with another slug would leave two reports
+# on one number. The reservation sentinel stays. report_num and id come from
+# the worker that calls this.
+quarantine_attempt_artifacts() {
+  local reason="$1"
+  local retry_quarantine="${LOGS_DIR:-}/quarantine" retry_artifact
+  shopt -s nullglob
+  # The tracker path is not a glob, so a missing file would still be a loop
+  # item. A rate-limit failure often has no report yet. Move only what exists.
+  for retry_artifact in "${REPORTS_DIR:-}/$report_num-"*.md "${TRACKER_DIR:-}/$report_num-"*.tsv "${TRACKER_DIR:-}/$id.tsv"; do
+    [[ -e "$retry_artifact" ]] || continue
+    [[ "$retry_artifact" == *-RESERVED.md ]] && continue
+    mkdir -p "$retry_quarantine"
+    mv "$retry_artifact" "$retry_quarantine/$id-${reason}-${retry_artifact##*/}"
+  done
+  shopt -u nullglob
+}
 # Retry wrapper — same rationale as update_state_retrying above. A bare
 # `x=$(reserve_report_num ...)` under `set -e` kills the worker subshell
 # silently on a single lock-timeout; this retries and logs instead.
@@ -2080,8 +2099,8 @@ process_offer() {
     [[ -n "$MODEL" ]] && model_args=(--model "$MODEL")
   fi
 
-  # Non-claude CLIs run a single attempt (explicit break after dispatch); the
-  # rate-limit/session retry loop only applies to claude.
+  # Qwen, gemini, and opencode run one attempt (break below). Claude and grok
+  # share the rate-limit and session pause.
   local exit_code=0
   local timed_out=false
   local terminal_failure_recorded=false
@@ -2133,7 +2152,9 @@ process_offer() {
       terminal_failure_recorded=true
       break
     fi
-    if [[ $exit_code -eq 0 || "$CLI" != "claude" ]]; then
+    if [[ $exit_code -eq 0 ]] || [[ "$CLI" != "claude" && "$CLI" != "grok" ]]; then
+      # Qwen, gemini, and opencode stop here: a posting they score can mention
+      # 429 or quota. Claude and grok share the session and rate-limit pause.
       break
     fi
 
@@ -2146,6 +2167,9 @@ process_offer() {
     fi
 
     if is_session_limit_log "$log_file"; then
+      # A paused row is not "failed", so merge-tracker would keep its tracker
+      # line. Move the attempt aside before the pause, same as a retry.
+      quarantine_attempt_artifacts session-pause
       mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$log_file"
       echo "    ⏸️  Session/rate limit reached; pausing batch without consuming retry budget."
       terminal_failure_recorded=true
@@ -2160,6 +2184,7 @@ process_offer() {
     fi
     if is_rate_limit_log "$log_file" && (( retries < MAX_RETRIES )); then
       if (( RATE_LIMIT_SLEEP <= 0 )); then
+        quarantine_attempt_artifacts rate-pause
         mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$log_file"
         echo "    ⏸️  Rate limited and --rate-limit-sleep is 0; pausing batch without consuming retry budget."
         terminal_failure_recorded=true
@@ -2168,6 +2193,7 @@ process_offer() {
       local retry_delay
       retry_delay=$(rate_limit_delay "$log_file" "$retries")
       if [[ "$retry_delay" == pause ]]; then
+        quarantine_attempt_artifacts rate-pause
         mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$log_file"
         echo "    ⏸️  Retry-After exceeds --rate-limit-sleep; pausing batch without consuming retry budget."
         terminal_failure_recorded=true
@@ -2179,6 +2205,7 @@ process_offer() {
       retry_completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       update_state_retrying "$id" "$url" "rate_limited" "$started_at" "$retry_completed_at" "$report_num" "-" "rate-limit; retrying after ${retry_delay}s" "$retries" || true
       echo "    ⏳ Rate limited (attempt $retries/$MAX_RETRIES). Waiting ${retry_delay}s before retry..."
+      quarantine_attempt_artifacts rate-retry
       sleep "$retry_delay"
       continue
     fi
