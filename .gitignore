@@ -68,6 +68,7 @@ batch/*
 !batch/runner-ownership.mjs
 !batch/state-store.mjs
 !batch/worker-process.mjs
+!batch/t3-usage.mjs
 !batch/company-scope.mjs
 !batch/jd-rescue.mjs
 # No trailing slash, so git descends into the two keeper directories. A slashed

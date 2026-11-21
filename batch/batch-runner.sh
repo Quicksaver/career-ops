@@ -362,6 +362,11 @@ release_lock() {
   fi
   if [[ -n "$OWNER_TOKEN" ]]; then
     stop_owned_workers || return 1
+    # All CLIs have exited before T3 reads their logs. Offline T3 never fails
+    # the batch; receipts survive for the next run or an explicit sync.
+    if [[ "$CLI" == "codex" && "${CAREER_OPS_T3_USAGE:-1}" != "0" && -f "$SCRIPT_DIR/t3-usage.mjs" ]]; then
+      node "$SCRIPT_DIR/t3-usage.mjs" sync --user "$USER_ID" --logs "$LOGS_DIR" || true
+    fi
     # Stop the painter this run started once its workers are gone, and before
     # releasing ownership. The painter is keyed by the checkout and the selected
     # user's data root, tracker and profile, so another user's batch has its own
@@ -2109,6 +2114,10 @@ process_offer() {
     esac
     local worker_pid=$!
     wait "$worker_pid" || exit_code=$?
+    # Preserve this attempt's session id before any later attempt reuses its log.
+    if [[ "$CLI" == "codex" && "${CAREER_OPS_T3_USAGE:-1}" != "0" && -f "$SCRIPT_DIR/t3-usage.mjs" ]]; then
+      node "$SCRIPT_DIR/t3-usage.mjs" record --user "$USER_ID" --log "$log_file" || true
+    fi
     if [[ "$exit_code" == 125 ]]; then
       echo "ERROR: Worker supervisor could not establish or drain ownership; no retry or artifact merge is safe." >&2
       return 125
