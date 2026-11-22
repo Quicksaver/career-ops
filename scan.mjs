@@ -3,6 +3,7 @@ export function isIgnorableDirectoryFsyncError(err, platform = process.platform)
   return ['EINVAL', 'ENOTSUP', 'ENOSYS'].includes(err?.code)
     || (platform === 'win32' && ['EACCES', 'EPERM'].includes(err?.code));
 }
+const ATOMIC_WRITE_RETRY_DELAYS_MS = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
 export function atomicWriteFile(filePath, text) {
   const fileStat = lstatSync(filePath, { throwIfNoEntry: false });
   const targetPath = fileStat?.isSymbolicLink() ? realpathSync(filePath) : filePath;
@@ -17,7 +18,12 @@ export function atomicWriteFile(filePath, text) {
     fsyncSync(fd);
     closeSync(fd);
     fd = null;
-    renameSync(tempPath, targetPath);
+    // pipeline.md has concurrent readers (scan-auth runs beside this scan
+    // under run-workflow.mjs), and Windows refuses a rename over a destination
+    // someone has open, so retry the contention (#3006). The file runs to
+    // megabytes and a reader can hold it past the tracker's ~200ms budget:
+    // scan-auth's saves needed a 1s retry, so allow about 2s here.
+    renameSyncWithRetry(tempPath, targetPath, undefined, ATOMIC_WRITE_RETRY_DELAYS_MS);
     try {
       directoryFd = openSync(path.dirname(targetPath), 'r');
       fsyncSync(directoryFd);
@@ -84,7 +90,6 @@ import {
   openSync,
   readFileSync,
   realpathSync,
-  renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -102,7 +107,7 @@ import {
   printUserContextErrorAndExit,
   userPath,
 } from './lib/user-context.mjs';
-import { rebuildRow, openTrackerTransaction, loadCanonicalStates, resolveCanonicalStateId, writeFileAtomic } from './tracker-utils.mjs';
+import { rebuildRow, openTrackerTransaction, loadCanonicalStates, resolveCanonicalStateId, writeFileAtomic, renameSyncWithRetry } from './tracker-utils.mjs';
 import { formatHttpCacheWindow, httpCacheStats, resolveHttpCacheTtlMs, withHttpCache } from './providers/_http-cache.mjs';
 import { buildTrustValidator } from './providers/_trust-validator.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';

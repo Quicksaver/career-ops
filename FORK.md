@@ -1854,12 +1854,14 @@ Files:
 - `templates/README.md`
 - `AGENTS.md`
 - `lib/dir-lock.mjs` and its byte-identical web copy `web/src/lib/core/dir-lock.mjs`
+- `scan.mjs` and `tracker-utils.mjs`
 
 What this customizes:
 
 - Keeps references to fork-added commands, providers, and behavior in sync with the code above.
 - Adjusts one Gemini free-tier model reference in `README.md`.
 - Treats a directory lock whose `started_at` predates the last boot as stale even when its recorded PID is alive, and `batch/runner-ownership.mjs` uses the same rule. Windows reuses PIDs, so after a reboot a batch runner lock read as held by an unrelated process (Remote Desktop) and `run` refused to start. Keep the web copy byte-identical; `tests/pipeline-lock.test.mjs` checks it.
+- Routes `scan.mjs` `atomicWriteFile` through `renameSyncWithRetry`, with an optional schedule that `tracker-utils.mjs` now accepts, so a Windows `EPERM` on `pipeline.md` is retried for about 2 seconds instead of ending the scan. Under `run`, the portal scan and the LinkedIn scan write the same `pipeline.md` side by side; a bare rename lost a whole portal scan, and the LinkedIn saves needed a 1-second retry. `tests/rename-contention-family.test.mjs` now covers `scan.mjs`. Drop this when upstream wraps the rename itself.
 
 Future merge notes:
 

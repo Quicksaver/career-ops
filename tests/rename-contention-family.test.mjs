@@ -38,6 +38,9 @@ const MIGRATED_FILES = [
   'discover-ats.mjs',
   'paste-reply.mjs',
   'update-system.mjs',
+  // atomicWriteFile replaces pipeline.md, which scan-auth writes and reads
+  // beside a scan; a bare rename there killed a scan with EPERM.
+  'scan.mjs',
 ];
 
 for (const file of MIGRATED_FILES) {

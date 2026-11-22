@@ -777,16 +777,18 @@ function sleepSync(ms) {
  * @param {string} tmpPath - Source path (the fully written temporary file).
  * @param {string} path - Destination path to replace.
  * @param {(from: string, to: string) => void} [rename] - Injectable rename, for tests.
+ * @param {number[]} [delays] - Backoff schedule; a longer one suits a file
+ *   with longer-lived readers, such as scan.mjs's pipeline.md.
  * @returns {void}
  */
-export function renameSyncWithRetry(tmpPath, path, rename = renameSync) {
+export function renameSyncWithRetry(tmpPath, path, rename = renameSync, delays = RENAME_RETRY_DELAYS_MS) {
   for (let attempt = 0; ; attempt++) {
     try {
       rename(tmpPath, path);
       return;
     } catch (err) {
-      if (!isRenameContention(err) || attempt >= RENAME_RETRY_DELAYS_MS.length) throw err;
-      sleepSync(RENAME_RETRY_DELAYS_MS[attempt]);
+      if (!isRenameContention(err) || attempt >= delays.length) throw err;
+      sleepSync(delays[attempt]);
     }
   }
 }

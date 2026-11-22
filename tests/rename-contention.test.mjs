@@ -97,6 +97,23 @@ const mkErr = (code) => Object.assign(new Error(code), { code });
   );
 }
 
+// A caller-supplied schedule sets the bound instead (scan.mjs passes a longer
+// one for pipeline.md).
+{
+  let attempts = 0;
+  const deadRename = () => {
+    attempts++;
+    throw mkErr('EBUSY');
+  };
+  let code = null;
+  try {
+    renameSyncWithRetry('from.tmp', 'to.md', deadRename, [0, 0]);
+  } catch (err) {
+    code = err.code;
+  }
+  ok(code === 'EBUSY' && attempts === 3, `a custom schedule bounds the retries (made ${attempts} attempts)`);
+}
+
 // ── 3. Non-contention errors fail fast, and the temp file never leaks ────────
 {
   let attempts = 0;
