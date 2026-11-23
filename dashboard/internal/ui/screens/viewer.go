@@ -48,6 +48,7 @@ type ViewerModel struct {
 	pdf             viewerPDFLink
 	pdfLinker       func(string) string
 	pdfConfigured   bool
+	cv2mac          bool
 	statusPicker    bool
 	statusCursor    int
 	// flash is a one-shot notice rendered in place of the footer, cleared on
@@ -196,6 +197,13 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 	case StatusUpdateFailedMsg:
 		m.flash = "Could not update status: " + msg.Err
 		return m, nil
+	case ViewerCV2MacDoneMsg:
+		if msg.Err != "" {
+			m.flash = "cv2mac failed: " + msg.Err
+		} else {
+			m.flash = msg.Output
+		}
+		return m, nil
 	case tea.KeyMsg:
 		m.flash = ""
 		if m.statusPicker {
@@ -212,6 +220,9 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 			}
 			url := m.jobURL
 			return m, func() tea.Msg { return PipelineOpenURLMsg{URL: url} }
+
+		case "m":
+			return m.sendPDFToMac()
 
 		case "c":
 			m.statusPicker = true
@@ -1008,6 +1019,9 @@ func (m ViewerModel) renderFooter() string {
 	)
 	if m.coverLetterPath != "" {
 		pieces = append(pieces, helpPiece{text: "  " + keyStyle.Render("L") + descStyle.Render(" cover letter")})
+	}
+	if m.cv2macReady() {
+		pieces = append(pieces, helpPiece{text: "  " + keyStyle.Render("m") + descStyle.Render(" cv2mac")})
 	}
 
 	return oneLine(m.width, style, joinHelp(budget, pieces, "", ""))

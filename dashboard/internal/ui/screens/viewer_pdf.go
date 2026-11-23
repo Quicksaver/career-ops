@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -127,5 +128,44 @@ func (m ViewerModel) renderPDFHeader(width int) string {
 	} else {
 		label += lipgloss.NewStyle().Foreground(m.theme.Subtext).Render(" (missing)")
 	}
+	if m.cv2macReady() {
+		label += lipgloss.NewStyle().Foreground(m.theme.Subtext).Render("  ·  ") +
+			lipgloss.NewStyle().Foreground(m.theme.Text).Bold(true).Render("m") +
+			lipgloss.NewStyle().Foreground(m.theme.Subtext).Render(" cv2mac")
+	}
 	return ansi.Wrap(header+" "+label, width, "")
+}
+
+// ViewerCV2MacMsg asks the host to run the cv2mac tool on the report's CV PDF,
+// which copies it to the MacBook's Downloads folder (a fork-local tool, see
+// FORK.md). Path is the absolute PDF path the PDF row shows.
+type ViewerCV2MacMsg struct{ Path string }
+
+// ViewerCV2MacDoneMsg carries the cv2mac outcome back for the flash line:
+// Output is the tool's last line on success, Err its error otherwise.
+type ViewerCV2MacDoneMsg struct{ Output, Err string }
+
+// WithCV2Mac tells the viewer whether the host found the cv2mac tool, which
+// shows the `m` action on the PDF row and in the footer.
+func (m ViewerModel) WithCV2Mac(available bool) ViewerModel {
+	m.cv2mac = available
+	m.rebuildRender()
+	return m
+}
+
+// cv2macReady reports whether `m` can send the PDF the PDF row names.
+func (m ViewerModel) cv2macReady() bool { return m.cv2mac && m.pdf.exists }
+
+func (m ViewerModel) sendPDFToMac() (ViewerModel, tea.Cmd) {
+	switch {
+	case !m.cv2mac:
+		m.flash = "cv2mac was not found on PATH"
+		return m, nil
+	case !m.pdf.exists:
+		m.flash = "No CV PDF to send for this report"
+		return m, nil
+	}
+	m.flash = "Sending " + filepath.Base(m.pdf.path) + " to the Mac..."
+	path := m.pdf.path
+	return m, func() tea.Msg { return ViewerCV2MacMsg{Path: path} }
 }

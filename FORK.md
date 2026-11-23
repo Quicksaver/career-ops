@@ -1357,6 +1357,11 @@ Files:
 - `docs/ARCHITECTURE.md`
 - `dashboard/main.go`
 - `dashboard/main_test.go`
+- `dashboard/cv2mac.go`
+- `dashboard/cv2mac_test.go`
+- `dashboard/internal/ui/screens/viewer.go`
+- `dashboard/internal/ui/screens/viewer_pdf.go`
+- `dashboard/internal/ui/screens/viewer_pdf_test.go`
 - `dashboard/internal/data/career.go`
 - `dashboard/internal/data/career_test.go`
 - `dashboard/internal/data/derive.go`
@@ -1404,6 +1409,7 @@ What this customizes:
 - Displays the report's `## Machine Summary` section after all other sections in the TUI viewer, including when it precedes the evaluation in the saved report. Its code block and nested headings move together; source report ordering remains unchanged for machine consumers.
 - Restores the viewer's PDF header as a clickable filename instead of generic labels such as `Two-page A4 CV`. Paths stay within the selected user's output directory; missing files are labelled, and outside paths are rejected.
 - Opens PDFs directly in the browser through a dashboard-owned HTTP server bound only to the host's Tailnet IP on an ephemeral port. Startup discovers its own Tailscale DNS name/IP once with a two-second timeout. Cmd-click on macOS or Ctrl-click on Windows/Linux opens the link in the viewing machine's browser. There are no VS Code links, application-opening confirmations, SSH account settings, or external redirects. Only opaque links registered by the viewer are accepted, and only regular PDFs inside the selected user's output directory are served. An `os.Root` directory handle prevents symlink escapes even after registration. Responses use `application/pdf` with inline disposition and support HEAD/range requests; unknown links and non-PDF targets are rejected. The server stops with the dashboard, so links last for that dashboard session. No separate web dashboard is needed. Missing Tailnet discovery or server startup failure displays an unavailable marker; the filename remains visible for manual opening. General report Markdown cannot supply arbitrary local-file targets.
+- Adds an `m` key to the report viewer that runs the user's `cv2mac` tool on the CV PDF the PDF row names, which copies it to the MacBook's Downloads folder. `cv2mac` lives outside the repo, on PATH: an executable named `cv2mac`, or on Windows `cv2mac.ps1` run through `pwsh` (or Windows PowerShell). The dashboard looks it up once at startup (`findCV2Mac()` in `dashboard/cv2mac.go`) and passes the PDF's absolute path, so the copy is the file on screen rather than whatever a report-number lookup would pick. The PDF row then shows `· m cv2mac` after its link and the footer lists the key; without the tool, or when the PDF is missing, neither appears and `m` explains why. The copy runs asynchronously with a 2-minute limit, and its last output line (or error, without PowerShell's colors) shows in the footer. The label is not clickable: the dashboard has no mouse mode, which would take clicks away from the OSC 8 links.
 - Preserves upstream derived fields, shared sort comparator, and new dashboard sort modes, but keeps the listing-date sort on the fork's `dashboardDate()` fallback so reports/scan-history listing dates win when available.
 - Adds a `#id` sort mode to the dashboard sort cycle; it orders tracker rows numerically by ID with the newest/highest IDs first.
 - Preserves upstream customizable columns / column picker behavior and cross-platform default-app open helpers while keeping user-root normalization for report/PDF targets.

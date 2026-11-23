@@ -8,6 +8,9 @@ A terminal UI over the application tracker: filter tabs, sort modes,
 grouped/flat views, lazy-loaded report previews, and an inline status picker.
 The report viewer opens the job posting with `o`, using the tracker row's URL
 or, failing that, the report's `**URL:**` header.
+When a `cv2mac` tool is on PATH (an executable, or `cv2mac.ps1` on Windows),
+`m` runs it on the CV PDF the report's PDF row names; the row and footer show
+the key only then.
 It is isolated from the Node core — optional, never required by any other
 component.
 

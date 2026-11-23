@@ -43,6 +43,7 @@ type appModel struct {
 	careerOpsPath   string
 	userID          string
 	pdfLinker       func(string) string
+	cv2mac          []string
 	theme           theme.Theme
 	progressMetrics model.ProgressMetrics
 	statsMetrics    model.StatsMetrics
@@ -201,13 +202,16 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.Path, msg.Title, m.careerOpsPath,
 			m.pipeline.Width(), m.pipeline.Height(),
 			msg.App, m.careerOpsPath,
-		).WithPDFLinker(m.pdfLinker)
+		).WithPDFLinker(m.pdfLinker).WithCV2Mac(len(m.cv2mac) > 0)
 		m.state = viewReport
 		return m, nil
 
 	case screens.ViewerClosedMsg:
 		m.state = viewPipeline
 		return m, nil
+
+	case screens.ViewerCV2MacMsg:
+		return m, runCV2Mac(m.cv2mac, msg.Path)
 
 	case screens.ViewerOpenCoverLetterMsg:
 		path := msg.Path
@@ -1075,6 +1079,7 @@ func main() {
 		careerOpsPath:   careerOpsPath,
 		userID:          resolvedUser,
 		pdfLinker:       pdfLinker,
+		cv2mac:          findCV2Mac(),
 		theme:           t,
 		progressMetrics: progressMetrics,
 		statsMetrics:    statsMetrics,
