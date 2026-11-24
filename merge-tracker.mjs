@@ -24,7 +24,7 @@
  */
 
 import { readFileSync, readdirSync, mkdirSync, renameSync, existsSync } from 'fs';
-import { join, basename, dirname } from 'path';
+import { join, basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import { normalizeReportLink as normalizeLink } from './tracker-links.mjs';
@@ -45,6 +45,7 @@ import { loadYaml } from './lib/yaml-document.mjs';
 import { machineSummarySection } from './lib/machine-summary-section.mjs';
 import { syncTrackerPdfFlags } from './sync-pdf-flags.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
+import { promoteNewerCv, linkReportToCv } from './lib/promote-duplicate-cv.mjs';
 import { occupiedTrackerNumbersFromLedgers } from './reserve-report-num.mjs';
 
 /**
@@ -1866,6 +1867,9 @@ export async function mergeTracker(options = {}) {
     let skipped = 0;
     let missingReports = 0;
     let unwrittenNotes = 0;
+    // Re-evaluations whose CV moves under the row's primary report once the
+    // tracker is written (see promoteReevaluationCvs below).
+    const cvPromotions = [];
     // set-status.mjs refuses --note on a tracker with no Notes column, because a
     // note is all that command writes. A merge carries a whole evaluation, so it
     // goes ahead, like a row whose report is missing, and says what it left out.
@@ -2424,6 +2428,16 @@ export async function mergeTracker(options = {}) {
           `${downgrade ? '🔽' : '🔄'} Update: #${duplicate.num} ${addition.company} — ${addition.role} (${oldScore}→${newScore})`
           + (downgrade ? ' — DOWNGRADE, re-eval scored lower' : ''),
         );
+        // The job's CV is its newest one: a re-evaluation's CV is filed under
+        // the primary report number after the write, so tools that look a job
+        // up by its number (the dashboard, cv2mac) get it.
+        if (reevaluationNote && pdfIndex.has(String(reportNum))) {
+          const keeperReport = resolveReportPath(duplicate.report);
+          const candidateReport = resolveReportPath(addition.report);
+          if (keeperReport && candidateReport) {
+            cvPromotions.push({ keeperReport, candidateReport, candidatePdf: resolve(REPORTS_ROOT, pdfIndex.get(String(reportNum))) });
+          }
+        }
         // PDF readiness describes the retained primary report, not the new evaluation.
         const retainedReportNum = oldReportNum || reportNum;
         const pdf = retainedReportNum && pdfIndex.has(String(retainedReportNum))
@@ -2636,6 +2650,30 @@ export async function mergeTracker(options = {}) {
     }
     if (DRY_RUN) console.log('(dry-run — no changes written)');
     trackerLock.release();
+
+    // A job keeps linking its most recent CV. The row keeps its primary report,
+    // so a re-evaluation's newer CV moves under that report's number (PDF, HTML,
+    // the primary report's **PDF:** line and its data/pdf-index.tsv row), the
+    // CV it replaces goes to data/superseded-cvs/, and the re-evaluation report
+    // links the moved file. The same promotion the duplicate resolver applies.
+    if (!DRY_RUN) {
+      for (const p of cvPromotions) {
+        try {
+          const promotion = await promoteNewerCv({
+            userRoot: REPORTS_ROOT,
+            indexPath: PDF_INDEX_FILE,
+            keeperReport: p.keeperReport,
+            candidatePdf: p.candidatePdf,
+            backupDir: join(REPORTS_ROOT, 'data', 'superseded-cvs'),
+          });
+          if (!promotion.promoted) continue;
+          linkReportToCv(p.candidateReport, promotion.pdf);
+          console.log(`📎 CV: ${promotion.pdf} is now the CV of ${basename(p.keeperReport)} (from re-evaluation ${basename(p.candidateReport)})`);
+        } catch (e) {
+          console.warn(`⚠️  Could not move the re-evaluation CV ${p.candidatePdf} under ${basename(p.keeperReport)}: ${e.message}`);
+        }
+      }
+    }
 
     // Sync PDF flags (idempotent; takes the tracker lock again in its own
     // transaction). In-process since #4758: it used to be a sync-pdf-flags.mjs
