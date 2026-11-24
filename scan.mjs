@@ -229,6 +229,8 @@ export const VERIFY_CONCURRENCY = 10;
 
 export function companyFetchHost(company) {
   try {
+    const group = company?._provider?.fetchConcurrencyGroup;
+    if (group) return `provider:${company._provider.id}`;
     const declared = company?._provider?.fetchHost?.(company);
     if (typeof declared === 'string' && declared.trim()) return declared.trim().toLowerCase();
     const detected = company?._provider?.detect?.(company);
@@ -241,6 +243,22 @@ export function companyFetchHost(company) {
   } catch {
     return '';
   }
+}
+
+export function companyFetchPoolOptions(targets, hostLimit = HOST_CONCURRENCY) {
+  const limits = new Map();
+  const hosts = targets.map((target) => {
+    const host = companyFetchHost(target);
+    const groupLimit = target?._provider?.fetchConcurrencyGroup?.limit;
+    if (Number.isSafeInteger(groupLimit) && groupLimit > 0) {
+      limits.set(host, Math.min(hostLimit, groupLimit));
+    }
+    return host;
+  });
+  return {
+    hostOf: (_task, index) => hosts[index],
+    hostLimit: (host) => limits.get(host) ?? hostLimit,
+  };
 }
 const PROGRESS_EVERY = 25;
 
@@ -1546,8 +1564,8 @@ export function buildVisaFilter(visaFilter) {
 // pass, byte-identical to before the filter existed.
 //
 // Reads the structured `job.employmentType` a provider sets from the source's
-// own field (providers/_employment-type.mjs; today Himalayas, We Work Remotely,
-// Remotive, Ashby and Lever), never the title or description. A local parser
+// own field (providers/_employment-type.mjs; templates/portals.example.yml
+// lists the providers that set it), never the title or description. A local parser
 // may emit a raw label ("Contractor"); it is normalized here the same way.
 //
 // Semantics:
@@ -3959,6 +3977,23 @@ function normalizeScanUrl(value) {
   return String(value ?? '').trim().split(/\s+/)[0] || '';
 }
 
+// A posting locator is a URL only when it is an absolute http(s) one. Anything
+// else — a `javascript:` href a hostile board put in its listing, `file:`, a
+// placeholder, a scheme typo — is not a posting, and writing it into the inbox
+// or the scan history puts board-authored text where the agent reads it as
+// data. url-key.mjs's normalizeUrl already draws that line for dedup keys; this
+// is the same predicate at the write boundary.
+export function safePostingUrl(value) {
+  const token = normalizeScanUrl(value);
+  if (!token) return '';
+  try {
+    const parsed = new URL(token);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? token : '';
+  } catch {
+    return '';
+  }
+}
+
 const MARKDOWN_ESCAPE_CHARS = {
   '\\': '\\\\',
   '[': '\\[',
@@ -3972,8 +4007,15 @@ export function sanitizeMarkdownField(value) {
 }
 
 function sanitizePipelineUrl(value) {
-  return normalizeScanUrl(value)
+  // Percent-encode the three characters that can break the row's markdown cell:
+  // a backtick opens inline code, and `<`/`>` can be read as HTML. Encoding
+  // keeps the value a URL (a server decodes it back) where HTML-escaping would
+  // turn it into markup the reader has to unescape.
+  return safePostingUrl(value)
     .replace(/[\\[\]]/g, char => MARKDOWN_ESCAPE_CHARS[char])
+    .replace(/`/g, '%60')
+    .replace(/</g, '%3C')
+    .replace(/>/g, '%3E')
     .replace(/\|/g, '%7C');
 }
 
@@ -4027,6 +4069,9 @@ export function formatTrustSegment(offer) {
 
 export function formatPipelineOffer(offer) {
   const url = sanitizePipelineUrl(offer.url);
+  // No safe http(s) URL, no row: an offer the board could not describe as a
+  // posting must not become a line the pipeline mode then tries to evaluate.
+  if (!url) return '';
   const company = sanitizeMarkdownField(offer.company);
   const title = sanitizeMarkdownField(offer.title);
   // Optional trailing columns, each sanitized like every other field:
@@ -4072,7 +4117,7 @@ function postedAtIsoDate(postedAt) {
 }
 export function formatScanHistoryRow(offer, date, status = 'added') {
   const record = {
-    url: normalizeScanUrl(offer.url),
+    url: safePostingUrl(offer.url),
     first_seen: date,
     portal: offer.source,
     title: offer.title,
@@ -4319,7 +4364,12 @@ Paste job URLs below as \`- [ ] {url}\` then run \`/career-ops pipeline\`.
 
 function sameJobWriteKey(url) {
   if (typeof url !== 'string' || !url) return '';
-  return canonicalJobKey(url) || url;
+  // No fallback to the raw string: a URL that is not an http(s) posting has no
+  // key, and the callers below treat "no key" as "not a row". The old
+  // `|| url` fallback gave every `javascript:`/`file:`/placeholder value a
+  // non-empty key, so it was written to pipeline.md and scan-history.tsv —
+  // exactly the board-authored text the sanitizer above exists to keep out.
+  return canonicalJobKey(url);
 }
 
 // Keys whose history rows no longer pin. A still-pinning row of the same
@@ -4445,6 +4495,12 @@ export async function appendToPipeline(offers, {
     }
     const fresh = offersMissingFromPipeline(offers, text, historyText, policy);
     if (fresh.length === 0) return;
+    // formatPipelineOffer returns '' for an offer with no safe http(s) URL. The
+    // filter is belt-and-braces: offersMissingFromPipeline already drops those
+    // through sameJobWriteKey, but a row joined from an empty entry would be a
+    // bare `- [ ]  | Company | Role` line the pipeline mode still parses.
+    const rows = fresh.map(formatPipelineOffer).filter(Boolean);
+    if (rows.length === 0) return;
 
     const headings = [...text.matchAll(/^##[ \t].*$/gm)];
     const pending = headings.find(h => sectionKind(h[0]) === 'pending');
@@ -4453,7 +4509,7 @@ export async function appendToPipeline(offers, {
       // No Pending section found — insert one before Processed (or at end)
       const processed = headings.find(h => sectionKind(h[0]) === 'processed');
       const insertAt = processed ? processed.index : text.length;
-      const block = `\n## Pending\n\n` + fresh.map(formatPipelineOffer).join('\n') + '\n\n';
+      const block = `\n## Pending\n\n` + rows.join('\n') + '\n\n';
       text = text.slice(0, insertAt) + block + text.slice(insertAt);
     } else {
       // Find the end of existing Pending content (next ## or end)
@@ -4461,7 +4517,7 @@ export async function appendToPipeline(offers, {
       const nextSection = text.indexOf('\n## ', afterMarker);
       const insertAt = nextSection === -1 ? text.length : nextSection;
 
-      const block = '\n' + fresh.map(formatPipelineOffer).join('\n') + '\n';
+      const block = '\n' + rows.join('\n') + '\n';
       text = text.slice(0, insertAt) + block + text.slice(insertAt);
     }
 
@@ -4511,11 +4567,17 @@ export async function appendToScanHistory(offers, date, status = 'added', {
     const policy = historyPolicy ?? historyPolicyFromPortals();
     const fresh = offersMissingFromHistory(offers, status, readIfExists(historyPath), policy);
     if (fresh.length === 0) return 0;
+    // A direct caller (not the scanner) can hand this an offer whose URL is not
+    // http(s). sameJobWriteKey already drops those; the filter keeps a future
+    // caller from writing a row with an empty url, which every reader skips
+    // silently and so would look like data loss.
+    const recorded = fresh.filter(o => safePostingUrl(o.url));
+    if (recorded.length === 0) return 0;
 
-    const lines = fresh.map(o => formatScanHistoryRow(o, date, status)).join('\n') + '\n';
+    const lines = recorded.map(o => formatScanHistoryRow(o, date, status)).join('\n') + '\n';
 
     appendLedgerRows(historyPath, lines);
-    return fresh.length;
+    return recorded.length;
   };
 
   if (alreadyLocked) return write();
@@ -4896,7 +4958,6 @@ export async function parallelFetch(tasks, limit, onDone = () => {}, { hostOf = 
 
   const n = tasks.length;
   if (n === 0 || !(limit > 0)) return [];
-  const perHost = Math.max(1, hostLimit);
   const hosts = tasks.map((task, index) => {
     try {
       const host = hostOf(task, index);
@@ -4905,6 +4966,11 @@ export async function parallelFetch(tasks, limit, onDone = () => {}, { hostOf = 
       return '';
     }
   });
+  const hostCaps = new Map();
+  for (const host of new Set(hosts.filter(Boolean))) {
+    const cap = typeof hostLimit === 'function' ? hostLimit(host) : hostLimit;
+    hostCaps.set(host, Math.max(1, cap));
+  }
   const results = new Array(n);
   const pending = hosts.map((_, index) => index);
   const hostActive = new Map();
@@ -4917,7 +4983,7 @@ export async function parallelFetch(tasks, limit, onDone = () => {}, { hostOf = 
       const index = pending[k];
       const host = hosts[index];
       // An empty host is not a bucket. Unknown URLs must not share one cap.
-      if (host && (hostActive.get(host) || 0) >= perHost) continue;
+      if (host && (hostActive.get(host) || 0) >= hostCaps.get(host)) continue;
       pending.splice(k, 1);
       return index;
     }
@@ -5393,6 +5459,15 @@ async function main() {
   const sinceDays = since.days;
 
   const effectiveAfter = resolveEffectiveAfter(postedAfter, sinceDays);
+  // Each bound is a valid date on its own, but a lower bound past the upper
+  // one leaves an empty window: every dated posting is filtered out and the
+  // run reports it as an ordinary "Filtered by posted date" count. Swapped
+  // dates or a mistyped year are the same typo the checks above exist for.
+  if (effectiveAfter && postedBefore && effectiveAfter > postedBefore) {
+    const lower = postedAfter === effectiveAfter ? `--posted-after ${postedAfter}` : `--since ${sinceDays} (from ${effectiveAfter})`;
+    console.error(`Error: ${lower} is later than --posted-before ${postedBefore}, so no dated posting can match`);
+    process.exit(1);
+  }
 
   // 1. Load providers
   const providers = await loadProviders(PROVIDERS_DIR);
@@ -5468,6 +5543,34 @@ async function main() {
   // description. See the title gate in the scan loop.
   const rescueTitleMisses = contentFilter.rescueTitleMisses === true;
   const titleGate = buildTitleGate(config.title_filter, contentFilter, titleFilter);
+
+  // #7244. A tracked_companies / job_boards entry may carry its own title_filter,
+  // which replaces the global filter for that entry only.
+  const entryTitleGates = new WeakMap();
+  const resolveEntryTitleGate = (entry) => {
+    const entryFilter = (entry?.title_filter && typeof entry.title_filter === 'object' && !Array.isArray(entry.title_filter))
+      ? entry.title_filter
+      : null;
+    if (!entryFilter) {
+      return { titleFilter, titleGate, rawFilter: config.title_filter };
+    }
+    const cached = entryTitleGates.get(entryFilter);
+    if (cached) return cached;
+
+    let raw = entryFilter;
+    // An entry without usable positive keywords keeps the global positives with or without negatives (#7244)
+    const hasEntryPositives = Array.isArray(raw.positive)
+      && raw.positive.some(k => typeof k === 'string' && k.trim().length > 0);
+    if (!hasEntryPositives && config.title_filter?.positive) {
+      raw = { ...raw, positive: config.title_filter.positive };
+    }
+
+    const tf = buildTitleFilter(raw);
+    const tg = buildTitleGate(raw, contentFilter, tf);
+    const compiled = { titleFilter: tf, titleGate: tg, rawFilter: raw };
+    entryTitleGates.set(entryFilter, compiled);
+    return compiled;
+  };
   const candidateCountry = loadCandidateCountry();
   const countryEligibilityFilter = buildCountryEligibilityFilter(config.country_eligibility_filter, candidateCountry);
   const visaFilter = buildVisaFilter(config.visa_filter);
@@ -5640,6 +5743,16 @@ async function main() {
         || target.skip_tiers.some(t => typeof t !== 'string' || !TIERS.includes(t.toLowerCase())))) {
       exitOnConfigError(`${target.name}: skip_tiers must be a list of ${TIERS.join(', ')}, or [] to turn the tier filter off`);
     }
+    if (target.title_filter !== undefined) {
+      if (!target.title_filter || typeof target.title_filter !== 'object' || Array.isArray(target.title_filter)) {
+        exitOnConfigError(`${target.name}: title_filter must be an object with positive and/or negative keyword lists`);
+      }
+      for (const key of Object.keys(target.title_filter)) {
+        if (!['positive', 'negative', 'seniority_boost'].includes(key)) {
+          exitOnConfigError(`${target.name}: title_filter.${key} is not a recognized key - expected one of positive, negative, seniority_boost`);
+        }
+      }
+    }
   }
   const tierFilterActive = skipTiers.length > 0 || targets.some(t => entrySkipTiers(t).length > 0);
   if (tierFilterActive) {
@@ -5749,6 +5862,7 @@ async function main() {
   // company: see lib/board-truncation.mjs. Logged `partial`, never `reachable`.
   /** @type {Map<string, import('./lib/board-truncation.mjs').BoardTruncation>} */
   const partialTargets = new Map();
+  const queryScopedTargets = new Map();
 
   if (!dryRun) registerRunFailureSnapshot(() => ({
     timestamp: new Date().toISOString(), companies: targets.filter(target => !target._isBoard).length,
@@ -5829,7 +5943,7 @@ async function main() {
       // posting (Workday's multi-location detail GETs) and can skip postings
       // the title filter below will drop. Absent when this company's filter_on
       // leaves the title out, since then no title is dropped.
-      ...(normalizeFilterOn(company.filter_on).includes('title') ? { titleWanted: (title) => titleGate(title) === 'match' } : {}),
+      ...(normalizeFilterOn(company.filter_on).includes('title') ? { titleWanted: (title) => resolveEntryTitleGate(company).titleGate(title) === 'match' } : {}),
       idCache: idCaches.forProvider(provider.id),
     };
     applyEntryResponseCap(ctx, company);
@@ -5911,6 +6025,9 @@ async function main() {
       st.source += sourceDroppedTotal;
       for (const [reason, n] of Object.entries(sourceDropped)) st.sourceDetail[reason] = (st.sourceDetail[reason] || 0) + n;
       const truncation = boardTruncation(jobs);
+      if (jobs.queryScope) {
+        queryScopedTargets.set(company, { company: company.name, provider: provider.id, ...jobs.queryScope });
+      }
       // Boards (job_boards: aggregators) too: unlike an empty result, which is
       // routine for a keyword search, a capped or failed walk is a real gap.
       if (truncation) partialTargets.set(company.name, truncation);
@@ -5939,6 +6056,7 @@ async function main() {
       const companySkipTiers = entrySkipTiers(company);
       // The preferred language version of a posting is judged first, so the
       // dedup below keeps it and drops the other versions (#5285).
+      const { titleGate: companyTitleGate, rawFilter: companyRawTitleFilter } = resolveEntryTitleGate(company);
       const orderedJobs = preferredLanguageRank ? orderByPreferredLanguage(jobs, preferredLanguageRank) : jobs;
       // #3438. Presence accounting only — no verdict, no rejection. It runs
       // before every filter below, including the blacklist skip, because it
@@ -6005,7 +6123,7 @@ async function main() {
         let titleMissed = false;
         for (const field of declaredFields) {
           if (field === 'title') {
-            const verdict = titleGate(job.title);
+            const verdict = companyTitleGate(job.title);
             if (verdict === 'rescue') { titleMissed = true; continue; }
             if (verdict === 'reject') { failedField = field; break; }
           } else {
@@ -6078,7 +6196,7 @@ async function main() {
             continue;
           }
           totalRescuedByContent++;
-        } else if (!contentFilter(job.description, matchedTitleKeywords(job.title, config.title_filter))) {
+        } else if (!contentFilter(job.description, matchedTitleKeywords(job.title, companyRawTitleFilter))) {
           totalFilteredContent++;
           st.other++;
           continue;
@@ -6248,10 +6366,7 @@ async function main() {
   };
 
   const companyFetches = async () => {
-    await parallelFetch(tasks, SCAN_CONCURRENCY, progressTicker(tasks.length), {
-      hostLimit: HOST_CONCURRENCY,
-      hostOf: (_task, index) => companyFetchHost(targets[index]),
-    });
+    await parallelFetch(tasks, SCAN_CONCURRENCY, progressTicker(tasks.length), companyFetchPoolOptions(targets));
     await retryTransientFailures();
   };
   if (process.env.CAREER_OPS_HTTP_CACHE === '0') {
@@ -6750,6 +6865,13 @@ async function main() {
       for (const line of partialRepeatHints(reasons)) console.log(`   ${line}`);
     }
   }
+  const queryScoped = targets.flatMap(target => queryScopedTargets.has(target) ? [queryScopedTargets.get(target)] : []);
+  if (queryScoped.length > 0) {
+    console.log(`\n⚠️  ${queryScoped.length} target(s) read through keyword queries only:`);
+    for (const { company, config, queries } of queryScoped) {
+      console.log(`   • ${company} (${config}): ${queries.map(query => JSON.stringify(query)).join(', ')}`);
+    }
+  }
   if (unverifiedZeroTargets.length > 0) {
     console.log(`⚠️  ${unverifiedZeroTargets.length} target(s) returned zero jobs without a successful HTTP response: ${unverifiedZeroTargets.join(', ')}`);
   }
@@ -6836,6 +6958,7 @@ async function main() {
       // Boards read only partly (lib/board-truncation.mjs), so automation can
       // tell a short read from a complete one without parsing stdout.
       partial: [...partialTargets].map(([company, { source: _source, ...t }]) => ({ company, ...t })),
+      ...(queryScoped.length ? { query_scoped: queryScoped } : {}),
       dry_run: dryRun,
     }, errors.length > 0 ? 2 : 0);
   }

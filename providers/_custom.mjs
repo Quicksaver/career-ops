@@ -32,7 +32,7 @@ function assertRequestUrl(value) {
 }
 
 const SOURCE_HOSTS = {
-  itjobs: ['itjobs.pt'], sapo: ['emprego.sapo.pt'], portalemprego: ['portalemprego.pt'],
+  sapo: ['emprego.sapo.pt'], portalemprego: ['portalemprego.pt'],
   dice: ['dice.com'], euremotejobs: ['euremotejobs.com'], remoteineurope: ['remoteineurope.com'],
   devitjobs: ['swissdevjobs.ch', 'germantechjobs.de', 'devitjobs.uk', 'devitjobs.nl'],
   englishjobs: ['englishjobsearch.ch', 'englishjobs.dk', 'englishjobsearch.se', 'englishjobs.no', 'englishjobs.fi', 'englishjobsearch.nl', 'englishjobs.de'],
@@ -143,9 +143,6 @@ const PCSX_DETAIL_CONCURRENCY = 1;
 const EUREMOTEJOBS_DETAIL_CONCURRENCY = 5;
 const EUREMOTEJOBS_MAX_PAGES = 5;
 const EUREMOTEJOBS_CATEGORY_PATH_RE = /^\/job-category\/([^/]+)(?:\/(?:feed|page\/\d+)\/?|\/)?$/;
-const ITJOBS_MAX_PAGES = 5;
-// itjobs.pt robots.txt asks for one request per second (Crawl-delay: 1).
-const ITJOBS_CRAWL_DELAY_MS = 1000;
 const SAPO_MAX_PAGES = 5;
 const PORTALEMPREGO_MAX_PAGES = 5;
 const DICE_MAX_PAGES = 5;
@@ -246,49 +243,6 @@ function getPcsxConfig(company) {
     domain,
     searchUrl: searchUrl.toString(),
     detailPath: company.api_detail_path || '/api/pcsx/position_details',
-  };
-}
-
-// itjobs.pt's robots.txt disallows every list filter in the query string (they
-// are noindexed duplicates of the plain lists). Filter with a list path such as
-// /emprego/remote, /emprego/backend or /local/porto instead; `page` is allowed.
-const ITJOBS_DISALLOWED_PARAMS = new Set(['company', 'contract', 'location', 'type', 'work_model', 'remote', 'salary', 'sort', 'date', 'q', 'lang']);
-
-function getItjobsConfig(company) {
-  const baseUrl = company.api || company.careers_url;
-  if (!baseUrl) return null;
-
-  let listUrl;
-  try {
-    listUrl = new URL(baseUrl);
-  } catch {
-    return null;
-  }
-
-  let urls = [listUrl];
-
-  for (const [key, rawValue] of Object.entries(company.api_params || {})) {
-    if (rawValue === false || rawValue === null || rawValue === undefined || rawValue === '') {
-      continue;
-    }
-
-    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
-    const nextUrls = [];
-
-    for (const existingUrl of urls) {
-      for (const value of values) {
-        const nextUrl = new URL(existingUrl.toString());
-        nextUrl.searchParams.set(key, String(value));
-        nextUrls.push(nextUrl);
-      }
-    }
-
-    urls = nextUrls;
-  }
-
-  return {
-    listUrls: urls.map(url => url.toString()),
-    maxPages: Math.max(1, Number(company.api_max_pages) || ITJOBS_MAX_PAGES),
   };
 }
 
@@ -883,11 +837,6 @@ function detectApi(company) {
     return pcsx ? { type: 'pcsx', url: pcsx.searchUrl, pcsx } : null;
   }
 
-  if (company.api_provider === 'itjobs' || /https?:\/\/(?:www\.)?itjobs\.pt\/(?:emprego|local)\b/.test(company.api || company.careers_url || '')) {
-    const itjobs = getItjobsConfig(company);
-    return itjobs ? { type: 'itjobs', url: itjobs.listUrls[0], itjobs } : null;
-  }
-
   if (company.api_provider === 'euremotejobs' || [company.api, company.careers_url].some(value => /^https?:\/\/(?:www\.)?euremotejobs\.com\/(?:job-listings\/feed\/?|job-category\/)/.test(value || ''))) {
     const euremotejobs = getEuRemoteJobsConfig(company);
     return euremotejobs ? { type: 'euremotejobs', url: euremotejobs.categoryUrl, euremotejobs } : null;
@@ -1262,44 +1211,6 @@ function filterDevITJobsFamilyJobs(jobs, filters) {
   ));
 }
 
-function buildItjobsPageUrl(url, pageNumber) {
-  const pageUrl = new URL(url);
-  if (pageNumber <= 1) {
-    pageUrl.searchParams.delete('page');
-  } else {
-    pageUrl.searchParams.set('page', String(pageNumber));
-  }
-  return pageUrl.toString();
-}
-
-function extractItjobsDetails(itemHtml) {
-  const detailsMatch = itemHtml.match(/<div class="list-details">([\s\S]*?)<\/div>/);
-  if (!detailsMatch) return '';
-  return splitHtmlSegments(detailsMatch[1]).join(' | ');
-}
-
-function parseItjobsPage(html, sourceUrl, seenUrls) {
-  const origin = new URL(sourceUrl).origin;
-  const jobs = [];
-
-  const jobPattern = /<div class="list-title">\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/div>\s*<div class="list-name">\s*<a[^>]*>([\s\S]*?)<\/a>\s*<\/div>\s*<div class="list-details">([\s\S]*?)<\/div>/g;
-
-  for (const match of html.matchAll(jobPattern)) {
-    const url = new URL(decodeHtmlEntities(match[1]), origin).toString();
-    if (seenUrls.has(url)) continue;
-    seenUrls.add(url);
-
-    jobs.push({
-      title: cleanHtmlText(match[2]),
-      url,
-      company: cleanHtmlText(match[3]),
-      location: splitHtmlSegments(match[4]).join(' | '),
-    });
-  }
-
-  return jobs;
-}
-
 function parseFirstHtmlPage(parser, html, sourceUrl, seenUrls) {
   const parsed = parser(html, sourceUrl, new Set());
   if (parsed.length === 0 && !/\b(?:no (?:jobs|vacancies|results|offers)(?: (?:found|available))?|(?:0|zero) (?:jobs|vacancies|results|offers|ofertas|vagas)|nenhum(?:a)? (?:resultado|oferta|vaga)|sem (?:resultados|ofertas|vagas)|keine (?:stellen|ergebnisse|jobs)|ingen (?:job|resultater))\b/i.test(cleanHtmlText(html))) {
@@ -1310,14 +1221,6 @@ function parseFirstHtmlPage(parser, html, sourceUrl, seenUrls) {
     seenUrls.add(job.url);
     return true;
   });
-}
-
-function getItjobsPageCount(html) {
-  let maxPage = 1;
-  for (const match of html.matchAll(/[?&]page=(\d+)/g)) {
-    maxPage = Math.max(maxPage, Number(match[1]));
-  }
-  return maxPage;
 }
 
 function buildSapoPageUrl(url, pageNumber) {
@@ -2416,36 +2319,6 @@ async function enrichPcsxJobs(company, jobs) {
   return parallelFetch(tasks, detailConcurrency);
 }
 
-async function fetchItjobsJobs(url, company) {
-  const disallowed = [...new Set([url, ...(company._api?.itjobs?.listUrls || [])]
-    .flatMap(listUrl => [...new URL(listUrl).searchParams.keys()])
-    .filter(key => ITJOBS_DISALLOWED_PARAMS.has(key)))];
-  if (disallowed.length) {
-    throw new Error(`itjobs: robots.txt disallows the ${disallowed.join(', ')} filter(s); use a list path such as /emprego/remote or /local/porto`);
-  }
-  const seenUrls = new Set();
-  const jobs = [];
-  const listUrls = company._api?.itjobs?.listUrls || [url];
-
-  let requests = 0;
-  for (const listUrl of listUrls) {
-    if (requests++ > 0) await sleep(ITJOBS_CRAWL_DELAY_MS, currentContext());
-    const firstPageHtml = await fetchText(listUrl);
-    const pageCount = getItjobsPageCount(firstPageHtml);
-    const maxPages = Math.min(pageLimit(company._api?.itjobs?.maxPages || ITJOBS_MAX_PAGES), pageCount);
-    jobs.push(...parseFirstHtmlPage(parseItjobsPage, firstPageHtml, listUrl, seenUrls));
-
-    for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
-      requests++;
-      await sleep(ITJOBS_CRAWL_DELAY_MS, currentContext());
-      const html = await fetchText(buildItjobsPageUrl(listUrl, pageNumber));
-      jobs.push(...parseItjobsPage(html, listUrl, seenUrls));
-    }
-  }
-
-  return jobs;
-}
-
 async function fetchSapoJobs(url, company) {
   const seenUrls = new Set();
   const jobs = [];
@@ -2852,10 +2725,6 @@ async function fetchJobs(company) {
 
   if (type === 'pcsx') {
     return fetchPcsxJobs(url, company);
-  }
-
-  if (type === 'itjobs') {
-    return fetchItjobsJobs(url, company);
   }
 
   if (type === 'euremotejobs') {

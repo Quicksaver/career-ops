@@ -22,6 +22,11 @@
  * error, such as a --url that is not a public http(s) URL. A URL known only to
  * batch-state.tsv is queued again with its saved ID, as a full sync does.
  *
+ * dropAggregatorDuplicates() (#7259) stays exported for callers and tests, but
+ * the fork synchronizer does not apply it: upstream leaves a dropped row in
+ * Pending, and the fork run completes only when every Pending row reaches a
+ * terminal state (FORK.md, Deterministic run runner).
+ *
  * Run: node sync-batch-input.mjs --user <id> [--dry-run] [--json] [--url <url>]
  */
 
@@ -30,6 +35,9 @@ import { isBlockedAddress } from './providers/_ip-guard.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { sectionKind } from './lib/pipeline-sections.mjs';
 import { getUserContext, printUserContextErrorAndExit } from './lib/user-context.mjs';
+import { isAggregatorUrl } from './url-key.mjs';
+import { normalizeCompany } from './tracker-utils.mjs';
+import { normalizeTextKey } from './tracker-parse.mjs';
 
 export { URL_EXIT } from './lib/run-batch-sync.mjs';
 
@@ -124,6 +132,9 @@ export function extractLabels(body) {
   return labels;
 }
 
+// A labeled segment (see extractLabels) is never a positional company or title cell.
+const LABEL_CELL_RE = /^(?:posted|trust|yrs|note|rank):/;
+
 /**
  * Extract the company name (positional 2nd cell) from a pipeline row body.
  * @param {string} body - Raw pipeline row body.
@@ -131,7 +142,17 @@ export function extractLabels(body) {
  */
 export function lineCompany(body) {
   const parts = body.split('|').map((s) => s.trim());
-  return parts.length > 1 ? parts[1] || '' : '';
+  return parts.length > 1 && !LABEL_CELL_RE.test(parts[1]) ? parts[1] : '';
+}
+
+/**
+ * Extract the job title (positional 3rd cell) from a pipeline row body.
+ * @param {string} body - Raw pipeline row body.
+ * @returns {string}
+ */
+export function lineTitle(body) {
+  const parts = body.split('|').map((s) => s.trim());
+  return parts.length > 2 && !LABEL_CELL_RE.test(parts[2]) ? parts[2] : '';
 }
 
 /**
@@ -146,7 +167,7 @@ export function buildNotes(labels) {
 /**
  * Parse pending entries out of raw pipeline.md text (mirrors reconcile-pipeline.mjs).
  * @param {string} text - Raw pipeline.md contents.
- * @returns {Array<{url:string, company:string, notes:string}>}
+ * @returns {Array<{url:string, company:string, title:string, notes:string}>}
  */
 export function parsePending(text) {
   const lines = text.split(/\r?\n/);
@@ -168,7 +189,7 @@ export function parsePending(text) {
     const raw = lineUrl(body);
     if (!isSafePublicHttpUrl(raw)) continue;
     const url = new URL(raw).href;
-    out.push({ url, company: lineCompany(body), notes: buildNotes(extractLabels(body)) });
+    out.push({ url, company: lineCompany(body), title: lineTitle(body), notes: buildNotes(extractLabels(body)) });
   }
   return out;
 }
@@ -213,6 +234,36 @@ export function maxTsvId(text) {
     if (Number.isInteger(n) && n > 0 && n > max) max = n;
   }
   return max;
+}
+
+/**
+ * Drop aggregator rows that repeat a job another Pending row already carries.
+ * Rows match on an exact normalized company plus title; a row missing either is
+ * never matched. In a group with an employer-hosted row every aggregator row
+ * goes; an aggregator-only group keeps its first row. Employer rows are never
+ * dropped here, and input order is kept (#7259).
+ * @param {Array<{url:string, company:string, title?:string}>} pending
+ * @returns {Array<{url:string, company:string, title?:string}>}
+ */
+export function dropAggregatorDuplicates(pending) {
+  const keyOf = (e) => {
+    const company = normalizeCompany(e.company);
+    const title = normalizeTextKey(e.title, ' ');
+    return company && title ? `${company}\t${title}` : null;
+  };
+  const hasEmployer = new Set();
+  for (const e of pending) {
+    const key = keyOf(e);
+    if (key && !isAggregatorUrl(e.url)) hasEmployer.add(key);
+  }
+  const keptAggregator = new Set();
+  return pending.filter((e) => {
+    const key = keyOf(e);
+    if (!key || !isAggregatorUrl(e.url)) return true;
+    if (hasEmployer.has(key) || keptAggregator.has(key)) return false;
+    keptAggregator.add(key);
+    return true;
+  });
 }
 
 /**

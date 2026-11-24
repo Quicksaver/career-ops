@@ -14,8 +14,8 @@
  *       truncating it in place, leaves no temp file behind, keeps the file's
  *       permissions, and writes through a symlinked inbox.
  *   5. An empty `add` fails loudly (exit 1) rather than queuing a blank line.
- *   6. On the default path, a first `add` self-heals .gitignore (idempotent) so
- *      the personal queue isn't accidentally tracked.
+ *   6. Where the default queue lives, and the .gitignore self-heal, are in
+ *      tests/agent-inbox-data-root.test.mjs.
  *   7. Concurrent `add` calls all survive — the queue is appended to, never
  *      rewritten, so simultaneous writers cannot clobber each other.
  *   7c. When a writer in 7 dies, the line 7 prints names the cause. It did not:
@@ -674,7 +674,7 @@ console.log('12. --expect guards the target');
   // bare one after it and the command resolved.
   const trailing = runFail(inbox, ['resolve', '2', '--expect', 'Change.org', '--expect', '--result', 'oops']);
   check('a bare --expect after a valid one still exits 1', trailing.status === 1, `exit=${trailing.status}`);
-  check('error names the missing substring', /--expect needs a substring/.test(trailing.stderr), trailing.stderr.trim());
+  check('error names the missing substring', /--expect requires a value/.test(trailing.stderr), trailing.stderr.trim());
   const last = runFail(inbox, ['resolve', '2', '--result', 'oops', '--expect', 'Change.org', '--expect']);
   check('a bare --expect at the end of the line exits 1', last.status === 1, `exit=${last.status}`);
   const both = runFail(inbox, ['resolve', '2', '--expect', 'Change.org', '--expect', 'Dana-Farber', '--result', 'oops']);

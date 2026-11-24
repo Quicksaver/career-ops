@@ -38,7 +38,7 @@ unless the target item contains that substring (case-insensitive). Prefer
 `--expect` whenever you know what you mean to resolve — it turns "right command,
 wrong row" into an error instead of a plausible-looking wrong result line.
 
-`users/{USER}/data/agent-inbox.md` is user-layer (gitignored). Items look like:
+`users/{USER}/data/agent-inbox.md` is user-layer (gitignored). Set `CAREER_OPS_INBOX` to put the queue somewhere else. Items look like:
 
 ```markdown
 - [ ] 2026-06-21 09:30 — evaluate https://acme.com/jobs/42

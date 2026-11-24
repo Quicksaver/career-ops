@@ -41,6 +41,8 @@ These files contain your personal data, customizations, and work product. Update
 | `users/{USER}/data/career-profile.yml` | Your source-backed Master Career Profile; written only after explicit review of imported CV facts |
 | `users/{USER}/data/applications.db` | Derived query index over `applications.md` and `status-log.tsv` (SQLite, rebuilt by `node tracker.mjs sync`). Its `status_events` table, read by `tracker.mjs history`, is derived from the ledger: every sync rebuilds a row's events from `status-log.tsv` folded through `foldObservations()` in `funnel-velocity.mjs`, so `correction` and retraction lines apply. The one thing it adds is a status the ledger does not explain (a hand edit in `applications.md`, which writes no ledger row), recorded as observed at the sync that saw it and shown by `history` as `(no ledger row; observed at sync)`. Safe to delete: the next sync rebuilds every ledger-derived event exactly, and only those hand-edit observations are lost |
 | `users/{USER}/data/pipeline.md` | Your URL inbox |
+| `users/{USER}/data/role-change-radar/*.json` | Local Role Change Radar baselines, plain-text captures, provenance, timestamps, SHA-256 hashes, comparisons and per-comparison review state. Written only by manually triggered Radar actions through `role-change-radar.mjs`, using locks and atomic replacement. Never overwrites archived reports or the tracker. Gitignored by `data/*`; deleting it loses Radar history and future-check baselines. |
+| `users/{USER}/data/liveness-checks.tsv` | Last conclusive liveness verdict per posting URL: `url\tchecked_at\tresult` (`active` or `expired`; `checked_at` is the local observation time with its UTC offset, `YYYY-MM-DDTHH:MM:SS+HH:MM`), one row per URL, rewritten in place by `check-liveness.mjs` (uncertain results are not recorded, and an older observation never replaces a newer one). Read by `lib/posting-facts.mjs` for the Today page. Safe to delete: the next liveness check starts it again |
 | `users/{USER}/data/workflow-runs/`, `users/{USER}/data/verify-runs/`, legacy `users/{USER}/data/go-runs/` | Workflow diagnostics and resumable checkpoints; completed runs are compacted, timestamped runs expire after 10 days |
 | `users/{USER}/data/manual-actions.json` | Persisted exact-posting questions and user actions collected by the workflow coordinator |
 | `users/{USER}/data/manual-answers.json` | User answers saved by the interactive workflow, scoped to the exact posting URL and hold reason; includes pasted JD text when supplied |
@@ -232,7 +234,8 @@ Tracked in the repository, but `update-system.mjs` never writes, updates or dele
 
 | File | Purpose |
 |------|---------|
-| `employers/` | The employer registry: community-maintained pointers from an employer to its ATS board, CC BY 4.0 (see `employers/README.md`). A fresh clone has the copy of that day; the updater does not refresh it. |
+| `employers/` | The employer registry: community-maintained pointers from an employer to its ATS board, CC BY 4.0 (see `employers/README.md`). Each release refreshes `boards/`, `contributions/` (the manifests, which carry the attribution), `LICENSE` and `THIRD_PARTY_NOTICES.md`; `inbox/` stays in the repository. |
+| `employers-gap.mjs` | Lists the job boards in your own files (portals, pipeline, scan history; tracker and reports with `--include-applied`) that the registry does not have, after asking each one, through the scanner's provider, whether it lists jobs. Reads only; shares nothing |
 
 ## The Rule
 

@@ -10,7 +10,7 @@
  * is that place: an append-only queue the agent drains at the start of a
  * session.
  *
- *   data/agent-inbox.md
+ *   <data root>/data/agent-inbox.md   (CAREER_OPS_INBOX overrides)
  *     - [ ] <stamp> — <request>          (pending)
  *     - [x] <stamp> — <request> → result: <one line>   (resolved)
  *
@@ -44,6 +44,7 @@ const cliArgs = context.args;
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { writeFileAtomic } from './tracker-utils.mjs';
 import { localToday } from './lib/local-today.mjs';
+import { validateFlags } from './lib/cli-flags.mjs';
 
 const PATH = process.env.CAREER_OPS_INBOX ? resolvePath(context.projectRoot, process.env.CAREER_OPS_INBOX) : userPath(context, 'data/agent-inbox.md');
 
@@ -153,21 +154,26 @@ function parseItems() {
 }
 
 function opt(name, def = '') {
-  const i = cliArgs.indexOf('--' + name);
-  if (i < 0) return def;
-  const v = cliArgs[i + 1];
-  return v && !v.startsWith('--') ? v : def;
+  const [first] = optAll(name);
+  return first || def;
 }
 
-// Every value given for a repeatable flag, in argv order. An occurrence with no
-// value yields '' rather than being dropped, so the caller can reject it:
-// opt() reads only the first occurrence and would never see a later bare one.
+// Every value given for a repeatable flag, in argv order, in both spellings:
+// `--expect Acme` and `--expect=Acme`. Matching only the bare token dropped the
+// second: the guard was skipped and `--result=...` recorded nothing, at exit 0.
+// An occurrence with no value yields '' rather than being dropped, so the
+// caller can reject it: reading only the first occurrence would never see a
+// later bare one.
 function optAll(name) {
+  const flag = '--' + name;
   const values = [];
   cliArgs.forEach((arg, i) => {
-    if (arg !== '--' + name) return;
-    const v = cliArgs[i + 1];
-    values.push(v && !v.startsWith('--') ? v : '');
+    if (arg.startsWith(`${flag}=`)) {
+      values.push(arg.slice(flag.length + 1));
+    } else if (arg === flag) {
+      const v = cliArgs[i + 1];
+      values.push(v && !v.startsWith('--') ? v : '');
+    }
   });
   return values;
 }
@@ -249,6 +255,14 @@ function list() {
 async function resolve() {
   const n = Number(cliArgs[1]);
   if (!Number.isInteger(n) || n < 1) fail('resolve needs a 1-based item number (see `list`)');
+  // Before the lock and before anything is written: a flag resolve does not
+  // know (a mistyped --expect among them) was skipped, so the item was
+  // resolved with the guard the caller meant to set turned off. A flag with no
+  // value is refused too: a bare --result recorded nothing at exit 0.
+  validateFlags(cliArgs.slice(2), ['--expect', '--result', '--help', '-h'], USAGE, {
+    valueFlags: ['--expect', '--result'],
+    requireOperand: true,
+  });
   const outcome = await withPipelineLock(PATH, () => {
     // The item snapshot, line lookup, and rewrite are one transaction. An
     // add between the old read and write was acknowledged, then overwritten by

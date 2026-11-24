@@ -145,6 +145,7 @@ const METRIC_NOUNS = [
   // 20 passed the gate silently, which is the exact fabrication class this
   // script exists to catch.
   'staff', 'personnel', 'people', 'technicians', 'operators', 'contractors',
+  'consultants',
   'vendors', 'scientists', 'researchers', 'volunteers', 'students', 'patients',
   'crew',
   // People a candidate mentored or hired: "Mentored 12 interns" against a
@@ -164,6 +165,17 @@ const METRIC_NOUNS = [
   'graduates', 'alumni', 'teachers', 'instructors', 'educators', 'faculty',
   'schools', 'districts', 'campuses', 'classrooms', 'programs', 'programmes',
   'workshops', 'assessments', 'exams',
+  // Singular English forms, plus one plural that had no entry (#5406 review).
+  // A count of one is not a plural: a German "1 Standort" read as "1 locations"
+  // while an English source saying "1 location" produced no claim at all, so a
+  // truthful translation was reported as invented. The lazy match still binds
+  // the NEAREST noun, so "10 years as engineer" stays "10 years" and never
+  // becomes ten engineers. The four singulars are guarded below when they act
+  // as modifiers ("30 candidate interviews" counts interviews), while a direct
+  // "1 Standort" still binds. "offices" is here for "3 Büros" against "3
+  // offices": both fold to facilities. Each singular folds to its plural
+  // canonical in NOUN_SYNONYMS below.
+  'consultant', 'candidate', 'engineer', 'location', 'offices',
   // German (language.output: de / modes/de). Without these a German CV or cover
   // letter produced no count claim at all and only got the coverage warning,
   // so "45 Mitarbeiter" against a source saying 20 passed unchecked. Inflected
@@ -180,6 +192,17 @@ const METRIC_NOUNS = [
   'mitarbeitern', 'mitarbeiterinnen', 'teammitglieder', 'teammitgliedern',
   'nutzer', 'nutzern', 'entwickler', 'entwicklern', 'entwicklerinnen',
   'ingenieure', 'ingenieuren', 'ingenieurinnen',
+  // Remaining German count nouns (#5125). Each form is listed explicitly and
+  // folded to the English canonical noun in NOUN_SYNONYMS, the same rule the
+  // block above follows. "Berater" was the gap review called out: a German CV
+  // wrote "45 Berater" beside "10 Schulen" and only the schools count was read.
+  // "Benutzer" is the other common spelling of "Nutzer"; both fold to users.
+  'berater', 'beratern', 'beraterinnen',
+  'bewerber', 'bewerbern', 'bewerbungen', 'kandidaten',
+  'studenten', 'schüler', 'schülern', 'azubis', 'schulen',
+  'standort', 'niederlassungen',
+  'benutzer', 'benutzern', 'leute', 'leuten', 'personen',
+  'ingenieur', 'büros', 'bürogebäude',
   // French (language.output: fr / modes/fr), on the same terms as German above:
   // plural forms listed explicitly and folded to the English canonical noun in
   // NOUN_SYNONYMS, so "Encadré 45 collaborateurs" checks against a cv.md that
@@ -197,6 +220,10 @@ const METRIC_NOUNS = [
   'projets', 'chantiers', 'usines', 'bâtiments', 'agences', 'magasins',
   'outils', 'serveurs', 'rapports', 'déploiements', 'formations',
   'clientes', 'recrutements', 'interventions',
+  // Remaining French count nouns (#5125). "candidates" already reads because
+  // French spells it like English; "membres" stays out deliberately, since
+  // "membres du jury" or "membres actifs" is not a headcount.
+  'candidats', 'écoles', 'bureaux',
 ];
 // How many words may sit between a number and the noun it counts. The same
 // regex parses the generated CV and the sources, so the window is symmetric by
@@ -247,6 +274,57 @@ const SPELLED_MAGNITUDES = new Map([
 ]);
 const SPELLED_MAGNITUDE_ALT = [...SPELLED_MAGNITUDES.keys()].join('|');
 
+// These four singulars were added for counts of one, but they also appear as
+// attributive modifiers: "30 candidate interviews" counts the interviews, not
+// thirty candidates. Let a singular bind only when no other listed count noun
+// follows it as the head of the same noun phrase. Direct counts before a
+// preposition, conjunction, relative pronoun, or common CV verb still bind:
+// "1 engineer to support teams" stays one engineer, not one team. A second
+// number is a hard barrier for the window, so "1 Standort mit 1 Ingenieur"
+// still reads as two counts. Every other noun keeps the lazy nearest-noun rule.
+const ATTRIBUTIVE_SINGULAR_NOUNS = new Set(['consultant', 'candidate', 'engineer', 'location']);
+const BASE_COUNT_NOUNS = METRIC_NOUNS.filter((noun) => !ATTRIBUTIVE_SINGULAR_NOUNS.has(noun));
+const ATTRIBUTIVE_BREAK_WORDS = [
+  // Prepositions, conjunctions, and relative pronouns.
+  'to', 'for', 'with', 'at', 'in', 'on', 'by', 'from', 'of', 'as', 'into',
+  'onto', 'over', 'under', 'across', 'within', 'without', 'about', 'after',
+  'before', 'during', 'per', 'via', 'through', 'between', 'among', 'against',
+  'around', 'behind', 'beyond', 'despite', 'except', 'inside', 'outside',
+  'toward', 'towards', 'upon', 'versus', 'than', 'near', 'and', 'or', 'but',
+  'nor', 'so', 'yet', 'while', 'when', 'where', 'which', 'who', 'whom',
+  'whose', 'that', 'if', 'because', 'since', 'although', 'though', 'whether',
+  // Common CV verbs. A singular count followed by one of these is the head of
+  // the phrase, not a modifier before the later noun.
+  'lead', 'leads', 'leading', 'led', 'manage', 'manages', 'managed', 'managing',
+  'support', 'supports', 'supported', 'supporting', 'build', 'builds', 'built',
+  'building', 'run', 'runs', 'ran', 'running', 'own', 'owns', 'owned', 'owning',
+  'drive', 'drives', 'drove', 'driven', 'driving', 'deliver', 'delivers',
+  'delivered', 'delivering', 'develop', 'develops', 'developed', 'developing',
+  'design', 'designs', 'designed', 'designing', 'create', 'creates', 'created',
+  'creating', 'improve', 'improves', 'improved', 'improving', 'reduce',
+  'reduces', 'reduced', 'reducing', 'increase', 'increases', 'increased',
+  'increasing', 'grow', 'grows', 'grew', 'grown', 'growing', 'mentor',
+  'mentors', 'mentored', 'mentoring', 'train', 'trains', 'trained', 'training',
+  'coach', 'coaches', 'coached', 'coaching', 'partner', 'partners', 'partnered',
+  'partnering', 'collaborate', 'collaborates', 'collaborated', 'collaborating',
+  'serve', 'serves', 'served', 'serving', 'hire', 'hired', 'hiring', 'work',
+  'works', 'worked', 'working', 'contribute', 'contributes', 'contributed',
+  'contributing', 'base', 'based', 'basing', 'embed', 'embeds', 'embedded',
+  'embedding', 'join', 'joins', 'joined', 'joining', 'use', 'uses', 'used',
+  'using', 'have', 'has', 'had', 'having', 'make', 'makes', 'made', 'making',
+  'help', 'helps', 'helped', 'helping', 'enable', 'enables', 'enabled',
+  'enabling', 'allow', 'allows', 'allowed', 'allowing', 'require', 'requires',
+  'required', 'requiring', 'keep', 'keeps', 'kept', 'keeping',
+];
+const ATTRIBUTIVE_BREAK_ALT = ATTRIBUTIVE_BREAK_WORDS.join('|');
+const ATTRIBUTIVE_MODIFIER = String.raw`(?!\b(?:${ATTRIBUTIVE_BREAK_ALT})\b)\p{L}[\p{L}\p{M}-]*`;
+const COUNT_NOUN_ALT = [
+  ...[...ATTRIBUTIVE_SINGULAR_NOUNS].map((noun) =>
+    String.raw`${noun}(?!\s+(?:${ATTRIBUTIVE_MODIFIER}\s+){0,${MODIFIER_WINDOW - 1}}(?:${METRIC_NOUNS.join('|')})(?![\p{L}\p{N}]))`
+  ),
+  ...BASE_COUNT_NOUNS,
+].join('|');
+
 const COUNT_CLAIM_RE = new RegExp(
   // LAZY (`{0,N}?`), so the number binds to the NEAREST noun in the window
   // rather than the farthest. Greedy, the quantifier consumed as many filler
@@ -282,7 +360,10 @@ const COUNT_CLAIM_RE = new RegExp(
   // window. `(?:[\p{L}\p{N}]+-)*` lets the counted noun close a hyphenated
   // compound ("318 TryHackMe-Rooms"): German writes the modifier and the noun
   // as one hyphenated token, which a whitespace-only window never saw.
-  String.raw`(?<![A-Za-z]-)\b(?!1C\b)(\d[\d,.]*(?:[kKmMbB]\b|\s+(?:${SPELLED_MAGNITUDE_ALT})\b)?)\s*\+?\s*(?:\p{L}[\p{L}\p{M}-]*\s+){0,${MODIFIER_WINDOW}}?(?:[\p{L}\p{N}]+-)*(${METRIC_NOUNS.join('|')})(?![\p{L}\p{N}])`,
+  // COUNT_NOUN_ALT guards the English singulars added for counts of one so an
+  // attributive use ("30 candidate interviews") leaves the number to the head
+  // noun instead of inventing a candidate count.
+  String.raw`(?<![A-Za-z]-)\b(?!1C\b)(\d[\d,.]*(?:[kKmMbB]\b|\s+(?:${SPELLED_MAGNITUDE_ALT})\b)?)\s*\+?\s*(?:\p{L}[\p{L}\p{M}-]*\s+){0,${MODIFIER_WINDOW}}?(?:[\p{L}\p{N}]+-)*(${COUNT_NOUN_ALT})(?![\p{L}\p{N}])`,
   'giu'
 );
 const NOUN_SYNONYMS = new Map([
@@ -296,6 +377,14 @@ const NOUN_SYNONYMS = new Map([
   // restating a source's "20 staff" is a paraphrase, not a fabrication.
   ['personnel', 'staff'],
   ['labs', 'laboratories'],
+  // Singular English forms fold to the plural canonical the German and French
+  // blocks already use, so "1 Standort" and "1 location" compare equal (a count
+  // of one is not a plural), and "3 Büros" matches "3 offices" (#5406 review).
+  ['consultant', 'consultants'],
+  ['candidate', 'candidates'],
+  ['engineer', 'engineers'],
+  ['location', 'locations'],
+  ['offices', 'facilities'],
   // German forms fold to the English canonical noun (see METRIC_NOUNS).
   ['mitarbeiter', 'employees'],
   ['mitarbeitern', 'employees'],
@@ -313,6 +402,28 @@ const NOUN_SYNONYMS = new Map([
   ['ingenieure', 'engineers'],
   ['ingenieuren', 'engineers'],
   ['ingenieurinnen', 'engineers'],
+  ['berater', 'consultants'],
+  ['beratern', 'consultants'],
+  ['beraterinnen', 'consultants'],
+  ['bewerber', 'candidates'],
+  ['bewerbern', 'candidates'],
+  ['bewerbungen', 'applications'],
+  ['kandidaten', 'candidates'],
+  ['studenten', 'students'],
+  ['schüler', 'students'],
+  ['schülern', 'students'],
+  ['azubis', 'trainees'],
+  ['schulen', 'schools'],
+  ['standort', 'locations'],
+  ['niederlassungen', 'locations'],
+  ['benutzer', 'users'],
+  ['benutzern', 'users'],
+  ['leute', 'people'],
+  ['leuten', 'people'],
+  ['personen', 'people'],
+  ['ingenieur', 'engineers'],
+  ['büros', 'facilities'],
+  ['bürogebäude', 'buildings'],
   ['projekte', 'projects'],
   ['projekten', 'projects'],
   ['standorte', 'locations'],
@@ -374,6 +485,9 @@ const NOUN_SYNONYMS = new Map([
   ['formations', 'courses'],
   ['clientes', 'clients'],
   ['recrutements', 'hires'],
+  ['candidats', 'candidates'],
+  ['écoles', 'schools'],
+  ['bureaux', 'facilities'],
 ]);
 // One claim, however it is spelled (#5348). Each pattern below is a spelling of
 // a percentage, an amount of money or a multiplier, and canonicalMetric() folds
@@ -386,8 +500,13 @@ const NOUN_SYNONYMS = new Map([
 // Currency codes are matched case-sensitively: lowercase "eur" or "gbp" in prose
 // is not a currency. A bare "pound(s)" is left out because it is also a weight.
 const MAGNITUDE_ALT = String.raw`(?:\s?(?:thousand|million|billion)\b|\s?[kKmMbB](?![\p{L}]))`;
+const PERCENT_CLAIM_PATTERNS = [
+  /\b\d+(?:[.,]\d+)?[^\S\n]?(?:%|(?:percent|per\s?cent|pct)\b)/gi,
+  /(?<![\p{L}\p{N}])%\d+(?:[.,]\d+)?(?![\p{L}\p{N}])/gu,
+];
+
 const SIMPLE_CLAIM_PATTERNS = [
-  /\b\d+(?:\.\d+)?[^\S\n]?(?:%|(?:percent|per\s?cent|pct)\b)/gi,
+  ...PERCENT_CLAIM_PATTERNS,
   new RegExp(String.raw`(?<![\w$€£])[$€£]\s?\d[\d,.]*(?:\s?(?:thousand|million|billion)\b|\s?[kKmMbB])?`, 'gu'),
   new RegExp(String.raw`(?:\b(?:USD|EUR|GBP)|\bUS\$)\s?\d[\d,.]*${MAGNITUDE_ALT}?`, 'gu'),
   new RegExp(String.raw`\b\d[\d,.]*${MAGNITUDE_ALT}?\s?-?\s?(?:(?:USD|EUR|GBP)\b|(?:[Dd]ollars?|[Ee]uros?)\b)`, 'gu'),
@@ -412,9 +531,9 @@ const CURRENCY_SYMBOLS = new Map([
  * @returns {string}
  */
 function canonicalMetric(raw) {
+  const percent = /^(?:%(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*(?:%|percent|per\s?cent|pct))$/i.exec(raw.trim());
+  if (percent) return (percent[1] ?? percent[2]).replace(',', '.') + '%';
   const claim = normalizeClaim(raw);
-  const percent = /^(\d+(?:\.\d+)?) ?(?:%|percent|per ?cent|pct)$/.exec(claim);
-  if (percent) return `${percent[1]}%`;
   const multiplier = /^(\d+(?:\.\d+)?) ?(?:x|-? ?fold)$/.exec(claim);
   if (multiplier) return `${multiplier[1]}x`;
   const amount = String.raw`(\d[\d.]*)(?: ?(thousand|million|billion|[kmb]))?`;
@@ -1335,8 +1454,34 @@ function removeBalancedElements(raw, openRe) {
  * accounting for potential nested tags of the same type (e.g. nowrap spans inside
  * a span field like job-company, or nested divs inside edu-title).
  */
+// The class carries the meaning; the element does not. A template is free to
+// render `job-company` or `edu-org` as a <td>, an <li>, a <p> or a <strong>, and
+// to quote the class with either character. One list, used by every reader and
+// every strip in this file: a second list is how the field was read in one layout
+// and missed in another, and how a nested `edu-org` ended up read twice.
+const FIELD_ELEMENT_TAGS = 'span|div|td|th|li|p|dd|dt|section|strong|em';
+
+/**
+ * A regex matching an opening tag that carries `cls` in its class attribute.
+ * Group 1 is the tag name, which `removeBalancedElements` and
+ * `findBalancedElements` both rely on.
+ *
+ * @param {string} cls - Class name, matched on word boundaries so a class that
+ *   merely contains it (`not-job-companyish`) is not a match.
+ * @returns {RegExp}
+ */
+function classedElementRe(cls) {
+  return new RegExp(
+    // `class=` has to be the attribute itself, so a whitespace or a quote precedes
+    // it. `\bclass=` also matched `data-class=`, which turned any element carrying
+    // that data attribute into a structured field.
+    String.raw`<(${FIELD_ELEMENT_TAGS})\b[^>]*[\s"']class=(?:"[^"]*(?<![\w-])${cls}(?![\w-])[^"]*"|'[^']*(?<![\w-])${cls}(?![\w-])[^']*')[^>]*>`,
+    'gi',
+  );
+}
+
 function extractStructuredFieldInners(raw, cls) {
-  const openRe = new RegExp(String.raw`<(span|div)\b[^>]*\bclass="[^"]*(?<![\w-])${cls}(?![\w-])[^"]*"[^>]*>`, 'gi');
+  const openRe = classedElementRe(cls);
   return findBalancedElements(raw, openRe).map(el => raw.slice(el.contentStart, el.contentEnd));
 }
 
@@ -1360,10 +1505,7 @@ export function structuredFieldClaims(text) {
       // edu-title encloses its edu-org span or div, which is read on its own.
       // Remove the full nested classed element (accounting for inner formatting
       // spans); unclassed formatting spans like nowrap wrappers must be kept.
-      const withoutEduOrg = removeBalancedElements(
-        inner,
-        /<(span|div)\b[^>]*\bclass="[^"]*(?<![\w-])edu-org(?![\w-])[^"]*"[^>]*>/gi,
-      );
+      const withoutEduOrg = removeBalancedElements(inner, classedElementRe('edu-org'));
       const cleaned = removeBalancedElements(
         withoutEduOrg,
         /<span\b[^>]*\bclass="[^"]*"[^>]*>/gi,
@@ -1434,10 +1576,7 @@ export function skillToolClaims(text) {
   const seen = new Set();
   for (const cls of ['skill-item', 'competency-tag']) {
     for (const inner of extractStructuredFieldInners(raw, cls)) {
-      const withoutCategory = removeBalancedElements(
-        inner,
-        /<(span|div)\b[^>]*\bclass="[^"]*(?<![\w-])skill-category(?![\w-])[^"]*"[^>]*>/gi,
-      );
+      const withoutCategory = removeBalancedElements(inner, classedElementRe('skill-category'));
       pushSkillTokens(claims, seen, stripMarkup(withoutCategory));
     }
   }
@@ -1570,7 +1709,7 @@ export function structuredAssociationClaims(targetText, sourceTexts, config = {}
   }
   for (const item of blocks('edu-item')) {
     const rawTitle = extractStructuredFieldInners(item, 'edu-title')[0] || '';
-    const title = norm(removeBalancedElements(rawTitle, /<(span|div)\b[^>]*\bclass="[^"]*(?<![\w-])edu-org(?![\w-])[^"]*"[^>]*>/gi));
+    const title = norm(removeBalancedElements(rawTitle, classedElementRe('edu-org')));
     const org = field(item, 'edu-org'), year = field(item, 'edu-year');
     if (!title || !org) { gaps.add('Education associations require both a degree and a school.'); continue; }
     const pairs = education.filter(entry => norm(entry.org) === norm(org) && norm(entry.title) === title);
@@ -1598,7 +1737,7 @@ export function structuredAssociationClaims(targetText, sourceTexts, config = {}
   }));
   // Cover prose has no job classes. Reuse the employer reader rather than
   // treating the addressed company or a future plan as employment evidence.
-  const prose = removeBalancedElements(String(targetText), /<(span|div)\b[^>]*\bclass="[^"]*(?<![\w-])job(?![\w-])[^"]*"[^>]*>/gi);
+  const prose = removeBalancedElements(String(targetText), classedElementRe('job'));
   for (const statement of sourceStatementsOf(prose)) {
     if (!metricClaims(statement).size || FORWARD_MARKER_RE.test(statement)) continue;
     const employers = factClaims(statement).filter(claim => claim.kind === 'employer');
@@ -1607,8 +1746,23 @@ export function structuredAssociationClaims(targetText, sourceTexts, config = {}
     const exact = experience.filter(entry => norm(entry.company) === employer);
     const matches = exact.length ? exact
       : experience.filter(entry => sourceContainsFact(norm(entry.company), employer));
+    if (!matches.length) {
+      // No job block to compare against (#7577): the employer is named in the
+      // source only outside a job entry (a bold line, a #### heading, an
+      // unrecognized section, or a client or tool in a bullet). Say the
+      // comparison did not run rather than pass quietly, but only when it would
+      // have run: a metric the source carries that is not waived, and an
+      // employer the source does name.
+      const comparable = [...metricClaims(statement)].some(metric => !explicitlyAllowed.has(metric)
+        && allSourceLines.some(entry => entry.metrics.has(metric)));
+      if (comparable && !allowedFacts.has(employer)
+        && sourceTexts.some(text => sourceContainsFact(norm(text), employer))) {
+        gaps.add('Metric context could not be checked for an employer with no job entry in the source (job entries are read from ### headings under an Experience section).');
+      }
+      continue;
+    }
     // A shortened name must identify one employer, not pool different jobs.
-    if (!matches.length || new Set(matches.map(entry => norm(entry.company))).size !== 1) continue;
+    if (new Set(matches.map(entry => norm(entry.company))).size !== 1) continue;
     metricContexts.push({ lines: [statement], sources: matches.flatMap(entry => sourceStatementsOf(entry.body)) });
   }
   for (const context of metricContexts) {
@@ -3098,8 +3252,12 @@ function countShapedSpans(text) {
  *
  * TWO KNOWN BLIND SPOTS, stated rather than implied:
  *
- *   - Coincidental coverage. One listed noun ("3 sites") silences the warning
- *     for a document whose other counts use nouns outside the lexicon.
+ *   - Partial lexicon. A listed noun ("3 sites") silences the warning for a
+ *     document whose other counts use nouns outside the lexicon. The German and
+ *     French blocks cover the core forms, not every noun; "45 Spezialisten
+ *     beside 10 Schulen" stays under-reported until that noun joins
+ *     METRIC_NOUNS. The pinned tests assert this so a later widening is
+ *     deliberate.
  *   - CJK. This detector needs whitespace: it locates a count by a digit run
  *     that is not preceded by a letter and is followed by one. Japanese and
  *     Chinese put digits flush against the surrounding text ("3拠点で45名"),
@@ -3135,7 +3293,8 @@ export function diagnoseCoverage(targetText) {
     reason: 'no-count-claims-recognized',
     message:
       `${spans.length} count-like claims are present but none matched the metric extractor, whose noun ` +
-      'list covers English, German and French only — so no count in this document was checked against your sources. ' +
+      'list is not exhaustive: it reads English, German and French counts, but not every count noun in ' +
+      'those languages, so no count in this document was checked against your sources. ' +
       'Percentages, currency and multipliers were still checked. Verify the counts by hand, or add ' +
       'them to allow_metrics in config/cv-facts.json once confirmed.',
     spans,
@@ -3677,8 +3836,13 @@ function sourceFileLines(path, text) {
  * past metric into the plan set.
  */
 const PAST_TIME_CLAIM_RE = /\b(?:have|has|had|spent|worked)\s+(?:[\p{L}\p{M}-]+\s+){0,4}\d[\d,.]*\s*\+?\s*(?:months|years|weeks|days)\b/giu;
-const PAST_PERCENT_CLAIM_RE = /\b(?:grew|increased|improved|reduced|generated|achieved|delivered|managed|led)\b[^.!?;\n]{0,80}?\d[\d,.]*\s*(?:%|(?:percent|per\s?cent|pct)\b)/giu;
+const PAST_ACHIEVEMENT_VERB_RE = /\b(?:grew|increased|improved|reduced|generated|achieved|delivered|managed|led)\b/i;
+// The relative clause can omit "that", as in "the 20% I achieved".
+const RELATIVE_SUBJECT_RE = /^\s+(?:(?:that|which)\s+)?(?:I|we|you|they|he|she|it|(?:my|our|the)\s+team)\s+(?:(?:had|have|previously|already)\s+)*$/i;
 const DURATION_INTRO_RE = /^\s*(?:over|in|within|for|during|across)\b[^,;:]*?\d[\d,.]*\s*\+?\s*(?:days|weeks|months|years)\s*$/i;
+// Recognize Turkish plans only where the number directly modifies the
+// planned change. A later intention cannot license an earlier percentage.
+const TR_PERCENT_PLAN_RE = /(?<![\p{L}\p{N}])(%\d+(?:[.,]\d+)?)\s+(?:oran[ıI]nda\s+)?\p{L}+(?:(?:may[ıI]|mey[iİ])\s+(?:planl[ıI]yorum|hedefl[iİ]yorum|amaçl[ıI]yorum)|(?:acağ[ıI]m|eceğ[iİ]m))(?![\p{L}\p{M}])/giu;
 
 /**
  * Sentence bounds at `.`, `!`, `?`, or newline — used so a duration intro
@@ -3704,10 +3868,32 @@ function pastClaimMetrics(span) {
     for (const claim of metricClaims(text, { keepPlanHorizons: true })) claims.add(claim);
   };
   for (const match of span.matchAll(PAST_TIME_CLAIM_RE)) add(match[0]);
-  for (const match of span.matchAll(PAST_PERCENT_CLAIM_RE)) {
-    const markerAfterVerb = match[0].search(FORWARD_MARKER_RE) > 0;
-    if (markerAfterVerb) continue;
-    add(match[0]);
+  for (const [index, segment] of span.split(FORWARD_MARKER_RE).entries()) {
+    // After "will", "have increased" is future perfect. Skip that verb only:
+    // a later independent achievement in the same clause still needs evidence.
+    const firstVerb = PAST_ACHIEVEMENT_VERB_RE.exec(segment);
+    const futurePerfect = index > 0 && firstVerb
+      && /^\s*(?:already\s+)?have\s+(?:already\s+)?$/i.test(segment.slice(0, firstVerb.index));
+    const part = futurePerfect ? segment.slice(firstVerb.index + firstVerb[0].length) : segment;
+    for (let i = 0; i < part.length;) {
+      const { end } = clauseBounds(part, i, { extendCoordinated: false });
+      const clause = part.slice(i, end);
+      const verb = clause.search(PAST_ACHIEVEMENT_VERB_RE);
+      if (verb >= 0) {
+        const beforeVerb = clause.slice(0, verb);
+        for (const pattern of PERCENT_CLAIM_PATTERNS) {
+          for (const match of beforeVerb.matchAll(pattern)) {
+            if (RELATIVE_SUBJECT_RE.test(beforeVerb.slice(match.index + match[0].length))) {
+              claims.add(canonicalMetric(match[0]));
+            }
+          }
+        }
+        for (const claim of metricClaims(clause.slice(verb))) {
+          if (claim.endsWith('%')) claims.add(claim);
+        }
+      }
+      i = end + 1;
+    }
   }
   return claims;
 }
@@ -3747,7 +3933,14 @@ function plannedClaims(targetText, planTexts) {
     const sentence = clean.slice(s0, s1);
     const planAssertion = isPlanAssertion(span, sentence);
     const pastInSpan = pastClaimMetrics(span);
-    for (const claim of metricClaims(clean.slice(i, end))) {
+    const remaining = clean.slice(i, end);
+    // In Turkish, uppercase I pairs with dotless ı and uppercase İ with i.
+    // Remove only the recognized plan metric before checking the rest of the span.
+    const nonTurkishPlans = remaining.replace(TR_PERCENT_PLAN_RE, (match, percent) => {
+      forward.add(canonicalMetric(percent));
+      return match.slice(percent.length);
+    });
+    for (const claim of metricClaims(nonTurkishPlans)) {
       if (pastInSpan.has(claim)) past.add(claim);
       else if (planAssertion) forward.add(claim);
       else past.add(claim);
@@ -3804,14 +3997,16 @@ function parseCliArgs(args) {
   let targetArg = '';
   let configPath = DEFAULT_CONFIG;
   let json = false;
+  let help = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--source' || arg === '--config') {
-      if (!args[i + 1]) throw new Error(`${arg} requires a path`);
+      const next = args[i + 1];
+      if (!next || next.startsWith('-')) throw new Error(`${arg} requires a path`);
       if (arg === '--source') sourcePaths.push(args[++i]);
       else configPath = args[++i];
     } else if (arg === '--help' || arg === '-h') {
-      return { help: true };
+      help = true;
     } else if (arg === '--json') {
       json = true;
     } else if (arg.startsWith('--')) {
@@ -3822,7 +4017,7 @@ function parseCliArgs(args) {
       throw new Error(`unexpected extra positional argument: ${arg}`);
     }
   }
-  return { targetArg, sourcePaths, configPath, json, help: false };
+  return { targetArg, sourcePaths, configPath, json, help };
 }
 
 /** Return the command-line usage text. */
@@ -4575,6 +4770,10 @@ export function runCli(args = process.argv.slice(2)) {
   const missingSources = parsed.sourcePaths.filter((p) => !existsSync(resolveInputPath(p)));
   if (missingSources.length > 0) {
     console.error(`ERROR: --source file not found: ${missingSources.join(', ')}`);
+    return 1;
+  }
+  if (parsed.sourcePaths.length === 0 && !existsSync(DEFAULT_SOURCES[0])) {
+    console.error(`ERROR: cv.md not found: ${DEFAULT_SOURCES[0]}`);
     return 1;
   }
   try {

@@ -30,7 +30,7 @@ const ctx = (fetchJson, extra = {}) => ({ fetchJson, fetchResponse: async (url, 
 const boards = {
   pcsx: entry.api, devitjobs: 'https://devitjobs.uk/api/jobsLight',
   swissdevjobs: 'https://swissdevjobs.ch/api/jobsLight', germantechjobs: 'https://germantechjobs.de/api/jobsLight',
-  itjobs: 'https://www.itjobs.pt/emprego', sapo: 'https://emprego.sapo.pt/offers',
+  sapo: 'https://emprego.sapo.pt/offers',
   portalemprego: 'https://www.portalemprego.pt/anuncios/', dice: 'https://www.dice.com/jobs',
   euremotejobs: 'https://euremotejobs.com/job-category/engineering/', remoteineurope: 'https://remoteineurope.com/',
   englishjobs: 'https://englishjobsearch.ch/', jobsinenglish: 'https://jobsinenglish.dk/',
@@ -318,8 +318,8 @@ test('PCSX carries the session cookies its host sets on later pages and details'
 
 test('source URLs reject HTTP, credentials, custom ports and deceptive vendor hosts before transport', async () => {
   const unexpected = ctx(async()=>assert.fail('transport must not run'));
-  for(const api of ['http://itjobs.pt/emprego','https://user:pass@itjobs.pt/emprego','https://itjobs.pt:8080/emprego','https://itjobs.pt.evil.example/emprego']) {
-    await assert.rejects(fetchCustomProvider('itjobs',{name:'Fixture',api},unexpected),/HTTPS|untrusted/);
+  for(const api of ['http://emprego.sapo.pt/offers','https://user:pass@emprego.sapo.pt/offers','https://emprego.sapo.pt:8080/offers','https://emprego.sapo.pt.evil.example/offers']) {
+    await assert.rejects(fetchCustomProvider('sapo',{name:'Fixture',api},unexpected),/HTTPS|untrusted/);
   }
   await assert.rejects(fetchCustomProvider('pcsx',{...entry,api:'https://127.0.0.1/api/pcsx/search?domain=fixture'}, {...makeHttpCtx(),sleep:async()=>{}}), /private|blocked|refus/i);
 });
@@ -449,31 +449,10 @@ test('DevITJobs partner listings keep the board page, not the syndicating board 
 });
 
 test('first-page parser failures differ from explicit no-results responses', async () => {
-  for (const id of ['itjobs', 'portalemprego', 'remoteineurope', 'jobsinenglish', 'makeitingermany']) {
+  for (const id of ['portalemprego', 'remoteineurope', 'jobsinenglish', 'makeitingermany']) {
     const entry = { name: 'Fixture', api: boards[id] };
     await assert.rejects(fetchCustomProvider(id, entry, { fetchText: async () => '<html>Unexpected redesign</html>' }), /Unsupported listing page/);
     assert.deepEqual(await fetchCustomProvider(id, entry, { fetchText: async () => '<html>No jobs found</html>' }), []);
-  }
-});
-
-test('itjobs reads "0 ofertas" as an empty list, not a redesign', async () => {
-  const html = '<html><title>Emprego remoto e híbrido em IT: 0 ofertas em Portugal - ITJobs</title></html>';
-  assert.deepEqual(await fetchCustomProvider('itjobs', { name: 'Fixture', api: 'https://www.itjobs.pt/emprego/remote' }, { fetchText: async () => html }), []);
-});
-
-test('itjobs refuses the query filters its robots.txt disallows, before any request', async () => {
-  const unexpected = { fetchText: async () => { throw new Error('requested a disallowed URL'); } };
-  for (const entry of [
-    { name: 'Fixture', api: 'https://www.itjobs.pt/emprego', api_params: { date: '24h', work_model: [1, 2] } },
-    { name: 'Fixture', api: 'https://www.itjobs.pt/emprego?location=porto' },
-  ]) {
-    await assert.rejects(fetchCustomProvider('itjobs', entry, unexpected), /robots\.txt disallows/);
-  }
-  // List paths and pagination stay allowed.
-  const listed = '<div class="list-title"><a href="/oferta/1/dev">Backend Developer</a></div><div class="list-name"><a>Fixture</a></div><div class="list-details">Porto</div>';
-  for (const api of ['https://www.itjobs.pt/emprego/remote', 'https://www.itjobs.pt/local/porto']) {
-    const jobs = await fetchCustomProvider('itjobs', { name: 'Fixture', api }, { fetchText: async () => listed });
-    assert.equal(jobs.length, 1);
   }
 });
 

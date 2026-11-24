@@ -1,5 +1,6 @@
 import { parseMachineSummarySignals } from "@/lib/machine-summary.mjs";
 import Link from "next/link";
+import { companySlug } from "@/lib/company-slug.mjs";
 import { ArrowLeft, FileText, ExternalLink, ChevronDown } from "lucide-react";
 import type { Application } from "@/lib/career-ops";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,7 @@ import { cvDiskState } from "@/lib/cv-disk-state.mjs";
 import { reportSpendActions } from "@/lib/report-spend-actions.mjs";
 import { applyPostingUrl } from "@/lib/posting-url.mjs";
 import { PageFrame } from "@/components/page-frame";
+import { RoleChangeRadar } from "@/components/role-change-radar";
 
 // Progressive disclosure of the report. Current oferta.md writes letter F as
 // Interview Plan (STAR+R), not a verdict — never promote by letter (#3416).
@@ -146,6 +148,15 @@ export function ReportView({
   const spend = reportSpendActions(Boolean(report));
   const company = app ? companyPresentation(app) : null;
   const companyName = company?.label ?? app?.company ?? meta?.title ?? id;
+  // Shown with or without an evaluation report: preparation files can exist for either.
+  const prepLink = (
+    <Link
+      href={`/output?company=${encodeURIComponent(companySlug(companyName)?.slug ?? "")}`}
+      className="inline-flex items-center justify-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:border-brand/40 hover:text-brand-text max-sm:min-h-[44px]"
+    >
+      Preparation files
+    </Link>
+  );
 
   return (
     <PageFrame className="max-w-3xl xl:max-w-5xl 2xl:max-w-[1600px]">
@@ -186,6 +197,7 @@ export function ReportView({
           </div>
         )}
       </header>
+      {app && <RoleChangeRadar id={id} company={app.company} title={app.role} />}
 
       {signals && <DecisionSignalsTable signals={signals} />}
       {report ? (
@@ -198,7 +210,7 @@ export function ReportView({
             const mainSections = rest.filter((s) => !isMachine(s.heading));
             const reason = verdictReason({
               report,
-              intro,
+              intro: sections.length ? intro : "",
               verdictContent: verdictSection?.content,
             });
             const verdictClass = recommended
@@ -238,6 +250,7 @@ export function ReportView({
                     Apply checklist
                   </Link>
                 )}
+                {prepLink}
                 <MarkPdfReadyButton reportNum={reportNum} ready={disk.exists} trackerMarked={trackerMarkedPdf} />
                 <ApplyButton n={id} url={applyUrl} company={companyName} pdfReady={applyPdfReady} quiet={quietApply} />
                 {coverReady && (
@@ -346,8 +359,9 @@ export function ReportView({
         <div className="mt-8 rounded-2xl border border-dashed border-border bg-surface/30 p-5 text-sm text-muted">
           <p>{spend.explanation}</p>
           {app && (
-            <div className="mt-4 print:hidden">
+            <div className="mt-4 flex flex-wrap items-center gap-2.5 print:hidden">
               <StatusSelect n={id} current={app.status} />
+              {prepLink}
             </div>
           )}
           {app && canDelete && (

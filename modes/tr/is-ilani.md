@@ -182,7 +182,7 @@ Değerlendirmenin tamamını `users/{USER}/reports/{###}-{company-slug}-{YYYY-MM
 (ATS optimizasyonu için ilandan 15-20 anahtar kelime)
 
 ## Keyword Coverage
-(`keyword-match.mjs` (1b) tarafından üretilir — kapsam %, present, thin, missing)
+(`keyword-match.mjs` (1b) tarafından üretilir — kapsam %, present, missing)
 
 ## Job Description (archived verbatim)
 (the posting's full text, pasted verbatim — see requirement below)
