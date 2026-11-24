@@ -1798,9 +1798,10 @@ The workflow queue, liveness helper, synchronizer, authenticated scanner, and re
 
 The fork adds a repo-local skill for upstream merge maintenance.
 
-File:
+Files:
 
 - `.agents/skills/update-main/SKILL.md`
+- `.claude/skills/update-main/SKILL.md`: a symlink to the canonical `.agents` skill, the same way `.claude/skills/career-ops/SKILL.md` points to `.agents/skills/career-ops/SKILL.md`, so Claude Code lists `update-main` as a project skill.
 
 What this customizes:
 
@@ -1809,6 +1810,7 @@ What this customizes:
 Future merge notes:
 
 - Keep this if local agents use `$career-ops:update-main`.
+- Edit only the `.agents` file; the `.claude` entry is a symlink and should stay one.
 - If upstream adds an equivalent workflow, either remove this file or reduce it to fork-specific conflict policy.
 
 ## Personal Data And Generated Artifact Hygiene
