@@ -8,6 +8,7 @@ import {
   renameSync,
   rmSync,
 } from 'fs';
+import { renameSyncWithRetry } from './lib/rename-retry.mjs';
 import { basename, dirname, extname, join } from 'path';
 import { spawnSync } from 'child_process';
 import {
@@ -401,7 +402,7 @@ async function main() {
         copyFileSync(sourceReport, backupReport);
         mkdirSync(reportArchiveRoot, { recursive: true });
         const archivedReport = join(reportArchiveRoot, duplicateFile);
-        renameSync(sourceReport, archivedReport);
+        renameSyncWithRetry(sourceReport, archivedReport);
         moved.push({ from: sourceReport, to: archivedReport, backup: backupReport });
         const marker = `<!-- career-ops duplicate_of: reports/${keeperFile}; warning_id: ${plan.warning.id}; resolved_at: ${new Date().toISOString()} -->\n`;
         writeFileAtomic(archivedReport, marker + readFileSync(archivedReport, 'utf-8'));
@@ -442,7 +443,7 @@ async function main() {
           copyFileSync(sourceArtifact, backupArtifact);
           mkdirSync(outputArchiveRoot, { recursive: true });
           const archivedArtifact = join(outputArchiveRoot, basename(sourceArtifact));
-          renameSync(sourceArtifact, archivedArtifact);
+          renameSyncWithRetry(sourceArtifact, archivedArtifact);
           moved.push({ from: sourceArtifact, to: archivedArtifact, backup: backupArtifact });
           artifactsArchived++;
         }
@@ -512,7 +513,7 @@ async function main() {
         if (existsSync(item.to)) {
           mkdirSync(dirname(item.from), { recursive: true });
           rmSync(item.from, { force: true });
-          renameSync(item.to, item.from);
+          renameSyncWithRetry(item.to, item.from);
           if (item.backup && existsSync(item.backup)) copyFileSync(item.backup, item.from);
         }
       } catch {}

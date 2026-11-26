@@ -57,6 +57,7 @@ import fs from 'node:fs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { composeJd, fromLdJson, fromEmbeddedDescription, htmlToText, ldJsonBlocks, wordCount } from '../lib/jd-parse.mjs';
 import { pageClosureEvidence, inspectPage, sameDocument } from '../lib/jd-page-fetch.mjs';
+import { renameSyncWithRetry } from '../lib/rename-retry.mjs';
 
 // Re-exported so existing importers of this module keep working.
 export { fromLdJson, fromEmbeddedDescription, ldJsonBlocks, wordCount };
@@ -249,7 +250,7 @@ Options:
   const tmp = `${outFile}.rescue-${process.pid}`;
   try {
     fs.writeFileSync(tmp, found.text);
-    fs.renameSync(tmp, outFile);
+    renameSyncWithRetry(tmp, outFile);
   } catch (err) {
     try { fs.unlinkSync(tmp); } catch { /* nothing to clean */ }
     throw err;

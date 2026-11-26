@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
+import { renameSyncWithRetry } from '../lib/rename-retry.mjs';
 import { extname, join } from 'node:path';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { resolveRunnerCommand, terminateProcessTreeSync } from '../lib/runner-command.mjs';
@@ -65,7 +66,7 @@ export async function runWorker(command, args, { timeoutSeconds, registrationPat
   const save = () => {
     const pending = `${registrationPath}.pending`;
     writeFileSync(pending, JSON.stringify(record));
-    renameSync(pending, registrationPath);
+    renameSyncWithRetry(pending, registrationPath);
   };
   save();
   const failCleanup = error => {

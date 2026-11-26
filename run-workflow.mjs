@@ -10,6 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'fs';
+import { renameSyncWithRetry } from './lib/rename-retry.mjs';
 import { join, resolve } from 'path';
 import { loadYaml } from './lib/yaml-document.mjs';
 import {
@@ -241,7 +242,7 @@ async function acquireLock() {
   }
   const temporary = `${lockPath}.tmp-${process.pid}`;
   writeFileSync(temporary, `${process.pid}\n`, 'utf-8');
-  renameSync(temporary, lockPath);
+  renameSyncWithRetry(temporary, lockPath);
   lockOwned = true;
 }
 

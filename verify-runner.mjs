@@ -12,6 +12,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'fs';
+import { renameSyncWithRetry } from './lib/rename-retry.mjs';
 import { join, basename } from 'path';
 import {
   getUserContext,
@@ -234,7 +235,7 @@ async function acquireLock() {
     }
     const temporary = `${lockPath}.tmp-${process.pid}`;
     writeFileSync(temporary, `${process.pid}\n`, 'utf-8');
-    renameSync(temporary, lockPath);
+    renameSyncWithRetry(temporary, lockPath);
     lockOwned = true;
   } catch (error) {
     batchOwnershipLock?.release();
@@ -599,7 +600,7 @@ async function rawVerification(name) {
 function writeJsonAtomic(path, value) {
   const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
-  renameSync(temporary, path);
+  renameSyncWithRetry(temporary, path);
 }
 
 function validationErrors(error) {

@@ -9,6 +9,7 @@ import {
   renameSync,
   rmSync,
 } from 'fs';
+import { renameSyncWithRetry } from './lib/rename-retry.mjs';
 import { basename, dirname, extname, join, relative, resolve } from 'path';
 import { loadYaml } from './lib/yaml-document.mjs';
 import {
@@ -505,7 +506,7 @@ async function main() {
         mkdirSync(backupReportDir, { recursive: true });
         const backupReport = join(backupReportDir, originalReportName);
         copyFileSync(reportPath, backupReport);
-        renameSync(reportPath, renamedReportPath);
+        renameSyncWithRetry(reportPath, renamedReportPath);
         moved.push({ from: reportPath, to: renamedReportPath, backup: backupReport });
         const renamedStem = renamedReportName.slice(0, -extname(renamedReportName).length);
         const updated = readFileSync(renamedReportPath, 'utf-8')
@@ -522,7 +523,7 @@ async function main() {
           mkdirSync(backupOutputDir, { recursive: true });
           const backupArtifact = join(backupOutputDir, basename(sourceArtifact));
           copyFileSync(sourceArtifact, backupArtifact);
-          renameSync(sourceArtifact, targetArtifact);
+          renameSyncWithRetry(sourceArtifact, targetArtifact);
           moved.push({ from: sourceArtifact, to: targetArtifact, backup: backupArtifact });
         }
       }
@@ -582,7 +583,7 @@ async function main() {
       const archiveRoot = userPath(context, `reports/orphans/${stamp}`);
       mkdirSync(archiveRoot, { recursive: true });
       const archivedReport = join(archiveRoot, basename(sourceReport));
-      renameSync(sourceReport, archivedReport);
+      renameSyncWithRetry(sourceReport, archivedReport);
       moved.push({ from: sourceReport, to: archivedReport, backup: backupReport });
       const marker = `<!-- career-ops orphan_archived; finding_id: ${item.finding.id}; resolved_at: ${reviewedAt} -->\n`;
       writeFileAtomic(archivedReport, marker + readFileSync(archivedReport, 'utf-8'));
@@ -599,7 +600,7 @@ async function main() {
         const outputArchive = userPath(context, `output/orphans/${stamp}`);
         mkdirSync(outputArchive, { recursive: true });
         const archivedArtifact = join(outputArchive, basename(sourceArtifact));
-        renameSync(sourceArtifact, archivedArtifact);
+        renameSyncWithRetry(sourceArtifact, archivedArtifact);
         moved.push({ from: sourceArtifact, to: archivedArtifact, backup: backupArtifact });
         artifactsArchived++;
       }
@@ -630,7 +631,7 @@ async function main() {
         if (existsSync(item.to)) {
           mkdirSync(dirname(item.from), { recursive: true });
           rmSync(item.from, { force: true });
-          renameSync(item.to, item.from);
+          renameSyncWithRetry(item.to, item.from);
           if (item.backup && existsSync(item.backup)) copyFileSync(item.backup, item.from);
         }
       } catch {}

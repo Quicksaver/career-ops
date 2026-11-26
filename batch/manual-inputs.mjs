@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, renameSync, realpathSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, realpathSync, existsSync } from 'node:fs';
+import { renameSyncWithRetry } from '../lib/rename-retry.mjs';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { isMainModule } from '../lib/is-main-module.mjs';
 
@@ -76,7 +77,7 @@ export function canResume(hold, answers, { id, url, user }) {
 export function writeHold(path, result, user) {
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({ ...result, schema_version: 1, user }, null, 2) + '\n');
-  renameSync(tmp, path);
+  renameSyncWithRetry(tmp, path);
 }
 export function validateClosedResult(result, { id, url, reportNum } = {}) {
   const errors = [];

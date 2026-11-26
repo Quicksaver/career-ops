@@ -2,6 +2,7 @@ import '../user-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { toolRequired } from '../required-tools.mjs';
 import { detectCustomProvider, fetchCustomProvider, routeCustomBrowserRequests } from '../../providers/_custom.mjs';
@@ -14,7 +15,6 @@ import { boundedProbeCtx } from '../../verify-portals.mjs';
 const entry = { name: 'Fixture', api: 'https://careers.example/api/pcsx/search?domain=fixture' };
 
 test('retired custom branches route through direct provider modules while active custom adapters remain available', async () => {
-  const {fileURLToPath}=await import('node:url');
   const providers=await loadProviders(fileURLToPath(new URL('../../providers/',import.meta.url)));
   for(const id of ['landingjobs','nodesk','workingnomads','greenhouse','ashby','lever','pcsx']) {
     const resolved=resolveProvider({name:'Fixture',provider:id},providers);
@@ -36,6 +36,18 @@ const boards = {
   englishjobs: 'https://englishjobsearch.ch/', jobsinenglish: 'https://jobsinenglish.dk/',
   jobsch: 'https://www.jobs.ch/en/vacancies/', makeitingermany: 'https://www.make-it-in-germany.com/en/working-in-germany/job-listings',
 };
+
+test('the scanner registry keeps explicit GermanTechJobs jobsLight entries on the catalog', async () => {
+  const providers = await loadProviders(fileURLToPath(new URL('../../providers/', import.meta.url)));
+  const entry = { name: 'GermanTechJobs', provider: 'germantechjobs', api: boards.germantechjobs };
+  const { provider } = resolveProvider(entry, providers);
+  const jobs = await provider.fetch(entry, ctx(async url => {
+    assert.equal(url, boards.germantechjobs);
+    return [{ name: 'Backend Engineer', company: 'Example', jobUrl: 'backend-example', annualSalaryFrom: 65000 }];
+  }, { fetchText: async () => assert.fail('catalog entry must not fetch RSS') }));
+  assert.equal(jobs[0].title, 'Backend Engineer');
+  assert.deepEqual(jobs[0].salary, { min: 65000, currency: 'EUR' });
+});
 
 for (const [id, api] of Object.entries(boards)) {
   test(`${id} forwards its context and refuses redirects`, async () => {

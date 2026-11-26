@@ -11,6 +11,15 @@ Generated from:
 
 The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
 
+## Upstream integration at a8ea6d16
+
+This update incorporates 12 commits in `c752b4aa..a8ea6d16`, with no new release tag. Six files conflicted.
+
+- **Rename retry (#7639).** `lib/rename-retry.mjs` is the shared dependency-free implementation. `tracker-utils.mjs` re-exports it and the fork drops its local implementation. `scan.mjs` keeps its roughly two-second delay schedule because `run-workflow.mjs` can scan portals alongside authenticated LinkedIn discovery. The scan writer and the fork's batch state, manual input, process registration, runner ownership, verification, CV promotion and T3 usage writes now use the shared helper. `plugins/_lock.mjs` also uses it without adding a package dependency to `doctor.mjs`. The repository-wide rename check replaces the fork's list of individual scanner and tracker scripts. The updater already ships `lib/` as a directory, so `lib/update-manifest.mjs` needs no entry for the new file. Batch test sandboxes copy it via `tests/copy-batch-ownership.mjs`.
+- **GermanTechJobs family RSS (#7685).** `providers/germantechjobs.mjs` accepts `feed_url` for SwissDevJobs, DEVITjobs UK and DEVITjobs NL. `run` reaches it during its normal `scan.mjs` phase for explicitly configured sources. RSS omits location and workplace, so strict location filtering can drop those rows. Existing `jobsLight` configurations still use the catalog for location, workplace, salary and tech tags. That branch in `providers/_custom.mjs` remains necessary. The fork's `tests/providers/fork-contract.test.mjs` covers catalog routing through the scanner registry alongside upstream's new RSS cases.
+- **Outcome and migration.** `outcome.mjs` rechecks the selected tracker row under the journal workflow and passes an identity precondition to the status writer. This applies to the interactive outcome command. `migrate-scan-runs.mjs --apply --json` now reports the write result after the attempt, including failure and concurrent-write refusal. Migration remains explicit. `run` still uses its own queue reconciliation and reviewed verification paths.
+- **Registry and tests.** Upstream adds 3,264 employer registry boards. They reach `run` only after a board is configured in that user's `portals.yml`. `test-all.mjs` now prints rerun commands for failures and accepts `--shard i/n` for parallel full runs. The incoming range has no worker schema, model-selection, CV contract, manual-answer or dashboard changes.
+
 ## Upstream integration at c752b4aa
 
 This update incorporates the 179 commits from `26df5f505eeda5aed1fd4eb7473db06d3f431067` through `c752b4aa277c7ff43ca4e5cae189c4d501a9e299`, main-branch work with no new release tag. Fifty files conflicted.
@@ -1890,7 +1899,7 @@ What this customizes:
 - Keeps references to fork-added commands, providers, and behavior in sync with the code above.
 - Adjusts one Gemini free-tier model reference in `README.md`.
 - Treats a directory lock whose `started_at` predates the last boot as stale even when its recorded PID is alive, and `batch/runner-ownership.mjs` uses the same rule. Windows reuses PIDs, so after a reboot a batch runner lock read as held by an unrelated process (Remote Desktop) and `run` refused to start. Keep the web copy byte-identical; `tests/pipeline-lock.test.mjs` checks it.
-- Routes `scan.mjs` `atomicWriteFile` through `renameSyncWithRetry`, with an optional schedule that `tracker-utils.mjs` now accepts, so a Windows `EPERM` on `pipeline.md` is retried for about 2 seconds instead of ending the scan. Under `run`, the portal scan and the LinkedIn scan write the same `pipeline.md` side by side; a bare rename lost a whole portal scan, and the LinkedIn saves needed a 1-second retry. `tests/rename-contention-family.test.mjs` now covers `scan.mjs`. Drop this when upstream wraps the rename itself.
+- Passes a roughly two-second retry schedule to the shared `lib/rename-retry.mjs` from `scan.mjs`. Under `run`, the portal and LinkedIn scans use the same `pipeline.md`, and a Windows reader can hold the file past the default retry budget. `tests/rename-contention.test.mjs` covers the caller-supplied bound.
 
 Future merge notes:
 
@@ -1909,6 +1918,7 @@ Future merge notes:
 - The independent `_custom-fetch.mjs` retry helper is retired. Fork providers now use upstream context transports, shared retries, HTML normalization, and entity decoding.
 - The fork's private copy of the directory-lock protocol in `pipeline-lock.mjs`, its inline Block G signals 8–17, its web personalization section scanner, its private web `runSetStatus`, and its updater `dataRoots` template-variant code are retired in favor of upstream's `lib/dir-lock.mjs`, `modes/oferta-signals/`, core `sectionState`, `core-cli.ts` and `snapshotConfiguredTemplateVariantsAcrossProfiles` (integration at 8f489289).
 - The ITJobs list-page scraper in `providers/_custom.mjs` (list paths only, five pages a second apart, robots.txt filter refusal) is retired for upstream's RSS provider (#7687). The feed returns the whole board (about 700 postings) in one request, so an entry needs only `provider: itjobs`; its `careers_url`/`api` list path no longer narrows the read, and the user's `location_filter` decides what is kept. `tests/providers/fork-contract.test.mjs` drops its ITJobs cases and checks the HTTPS/host guard on SAPO instead.
+- The local rename retry implementation and its file-by-file test list are retired for upstream's `lib/rename-retry.mjs` and repository-wide guard (#7639). The scan still supplies its longer retry schedule.
 - Upstream's own `sync-batch-input.mjs` implementation and Bash `run_worker` watchdog are not carried: the former forwards to the fork's synchronizer, the latter is replaced by `worker-process.mjs`.
 
 ## Redundancy Checklist For Future Upstream Updates

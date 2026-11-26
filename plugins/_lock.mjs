@@ -12,7 +12,8 @@
 // WITHOUT a version bump (the postmark-mcp class). Stated plainly in README.
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync, rmSync } from 'node:fs';
+import { renameSyncWithRetry } from '../lib/rename-retry.mjs';
 import path from 'node:path';
 
 const LOCK_VERSION = 1;
@@ -97,7 +98,7 @@ function saveLock(root, lock) {
   const tmp = path.join(root, `.plugins.lock.${process.pid}.${randomUUID()}.tmp`);
   try {
     writeFileSync(tmp, JSON.stringify(lock, null, 2) + '\n', 'utf8');
-    renameSync(tmp, file);
+    renameSyncWithRetry(tmp, file);
   } catch (err) {
     try { rmSync(tmp, { force: true }); } catch { /* the temp file may not exist */ }
     throw err;

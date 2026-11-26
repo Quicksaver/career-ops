@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { renameSyncWithRetry } from '../lib/rename-retry.mjs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { acquirePipelineLock } from '../pipeline-lock.mjs';
@@ -22,7 +23,7 @@ function atomicStateWrite(path, lines) {
   const temp = `${path}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temp, lines.join('\n') + '\n', { flag: 'wx' });
-    renameSync(temp, path);
+    renameSyncWithRetry(temp, path);
   } finally { rmSync(temp, { force: true }); }
 }
 
