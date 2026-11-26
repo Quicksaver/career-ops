@@ -33,6 +33,7 @@ const check = (name, fn) => {
 try {
   for (const dir of ['reports', 'batch', 'lib', 'output', 'jds']) mkdirSync(join(work, dir));
   copyFileSync(join(ROOT, 'batch/manual-inputs.mjs'), join(work, 'batch/manual-inputs.mjs'));
+  copyFileSync(join(ROOT, 'lib/rename-retry.mjs'), join(work, 'lib/rename-retry.mjs'));
   copyFileSync(join(ROOT, 'lib/is-main-module.mjs'), join(work, 'lib/is-main-module.mjs'));
   writeFileSync(join(work, 'batch/validate-worker-artifacts.mjs'), '// Validator independently tested.\n');
   writeFileSync(join(work, 'validate-worker-artifacts.mjs'), '// Artifact validity is covered by the artifact contract suite.\n');

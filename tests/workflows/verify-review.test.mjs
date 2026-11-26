@@ -811,7 +811,7 @@ try {
     "const output = args[args.indexOf('--output-last-message') + 1];",
     "let stdin = '';",
     "process.stdin.on('data', chunk => { stdin += chunk; });",
-    "process.stdin.on('end', () => {",
+    "process.stdin.on('end', async () => {",
     "  const inputPath = stdin.match(/^FINDINGS_JSON=(.+)$/m)[1].trim();",
     "  const input = JSON.parse(fs.readFileSync(inputPath, 'utf8'));",
     "  if (input.findings.length > 5) { console.error('review chunk exceeded 5 findings'); process['exit'](2); return; }",
@@ -915,6 +915,15 @@ try {
     "    fs.writeFileSync(process.env.FAKE_CODEX_INVALID_ONCE, 'invalid emitted\\n');",
     "    findings = findings.map(finding => ({ ...finding, classification: 'actionable', disposition: 'patch_tracker', tracker_patch: null }));",
     "  }",
+    // Wait for both reviewers to start before either can finish. A fixed delay
+    // can expire while Windows is still starting the second CLI process.
+    "  if (process.env.FAKE_CODEX_WAIT_FOR_PEER) {",
+    "    const deadline = Date.now() + 10000;",
+    "    while ((fs.readFileSync(process.env.FAKE_CODEX_CONCURRENCY, 'utf8').match(/\"event\":\"start\"/g) || []).length < 2) {",
+    "      if (Date.now() >= deadline) { console.error('peer reviewer did not start'); process.exitCode = 4; return; }",
+    "      await new Promise(resolve => setTimeout(resolve, 25));",
+    "    }",
+    "  }",
     "  setTimeout(() => {",
     "    fs.appendFileSync(process.env.FAKE_CODEX_CALLS, '1\\n');",
     "    fs.writeFileSync(output, JSON.stringify({ status: 'completed', needs_human_review: findings.some(finding => finding.needs_human_review), findings }));",
@@ -932,7 +941,7 @@ try {
   };
   const firstProcess = spawnSync(process.execPath, [
     join(ROOT, 'verify-runner.mjs'), '--user', 'test', '--max-passes', '2', '--json',
-  ], { cwd: ROOT, env: runnerEnv, encoding: 'utf-8' });
+  ], { cwd: ROOT, env: { ...runnerEnv, FAKE_CODEX_WAIT_FOR_PEER: '1' }, encoding: 'utf-8' });
   if (firstProcess.status !== 0) throw new Error(`first verify runner failed: ${firstProcess.stderr}`);
   const firstRun = JSON.parse(firstProcess.stdout);
   const secondRun = JSON.parse(execFileSync(process.execPath, [

@@ -4,21 +4,21 @@ This file documents what this fork changes relative to its incorporated upstream
 
 Generated from:
 
-- Incorporated upstream base: `c752b4aa277c7ff43ca4e5cae189c4d501a9e299`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
-- Implementation snapshot: `5c949aa47e8e089bf5f303a8da33b42f67a44678`, the upstream integration at `c752b4aa` with its compatibility repairs.
-- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `353`.
-- Diff size against the incorporated base at that snapshot: `1133 files changed, 45148 insertions(+), 12755 deletions(-)`.
+- Incorporated upstream base: `a8ea6d16d8ad38817b1fc333d717b8ada4b9a227`, the merge base of `main` and `upstream/main`. The remote ref can advance independently of this incorporated base.
+- Implementation snapshot: `ec3fcfb3cae561643f36f1330b0b68359f35e3d7`, the upstream integration at `a8ea6d16` with its compatibility repairs.
+- Relationship to the incorporated base at that snapshot: upstream-only commits `0`, fork-only commits `356`.
+- Diff size against the incorporated base at that snapshot: `1135 files changed, 45341 insertions(+), 12764 deletions(-)`.
 
-The refs and counts describe that committed implementation snapshot. A later documentation-only inventory refresh may follow it; no uncommitted implementation is included. Refresh the snapshot after subsequent implementation or upstream merges.
+The refs and counts describe the merge commit above. Refresh the snapshot after subsequent production changes or upstream merges.
 
 ## Upstream integration at a8ea6d16
 
 This update incorporates 12 commits in `c752b4aa..a8ea6d16`, with no new release tag. Six files conflicted.
 
-- **Rename retry (#7639).** `lib/rename-retry.mjs` is the shared dependency-free implementation. `tracker-utils.mjs` re-exports it and the fork drops its local implementation. `scan.mjs` keeps its roughly two-second delay schedule because `run-workflow.mjs` can scan portals alongside authenticated LinkedIn discovery. The scan writer and the fork's batch state, manual input, process registration, runner ownership, verification, CV promotion and T3 usage writes now use the shared helper. `plugins/_lock.mjs` also uses it without adding a package dependency to `doctor.mjs`. The repository-wide rename check replaces the fork's list of individual scanner and tracker scripts. The updater already ships `lib/` as a directory, so `lib/update-manifest.mjs` needs no entry for the new file. Batch test sandboxes copy it via `tests/copy-batch-ownership.mjs`.
+- **Rename retry (#7639).** `lib/rename-retry.mjs` is the shared dependency-free implementation. `tracker-utils.mjs` re-exports it and the fork drops its local implementation. `scan.mjs` keeps its roughly two-second delay schedule because `run-workflow.mjs` can scan portals alongside authenticated LinkedIn discovery. The scan writer and the fork's batch state, manual input, process registration, runner ownership, verification, CV promotion and T3 usage writes now use the shared helper. `plugins/_lock.mjs` also uses it without adding a package dependency to `doctor.mjs`. The repository-wide rename check replaces the fork's list of individual scanner and tracker scripts. The updater already ships `lib/` as a directory, so `lib/update-manifest.mjs` needs no entry for the new file. The shared batch fixtures and the delegated-agency-confirmation fixture copy the new dependency into their isolated sandboxes.
 - **GermanTechJobs family RSS (#7685).** `providers/germantechjobs.mjs` accepts `feed_url` for SwissDevJobs, DEVITjobs UK and DEVITjobs NL. `run` reaches it during its normal `scan.mjs` phase for explicitly configured sources. RSS omits location and workplace, so strict location filtering can drop those rows. Existing `jobsLight` configurations still use the catalog for location, workplace, salary and tech tags. That branch in `providers/_custom.mjs` remains necessary. The fork's `tests/providers/fork-contract.test.mjs` covers catalog routing through the scanner registry alongside upstream's new RSS cases.
 - **Outcome and migration.** `outcome.mjs` rechecks the selected tracker row under the journal workflow and passes an identity precondition to the status writer. This applies to the interactive outcome command. `migrate-scan-runs.mjs --apply --json` now reports the write result after the attempt, including failure and concurrent-write refusal. Migration remains explicit. `run` still uses its own queue reconciliation and reviewed verification paths.
-- **Registry and tests.** Upstream adds 3,264 employer registry boards. They reach `run` only after a board is configured in that user's `portals.yml`. `test-all.mjs` now prints rerun commands for failures and accepts `--shard i/n` for parallel full runs. The incoming range has no worker schema, model-selection, CV contract, manual-answer or dashboard changes.
+- **Registry and tests.** Upstream adds 3,264 employer registry boards. They reach `run` only after a board is configured in that user's `portals.yml`. `test-all.mjs` now prints rerun commands for failures and accepts `--shard i/n` for parallel full runs. The concurrent review fixture waits for both mock reviewers to start before either exits, so Windows CLI startup time cannot invalidate its overlap check. The incoming range has no worker schema, model-selection, CV contract, manual-answer or dashboard changes.
 
 ## Upstream integration at c752b4aa
 
